@@ -63,5 +63,11 @@ class QSonarToggleWidget(QWidget):
         subprocess.Popen(
             ['python3', str(TOGGLE_SCRIPT)],
         ).wait()
+        # Restart audio services to restore virtual sinks after mode switch
+        subprocess.run(
+            ['systemctl', '--user', 'restart',
+             'pipewire', 'pipewire-pulse', 'filter-chain', 'arctis-manager'],
+            check=False,
+        )
         self._refresh()
         self._button.setEnabled(True)
