@@ -1,117 +1,149 @@
-# Linux Arctis Manager
+# Arctis Sound Manager
 
-A replacement for SteelSeries GG software, to manage your Arctis device on Linux!
+A Linux GUI for SteelSeries Arctis headsets — manages device settings and provides a 3-channel audio mixer (Game / Chat / Media) with automatic media routing.
 
-[![CI](https://github.com/elegos/Linux-Arctis-Manager/actions/workflows/wheel-install-test.yaml/badge.svg?branch=develop)](https://github.com/elegos/Linux-Arctis-Manager/actions/workflows/wheel-install-test.yaml)
+> Based on [Linux Arctis Manager](https://github.com/elegos/Linux-Arctis-Manager) by elegos.
 
-## 👍 Key points
+---
 
-- Enable the Media and Chat audio streams
-- Configure any device via a simple configuration file
-- Enable per-device features by adding them in the relative configuration file
-- D-Bus based communication, to support different clients (alternative clients, Plasma extensions, etc)
+## Features
 
-## 🎧 Supported devices table
+- **3-channel audio mixer** — separate Game, Chat and Media virtual sinks
+- **Automatic media routing** — browsers (Firefox, Chromium…) and video players (VLC, mpv, Haruna…) are automatically routed to the Media sink
+- **Manual stream control** — move any audio stream between channels on the fly via the GUI
+- **Persistent routing** — manual moves are remembered across app restarts
+- **Native PipeWire support** — detects apps that bypass PulseAudio (mpv, Haruna…)
+- **Volume sliders** per channel with live percentage display
+- **Device status** — battery, mic, EQ and more depending on your device
 
-|Device|Channels mix|Advanced features|Product ID(s)|
-|------|------------|-----------------|-------------|
-|Arctis 1 / Xbox                      |❌|❌|12b3, 12b6|
-|Arctis 1 Wireless                    |❌|❌||
-|Arctis 3 Console Edition             |❌|❌||
-|Arctis 7 / Gen 2                     |❌|❌|1260, 12ad|
-|Arctis 7+ / PS5 / Xbox / Destiny     |❌|❌|220e, 2212, 2216, 2236|
-|Arctis Nova 3                        |❌|❌|12ec|
-|Arctis Nova 3P Wireless / 3X Wireless|❌|❌|2269, 226d|
-|Arctis Nova 5                        |❌|❌|2232, 2253|
-|Arctis Nova 7P                       |❌|❌|220a|
-|Arctis Nova 7X                       |❌|❌|12d7|
-|Arctis Nova 9                        |❌|❌|12c2|
-|Arctis Nova Elite                    |❌|❌||
-|Arctis Nova Pro Wireless / X         |✅|✅|12e0, 12e5|
-|Arctis Nova Pro                      |❌|❌||
-|Arctis Pro GameDAC                   |❌|❌|1280|
-|Arctis Pro Wireless                  |❌|❌|1290|
-|Arctis Pro                           |❌|❌|1252|
+## Supported Devices
 
+| Device | Mixer | Advanced features | Product ID(s) |
+|---|---|---|---|
+| Arctis 7 / Gen 2 | ❌ | ❌ | 1260, 12ad |
+| Arctis 7+ / PS5 / Xbox / Destiny | ❌ | ❌ | 220e, 2212, 2216, 2236 |
+| Arctis Nova 3 | ❌ | ❌ | 12ec |
+| Arctis Nova 5 | ❌ | ❌ | 2232, 2253 |
+| Arctis Nova 7P | ❌ | ❌ | 220a |
+| Arctis Nova 7X | ❌ | ❌ | 12d7 |
+| Arctis Nova 9 | ❌ | ❌ | 12c2 |
+| **Arctis Nova Pro Wireless / X** | ✅ | ✅ | 12e0, 12e5 |
+| Arctis Pro GameDAC | ❌ | ❌ | 1280 |
+| Arctis Pro Wireless | ❌ | ❌ | 1290 |
 
-\*: experimental support, needs test by the community. Open an issue in case of problem(s)
+---
 
-## CLI commands
+## Requirements
 
-- `lam-daemon`: executed by user-level systemd.
-- `lam-cli`: to run utilities like udev rules generation, desktop entries installation etc.
-- `lam-gui`: the graphical user interface, to alter settings and see the device's status.
+- Linux with **PipeWire** (+ `pipewire-pulse`)
+- **Python 3.10+**
+- `uv` — [installation guide](https://docs.astral.sh/uv/getting-started/installation/)
+- `pipx` — install with your package manager:
+  ```bash
+  # Arch / CachyOS / Manjaro
+  sudo pacman -S python-pipx
 
-Each command can be called with `-h` or `--help` to get all the options for the commands and subcommands.
+  # Debian / Ubuntu
+  sudo apt install pipx
 
-## 🖥️ Install & setup
+  # Fedora
+  sudo dnf install pipx
+  ```
 
-### Distrobox
+---
 
-Note on Distrobox (immutable distros like Bazzite, just to be **aware**): distrobox executes applications within containers, mounting `/var`, `/etc` and your `/home` in the container itself. This application heavily relies on your `/home`, thus distrobox is not really used but for the installation process.
-
-```bash
-curl -LsSf https://raw.githubusercontent.com/elegos/Linux-Arctis-Manager/refs/heads/develop/scripts/distrobox.sh | sh
-```
-### Arch Linux (AUR)
-
-Arch Linux users can install the community-maintained package from the Arch User Repository (AUR). Please report any packaging-specific issues directly to the AUR maintainers [@tonitch](https://aur.archlinux.org/account/tonitch) and [@Aiyahhh](https://aur.archlinux.org/account/Aiyahhh)
-
-- [Linux Arctis Manager on AUR](https://aur.archlinux.org/packages/linux-arctis-manager)
-
-### Manual install
-
-#### Prerequisites
-
-- `uv` ([installation guide](https://docs.astral.sh/uv/getting-started/installation/))
-- `pip` or `pipx` (some distros will **REQUIRE** pipx). **pipx is recommended** for dependencies isolation, while pip will have a smaller footprint.
-
-#### Commands
+## Installation
 
 ```bash
-# Prerequisites
-curl -LsSf https://astral.sh/uv/install.sh | sh
-# install pipx with your package manager
-mkdir -p $HOME/.local/share/applications
+# 1. Clone the repository
+git clone https://github.com/loteran/Arctis-Sound-Manager.git
+cd Arctis-Sound-Manager
 
-# Download the sources and enter them
-git clone https://github.com/elegos/Linux-Arctis-Manager.git # first time only
-cd Linux-Arctis-Manager
-git pull # to get the latest version available
-
-# Build the .whl package. Skip this if downloading from releases page
-rm -rf dist
-uv build
-
-# Install the .whl package
-find ./dist -name "*.whl" | head -n1 | xargs pipx install --force
-# ALT using pip: find ./dist -name "*.whl" | head -n1 | xargs pip install --user --force-reinstall
-
-# Setup
-lam-cli desktop write # Only to produce the desktop entries; optional after first installation
-lam-cli udev write-rules --force --reload # Required for first installation or new devices support only
+# 2. Run the installer
+bash scripts/install.sh
 ```
 
-## ⛔ Uninstall / cleanup
-- `lam-cli desktop remove` (remove the desktop menu entries)
-- `systemctl --user disable --now arctis-manager` (disables and stops arctis-manager service)
-- `rm ~/.config/systemd/user/arctis-manager.service` (removes the systemd's user-level arctis-manager service file)
-- `rm ~/.config/arctis_manager` (user preferences and custom device / lang files)
-- `sudo rm /usr/lib/udev/rules.d/91-steelseries-arctis.rules` (remove udev rules)
-- `pipx uninstall linux_arctis_manager` (pipx)
-- `pip uninstall linux_arctis_manager` (pip)
+The installer will:
+- Build and install the package via `pipx`
+- Install udev rules for USB device access (requires sudo)
+- Create desktop entries
+- Enable the `arctis-manager` systemd user service (device daemon)
+- Enable the `arctis-video-router` systemd user service (media auto-routing)
 
-## ⌨️ Development
+After installation, launch the GUI from your application menu or run:
+```bash
+lam-gui
+```
 
-### Basic commands
+---
 
-- Run the daemon: `uv run lam-daemon`
-- Run the CLI: `uv run lam-cli`
-- Run the GUI: `uv run lam-gui [--no-enforce-systemd]` - use the option to avoid force enabling the daemon, in case you're working on it
+## How the mixer works
 
-### Documentation
+The app creates 3 virtual audio sinks on top of your physical Arctis device:
 
-- [How to add support to a new device](docs/device_support.md)
-- [Wireshark quick tutorial](https://www.youtube.com/watch?v=zWbdnHwTr3M)
-- [Device configuration specs](docs/device_configuration_file_specs.md)
-- [Dbus messaging](docs/dbus.md)
+| Sink | Default use | Color |
+|---|---|---|
+| **Arctis_Game** | Games, general audio | Teal |
+| **Arctis_Chat** | Voice apps (Discord, TeamSpeak…) | Blue |
+| **Arctis_Media** | Browsers, video players | Orange |
+
+The **media router** (`lam-router`) runs as a background service and automatically moves browsers and video players to `Arctis_Media`. Any app not in the list stays on whichever sink it was placed on.
+
+To **manually move** an app stream, click the **G / C / M** buttons on its tag in the GUI. The choice is saved and respected even after the app restarts.
+
+---
+
+## Uninstall
+
+```bash
+# Stop and disable services
+systemctl --user disable --now arctis-manager.service
+systemctl --user disable --now arctis-video-router.service
+
+# Remove service files
+rm ~/.config/systemd/user/arctis-manager.service
+rm ~/.config/systemd/user/arctis-video-router.service
+
+# Remove desktop entries and udev rules
+lam-cli desktop remove
+sudo rm /usr/lib/udev/rules.d/91-steelseries-arctis.rules
+
+# Remove user config
+rm -rf ~/.config/arctis_manager
+
+# Uninstall the package
+pipx uninstall linux-arctis-manager
+```
+
+---
+
+## Development
+
+```bash
+# Run the daemon
+uv run lam-daemon
+
+# Run the GUI (without enforcing systemd)
+uv run lam-gui --no-enforce-systemd
+
+# Run the media router
+uv run lam-router
+```
+
+### Project structure
+
+```
+src/linux_arctis_manager/
+├── scripts/
+│   ├── daemon.py          # lam-daemon: device manager service
+│   ├── gui.py             # lam-gui: graphical interface
+│   ├── video_router.py    # lam-router: media auto-routing service
+│   └── cli.py             # lam-cli: setup utilities
+├── gui/
+│   ├── home_page.py       # Audio mixer (Game/Chat/Media cards)
+│   ├── components.py      # Reusable widgets
+│   └── theme.py           # Color constants
+├── pw_utils.py            # Native PipeWire stream detection
+├── pactl.py               # PulseAudio virtual sink management
+└── devices/               # Per-device configuration files
+```
