@@ -10,6 +10,7 @@ from linux_arctis_manager.gui.base_app import QBaseDesktopApp
 from linux_arctis_manager.gui.dbus_wrapper import DbusWrapper
 from linux_arctis_manager.gui.main_app_proto_widget import QMainAppProtoWidget
 from linux_arctis_manager.gui.settings_widget import QSettingsWidget
+from linux_arctis_manager.gui.sonar_toggle_widget import QSonarToggleWidget
 from linux_arctis_manager.gui.status_widget import QStatusWidget
 from linux_arctis_manager.gui.ui_utils import get_icon_pixmap
 from linux_arctis_manager.i18n import I18n
@@ -44,11 +45,13 @@ class QMainApp(QBaseDesktopApp):
         self.status_widget = QStatusWidget(self.main_panel)
         self.general_settings_widget = QSettingsWidget(self.main_panel, 'general', 'general')
         self.device_settings_widget = QSettingsWidget(self.main_panel, 'device', 'device')
+        self.sonar_toggle_widget = QSonarToggleWidget(self.main_panel)
 
         self.main_panel_widgets: dict[str, QWidget] = {
             'status': self.status_widget,
             'general': self.general_settings_widget,
             'device': self.device_settings_widget,
+            'equalizer': self.sonar_toggle_widget,
         }
 
         for widget in self.main_panel_widgets.values():
@@ -112,6 +115,7 @@ class QMainApp(QBaseDesktopApp):
             ('status', I18n.get_instance().translate('ui', 'status')),
             ('general', I18n.get_instance().translate('ui', 'general')),
             ('device', I18n.get_instance().translate('ui', 'device')),
+            ('equalizer', 'Equalizer'),
         ]
 
         for value, text in self.side_panel_items:
@@ -131,7 +135,7 @@ class QMainApp(QBaseDesktopApp):
 
         return window
     
-    def switch_panel(self, panel: Literal['status', 'general', 'device']) -> None:
+    def switch_panel(self, panel: Literal['status', 'general', 'device', 'equalizer']) -> None:
         if not self.main_panel_widgets[panel].isHidden():
             return
 
