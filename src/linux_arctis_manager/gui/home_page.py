@@ -212,8 +212,9 @@ class AudioCard(QWidget):
         tag.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tag.setFixedHeight(24)
         tag.setStyleSheet(
-            f"background-color: {bg_color}; color: white; font-size: 9pt; "
-            f"border-radius: 4px; padding: 0 6px;"
+            f"background-color: #1e2530; color: {bg_color}; font-size: 9pt; "
+            f"font-weight: bold; border-radius: 4px; padding: 0 6px; "
+            f"border: 1px solid {bg_color};"
         )
         self._apps_area.addWidget(tag)
 
