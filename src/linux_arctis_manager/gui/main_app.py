@@ -3,12 +3,13 @@ Main application window — ArctisSonar GUI visual style.
 """
 import logging
 
-from PySide6.QtCore import Qt, Slot
-from PySide6.QtGui import QIcon
+from PySide6.QtCore import Qt, QUrl, Slot
+from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
@@ -141,6 +142,19 @@ class QMainApp(QBaseDesktopApp):
             self._sidebar_buttons.append(btn)
 
         sidebar_layout.addStretch(1)
+
+        # GitHub link at the bottom of the sidebar
+        gh_btn = QPushButton("GitHub Repo")
+        gh_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none; color: {TEXT_SECONDARY}; "
+            f"font-size: 8pt; text-decoration: underline; padding: 4px 0; }}"
+            f"QPushButton:hover {{ color: {ACCENT}; }}"
+        )
+        gh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        gh_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl("https://github.com/loteran/Arctis-Sound-Manager"))
+        )
+        sidebar_layout.addWidget(gh_btn, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         root_layout.addWidget(sidebar)
 
