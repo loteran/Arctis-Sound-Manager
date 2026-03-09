@@ -1,4 +1,5 @@
 import subprocess
+import time
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -64,10 +65,12 @@ class QSonarToggleWidget(QWidget):
             ['python3', str(TOGGLE_SCRIPT)],
         ).wait()
         # Restart audio services to restore virtual sinks after mode switch
+        self._button.setText('Redémarrage du son...')
         subprocess.run(
             ['systemctl', '--user', 'restart',
              'pipewire', 'pipewire-pulse', 'filter-chain', 'arctis-manager'],
             check=False,
         )
+        time.sleep(4)
         self._refresh()
         self._button.setEnabled(True)
