@@ -101,8 +101,8 @@ class QMainApp(QBaseDesktopApp):
 
         available = window.screen().availableGeometry()
         window.resize(
-            min(1200, available.width()),
-            min(750, available.height()),
+            min(1400, available.width()),
+            min(900, available.height()),
         )
 
         root_layout = QHBoxLayout(window)
