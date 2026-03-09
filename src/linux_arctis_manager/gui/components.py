@@ -8,6 +8,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
+    QFrame,
     QLabel,
     QPushButton,
     QSizePolicy,
@@ -41,13 +42,17 @@ MEDIA_ICON = os.path.join(IMAGES_DIR, "media_icon.svg")
 class SvgIconWidget(QLabel):
     """Renders an SVG file tinted with a given color."""
 
-    def __init__(self, svg_path: str, color: str, size: int = 55, parent=None):
+    def __init__(self, svg_path: str, color: str, size: int = 55, width: int | None = None, parent=None):
         super().__init__(parent)
-        self.setFixedSize(size, size)
-        self._load(svg_path, color, size)
+        w = width if width is not None else size
+        self.setFixedSize(w, size)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setFrameShadow(QFrame.Shadow.Plain)
+        self._load(svg_path, color, size, w)
 
-    def _load(self, svg_path: str, color: str, size: int):
-        pixmap = QPixmap(size, size)
+    def _load(self, svg_path: str, color: str, size: int, width: int | None = None):
+        w = width if width is not None else size
+        pixmap = QPixmap(w, size)
         pixmap.fill(QColor(0, 0, 0, 0))
 
         try:
@@ -68,6 +73,7 @@ class SvgIconWidget(QLabel):
 
         self.setPixmap(pixmap)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setStyleSheet("border: none; background: transparent;")
 
 
 # ── SidebarButton ──────────────────────────────────────────────────────────────

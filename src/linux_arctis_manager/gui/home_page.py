@@ -2,20 +2,40 @@
 Home page — Audio mixer matching the ArctisSonar GUI visual style.
 Shows horizontal audio channel cards (Game, Chat, Media, etc.) with vertical sliders.
 """
+import json
 import logging
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Slot
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
+    QComboBox,
     QHBoxLayout,
     QLabel,
-    QScrollArea,
+    QPushButton,
     QSizePolicy,
     QSlider,
     QVBoxLayout,
     QWidget,
-    QFrame,
 )
+
+OVERRIDES_FILE = Path.home() / ".config" / "arctis_manager" / "routing_overrides.json"
+
+
+def _load_overrides() -> dict:
+    if OVERRIDES_FILE.exists():
+        try:
+            return json.loads(OVERRIDES_FILE.read_text())
+        except Exception:
+            pass
+    return {}
+
+
+def _save_overrides(overrides: dict) -> None:
+    OVERRIDES_FILE.parent.mkdir(parents=True, exist_ok=True)
+    OVERRIDES_FILE.write_text(json.dumps(overrides))
 
 from linux_arctis_manager.gui.components import (
     CHAT_ICON,
@@ -35,12 +55,14 @@ from linux_arctis_manager.gui.theme import (
     TEXT_SECONDARY,
 )
 from linux_arctis_manager.i18n import I18n
+from linux_arctis_manager.pw_utils import get_native_streams
 
 logger = logging.getLogger("HomePage")
 
 # PulseAudio sink name fragments to match
-SINK_MEDIA = "Arctis_Media"
+SINK_MEDIA = "Arctis_Game"
 SINK_CHAT = "Arctis_Chat"
+SINK_VIDEO = "Arctis_Media"
 
 # Default audio device label
 DEFAULT_DEVICE = "Default Audio Device"
@@ -64,6 +86,10 @@ def _make_vertical_slider_qss(accent_color: str) -> str:
             border-radius: 9px;
         }}
         QSlider::sub-page:vertical {{
+            background: white;
+            border-radius: 3px;
+        }}
+        QSlider::add-page:vertical {{
             background: {accent_color};
             border-radius: 3px;
         }}
@@ -88,20 +114,11 @@ class AudioCard(QWidget):
     ):
         super().__init__(parent)
         self.setObjectName("audioCard")
-        self.setFixedWidth(185)
-        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
-        self.setStyleSheet(
-            f"""
-            QWidget#audioCard {{
-                background-color: {BG_CARD};
-                border: 1px solid {BORDER};
-                border-radius: 12px;
-            }}
-            """
-        )
-
+        self.setMinimumWidth(260)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._accent = accent_color
         self._ignore_change = False
+        self._apply_normal_style()
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -121,19 +138,37 @@ class AudioCard(QWidget):
         header_layout = QHBoxLayout(header_row)
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(8)
-        header_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        header_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
 
         if svg_path:
-            icon = SvgIconWidget(svg_path, accent_color, size=28)
+            icon = SvgIconWidget(svg_path, accent_color, size=72, width=96)
             header_layout.addWidget(icon)
 
         name_lbl = QLabel(channel_name)
         name_lbl.setStyleSheet(
-            f"color: {accent_color}; font-size: 12pt; font-weight: bold; background: transparent;"
+            f"color: {accent_color}; font-size: 14pt; font-weight: normal; background: transparent;"
         )
         header_layout.addWidget(name_lbl)
-        header_layout.addStretch(1)
         top_layout.addWidget(header_row)
+
+        # Source selector (sink chooser)
+        self._source_combo = QComboBox()
+        self._source_combo.setStyleSheet(
+            f"QComboBox {{ background-color: #1C2026; color: {ACCENT}; "
+            f"border: 1px solid {BORDER}; border-radius: 8px; "
+            f"font-size: 8pt; font-weight: bold; "
+            f"padding: 2px 24px 2px 6px; }}"
+            f"QComboBox::drop-down {{ border: none; width: 20px; subcontrol-origin: padding; subcontrol-position: right center; }}"
+            f"QComboBox::down-arrow {{ image: url({__import__('pathlib').Path(__file__).parent / 'images' / 'arrow_down.svg'}); width: 10px; height: 6px; }}"
+            f"QComboBox QAbstractItemView {{ background-color: #1C2026; color: {TEXT_PRIMARY}; "
+            f"border: 1px solid {BORDER}; border-radius: 8px; selection-background-color: #2D363E; }}"
+        )
+        self._source_combo.setEditable(False)
+        self._source_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._source_combo.currentIndexChanged.connect(self._on_source_changed)
+        self._on_sink_changed_callback = None
+        self._updating_combo = False
+        top_layout.addWidget(self._source_combo)
 
         # Volume percentage label
         self._pct_label = QLabel("—")
@@ -157,35 +192,99 @@ class AudioCard(QWidget):
 
         outer.addWidget(top_widget, stretch=1)
 
-        # ── Divider ────────────────────────────────────────────────────────────
-        divider = QWidget()
-        divider.setFixedHeight(1)
-        divider.setStyleSheet(f"background-color: {BORDER};")
-        outer.addWidget(divider)
+        outer.addSpacing(8)
 
         # ── Applications section ───────────────────────────────────────────────
         apps_widget = QWidget()
+        apps_widget.setObjectName("appsWidget")
         apps_widget.setStyleSheet(
-            f"background-color: #13161A; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px;"
+            "QWidget#appsWidget { background-color: #13161A; border-radius: 12px; }"
         )
         apps_layout = QVBoxLayout(apps_widget)
         apps_layout.setContentsMargins(12, 10, 12, 10)
         apps_layout.setSpacing(6)
 
         apps_title = QLabel("Applications")
+        apps_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         apps_title.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;"
+            f"color: {TEXT_PRIMARY}; font-size: 9pt; font-weight: bold; background: transparent;"
         )
         apps_layout.addWidget(apps_title)
 
         self._apps_area = QVBoxLayout()
         self._apps_area.setSpacing(4)
         apps_layout.addLayout(self._apps_area)
+        apps_layout.addStretch(1)
 
         apps_widget.setFixedHeight(100)
         outer.addWidget(apps_widget)
 
         self._on_change_callback = None
+        self._on_drop_callback = None  # fn(si_index, app_name, pid)
+        self.setAcceptDrops(False)
+
+    def set_on_sink_changed(self, callback):
+        """callback(sink_name: str) called when user picks a different source."""
+        self._on_sink_changed_callback = callback
+
+    def update_sources(self, sink_names: list[str], current_name: str):
+        """Refresh the source combo with available sinks."""
+        self._updating_combo = True
+        prev = self._source_combo.currentData()
+        self._source_combo.clear()
+        for name in sink_names:
+            display = name.split(".")[-1] if "." in name else name
+            self._source_combo.addItem(display, userData=name)
+            idx = self._source_combo.count() - 1
+            self._source_combo.setItemData(idx, Qt.AlignmentFlag.AlignCenter, Qt.ItemDataRole.TextAlignmentRole)
+        # Select current
+        idx = next((i for i in range(self._source_combo.count())
+                    if self._source_combo.itemData(i) == current_name), 0)
+        self._source_combo.setCurrentIndex(idx)
+        self._updating_combo = False
+
+    def _on_source_changed(self, index: int):
+        if self._updating_combo:
+            return
+        sink_name = self._source_combo.itemData(index)
+        if sink_name and self._on_sink_changed_callback:
+            self._on_sink_changed_callback(sink_name)
+
+    # ── Style helpers ──────────────────────────────────────────────────────────
+
+    def _apply_normal_style(self):
+        self.setStyleSheet(
+            f"""
+            QWidget#audioCard {{
+                background-color: {BG_CARD};
+                border: 1px solid {BORDER};
+                border-radius: 12px;
+            }}
+            """
+        )
+
+    def _apply_highlight_style(self):
+        self.setStyleSheet(
+            f"""
+            QWidget#audioCard {{
+                background-color: {BG_CARD};
+                border: 2px solid {self._accent};
+                border-radius: 12px;
+            }}
+            """
+        )
+
+    def set_highlight(self, active: bool):
+        """Highlight this card visually when an app tag is dragged over it."""
+        if active:
+            self._apply_highlight_style()
+        else:
+            self._apply_normal_style()
+
+    # ── Public API ─────────────────────────────────────────────────────────────
+
+    def set_on_drop(self, callback):
+        self._on_drop_callback = callback
 
     def set_on_change(self, callback):
         self._on_change_callback = callback
@@ -206,16 +305,9 @@ class AudioCard(QWidget):
     def set_connected(self):
         self._slider.setEnabled(True)
 
-    def add_app_tag(self, app_name: str, bg_color: str = "#333333"):
-        """Add an application pill/tag in the Applications section."""
-        tag = QLabel(app_name)
-        tag.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        tag.setFixedHeight(24)
-        tag.setStyleSheet(
-            f"background-color: #1e2530; color: {bg_color}; font-size: 9pt; "
-            f"font-weight: bold; border-radius: 4px; padding: 0 6px; "
-            f"border: 1px solid {bg_color};"
-        )
+    def add_app_tag(self, app_name: str, si_index: int, pid: int, bg_color: str = "#333333"):
+        """Add a draggable application pill/tag in the Applications section."""
+        tag = _AppTag(app_name, si_index, pid, bg_color)
         self._apps_area.addWidget(tag)
 
     def clear_apps(self):
@@ -228,6 +320,62 @@ class AudioCard(QWidget):
         self._pct_label.setText(f"{value}%")
         if not self._ignore_change and self._on_change_callback:
             self._on_change_callback(value)
+
+
+# ── App tag with inline move buttons ──────────────────────────────────────────
+
+class _AppTag(QWidget):
+    """
+    App tag row:  [app name ·············· G  C  M]
+    G/C/M are small colored buttons to move the stream instantly.
+    """
+
+    # Set by HomePage: list of (short_label, color, callback)
+    _cards_registry: list = []
+
+    def __init__(self, app_name: str, si_index: int, pid: int, color: str):
+        super().__init__()
+        self._si_index = si_index
+        self._pid = pid
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(6, 0, 4, 0)
+        layout.setSpacing(4)
+
+        self.setFixedHeight(24)
+        self.setStyleSheet(
+            f"background-color: #1e2530; border-radius: 4px; border: 1px solid {color};"
+        )
+
+        lbl = QLabel(app_name)
+        lbl.setStyleSheet(
+            f"color: {color}; font-size: 11pt; font-weight: bold; "
+            f"background: transparent; border: none;"
+        )
+        layout.addWidget(lbl, stretch=1)
+
+        # Move buttons — built lazily from registry when first painted
+        self._btn_container = QWidget()
+        self._btn_container.setStyleSheet("background: transparent; border: none;")
+        btn_layout = QHBoxLayout(self._btn_container)
+        btn_layout.setContentsMargins(0, 0, 0, 0)
+        btn_layout.setSpacing(3)
+
+        for short, btn_color, cb in _AppTag._cards_registry:
+            btn = QPushButton(short)
+            btn.setFixedSize(18, 18)
+            btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; color: {btn_color}; "
+                f"border: 1px solid {btn_color}; border-radius: 3px; "
+                f"font-size: 7pt; font-weight: bold; padding: 0; }}"
+                f"QPushButton:hover {{ background: {btn_color}; color: #000; }}"
+            )
+            btn.clicked.connect(
+                lambda checked=False, c=cb, si=si_index, a=app_name, p=pid: c(si, a, p)
+            )
+            btn_layout.addWidget(btn)
+
+        layout.addWidget(self._btn_container)
 
 
 # ── Toggle switch widget ────────────────────────────────────────────────────────
@@ -288,7 +436,12 @@ class HomePage(QWidget):
         self._pulse = None
         self._sink_media = None
         self._sink_chat = None
+        self._sink_video = None
         self._connected = False
+        # Track which sink each card is currently bound to (can be changed by user)
+        self._bound_media = SINK_MEDIA
+        self._bound_chat  = SINK_CHAT
+        self._bound_video = SINK_VIDEO
 
         root = QVBoxLayout(self)
         root.setContentsMargins(36, 28, 36, 28)
@@ -297,6 +450,7 @@ class HomePage(QWidget):
 
         # ── App title ─────────────────────────────────────────────────────────
         app_title = QLabel("Arctis Manager")
+        app_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         app_title.setStyleSheet(
             f"color: {TEXT_PRIMARY}; font-size: 28pt; font-weight: bold; background: transparent;"
         )
@@ -342,42 +496,101 @@ class HomePage(QWidget):
         self._disconnected_label.hide()
         root.addWidget(self._disconnected_label)
 
-        # ── Cards scroll area ─────────────────────────────────────────────────
-        self._cards_scroll = QScrollArea()
-        self._cards_scroll.setWidgetResizable(True)
-        self._cards_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self._cards_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self._cards_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._cards_scroll.setStyleSheet(
-            f"QScrollArea {{ background: transparent; border: none; }}"
-        )
-        self._cards_scroll.setFixedHeight(430)
+        # ── Cards area (3/4 of window width, centered) ────────────────────────
+        cards_outer = QWidget()
+        cards_outer.setStyleSheet(f"background: transparent;")
+        cards_outer_layout = QHBoxLayout(cards_outer)
+        cards_outer_layout.setContentsMargins(0, 0, 0, 0)
+        cards_outer_layout.setSpacing(0)
+
+        # Side spacers each take 1/8 so cards fill 3/4
+        cards_outer_layout.addStretch(1)
 
         self._cards_widget = QWidget()
         self._cards_widget.setStyleSheet(f"background-color: {BG_MAIN};")
         self._cards_layout = QHBoxLayout(self._cards_widget)
-        self._cards_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        self._cards_layout.setSpacing(16)
+        self._cards_layout.setSpacing(20)
         self._cards_layout.setContentsMargins(0, 0, 0, 0)
 
         # Game card (Arctis_Media sink → "Game" in the reference)
         self._game_card = AudioCard("Game", COLOR_GAME, GAME_ICON)
         self._game_card.set_on_change(self._on_media_volume_changed)
-        self._cards_layout.addWidget(self._game_card)
+        self._game_card.set_on_drop(lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_MEDIA))
+        self._cards_layout.addWidget(self._game_card, stretch=1)
 
         # Chat card (Arctis_Chat sink)
         self._chat_card = AudioCard("Chat", COLOR_CHAT, CHAT_ICON)
         self._chat_card.set_on_change(self._on_chat_volume_changed)
-        self._cards_layout.addWidget(self._chat_card)
+        self._chat_card.set_on_drop(lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_CHAT))
+        self._cards_layout.addWidget(self._chat_card, stretch=1)
 
-        # Media card (placeholder — shown grayed out when no dedicated sink)
+        # Media card (Arctis_Video sink — browsers, video players)
         self._media_card = AudioCard("Media", COLOR_MEDIA, MEDIA_ICON)
-        self._media_card.set_disconnected()
-        self._cards_layout.addWidget(self._media_card)
+        self._media_card.set_on_change(self._on_video_volume_changed)
+        self._media_card.set_on_drop(lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_VIDEO))
+        self._cards_layout.addWidget(self._media_card, stretch=1)
 
-        self._cards_scroll.setWidget(self._cards_widget)
-        root.addWidget(self._cards_scroll)
-        root.addStretch(1)
+        cards_outer_layout.addWidget(self._cards_widget, stretch=6)
+        cards_outer_layout.addStretch(1)
+
+        root.addWidget(cards_outer, stretch=1)
+
+        # ── Help button ───────────────────────────────────────────────────────
+        help_row = QWidget()
+        help_row.setStyleSheet("background: transparent;")
+        help_row_layout = QHBoxLayout(help_row)
+        help_row_layout.setContentsMargins(0, 0, 0, 0)
+        help_row_layout.addStretch(1)
+
+        _help_icon_path = str(
+            __import__("pathlib").Path(__file__).parent / "images" / "help_icon.png"
+        )
+        _help_text = (
+            "<b>Comment utiliser le mixeur</b><br><br>"
+            "<b>Game</b> — Jeux (Arctis_Media)<br>"
+            "<b>Chat</b> — Voix / Discord (Arctis_Chat)<br>"
+            "<b>Media</b> — Navigateurs &amp; lecteurs vidéo (Arctis_Video)<br><br>"
+            "Les sliders contrôlent le volume de chaque canal.<br>"
+            "Les boutons <b>G C M</b> sur un tag d'appli déplacent<br>"
+            "ce flux audio vers le canal souhaité."
+        )
+
+        self._help_btn = QPushButton()
+        self._help_btn.setFixedSize(32, 32)
+        self._help_btn.setStyleSheet(
+            "QPushButton { background: transparent; border: none; }"
+            "QPushButton:hover { opacity: 0.8; }"
+        )
+        _pixmap = QPixmap(_help_icon_path).scaled(
+            32, 32,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self._help_btn.setIcon(__import__("PySide6.QtGui", fromlist=["QIcon"]).QIcon(_pixmap))
+        self._help_btn.setIconSize(_pixmap.size())
+        self._help_btn.setToolTip(_help_text)
+        self._help_btn.clicked.connect(
+            lambda: __import__("PySide6.QtWidgets", fromlist=["QToolTip"]).QToolTip.showText(
+                self._help_btn.mapToGlobal(self._help_btn.rect().bottomLeft()),
+                _help_text,
+                self._help_btn,
+            )
+        )
+        help_row_layout.addWidget(self._help_btn)
+        root.addWidget(help_row)
+
+        # Sink-change callbacks
+        self._game_card.set_on_sink_changed(lambda name: self._on_card_sink_changed("game", name))
+        self._chat_card.set_on_sink_changed(lambda name: self._on_card_sink_changed("chat", name))
+        self._media_card.set_on_sink_changed(lambda name: self._on_card_sink_changed("media", name))
+
+        # Register cards so _AppTag inline buttons know where to send streams
+        # Format: (short_label, button_color, callback)
+        _AppTag._cards_registry = [
+            ("G", COLOR_GAME,  lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_MEDIA)),
+            ("C", COLOR_CHAT,  lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_CHAT)),
+            ("M", COLOR_MEDIA, lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_VIDEO)),
+        ]
 
         # ── Polling timer ─────────────────────────────────────────────────────
         self._timer = QTimer(self)
@@ -390,6 +603,7 @@ class HomePage(QWidget):
     def _on_toggle_changed(self, enabled: bool):
         self._game_card.setEnabled(enabled)
         self._chat_card.setEnabled(enabled)
+        self._media_card.setEnabled(enabled)
 
     # ── D-Bus status signal handler ───────────────────────────────────────────
 
@@ -430,14 +644,27 @@ class HomePage(QWidget):
 
         try:
             sinks = pulse.sink_list()
-            sink_media = next((s for s in sinks if SINK_MEDIA in s.name), None)
-            sink_chat = next((s for s in sinks if SINK_CHAT in s.name), None)
+            sink_names = [s.name for s in sinks]
+
+            def _find(bound_name):
+                return next((s for s in sinks if bound_name in s.name), None)
+
+            sink_media = _find(self._bound_media)
+            sink_chat  = _find(self._bound_chat)
+            sink_video = _find(self._bound_video)
 
             if sink_media is None and sink_chat is None:
                 self._set_disconnected()
                 return
 
             self._set_connected()
+
+            # Update source combos (only when sink list changes)
+            if sink_names != getattr(self, "_last_sink_names", None):
+                self._last_sink_names = sink_names
+                self._game_card.update_sources(sink_names, self._bound_media)
+                self._chat_card.update_sources(sink_names, self._bound_chat)
+                self._media_card.update_sources(sink_names, self._bound_video)
 
             if sink_media is not None:
                 pct = round(sink_media.volume.value_flat * 100)
@@ -449,10 +676,23 @@ class HomePage(QWidget):
                 self._chat_card.set_volume(pct)
                 self._sink_chat = sink_chat
 
+            if sink_video is not None:
+                pct = round(sink_video.volume.value_flat * 100)
+                self._media_card.set_volume(pct)
+                self._sink_video = sink_video
+                self._media_card.set_connected()
+            else:
+                self._media_card.set_disconnected()
+
             # Update application lists
             sink_inputs = pulse.sink_input_list()
+            pulse_app_names = {si.proplist.get("application.name", "") for si in sink_inputs}
             self._update_apps(sink_inputs, sink_media, self._game_card)
             self._update_apps(sink_inputs, sink_chat, self._chat_card)
+            self._update_apps(sink_inputs, sink_video, self._media_card)
+
+            # Also show native PipeWire streams (mpv, haruna…), skip duplicates
+            self._update_native_apps(sinks, pulse_app_names)
 
         except Exception as exc:
             logger.warning("Error polling PulseAudio: %s", exc)
@@ -466,14 +706,37 @@ class HomePage(QWidget):
     def _update_apps(self, sink_inputs, sink, card: "AudioCard"):
         if sink is None:
             return
-        apps = [
-            si.proplist["application.name"]
-            for si in sink_inputs
+        matching = [
+            si for si in sink_inputs
             if si.sink == sink.index and "application.name" in si.proplist
         ]
         card.clear_apps()
-        for app in apps:
-            card.add_app_tag(app, bg_color=card._accent)
+        for si in matching:
+            pid = int(si.proplist.get("application.process.id", 0))
+            card.add_app_tag(si.proplist["application.name"], si.index, pid, bg_color=card._accent)
+
+    def _update_native_apps(self, pulse_sinks, already_shown: set[str] = frozenset()):
+        """Add native PipeWire streams (e.g. haruna/mpv) to the correct card."""
+        try:
+            native = get_native_streams()
+        except Exception as e:
+            logger.debug("get_native_streams failed: %s", e)
+            return
+
+        card_map = {
+            self._bound_media: self._game_card,
+            self._bound_chat:  self._chat_card,
+            self._bound_video: self._media_card,
+        }
+
+        for s in native:
+            if s["app_name"] in already_shown:
+                continue  # already listed via PulseAudio
+            sink_name = s.get("sink_name") or ""
+            card = next((c for bound, c in card_map.items() if bound in sink_name), None)
+            if card is None:
+                continue
+            card.add_app_tag(s["app_name"], s["id"], int(s["pid"] or 0), bg_color=card._accent)
 
     def _set_disconnected(self):
         if self._connected:
@@ -481,6 +744,7 @@ class HomePage(QWidget):
             self._disconnected_label.show()
             self._game_card.set_disconnected()
             self._chat_card.set_disconnected()
+            self._media_card.set_disconnected()
 
     def _set_connected(self):
         if not self._connected:
@@ -489,6 +753,40 @@ class HomePage(QWidget):
             self._game_card.set_connected()
             self._chat_card.set_connected()
 
+    # ── Drag & drop stream routing ────────────────────────────────────────────
+
+    def _on_card_sink_changed(self, card: str, sink_name: str):
+        """User selected a different source sink for a card."""
+        if card == "game":
+            self._bound_media = sink_name
+            self._sink_media = None
+        elif card == "chat":
+            self._bound_chat = sink_name
+            self._sink_chat = None
+        elif card == "media":
+            self._bound_video = sink_name
+            self._sink_video = None
+        self._last_sink_names = None  # force combo refresh next poll
+
+    def _on_stream_drop(self, si_index: int, app_name: str, pid: int, target_sink_name: str):
+        pulse = self._get_pulse()
+        if pulse is None:
+            return
+        try:
+            sinks = pulse.sink_list()
+            target = next((s for s in sinks if target_sink_name in s.name), None)
+            if target is None:
+                logger.warning("Sink %s not found", target_sink_name)
+                return
+            pulse.sink_input_move(si_index, target.index)
+            logger.info("Moved '%s' (pid=%d) -> %s", app_name, pid, target_sink_name)
+            # Record manual override — keyed by app name so it persists across restarts
+            overrides = _load_overrides()
+            overrides[app_name] = target_sink_name
+            _save_overrides(overrides)
+        except Exception as exc:
+            logger.warning("Error moving stream: %s", exc)
+
     # ── Volume change callbacks ───────────────────────────────────────────────
 
     def _on_media_volume_changed(self, value: int):
@@ -496,6 +794,9 @@ class HomePage(QWidget):
 
     def _on_chat_volume_changed(self, value: int):
         self._apply_volume(self._sink_chat, value)
+
+    def _on_video_volume_changed(self, value: int):
+        self._apply_volume(self._sink_video, value)
 
     def _apply_volume(self, sink, value: int):
         pulse = self._get_pulse()

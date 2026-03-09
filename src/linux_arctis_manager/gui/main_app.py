@@ -110,27 +110,20 @@ class QMainApp(QBaseDesktopApp):
 
         # ── Sidebar ───────────────────────────────────────────────────────────
         sidebar = QWidget()
+        sidebar.setObjectName("sidebar")
         sidebar.setFixedWidth(150)
         sidebar.setStyleSheet(
-            f"background-color: {BG_SIDEBAR}; border-right: 1px solid {BORDER};"
+            f"QWidget#sidebar {{ background-color: {BG_SIDEBAR}; border-right: 1px solid {BORDER}; }}"
         )
         sidebar_layout = QVBoxLayout(sidebar)
         sidebar_layout.setContentsMargins(15, 16, 15, 16)
         sidebar_layout.setSpacing(8)
 
-        # "ASG" brand text at the very top left
-        asg_label = QLabel("ASG")
-        asg_label.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 9pt; font-weight: normal; "
-            f"background: transparent; padding-left: 4px;"
-        )
-        sidebar_layout.addWidget(asg_label)
-        sidebar_layout.addSpacing(8)
-
         # Navigation buttons definition: (svg_path, label, icon_color_active)
         pages_def = [
-            (HOME_ICON,     "Home",     ACCENT),
-            (SETTINGS_ICON, "Settings", TEXT_SECONDARY),
+            (HOME_ICON,      "Home",      ACCENT),
+            (SETTINGS_ICON,  "Settings",  ACCENT),
+            (HEADPHONE_ICON, "Equalizer", ACCENT),
         ]
 
         self._sidebar_buttons: list[SidebarButton] = []
@@ -147,20 +140,7 @@ class QMainApp(QBaseDesktopApp):
             sidebar_layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignHCenter)
             self._sidebar_buttons.append(btn)
 
-        # Stretch pushes "Help" (EQ page) to the bottom
         sidebar_layout.addStretch(1)
-
-        help_btn = SidebarButton(
-            svg_path=HEADPHONE_ICON,
-            label="Help",
-            icon_color_inactive=TEXT_SECONDARY,
-            icon_color_active=ACCENT,
-            parent=sidebar,
-        )
-        help_idx = len(self._sidebar_buttons)
-        help_btn.clicked.connect(lambda checked=False, i=help_idx: self._switch_page(i))
-        sidebar_layout.addWidget(help_btn, alignment=Qt.AlignmentFlag.AlignHCenter)
-        self._sidebar_buttons.append(help_btn)
 
         root_layout.addWidget(sidebar)
 

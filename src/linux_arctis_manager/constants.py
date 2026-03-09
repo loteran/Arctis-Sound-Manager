@@ -19,8 +19,9 @@ SYSTEMD_SERVICE_NAME = 'arctis-manager.service'
 HOME_SYSTEMD_SERVICE_FOLDER = Path.home() / '.config' / 'systemd' / 'user'
 # ./Systemd
 
-PULSE_MEDIA_NODE_NAME = 'Arctis_Media'
+PULSE_MEDIA_NODE_NAME = 'Arctis_Game'
 PULSE_CHAT_NODE_NAME = 'Arctis_Chat'
+PULSE_VIDEO_NODE_NAME = 'Arctis_Media'
 
 STEELSERIES_VENDOR_ID = 0x1038
 

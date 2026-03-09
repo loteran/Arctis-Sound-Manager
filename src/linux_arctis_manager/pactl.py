@@ -5,6 +5,7 @@ import pulsectl
 
 from linux_arctis_manager.constants import (PULSE_CHAT_NODE_NAME,
                                             PULSE_MEDIA_NODE_NAME,
+                                            PULSE_VIDEO_NODE_NAME,
                                             STEELSERIES_VENDOR_ID)
 
 ONLY_PHYSICAL = 1
@@ -158,11 +159,13 @@ class PulseAudioManager:
             self.logger.warning('No SteelSeries Arctis sink found.')
             return
         
-        self.create_virtual_sink(PULSE_MEDIA_NODE_NAME, f'{device_name} Media', real_sink[0].name)
+        self.create_virtual_sink(PULSE_MEDIA_NODE_NAME, f'{device_name} Game', real_sink[0].name)
         self.create_virtual_sink(PULSE_CHAT_NODE_NAME, f'{device_name} Chat', real_sink[0].name)
+        self.create_virtual_sink(PULSE_VIDEO_NODE_NAME, f'{device_name} Media', real_sink[0].name)
 
     def sinks_teardown(self):
         self.logger.info('Removing virtual sinks...')
 
         self.remove_virtual_sink(PULSE_MEDIA_NODE_NAME)
         self.remove_virtual_sink(PULSE_CHAT_NODE_NAME)
+        self.remove_virtual_sink(PULSE_VIDEO_NODE_NAME)
