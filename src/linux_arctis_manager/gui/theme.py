@@ -1,7 +1,7 @@
 # SteelSeries Stealth dark theme — color constants and global QSS
 
 BG_MAIN = "#16191E"
-BG_SIDEBAR = "#0D1014"
+BG_SIDEBAR = "#1B1E22"
 BG_CARD = "#1C2026"
 BG_BUTTON = "#2D363E"
 BG_BUTTON_HOVER = "#3A4550"
@@ -9,6 +9,12 @@ ACCENT = "#FB4A00"
 TEXT_PRIMARY = "#FFFFFF"
 TEXT_SECONDARY = "#8D96AA"
 BORDER = "#2A3038"
+
+# Audio channel accent colors
+COLOR_GAME = "#04C5A8"
+COLOR_CHAT = "#2791CE"
+COLOR_MEDIA = "#C4006C"
+COLOR_AUX = "#FB4A00"
 
 APP_QSS = f"""
 /* ── Global ── */
@@ -127,12 +133,12 @@ QScrollBar:vertical {{
     border-radius: 4px;
 }}
 QScrollBar::handle:vertical {{
-    background: {BG_BUTTON_HOVER};
+    background: {BG_BUTTON};
     min-height: 30px;
     border-radius: 4px;
 }}
 QScrollBar::handle:vertical:hover {{
-    background: {ACCENT};
+    background: {BG_BUTTON_HOVER};
 }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
     height: 0;
@@ -145,12 +151,12 @@ QScrollBar:horizontal {{
     border-radius: 4px;
 }}
 QScrollBar::handle:horizontal {{
-    background: {BG_BUTTON_HOVER};
+    background: {BG_BUTTON};
     min-width: 30px;
     border-radius: 4px;
 }}
 QScrollBar::handle:horizontal:hover {{
-    background: {ACCENT};
+    background: {BG_BUTTON_HOVER};
 }}
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
     width: 0;
@@ -163,7 +169,7 @@ QFrame[frameShape="5"] {{
     color: {BORDER};
 }}
 
-/* ── List widget (fallback, not used in new sidebar) ── */
+/* ── List widget ── */
 QListWidget {{
     background-color: {BG_SIDEBAR};
     border: none;

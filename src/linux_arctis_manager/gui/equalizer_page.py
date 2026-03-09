@@ -1,6 +1,6 @@
 """
 Equalizer page — EQ mode toggle (Sonar / Custom).
-Based on the logic in sonar_toggle_widget.py, restyled with the dark theme.
+ArctisSonar GUI visual style.
 """
 import subprocess
 from pathlib import Path
@@ -9,12 +9,12 @@ from PySide6.QtCore import Qt, QThread, Signal, Slot
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
-    QPushButton,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
+from linux_arctis_manager.gui.components import AccentButton
 from linux_arctis_manager.gui.theme import (
     ACCENT,
     BG_CARD,
@@ -55,25 +55,30 @@ class EqualizerPage(QWidget):
         self.setStyleSheet(f"background-color: {BG_MAIN};")
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(32, 24, 32, 24)
-        root.setSpacing(20)
+        root.setContentsMargins(36, 28, 36, 28)
+        root.setSpacing(0)
         root.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        # ── Page header ───────────────────────────────────────────────────────
-        title = QLabel("Égaliseur")
-        title.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 16pt; font-weight: bold; background: transparent;"
+        # ── App title ─────────────────────────────────────────────────────────
+        app_title = QLabel("Arctis Manager")
+        app_title.setStyleSheet(
+            f"color: {TEXT_PRIMARY}; font-size: 28pt; font-weight: bold; background: transparent;"
         )
-        root.addWidget(title)
+        root.addWidget(app_title)
+        root.addSpacing(28)
 
-        subtitle = QLabel("Bascule entre le mode Sonar et le Custom EQ")
-        subtitle.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
+        # ── Section title ──────────────────────────────────────────────────────
+        eq_title = QLabel("Equalizer")
+        eq_title.setStyleSheet(
+            "color: #666666; font-size: 20pt; font-weight: bold; background: transparent;"
         )
-        root.addWidget(subtitle)
+        root.addWidget(eq_title)
+        root.addSpacing(20)
 
         # ── Mode card ─────────────────────────────────────────────────────────
         self._card = QWidget()
+        self._card.setObjectName("eqCard")
+        self._card.setFixedWidth(480)
         self._card.setStyleSheet(
             f"""
             QWidget#eqCard {{
@@ -83,8 +88,6 @@ class EqualizerPage(QWidget):
             }}
             """
         )
-        self._card.setObjectName("eqCard")
-        self._card.setFixedWidth(420)
 
         card_layout = QVBoxLayout(self._card)
         card_layout.setContentsMargins(28, 24, 28, 24)
@@ -120,33 +123,8 @@ class EqualizerPage(QWidget):
         )
         card_layout.addWidget(self._desc_label)
 
-        # Toggle button — styled with accent orange
-        self._button = QPushButton()
-        self._button.setFixedHeight(42)
-        self._button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self._button.setStyleSheet(
-            f"""
-            QPushButton {{
-                background-color: {ACCENT};
-                color: #FFFFFF;
-                border: none;
-                border-radius: 8px;
-                font-size: 12pt;
-                font-weight: bold;
-                padding: 0 20px;
-            }}
-            QPushButton:hover {{
-                background-color: #FF6A28;
-            }}
-            QPushButton:pressed {{
-                background-color: #CC3A00;
-            }}
-            QPushButton:disabled {{
-                background-color: #5C3020;
-                color: #AA8070;
-            }}
-            """
-        )
+        # Toggle button — orange accent
+        self._button = AccentButton("")
         self._button.clicked.connect(self._on_toggle)
         card_layout.addWidget(self._button)
 
@@ -173,7 +151,7 @@ class EqualizerPage(QWidget):
         else:
             self._mode_label.setText("Custom EQ")
             self._mode_label.setStyleSheet(
-                f"color: #04C5A8; font-size: 13pt; font-weight: bold; background: transparent;"
+                "color: #04C5A8; font-size: 13pt; font-weight: bold; background: transparent;"
             )
             self._desc_label.setText(
                 "Votre Custom EQ est actif. "
