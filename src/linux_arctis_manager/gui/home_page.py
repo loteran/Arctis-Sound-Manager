@@ -466,9 +466,9 @@ class HomePage(QWidget):
         if sink is None:
             return
         apps = [
-            si.proplist.get("application.name", "unknown")
+            si.proplist["application.name"]
             for si in sink_inputs
-            if si.sink == sink.index
+            if si.sink == sink.index and "application.name" in si.proplist
         ]
         card.clear_apps()
         for app in apps:
