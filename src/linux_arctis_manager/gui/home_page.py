@@ -448,6 +448,11 @@ class HomePage(QWidget):
                 self._chat_card.set_volume(pct)
                 self._sink_chat = sink_chat
 
+            # Update application lists
+            sink_inputs = pulse.sink_input_list()
+            self._update_apps(sink_inputs, sink_media, self._game_card)
+            self._update_apps(sink_inputs, sink_chat, self._chat_card)
+
         except Exception as exc:
             logger.warning("Error polling PulseAudio: %s", exc)
             try:
@@ -456,6 +461,18 @@ class HomePage(QWidget):
                 pass
             self._pulse = None
             self._set_disconnected()
+
+    def _update_apps(self, sink_inputs, sink, card: "AudioCard"):
+        if sink is None:
+            return
+        apps = [
+            si.proplist.get("application.name", "unknown")
+            for si in sink_inputs
+            if si.sink == sink.index
+        ]
+        card.clear_apps()
+        for app in apps:
+            card.add_app_tag(app)
 
     def _set_disconnected(self):
         if self._connected:
