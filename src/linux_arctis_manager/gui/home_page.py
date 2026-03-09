@@ -304,7 +304,6 @@ class HomePage(QWidget):
         if pulse is None or sink is None:
             return
         try:
-            # Refresh sink object before writing
             sinks = pulse.sink_list()
             fresh_sink = next((s for s in sinks if s.name == sink.name), None)
             if fresh_sink is not None:
