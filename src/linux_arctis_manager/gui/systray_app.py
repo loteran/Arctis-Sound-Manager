@@ -2,7 +2,9 @@ import asyncio
 import json
 import locale
 import logging
+import subprocess
 from logging import Logger
+from pathlib import Path
 from threading import Thread
 from time import sleep
 
@@ -142,10 +144,30 @@ class QSystrayApp(QBaseDesktopApp):
         if sections:
             self.menu.addSeparator()
 
+        self._menu_actions['toggle_sonar'] = QAction(self._sonar_toggle_label())
+        self._menu_actions['toggle_sonar'].triggered.connect(self.toggle_sonar)
+        self.menu.addAction(self._menu_actions['toggle_sonar'])
+
+        self.menu.addSeparator()
+
         self._menu_actions['exit'] = QAction(I18n.translate('ui', 'exit'))
         self._menu_actions['exit'].triggered.connect(self.sig_stop)
         self.menu.addAction(self._menu_actions['exit'])
     
+    def _sonar_state_file(self) -> Path:
+        return Path.home() / '.config' / 'arctis_manager' / '.eq_mode'
+
+    def _sonar_toggle_label(self) -> str:
+        state_file = self._sonar_state_file()
+        current = state_file.read_text().strip() if state_file.exists() else 'custom'
+        if current == 'sonar':
+            return 'EQ : Sonar → Custom'
+        return 'EQ : Custom → Sonar'
+
+    def toggle_sonar(self):
+        script = Path.home() / '.config' / 'arctis_manager' / 'toggle_sonar.py'
+        subprocess.Popen(['python3', str(script)])
+
     def is_stopping(self):
         return hasattr(self, '_stopping') and self._stopping
 
