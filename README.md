@@ -1,6 +1,6 @@
 # Arctis Sound Manager
 
-A Linux GUI for SteelSeries Arctis headsets — manages device settings and provides a 3-channel audio mixer (Game / Chat / Media) with automatic media routing.
+A Linux GUI for SteelSeries Arctis headsets — manages device settings and provides a 4-channel audio mixer (Game / Chat / Media / HDMI) with automatic media routing.
 
 > Based on [Linux Arctis Manager](https://github.com/elegos/Linux-Arctis-Manager) by elegos.
 
@@ -8,13 +8,15 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 
 ## Features
 
-- **3-channel audio mixer** — separate Game, Chat and Media virtual sinks
+- **4-channel audio mixer** — separate Game, Chat, Media and HDMI virtual sinks
+- **True HDMI surround** — route any app directly to your HDMI output (5.1 / 7.1 native)
 - **Automatic media routing** — browsers (Firefox, Chromium…) and video players (VLC, mpv, Haruna…) are automatically routed to the Media sink
-- **Manual stream control** — move any audio stream between channels on the fly via the GUI
+- **Manual stream control** — move any audio stream between channels on the fly via the G / C / M / H buttons
 - **Persistent routing** — manual moves are remembered across app restarts
 - **Native PipeWire support** — detects apps that bypass PulseAudio (mpv, Haruna…)
 - **Volume sliders** per channel with live percentage display
 - **Device status** — battery, mic, EQ and more depending on your device
+- **Virtual surround 7.1** — optional HeSuVi filter-chain for stereo headsets
 
 ## Supported Devices
 
@@ -37,7 +39,6 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 
 - Linux with **PipeWire** (+ `pipewire-pulse`)
 - **Python 3.10+**
-- `uv` — [installation guide](https://docs.astral.sh/uv/getting-started/installation/)
 - `pipx` — install with your package manager:
   ```bash
   # Arch / CachyOS / Manjaro
@@ -49,6 +50,44 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
   # Fedora
   sudo dnf install pipx
   ```
+
+---
+
+## Optional: Virtual Surround 7.1
+
+If you use a **stereo headset** and want virtual 7.1 surround sound (games, movies…), you can set it up via the included script **before** installing Arctis Sound Manager.
+
+It works by creating a PipeWire filter-chain sink that applies HRTF convolution (HeSuVi) to any 7.1 source and outputs stereo to your headset.
+
+```
+                  ┌──────────────────────────┐
+ 7.1 audio source │  Virtual Surround Sink   │
+ (game, movie…) ──►  (PipeWire filter-chain) ├──► Headset (stereo)
+                  └──────────────────────────┘
+```
+
+### How to set it up
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/loteran/Arctis-Sound-Manager.git
+cd Arctis-Sound-Manager
+
+# 2. Run the surround setup (BEFORE install.sh)
+bash scripts/setup-surround.sh
+
+# 3. Then install Arctis Sound Manager
+bash scripts/install.sh
+```
+
+The setup script will:
+- Install the PipeWire filter-chain config in `~/.config/pipewire/filter-chain.conf.d/`
+- Download a default HRIR file (KEMAR Gardner 1995) into `~/.local/share/pipewire/hrir_hesuvi/`
+- Enable and start the `filter-chain` systemd user service
+
+After setup, a new audio sink called **"Virtual Surround Sink"** appears in your system. Route it to your headset output from your desktop audio settings.
+
+> **Custom HRIR profiles**: You can replace `~/.local/share/pipewire/hrir_hesuvi/hrir.wav` with any 14-channel HeSuVi-compatible WAV file from the [HeSuVi project](https://github.com/nicehash/HeSuVi/tree/master/hrir/44), then restart the service: `systemctl --user restart filter-chain.service`
 
 ---
 
@@ -79,17 +118,49 @@ lam-gui
 
 ## How the mixer works
 
-The app creates 3 virtual audio sinks on top of your physical Arctis device:
+The app creates 3 virtual audio sinks on top of your physical Arctis device, plus direct access to your HDMI output:
 
-| Sink | Default use | Color |
+| Sink | Default use | Button |
 |---|---|---|
-| **Arctis_Game** | Games, general audio | Teal |
-| **Arctis_Chat** | Voice apps (Discord, TeamSpeak…) | Blue |
-| **Arctis_Media** | Browsers, video players | Orange |
+| **Arctis_Game** | Games, general audio | G |
+| **Arctis_Chat** | Voice apps (Discord, TeamSpeak…) | C |
+| **Arctis_Media** | Browsers, video players | M |
+| **HDMI** | Direct native surround (5.1 / 7.1) | H |
 
 The **media router** (`lam-router`) runs as a background service and automatically moves browsers and video players to `Arctis_Media`. Any app not in the list stays on whichever sink it was placed on.
 
-To **manually move** an app stream, click the **G / C / M** buttons on its tag in the GUI. The choice is saved and respected even after the app restarts.
+To **manually move** an app stream, click the **G / C / M / H** buttons on its tag in the GUI. The choice is saved and respected even after the app restarts.
+
+> **HDMI note**: The HDMI card routes audio **directly** to the physical HDMI sink, bypassing the virtual stereo sinks. This preserves true 5.1 / 7.1 channel output for games and movies. Use it when your display or AV receiver supports surround sound.
+
+### Configuring a different output for the HDMI card
+
+By default the HDMI card targets any sink whose name contains `hdmi-surround`. If your output has a different name (e.g. HDMI stereo, DisplayPort, USB DAC…), find it with:
+
+```bash
+pactl list sinks short
+```
+
+Example output:
+```
+91    alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.analog-stereo   ...
+1605  alsa_output.pci-0000_09_00.1.hdmi-surround                              ...
+```
+
+Then open `src/linux_arctis_manager/gui/home_page.py` and change the `SINK_HDMI` constant to match a unique fragment of your sink name:
+
+```python
+# Before (default)
+SINK_HDMI = "hdmi-surround"
+
+# Example: DisplayPort output
+SINK_HDMI = "hdmi-stereo"
+
+# Example: USB DAC
+SINK_HDMI = "USB_Audio"
+```
+
+The fragment just needs to be unique enough to match only the desired sink. After editing, restart the GUI.
 
 ---
 
@@ -113,6 +184,10 @@ rm -rf ~/.config/arctis_manager
 
 # Uninstall the package
 pipx uninstall linux-arctis-manager
+
+# Optional: remove virtual surround
+rm ~/.config/pipewire/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf
+systemctl --user disable --now filter-chain.service
 ```
 
 ---
@@ -121,13 +196,13 @@ pipx uninstall linux-arctis-manager
 
 ```bash
 # Run the daemon
-uv run lam-daemon
+python src/linux_arctis_manager/scripts/daemon.py
 
 # Run the GUI (without enforcing systemd)
-uv run lam-gui --no-enforce-systemd
+python src/linux_arctis_manager/scripts/gui.py --no-enforce-systemd
 
 # Run the media router
-uv run lam-router
+python src/linux_arctis_manager/scripts/video_router.py
 ```
 
 ### Project structure
@@ -140,10 +215,17 @@ src/linux_arctis_manager/
 │   ├── video_router.py    # lam-router: media auto-routing service
 │   └── cli.py             # lam-cli: setup utilities
 ├── gui/
-│   ├── home_page.py       # Audio mixer (Game/Chat/Media cards)
+│   ├── home_page.py       # Audio mixer (Game/Chat/Media/HDMI cards)
 │   ├── components.py      # Reusable widgets
 │   └── theme.py           # Color constants
 ├── pw_utils.py            # Native PipeWire stream detection
 ├── pactl.py               # PulseAudio virtual sink management
 └── devices/               # Per-device configuration files
+
+scripts/
+├── install.sh                              # Main installer
+├── setup-surround.sh                       # Optional virtual surround setup
+├── pipewire/
+│   └── sink-virtual-surround-7.1-hesuvi.conf  # PipeWire filter-chain config
+└── arctis-video-router.service             # Systemd service for lam-router
 ```

@@ -59,7 +59,7 @@ class PulseAudioManager:
             return product_id_attr in [f'0x{pid:04x}' for pid in lst]
 
         physical = [s for s in sinks if s.proplist.get('device.vendor.id', '') == f'0x{vendor_id:04x}' and check_prod_id(s.proplist.get('device.product.id', ''))]
-        virtual = [s for s in sinks if s.proplist.get('node.name', '') in (PULSE_MEDIA_NODE_NAME, PULSE_CHAT_NODE_NAME)]
+        virtual = [s for s in sinks if s.proplist.get('node.name', '') in (PULSE_MEDIA_NODE_NAME, PULSE_CHAT_NODE_NAME, PULSE_VIDEO_NODE_NAME)]
 
         if mode == ONLY_PHYSICAL:
             sinks = physical
@@ -87,7 +87,7 @@ class PulseAudioManager:
             'module-loopback',
             f'source={name}.monitor '
             f'sink={sink_output} '
-            'latency_msec=0'
+            'latency_msec=50'
         )
     
     def remove_virtual_sink(self, name: str) -> None:

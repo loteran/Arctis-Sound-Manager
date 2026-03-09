@@ -9,9 +9,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QTimer, Slot
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
-    QApplication,
     QCheckBox,
-    QComboBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -40,6 +38,7 @@ def _save_overrides(overrides: dict) -> None:
 from linux_arctis_manager.gui.components import (
     CHAT_ICON,
     GAME_ICON,
+    HDMI_ICON,
     MEDIA_ICON,
     SvgIconWidget,
 )
@@ -54,6 +53,7 @@ from linux_arctis_manager.gui.theme import (
     TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
+
 from linux_arctis_manager.i18n import I18n
 from linux_arctis_manager.pw_utils import get_native_streams
 
@@ -61,13 +61,11 @@ logger = logging.getLogger("HomePage")
 
 # PulseAudio sink name fragments to match
 SINK_MEDIA = "Arctis_Game"
-SINK_CHAT = "Arctis_Chat"
+SINK_CHAT  = "Arctis_Chat"
 SINK_VIDEO = "Arctis_Media"
+SINK_HDMI  = "hdmi-surround"   # physical HDMI output
 
-# Default audio device label
-DEFAULT_DEVICE = "Default Audio Device"
-COLOR_AUX = "#FB4A00"
-COLOR_DEFAULT = "#9B59B6"
+COLOR_HDMI = "#8B5CF6"   # violet — HDMI surround card
 
 
 def _make_vertical_slider_qss(accent_color: str) -> str:
@@ -151,24 +149,6 @@ class AudioCard(QWidget):
         header_layout.addWidget(name_lbl)
         top_layout.addWidget(header_row)
 
-        # Source selector (sink chooser)
-        self._source_combo = QComboBox()
-        self._source_combo.setStyleSheet(
-            f"QComboBox {{ background-color: #1C2026; color: {ACCENT}; "
-            f"border: 1px solid {BORDER}; border-radius: 8px; "
-            f"font-size: 8pt; font-weight: bold; "
-            f"padding: 2px 24px 2px 6px; }}"
-            f"QComboBox::drop-down {{ border: none; width: 20px; subcontrol-origin: padding; subcontrol-position: right center; }}"
-            f"QComboBox::down-arrow {{ image: url({__import__('pathlib').Path(__file__).parent / 'images' / 'arrow_down.svg'}); width: 10px; height: 6px; }}"
-            f"QComboBox QAbstractItemView {{ background-color: #1C2026; color: {TEXT_PRIMARY}; "
-            f"border: 1px solid {BORDER}; border-radius: 8px; selection-background-color: #2D363E; }}"
-        )
-        self._source_combo.setEditable(False)
-        self._source_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self._source_combo.currentIndexChanged.connect(self._on_source_changed)
-        self._on_sink_changed_callback = None
-        self._updating_combo = False
-        top_layout.addWidget(self._source_combo)
 
         # Volume percentage label
         self._pct_label = QLabel("—")
@@ -222,33 +202,6 @@ class AudioCard(QWidget):
         self._on_change_callback = None
         self._on_drop_callback = None  # fn(si_index, app_name, pid)
         self.setAcceptDrops(False)
-
-    def set_on_sink_changed(self, callback):
-        """callback(sink_name: str) called when user picks a different source."""
-        self._on_sink_changed_callback = callback
-
-    def update_sources(self, sink_names: list[str], current_name: str):
-        """Refresh the source combo with available sinks."""
-        self._updating_combo = True
-        prev = self._source_combo.currentData()
-        self._source_combo.clear()
-        for name in sink_names:
-            display = name.split(".")[-1] if "." in name else name
-            self._source_combo.addItem(display, userData=name)
-            idx = self._source_combo.count() - 1
-            self._source_combo.setItemData(idx, Qt.AlignmentFlag.AlignCenter, Qt.ItemDataRole.TextAlignmentRole)
-        # Select current
-        idx = next((i for i in range(self._source_combo.count())
-                    if self._source_combo.itemData(i) == current_name), 0)
-        self._source_combo.setCurrentIndex(idx)
-        self._updating_combo = False
-
-    def _on_source_changed(self, index: int):
-        if self._updating_combo:
-            return
-        sink_name = self._source_combo.itemData(index)
-        if sink_name and self._on_sink_changed_callback:
-            self._on_sink_changed_callback(sink_name)
 
     # ── Style helpers ──────────────────────────────────────────────────────────
 
@@ -437,11 +390,8 @@ class HomePage(QWidget):
         self._sink_media = None
         self._sink_chat = None
         self._sink_video = None
+        self._sink_hdmi = None
         self._connected = False
-        # Track which sink each card is currently bound to (can be changed by user)
-        self._bound_media = SINK_MEDIA
-        self._bound_chat  = SINK_CHAT
-        self._bound_video = SINK_VIDEO
 
         root = QVBoxLayout(self)
         root.setContentsMargins(36, 28, 36, 28)
@@ -530,6 +480,12 @@ class HomePage(QWidget):
         self._media_card.set_on_drop(lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_VIDEO))
         self._cards_layout.addWidget(self._media_card, stretch=1)
 
+        # HDMI card — routes directly to physical HDMI surround sink
+        self._hdmi_card = AudioCard("HDMI", COLOR_HDMI, HDMI_ICON)
+        self._hdmi_card.set_on_change(self._on_hdmi_volume_changed)
+        self._hdmi_card.set_on_drop(lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_HDMI))
+        self._cards_layout.addWidget(self._hdmi_card, stretch=1)
+
         cards_outer_layout.addWidget(self._cards_widget, stretch=6)
         cards_outer_layout.addStretch(1)
 
@@ -579,17 +535,13 @@ class HomePage(QWidget):
         help_row_layout.addWidget(self._help_btn)
         root.addWidget(help_row)
 
-        # Sink-change callbacks
-        self._game_card.set_on_sink_changed(lambda name: self._on_card_sink_changed("game", name))
-        self._chat_card.set_on_sink_changed(lambda name: self._on_card_sink_changed("chat", name))
-        self._media_card.set_on_sink_changed(lambda name: self._on_card_sink_changed("media", name))
-
         # Register cards so _AppTag inline buttons know where to send streams
         # Format: (short_label, button_color, callback)
         _AppTag._cards_registry = [
             ("G", COLOR_GAME,  lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_MEDIA)),
             ("C", COLOR_CHAT,  lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_CHAT)),
             ("M", COLOR_MEDIA, lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_VIDEO)),
+            ("H", COLOR_HDMI,  lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_HDMI)),
         ]
 
         # ── Polling timer ─────────────────────────────────────────────────────
@@ -604,6 +556,7 @@ class HomePage(QWidget):
         self._game_card.setEnabled(enabled)
         self._chat_card.setEnabled(enabled)
         self._media_card.setEnabled(enabled)
+        self._hdmi_card.setEnabled(enabled)
 
     # ── D-Bus status signal handler ───────────────────────────────────────────
 
@@ -644,27 +597,30 @@ class HomePage(QWidget):
 
         try:
             sinks = pulse.sink_list()
-            sink_names = [s.name for s in sinks]
 
-            def _find(bound_name):
-                return next((s for s in sinks if bound_name in s.name), None)
+            def _find_all(fragment) -> list:
+                return [s for s in sinks if fragment in s.name]
 
-            sink_media = _find(self._bound_media)
-            sink_chat  = _find(self._bound_chat)
-            sink_video = _find(self._bound_video)
+            def _primary(lst):
+                """Pick the running sink if any, else first."""
+                running = [s for s in lst if getattr(s, 'state', None) and str(s.state) == "running"]
+                return (running or lst or [None])[0]
+
+            sinks_media = _find_all(SINK_MEDIA)
+            sinks_chat  = _find_all(SINK_CHAT)
+            sinks_video = _find_all(SINK_VIDEO)
+            sinks_hdmi  = _find_all(SINK_HDMI)
+
+            sink_media = _primary(sinks_media)
+            sink_chat  = _primary(sinks_chat)
+            sink_video = _primary(sinks_video)
+            sink_hdmi  = _primary(sinks_hdmi)
 
             if sink_media is None and sink_chat is None:
                 self._set_disconnected()
                 return
 
             self._set_connected()
-
-            # Update source combos (only when sink list changes)
-            if sink_names != getattr(self, "_last_sink_names", None):
-                self._last_sink_names = sink_names
-                self._game_card.update_sources(sink_names, self._bound_media)
-                self._chat_card.update_sources(sink_names, self._bound_chat)
-                self._media_card.update_sources(sink_names, self._bound_video)
 
             if sink_media is not None:
                 pct = round(sink_media.volume.value_flat * 100)
@@ -684,13 +640,21 @@ class HomePage(QWidget):
             else:
                 self._media_card.set_disconnected()
 
-            # Update application lists
+            if sink_hdmi is not None:
+                pct = round(sink_hdmi.volume.value_flat * 100)
+                self._hdmi_card.set_volume(pct)
+                self._sink_hdmi = sink_hdmi
+                self._hdmi_card.set_connected()
+            else:
+                self._hdmi_card.set_disconnected()
+
+            # Update application lists — pass all matching sinks to catch duplicates
             sink_inputs = pulse.sink_input_list()
             pulse_app_names = {si.proplist.get("application.name", "") for si in sink_inputs}
-            self._update_apps(sink_inputs, sink_media, self._game_card)
-            self._update_apps(sink_inputs, sink_chat, self._chat_card)
-            self._update_apps(sink_inputs, sink_video, self._media_card)
-
+            self._update_apps(sink_inputs, sinks_media, self._game_card)
+            self._update_apps(sink_inputs, sinks_chat,  self._chat_card)
+            self._update_apps(sink_inputs, sinks_video, self._media_card)
+            self._update_apps(sink_inputs, sinks_hdmi,  self._hdmi_card)
             # Also show native PipeWire streams (mpv, haruna…), skip duplicates
             self._update_native_apps(sinks, pulse_app_names)
 
@@ -703,12 +667,14 @@ class HomePage(QWidget):
             self._pulse = None
             self._set_disconnected()
 
-    def _update_apps(self, sink_inputs, sink, card: "AudioCard"):
-        if sink is None:
+    def _update_apps(self, sink_inputs, sinks: list, card: "AudioCard"):
+        if not sinks:
+            card.clear_apps()
             return
+        sink_indices = {s.index for s in sinks}
         matching = [
             si for si in sink_inputs
-            if si.sink == sink.index and "application.name" in si.proplist
+            if si.sink in sink_indices and "application.name" in si.proplist
         ]
         card.clear_apps()
         for si in matching:
@@ -724,9 +690,10 @@ class HomePage(QWidget):
             return
 
         card_map = {
-            self._bound_media: self._game_card,
-            self._bound_chat:  self._chat_card,
-            self._bound_video: self._media_card,
+            SINK_MEDIA: self._game_card,
+            SINK_CHAT:  self._chat_card,
+            SINK_VIDEO: self._media_card,
+            SINK_HDMI:  self._hdmi_card,
         }
 
         for s in native:
@@ -745,6 +712,7 @@ class HomePage(QWidget):
             self._game_card.set_disconnected()
             self._chat_card.set_disconnected()
             self._media_card.set_disconnected()
+            self._hdmi_card.set_disconnected()
 
     def _set_connected(self):
         if not self._connected:
@@ -754,19 +722,6 @@ class HomePage(QWidget):
             self._chat_card.set_connected()
 
     # ── Drag & drop stream routing ────────────────────────────────────────────
-
-    def _on_card_sink_changed(self, card: str, sink_name: str):
-        """User selected a different source sink for a card."""
-        if card == "game":
-            self._bound_media = sink_name
-            self._sink_media = None
-        elif card == "chat":
-            self._bound_chat = sink_name
-            self._sink_chat = None
-        elif card == "media":
-            self._bound_video = sink_name
-            self._sink_video = None
-        self._last_sink_names = None  # force combo refresh next poll
 
     def _on_stream_drop(self, si_index: int, app_name: str, pid: int, target_sink_name: str):
         pulse = self._get_pulse()
@@ -797,6 +752,9 @@ class HomePage(QWidget):
 
     def _on_video_volume_changed(self, value: int):
         self._apply_volume(self._sink_video, value)
+
+    def _on_hdmi_volume_changed(self, value: int):
+        self._apply_volume(self._sink_hdmi, value)
 
     def _apply_volume(self, sink, value: int):
         pulse = self._get_pulse()
