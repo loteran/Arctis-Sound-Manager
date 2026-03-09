@@ -472,7 +472,7 @@ class HomePage(QWidget):
         ]
         card.clear_apps()
         for app in apps:
-            card.add_app_tag(app)
+            card.add_app_tag(app, bg_color=card._accent)
 
     def _set_disconnected(self):
         if self._connected:
