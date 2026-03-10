@@ -2,6 +2,7 @@ import asyncio
 import itertools
 import json
 import logging
+from pathlib import Path
 
 from dbus_next.aio.message_bus import MessageBus
 from dbus_next.service import ServiceInterface, method
@@ -84,6 +85,27 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
 
         return json.dumps(settings)
     
+    @method('SendEqCommand')
+    def send_eq_command(self, bands_json: 's') -> 'b': # type: ignore
+        try:
+            bands = json.loads(bands_json)
+            if not isinstance(bands, list) or len(bands) != 10:
+                return False
+            eq_file = Path.home() / '.config' / 'arctis_manager' / 'eq_bands.json'
+            eq_file.write_text(json.dumps(bands))
+            self.core_engine.send_eq_command(bands)
+            return True
+        except Exception as e:
+            self.logger.error(f'SendEqCommand error: {e}')
+            return False
+
+    @method('GetEqBands')
+    def get_eq_bands(self) -> 's': # type: ignore
+        eq_file = Path.home() / '.config' / 'arctis_manager' / 'eq_bands.json'
+        if eq_file.exists():
+            return eq_file.read_text()
+        return json.dumps([20] * 10)
+
     @method('SetSetting')
     def set_setting(self, setting: 's', value: 's') -> 'b': # type: ignore
         try:

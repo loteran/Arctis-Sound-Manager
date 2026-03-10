@@ -1,5 +1,7 @@
 import asyncio
+import json
 import logging
+from pathlib import Path
 from typing import Any, Coroutine, Literal, cast
 
 import usb
@@ -230,6 +232,25 @@ class CoreEngine:
 
             for bytes in self.device_config.device_init:
                 self.send_command(self.translate_init_bytes(bytes), endpoint)
+
+        self._apply_stored_eq()
+
+    def _apply_stored_eq(self) -> None:
+        eq_file = Path.home() / '.config' / 'arctis_manager' / 'eq_bands.json'
+        if not eq_file.exists():
+            return
+        try:
+            bands = json.loads(eq_file.read_text())
+            if isinstance(bands, list) and len(bands) == 10:
+                endpoint = self.get_command_endpoint_address()
+                self.send_command([0x06, 0x33] + bands, endpoint)
+                self.logger.info("Custom EQ applied from eq_bands.json")
+        except Exception as e:
+            self.logger.warning(f"Failed to apply stored EQ: {e}")
+
+    def send_eq_command(self, bands: list[int]) -> None:
+        endpoint = self.get_command_endpoint_address()
+        self.send_command([0x06, 0x33] + bands, endpoint)
     
     def is_device_online(self) -> bool:
         if self.device_status is None or self.device_config is None:

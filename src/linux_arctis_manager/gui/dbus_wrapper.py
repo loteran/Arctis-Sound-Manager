@@ -70,6 +70,50 @@ class DbusWrapper(QObject):
             qt_signal.emit(obj)
 
     @staticmethod
+    def send_eq_command(bands: list[int]) -> None:
+        request_thread = Thread(target=DbusWrapper.send_eq_command_thread, kwargs={'bands': bands})
+        request_thread.start()
+
+    @staticmethod
+    def send_eq_command_thread(bands: list[int]):
+        asyncio.run(DbusWrapper.send_eq_command_async(bands))
+
+    @staticmethod
+    async def send_eq_command_async(bands: list[int]):
+        dbus_bus = await MessageBus().connect()
+        await dbus_bus.call(Message(
+            destination=DBUS_BUS_NAME,
+            path=DBUS_SETTINGS_OBJECT_PATH,
+            interface=DBUS_SETTINGS_INTERFACE_NAME,
+            member='SendEqCommand',
+            message_type=MessageType.METHOD_CALL,
+            signature='s',
+            body=[json.dumps(bands)],
+        ))
+
+    @staticmethod
+    def get_eq_bands(qt_signal: SignalInstance) -> None:
+        request_thread = Thread(target=DbusWrapper.get_eq_bands_thread, kwargs={'qt_signal': qt_signal})
+        request_thread.start()
+
+    @staticmethod
+    def get_eq_bands_thread(qt_signal: SignalInstance):
+        asyncio.run(DbusWrapper.get_eq_bands_async(qt_signal))
+
+    @staticmethod
+    async def get_eq_bands_async(qt_signal: SignalInstance):
+        dbus_bus = await MessageBus().connect()
+        reply = await dbus_bus.call(Message(
+            destination=DBUS_BUS_NAME,
+            path=DBUS_SETTINGS_OBJECT_PATH,
+            interface=DBUS_SETTINGS_INTERFACE_NAME,
+            member='GetEqBands',
+            message_type=MessageType.METHOD_CALL,
+        ))
+        if reply and reply.message_type == MessageType.METHOD_RETURN:
+            qt_signal.emit(json.loads(reply.body[0]))
+
+    @staticmethod
     def change_setting(name: str, value: int|bool|str) -> None:
         request_thread = Thread(target=DbusWrapper.change_setting_thread, kwargs={'name': name, 'value': value})
         request_thread.start()
