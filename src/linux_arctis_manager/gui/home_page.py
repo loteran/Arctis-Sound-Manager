@@ -724,6 +724,7 @@ class HomePage(QWidget):
     # ── Drag & drop stream routing ────────────────────────────────────────────
 
     def _on_stream_drop(self, si_index: int, app_name: str, pid: int, target_sink_name: str):
+        import subprocess
         pulse = self._get_pulse()
         if pulse is None:
             return
@@ -739,6 +740,14 @@ class HomePage(QWidget):
             overrides = _load_overrides()
             overrides[app_name] = target_sink_name
             _save_overrides(overrides)
+            # Si on route vers un sink Arctis, repasser le default KDE sur Arctis_Game
+            # pour que le router reprenne la main (sinon le default reste HDMI et annule le move).
+            if target_sink_name != SINK_HDMI:
+                subprocess.Popen([
+                    "pw-metadata", "0",
+                    "default.configured.audio.sink",
+                    '{ "name": "Arctis_Game" }'
+                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception as exc:
             logger.warning("Error moving stream: %s", exc)
 

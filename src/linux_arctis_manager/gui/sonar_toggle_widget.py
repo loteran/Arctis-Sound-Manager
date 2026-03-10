@@ -68,7 +68,7 @@ class QSonarToggleWidget(QWidget):
         self._button.setText('Redémarrage du son...')
         subprocess.run(
             ['systemctl', '--user', 'restart',
-             'pipewire', 'pipewire-pulse', 'filter-chain', 'arctis-manager'],
+             'pipewire', 'wireplumber', 'pipewire-pulse', 'filter-chain', 'arctis-manager'],
             check=False,
         )
         time.sleep(4)
