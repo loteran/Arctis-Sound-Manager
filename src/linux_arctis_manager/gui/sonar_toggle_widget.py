@@ -213,11 +213,11 @@ class QSonarToggleWidget(QWidget):
         self._worker.start()
 
     def _on_countdown(self, remaining: int):
-        self._button.setText(f'Veuillez patienter... {remaining}s')
+        self._button.setText(f'Please wait... {remaining}s')
 
     def _on_done(self, success: bool, mode: str):
         if not success:
-            self._mode_label.setText('<b style="color:red;">Erreur lors du changement de mode</b>')
+            self._mode_label.setText('<b style="color:red;">Failed to switch mode</b>')
         self._refresh()
         self._button.setEnabled(True)
         if success and mode == 'custom':

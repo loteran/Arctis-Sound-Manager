@@ -346,7 +346,7 @@ class _LoadPresetDialog(QDialog):
         self._list.itemDoubleClicked.connect(self.accept)
         layout.addWidget(self._list)
 
-        del_btn = QPushButton("Supprimer")
+        del_btn = QPushButton("Delete")
         del_btn.setStyleSheet("color: #f44; background: transparent; border: 1px solid #f44; border-radius: 4px; padding: 4px 10px;")
         del_btn.clicked.connect(self._on_delete)
         layout.addWidget(del_btn)
@@ -609,7 +609,7 @@ class EqualizerPage(QWidget):
 
     @Slot(int)
     def _on_countdown(self, remaining: int):
-        self._button.setText(f"Veuillez patienter... {remaining}s")
+        self._button.setText(f"Please wait... {remaining}s")
 
     @Slot(bool, str)
     def _on_toggle_done(self, success: bool, mode: str):
