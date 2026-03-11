@@ -614,7 +614,7 @@ class EqualizerPage(QWidget):
     @Slot(bool, str)
     def _on_toggle_done(self, success: bool, mode: str):
         if not success:
-            self._desc_label.setText('<span style="color:red;">Erreur lors du changement de mode.</span>')
+            self._desc_label.setText('<span style="color:red;">Failed to switch mode.</span>')
         self._refresh()
         self._button.setEnabled(True)
         self._worker = None
