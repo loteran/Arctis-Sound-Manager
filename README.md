@@ -21,6 +21,25 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 - **Help page** — built-in user manual in English, French and Spanish
 - **Virtual surround 7.1** — optional HeSuVi filter-chain for stereo headsets
 
+## Screenshots
+
+### Home — 4-channel audio mixer
+![Home](docs/images/screenshot_home.png)
+
+### Equalizer — 10-band EQ with presets
+![Equalizer](docs/images/screenshot_equalizer.png)
+
+### Headset / DAC — Device info and live status
+![Headset](docs/images/screenshot_headset.png)
+
+### Settings — Device configuration
+![Settings](docs/images/screenshot_settings.png)
+
+### Help — Built-in user manual (EN / FR / ES)
+![Help](docs/images/screenshot_help.png)
+
+---
+
 ## Supported Devices
 
 | Device | Mixer | Advanced features | Product ID(s) |
