@@ -183,11 +183,11 @@ class QSonarToggleWidget(QWidget):
     def _refresh(self):
         mode = _current_mode()
         if mode == 'sonar':
-            self._mode_label.setText('Mode actuel : <b>Sonar</b>')
+            self._mode_label.setText('Current mode: <b>Sonar</b>')
             self._button.setText('Passer en Custom EQ')
             self._eq_widget.setVisible(False)
         else:
-            self._mode_label.setText('Mode actuel : <b>Custom EQ</b>')
+            self._mode_label.setText('Current mode: <b>Custom EQ</b>')
             self._button.setText('Passer en mode Sonar')
             self._eq_widget.setVisible(True)
 

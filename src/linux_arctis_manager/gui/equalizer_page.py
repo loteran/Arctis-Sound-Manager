@@ -325,7 +325,7 @@ class _EqSlider(QWidget):
 class _LoadPresetDialog(QDialog):
     def __init__(self, presets: dict[str, list[int]], parent: QWidget | None = None):
         super().__init__(parent)
-        self.setWindowTitle("Charger un preset")
+        self.setWindowTitle("Load preset")
         self.setMinimumWidth(300)
         self.selected_bands: list[int] | None = None
 
@@ -420,7 +420,7 @@ class EqualizerPage(QWidget):
         mrl.setContentsMargins(0, 0, 0, 0)
         mrl.setSpacing(12)
 
-        ms = QLabel("Mode actuel :")
+        ms = QLabel("Current mode:")
         ms.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11pt; background: transparent;")
         mrl.addWidget(ms)
 
@@ -490,7 +490,7 @@ class EqualizerPage(QWidget):
         pl.setContentsMargins(0, 4, 0, 0)
         pl.setSpacing(10)
 
-        save_btn = QPushButton("Sauvegarder le preset")
+        save_btn = QPushButton("Save preset")
         save_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; color: {ACCENT};
@@ -502,7 +502,7 @@ class EqualizerPage(QWidget):
         save_btn.clicked.connect(self._on_save_preset)
         pl.addWidget(save_btn)
 
-        load_btn = QPushButton("Charger un preset")
+        load_btn = QPushButton("Load preset")
         load_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; color: {TEXT_SECONDARY};
@@ -560,7 +560,7 @@ class EqualizerPage(QWidget):
     # ── Presets ──────────────────────────────────────────────────────────────
 
     def _on_save_preset(self):
-        name, ok = QInputDialog.getText(self, "Sauvegarder le preset", "Nom du preset :")
+        name, ok = QInputDialog.getText(self, "Save preset", "Preset name:")
         if not ok or not name.strip():
             return
         presets = _load_presets()
