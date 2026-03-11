@@ -15,7 +15,10 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 - **Persistent routing** — manual moves are remembered across app restarts
 - **Native PipeWire support** — detects apps that bypass PulseAudio (mpv, Haruna…)
 - **Volume sliders** per channel with live percentage display
-- **Device status** — battery, mic, EQ and more depending on your device
+- **10-band equalizer** — per-band gain (31 Hz to 16 kHz), save/load presets, synced with device hardware
+- **ANC / Transparent mode indicator** — reflects the physical button state (Off / Transparent / ANC) in real time
+- **Device status page** — battery, mic mute, sidetone, and more depending on your device
+- **Help page** — built-in user manual in English, French and Spanish
 - **Virtual surround 7.1** — optional HeSuVi filter-chain for stereo headsets
 
 ## Supported Devices
@@ -216,6 +219,10 @@ src/linux_arctis_manager/
 │   └── cli.py             # lam-cli: setup utilities
 ├── gui/
 │   ├── home_page.py       # Audio mixer (Game/Chat/Media/HDMI cards)
+│   ├── headset_page.py    # Device info and live status
+│   ├── equalizer_page.py  # 10-band EQ with presets
+│   ├── anc_widget.py      # ANC / Transparent mode indicator
+│   ├── help_page.py       # Built-in user manual (EN/FR/ES)
 │   ├── components.py      # Reusable widgets
 │   └── theme.py           # Color constants
 ├── pw_utils.py            # Native PipeWire stream detection
