@@ -77,6 +77,10 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 
 ## Optional: Virtual Surround 7.1
 
+> The virtual surround setup is also available as a **standalone repo**: [arctis-virtual-surround](https://github.com/loteran/arctis-virtual-surround).
+> Use it if you want to install virtual surround independently of Arctis Sound Manager, or on a fresh OS with a single command (`bash install.sh`).
+> It also includes WirePlumber priority rules to ensure the Arctis is always preferred over HDMI as the default sink.
+
 If you use a **stereo headset** and want virtual 7.1 surround sound (games, movies…), you can set it up via the included script **before** installing Arctis Sound Manager.
 
 It works by creating a PipeWire filter-chain sink that applies HRTF convolution (HeSuVi) to any 7.1 source and outputs stereo to your headset.
