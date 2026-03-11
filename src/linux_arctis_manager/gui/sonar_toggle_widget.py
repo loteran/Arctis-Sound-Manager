@@ -68,7 +68,7 @@ class _ToggleWorker(QThread):
         STATE_FILE.write_text(self._new_mode)
         subprocess.run(
             ['notify-send', '-a', 'Arctis EQ', 'Arctis EQ',
-             f'Mode {"Sonar" if self._new_mode == "sonar" else "Custom EQ"} activé'],
+             f'{"Sonar" if self._new_mode == "sonar" else "Custom EQ"} mode enabled'],
             check=False,
         )
         self.done.emit(True, self._new_mode)
@@ -205,7 +205,7 @@ class QSonarToggleWidget(QWidget):
         new_mode = 'sonar' if old_mode == 'custom' else 'custom'
 
         self._button.setEnabled(False)
-        self._button.setText('Redémarrage du son...')
+        self._button.setText('Restarting audio...')
 
         self._worker = _ToggleWorker(new_mode, old_mode)
         self._worker.countdown_tick.connect(self._on_countdown)

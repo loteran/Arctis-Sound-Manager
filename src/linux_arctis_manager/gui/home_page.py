@@ -556,7 +556,7 @@ class HomePage(QWidget):
         root.addSpacing(24)
 
         # ── "Disconnected" label ───────────────────────────────────────────────
-        self._disconnected_label = QLabel("Casque non connecté")
+        self._disconnected_label = QLabel("Headset not connected")
         self._disconnected_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._disconnected_label.setStyleSheet(
             f"color: {TEXT_SECONDARY}; font-size: 14pt; font-style: italic; background: transparent;"
@@ -620,13 +620,13 @@ class HomePage(QWidget):
             __import__("pathlib").Path(__file__).parent / "images" / "help_icon.png"
         )
         _help_text = (
-            "<b>Comment utiliser le mixeur</b><br><br>"
-            "<b>Game</b> — Jeux (Arctis_Media)<br>"
-            "<b>Chat</b> — Voix / Discord (Arctis_Chat)<br>"
-            "<b>Media</b> — Navigateurs &amp; lecteurs vidéo (Arctis_Video)<br><br>"
-            "Les sliders contrôlent le volume de chaque canal.<br>"
-            "Les boutons <b>G C M</b> sur un tag d'appli déplacent<br>"
-            "ce flux audio vers le canal souhaité."
+            "<b>How to use the mixer</b><br><br>"
+            "<b>Game</b> — Games (Arctis_Game)<br>"
+            "<b>Chat</b> — Voice / Discord (Arctis_Chat)<br>"
+            "<b>Media</b> — Browsers &amp; video players (Arctis_Media)<br><br>"
+            "Sliders control the volume of each channel.<br>"
+            "The <b>G C M H</b> buttons on an app tag move<br>"
+            "that audio stream to the desired channel."
         )
 
         self._help_btn = QPushButton()

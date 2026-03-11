@@ -122,7 +122,7 @@ class _ToggleWorker(QThread):
         STATE_FILE.write_text(self._new_mode)
         subprocess.run(
             ["notify-send", "-a", "Arctis EQ", "Arctis EQ",
-             f'Mode {"Sonar" if self._new_mode == "sonar" else "Custom EQ"} activé'],
+             f'{"Sonar" if self._new_mode == "sonar" else "Custom EQ"} mode enabled'],
             check=False,
         )
         self.done.emit(True, self._new_mode)
@@ -566,18 +566,18 @@ class EqualizerPage(QWidget):
         presets = _load_presets()
         presets[name.strip()] = list(self._band_values)
         _save_presets(presets)
-        self._preset_status.setText(f"Sauvegardé : {name.strip()}")
+        self._preset_status.setText(f"Saved: {name.strip()}")
 
     def _on_load_preset(self):
         presets = _load_presets()
         if not presets:
-            self._preset_status.setText("Aucun preset sauvegardé")
+            self._preset_status.setText("No preset saved")
             return
         dialog = _LoadPresetDialog(presets, self)
         if dialog.exec() == QDialog.DialogCode.Accepted and dialog.selected_bands:
             self._on_eq_bands_received(dialog.selected_bands)
             DbusWrapper.send_eq_command(list(self._band_values))
-            self._preset_status.setText("Preset chargé")
+            self._preset_status.setText("Preset loaded")
 
     # ── Toggle ───────────────────────────────────────────────────────────────
 
@@ -586,14 +586,14 @@ class EqualizerPage(QWidget):
         if mode == "sonar":
             self._mode_label.setText("Sonar")
             self._mode_label.setStyleSheet(f"color: {ACCENT}; font-size: 13pt; font-weight: bold; background: transparent;")
-            self._desc_label.setText("Le traitement audio SteelSeries Sonar est actif. Cliquez pour revenir à votre Custom EQ.")
-            self._button.setText("Passer en Custom EQ")
+            self._desc_label.setText("SteelSeries Sonar audio processing is active. Click to switch back to your Custom EQ.")
+            self._button.setText("Switch to Custom EQ")
             self._eq_card.setVisible(False)
         else:
             self._mode_label.setText("Custom EQ")
             self._mode_label.setStyleSheet("color: #04C5A8; font-size: 13pt; font-weight: bold; background: transparent;")
-            self._desc_label.setText("Votre Custom EQ est actif. Cliquez pour activer le traitement Sonar.")
-            self._button.setText("Passer en mode Sonar")
+            self._desc_label.setText("Your Custom EQ is active. Click to enable Sonar processing.")
+            self._button.setText("Switch to Sonar")
             self._eq_card.setVisible(True)
 
     @Slot()
@@ -601,7 +601,7 @@ class EqualizerPage(QWidget):
         old_mode = _current_mode()
         new_mode = "sonar" if old_mode == "custom" else "custom"
         self._button.setEnabled(False)
-        self._button.setText("Redémarrage du son...")
+        self._button.setText("Restarting audio...")
         self._worker = _ToggleWorker(new_mode, old_mode)
         self._worker.countdown_tick.connect(self._on_countdown)
         self._worker.done.connect(self._on_toggle_done)
