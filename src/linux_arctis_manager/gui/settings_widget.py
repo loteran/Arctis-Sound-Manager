@@ -2,8 +2,8 @@ from threading import Lock
 from typing import Callable
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QSlider,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QPushButton,
+                               QSlider, QVBoxLayout, QWidget)
 
 from linux_arctis_manager.config import ConfigSetting, SettingType
 from linux_arctis_manager.gui.dbus_wrapper import DbusWrapper
@@ -69,7 +69,10 @@ class QSettingsWidget(QWidget):
             # Mapp all the settings
             for name, value in self.settings.items():
                 if not name in self._settings_widgets:
-                    widget = self.get_widget(self.settings_config[name], value, self.on_settings_updated)
+                    config = self.settings_config.get(name)
+                    if config is None or getattr(config, 'hidden', False):
+                        continue
+                    widget = self.get_widget(config, value, self.on_settings_updated)
 
                     if widget is None:
                         continue
@@ -119,7 +122,7 @@ class QSettingsWidget(QWidget):
             widget = QDualState(
                 off_text=I18n.get_instance().translate('settings_values', config.values.get('off_label', 'off')),
                 on_text=I18n.get_instance().translate('settings_values', config.values.get('on_label', 'on')),
-                init_state='right' if value == True else 'left',
+                init_state='right' if value == config.values.get('on', True) else 'left',
             )
             widget.checkStateChanged.connect(lambda state: callback(config, state == Qt.CheckState.Checked))
         elif config.type == SettingType.SLIDER:
@@ -149,6 +152,65 @@ class QSettingsWidget(QWidget):
 
             slider.valueChanged.connect(lambda value: widget_value_label.setText(slider_value(value)))
             slider.valueChanged.connect(lambda value: callback(config, value))
+        elif config.type == SettingType.BUTTON_GROUP:
+            widget = QWidget()
+            widget_layout = QHBoxLayout()
+            widget_layout.setContentsMargins(0, 0, 0, 0)
+            widget_layout.setSpacing(4)
+            widget.setLayout(widget_layout)
+
+            btn_qss = """
+                QPushButton {
+                    background-color: #2D363E;
+                    color: #AAAAAA;
+                    border: 1px solid #3A4550;
+                    border-radius: 6px;
+                    padding: 5px 12px;
+                    font-size: 10pt;
+                }
+                QPushButton[active=true] {
+                    background-color: #FF4500;
+                    color: #FFFFFF;
+                    border: 1px solid #FF4500;
+                }
+                QPushButton:hover {
+                    background-color: #3A4550;
+                    color: #FFFFFF;
+                }
+                QPushButton[active=true]:hover {
+                    background-color: #FF6A28;
+                }
+            """
+
+            values_mapping: dict = getattr(config, 'values_mapping', {})
+
+            def parse_key(k) -> int:
+                return int(k, 16) if isinstance(k, str) and k.startswith('0x') else int(k)
+
+            current_value = parse_key(value) if isinstance(value, str) else int(value)
+            btn_entries: list[tuple[int, QPushButton]] = []
+
+            for raw_key, label_key in values_mapping.items():
+                btn_value = parse_key(raw_key)
+                label = I18n.get_instance().translate('settings_values', label_key)
+                btn = QPushButton(label)
+                btn.setProperty('active', btn_value == current_value)
+                btn.setStyleSheet(btn_qss)
+                widget_layout.addWidget(btn)
+                btn_entries.append((btn_value, btn))
+
+            def make_btn_callback(selected_value: int, entries: list, cfg: ConfigSetting):
+                def on_click():
+                    callback(cfg, selected_value)
+                    for v, b in entries:
+                        b.setProperty('active', v == selected_value)
+                        b.style().unpolish(b)
+                        b.style().polish(b)
+                return on_click
+
+            for btn_value, btn in btn_entries:
+                btn.clicked.connect(make_btn_callback(btn_value, btn_entries, config))
+
         elif config.type == SettingType.SELECT:
             widget = QComboBox()
             options = self._option_lists.get(config.options_source, [])

@@ -16,14 +16,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from linux_arctis_manager.gui.anc_widget import QAncWidget
 from linux_arctis_manager.gui.components import (
-    HEADPHONE_ICON,
-    SvgIconWidget,
     DividerLine,
     SectionTitle,
 )
 from linux_arctis_manager.gui.settings_widget import QSettingsWidget
-from linux_arctis_manager.gui.status_widget import QStatusWidget
 from linux_arctis_manager.gui.theme import (
     ACCENT,
     BG_CARD,
@@ -34,8 +32,6 @@ from linux_arctis_manager.gui.theme import (
     TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
-from linux_arctis_manager.i18n import I18n
-
 
 def _styled_button(text: str) -> QPushButton:
     btn = QPushButton(text)
@@ -62,7 +58,7 @@ def _styled_button(text: str) -> QPushButton:
 class DevicePage(QWidget):
     """
     Settings page with:
-    - Title "Arctis Manager" bold + subtitle "Device Settings"
+    - Title "Arctis Sound Manager" bold + subtitle "Device Settings"
     - "General Settings" section title (gray ~20pt)
     - Settings form rows (labels + controls)
     - Horizontal divider
@@ -89,126 +85,36 @@ class DevicePage(QWidget):
         content.setStyleSheet(f"background-color: {BG_MAIN};")
         content_layout = QVBoxLayout(content)
         content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        content_layout.setContentsMargins(36, 28, 36, 36)
+        content_layout.setContentsMargins(36, 12, 36, 12)
         content_layout.setSpacing(0)
 
         # ── App title ─────────────────────────────────────────────────────────
-        app_title = QLabel("Arctis Manager")
+        app_title = QLabel("Arctis Sound Manager")
         app_title.setStyleSheet(
             f"color: {TEXT_PRIMARY}; font-size: 28pt; font-weight: bold; background: transparent;"
         )
         content_layout.addWidget(app_title)
-        content_layout.addSpacing(28)
-
-        # ── General Settings section ───────────────────────────────────────────
-        general_title = SectionTitle("General Settings")
-        content_layout.addWidget(general_title)
-        content_layout.addSpacing(20)
-
-        # Settings form: label + control rows
-        self._general_widget = QSettingsWidget(content, "general", "general")
-        self._general_widget.setStyleSheet(
-            f"""
-            QWidget {{
-                background-color: {BG_MAIN};
-                color: {TEXT_PRIMARY};
-            }}
-            QLabel {{
-                background-color: transparent;
-                color: {TEXT_PRIMARY};
-                font-size: 11pt;
-            }}
-            """
-        )
-        content_layout.addWidget(self._general_widget)
-        content_layout.addSpacing(24)
-
-        # ── Horizontal divider ─────────────────────────────────────────────────
-        content_layout.addWidget(DividerLine())
-        content_layout.addSpacing(24)
-
-        # ── Devices section ────────────────────────────────────────────────────
-        devices_title = SectionTitle("Devices")
-        content_layout.addWidget(devices_title)
-        content_layout.addSpacing(20)
-
-        # Device card
-        self._device_card = QWidget()
-        self._device_card.setObjectName("deviceCard")
-        self._device_card.setStyleSheet(
-            f"""
-            QWidget#deviceCard {{
-                background-color: {BG_CARD};
-                border: 1px solid {BORDER};
-                border-radius: 12px;
-            }}
-            """
-        )
-
-        device_card_layout = QHBoxLayout(self._device_card)
-        device_card_layout.setContentsMargins(20, 16, 20, 16)
-        device_card_layout.setSpacing(16)
-
-        # Headphone icon (orange)
-        headphone_icon = SvgIconWidget(HEADPHONE_ICON, ACCENT, size=44)
-        device_card_layout.addWidget(headphone_icon)
-
-        # Device info (name + vendor/product IDs)
-        device_info = QWidget()
-        device_info.setStyleSheet("background: transparent;")
-        device_info_layout = QVBoxLayout(device_info)
-        device_info_layout.setContentsMargins(0, 0, 0, 0)
-        device_info_layout.setSpacing(2)
-
-        self._device_name_label = QLabel("Aucun appareil")
-        self._device_name_label.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 12pt; font-weight: bold; background: transparent;"
-        )
-        device_info_layout.addWidget(self._device_name_label)
-
-        self._vendor_label = QLabel("")
-        self._vendor_label.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;"
-        )
-        device_info_layout.addWidget(self._vendor_label)
-
-        self._product_label = QLabel("")
-        self._product_label.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;"
-        )
-        device_info_layout.addWidget(self._product_label)
-
-        device_card_layout.addWidget(device_info)
-        device_card_layout.addStretch(1)
-
-        content_layout.addWidget(self._device_card)
-        content_layout.addSpacing(24)
-
-        # ── Status section (hidden until device connects) ──────────────────────
-        self._status_widget = QStatusWidget(content)
-        self._status_widget.setStyleSheet(
-            f"""
-            QWidget {{
-                background-color: {BG_MAIN};
-                color: {TEXT_PRIMARY};
-            }}
-            QLabel {{
-                background-color: transparent;
-                color: {TEXT_PRIMARY};
-                font-size: 11pt;
-            }}
-            """
-        )
-        content_layout.addWidget(self._status_widget)
-
-        # ── Device settings section ────────────────────────────────────────────
         content_layout.addSpacing(8)
-        content_layout.addWidget(DividerLine())
-        content_layout.addSpacing(16)
 
+        # ── ANC / Transparent section ─────────────────────────────────────────
+        anc_title = SectionTitle("Noise Cancelling")
+        content_layout.addWidget(anc_title)
+        content_layout.addSpacing(4)
+
+        self._anc_widget = QAncWidget(content)
+        self._anc_widget.setStyleSheet(f"""
+            QWidget {{ background-color: {BG_MAIN}; color: {TEXT_PRIMARY}; }}
+            QLabel  {{ background-color: transparent; color: {TEXT_PRIMARY}; font-size: 11pt; }}
+        """)
+        content_layout.addWidget(self._anc_widget)
+        content_layout.addSpacing(6)
+        content_layout.addWidget(DividerLine())
+        content_layout.addSpacing(6)
+
+        # ── Device Settings section ────────────────────────────────────────────
         device_settings_title = SectionTitle("Device Settings")
         content_layout.addWidget(device_settings_title)
-        content_layout.addSpacing(16)
+        content_layout.addSpacing(4)
 
         self._device_widget = QSettingsWidget(content, "device", "device")
         self._device_widget.setStyleSheet(
@@ -225,6 +131,32 @@ class DevicePage(QWidget):
             """
         )
         content_layout.addWidget(self._device_widget)
+        content_layout.addSpacing(6)
+
+        # ── Horizontal divider ─────────────────────────────────────────────────
+        content_layout.addWidget(DividerLine())
+        content_layout.addSpacing(6)
+
+        # ── General Settings section ───────────────────────────────────────────
+        general_title = SectionTitle("General Settings")
+        content_layout.addWidget(general_title)
+        content_layout.addSpacing(4)
+
+        self._general_widget = QSettingsWidget(content, "general", "general")
+        self._general_widget.setStyleSheet(
+            f"""
+            QWidget {{
+                background-color: {BG_MAIN};
+                color: {TEXT_PRIMARY};
+            }}
+            QLabel {{
+                background-color: transparent;
+                color: {TEXT_PRIMARY};
+                font-size: 11pt;
+            }}
+            """
+        )
+        content_layout.addWidget(self._general_widget)
         content_layout.addStretch(1)
 
         scroll.setWidget(content)
@@ -234,29 +166,9 @@ class DevicePage(QWidget):
 
     @Slot(object)
     def update_status(self, status: dict):
-        self._status_widget.update_status(status)
-        # Update device card name from status if available
-        if status:
-            # Try to extract device name from any first category
-            for category in status:
-                self._device_name_label.setText(
-                    I18n.translate("status", category) or "SteelSeries Arctis"
-                )
-                break
+        self._anc_widget.update_status(status)
 
     @Slot(object)
     def update_settings(self, settings: dict):
         self._general_widget.update_settings(settings)
         self._device_widget.update_settings(settings)
-
-        # Try to update vendor/product IDs from settings
-        vendor_id = settings.get("vendor_id", "")
-        product_id = settings.get("product_id", "")
-        device_name = settings.get("device_name", "")
-
-        if device_name:
-            self._device_name_label.setText(device_name)
-        if vendor_id:
-            self._vendor_label.setText(f"Vendor ID:   {vendor_id}")
-        if product_id:
-            self._product_label.setText(f"Product ID:  {product_id}")

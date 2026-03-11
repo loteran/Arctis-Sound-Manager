@@ -18,13 +18,17 @@ from PySide6.QtWidgets import (
 
 from linux_arctis_manager.gui.base_app import QBaseDesktopApp
 from linux_arctis_manager.gui.components import (
+    EQUALIZER_ICON,
     HEADPHONE_ICON,
+    HELP_ICON,
     HOME_ICON,
     SETTINGS_ICON,
     SidebarButton,
 )
 from linux_arctis_manager.gui.dbus_wrapper import DbusWrapper
 from linux_arctis_manager.gui.device_page import DevicePage
+from linux_arctis_manager.gui.headset_page import HeadsetPage
+from linux_arctis_manager.gui.help_page import HelpPage
 from linux_arctis_manager.gui.equalizer_page import EqualizerPage
 from linux_arctis_manager.gui.home_page import HomePage
 from linux_arctis_manager.gui.main_app_proto_widget import QMainAppProtoWidget
@@ -69,7 +73,9 @@ class QMainApp(QBaseDesktopApp):
 
         # Wire D-Bus signals to pages
         self.dbus_wrapper.sig_status.connect(self._home_page.update_status)
+        self.dbus_wrapper.sig_status.connect(self._headset_page.update_status)
         self.dbus_wrapper.sig_status.connect(self._device_page.update_status)
+        self.dbus_wrapper.sig_settings.connect(self._headset_page.update_settings)
         self.dbus_wrapper.sig_settings.connect(self._device_page.update_settings)
 
         # Start on home page
@@ -84,7 +90,7 @@ class QMainApp(QBaseDesktopApp):
         if visible:
             self.logger.debug("App is visible — starting D-Bus polling")
             self.dbus_wrapper.request_settings(one_time=True)
-            self.dbus_wrapper.request_status(one_time=True)
+            self.dbus_wrapper.request_status()
         else:
             self.logger.debug("App is hidden — stopping D-Bus polling")
             self.dbus_wrapper.stop()
@@ -94,7 +100,7 @@ class QMainApp(QBaseDesktopApp):
     def _build_window(self) -> QMainAppProtoWidget:
         window = QMainAppProtoWidget()
         window.setWindowFlags(Qt.WindowType.Window)
-        window.setWindowTitle("Arctis Manager")
+        window.setWindowTitle("Arctis Sound Manager")
         window.setWindowIcon(QIcon(get_icon_pixmap()))
         window.setMinimumSize(900, 650)
         window.setStyleSheet(f"background-color: {BG_MAIN};")
@@ -120,15 +126,16 @@ class QMainApp(QBaseDesktopApp):
         sidebar_layout.setContentsMargins(15, 16, 15, 16)
         sidebar_layout.setSpacing(8)
 
-        # Navigation buttons definition: (svg_path, label, icon_color_active)
-        pages_def = [
+        # Top navigation buttons: Home, Equalizer, Headset, Settings
+        top_pages_def = [
             (HOME_ICON,      "Home",      ACCENT),
+            (EQUALIZER_ICON, "Equalizer", ACCENT),
+            (HEADPHONE_ICON, "Headset/DAC<br><span style='font-size:8pt'>Infos</span>", ACCENT),
             (SETTINGS_ICON,  "Settings",  ACCENT),
-            (HEADPHONE_ICON, "Equalizer", ACCENT),
         ]
 
         self._sidebar_buttons: list[SidebarButton] = []
-        for svg_path, label, color_active in pages_def:
+        for svg_path, label, color_active in top_pages_def:
             btn = SidebarButton(
                 svg_path=svg_path,
                 label=label,
@@ -143,7 +150,22 @@ class QMainApp(QBaseDesktopApp):
 
         sidebar_layout.addStretch(1)
 
-        # GitHub link at the bottom of the sidebar
+        # Help button at the bottom
+        help_btn = SidebarButton(
+            svg_path=HELP_ICON,
+            label="Help",
+            icon_color_inactive=TEXT_SECONDARY,
+            icon_color_active=ACCENT,
+            parent=sidebar,
+        )
+        help_idx = len(self._sidebar_buttons)
+        help_btn.clicked.connect(lambda checked=False, i=help_idx: self._switch_page(i))
+        sidebar_layout.addWidget(help_btn, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self._sidebar_buttons.append(help_btn)
+
+        sidebar_layout.addSpacing(help_btn.sizeHint().height())
+
+        # GitHub link
         gh_btn = QPushButton("GitHub Repo")
         gh_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; border: none; color: {TEXT_SECONDARY}; "
@@ -155,6 +177,15 @@ class QMainApp(QBaseDesktopApp):
             lambda: QDesktopServices.openUrl(QUrl("https://github.com/loteran/Arctis-Sound-Manager"))
         )
         sidebar_layout.addWidget(gh_btn, alignment=Qt.AlignmentFlag.AlignHCenter)
+
+        # Version label
+        from linux_arctis_manager.utils import project_version
+        ver_label = QLabel(f"v{project_version()}")
+        ver_label.setStyleSheet(
+            f"color: {TEXT_SECONDARY}; font-size: 8pt; background: transparent; padding: 2px 0;"
+        )
+        ver_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        sidebar_layout.addWidget(ver_label, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         root_layout.addWidget(sidebar)
 
@@ -169,13 +200,17 @@ class QMainApp(QBaseDesktopApp):
         self._stack = QStackedWidget()
         self._stack.setStyleSheet(f"background-color: {BG_MAIN};")
 
-        self._home_page = HomePage()
-        self._device_page = DevicePage()
+        self._home_page      = HomePage()
         self._equalizer_page = EqualizerPage()
+        self._headset_page   = HeadsetPage()
+        self._device_page    = DevicePage()
+        self._help_page      = HelpPage()
 
-        self._stack.addWidget(self._home_page)      # index 0  → Home button
-        self._stack.addWidget(self._device_page)    # index 1  → Settings button
-        self._stack.addWidget(self._equalizer_page) # index 2  → Help button
+        self._stack.addWidget(self._home_page)      # index 0 → Home
+        self._stack.addWidget(self._equalizer_page) # index 1 → Equalizer
+        self._stack.addWidget(self._headset_page)   # index 2 → Headset
+        self._stack.addWidget(self._device_page)    # index 3 → Settings
+        self._stack.addWidget(self._help_page)      # index 4 → Help
 
         content_layout.addWidget(self._stack)
         root_layout.addWidget(content_wrapper, stretch=1)

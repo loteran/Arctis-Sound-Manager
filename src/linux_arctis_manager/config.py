@@ -19,6 +19,7 @@ class SettingType(Enum):
     SLIDER = 'slider'
     TOGGLE = 'toggle'
     SELECT = 'select'
+    BUTTON_GROUP = 'button_group'
 
 class StatusParseType(Enum):
     PERCENTAGE = 'percentage'

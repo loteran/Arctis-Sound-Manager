@@ -46,7 +46,7 @@ class QSystrayApp(QBaseDesktopApp):
 
         pixmap = get_icon_pixmap()
         self.tray_icon = QSystemTrayIcon(QIcon(pixmap), parent=self.app)
-        self.tray_icon.setToolTip('Arctis Manager')
+        self.tray_icon.setToolTip('Arctis Sound Manager')
 
         lang_code, _ = locale.getdefaultlocale()
         lang_code = lang_code.split('_')[0] if lang_code else 'en'
@@ -175,7 +175,9 @@ class QSystrayApp(QBaseDesktopApp):
         if not hasattr(self, '_main_app'):
             self._main_app = QMainApp(self.app, self.logger.level)
 
-        self._main_app.start_sync()
+        self._main_app.main_window.show()
+        self._main_app.main_window.raise_()
+        self._main_app.main_window.activateWindow()
 
     @Slot()
     def sig_stop(self):

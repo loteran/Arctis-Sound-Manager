@@ -5,7 +5,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, Signal, Slot
+from PySide6.QtCore import Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (
     QDialog,
@@ -388,7 +388,7 @@ class EqualizerPage(QWidget):
         root.setSpacing(0)
         root.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        app_title = QLabel("Arctis Manager")
+        app_title = QLabel("Arctis Sound Manager")
         app_title.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 28pt; font-weight: bold; background: transparent;")
         root.addWidget(app_title)
         root.addSpacing(28)
@@ -526,7 +526,21 @@ class EqualizerPage(QWidget):
 
         self._sig_eq_bands.connect(self._on_eq_bands_received)
         self._refresh()
+
+        self._poll_timer = QTimer(self)
+        self._poll_timer.setInterval(500)
+        self._poll_timer.timeout.connect(lambda: DbusWrapper.get_eq_bands(self._sig_eq_bands))
+
+    # ── Lifecycle ─────────────────────────────────────────────────────────────
+
+    def showEvent(self, event):
+        super().showEvent(event)
         DbusWrapper.get_eq_bands(self._sig_eq_bands)
+        self._poll_timer.start()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self._poll_timer.stop()
 
     # ── EQ ───────────────────────────────────────────────────────────────────
 
@@ -538,8 +552,10 @@ class EqualizerPage(QWidget):
 
     def _on_slider_changed(self, index: int, raw: int):
         self._band_values[index] = raw
+        self._poll_timer.stop()
         DbusWrapper.send_eq_command(list(self._band_values))
         self._preset_status.setText("")
+        self._poll_timer.start()
 
     # ── Presets ──────────────────────────────────────────────────────────────
 

@@ -105,6 +105,8 @@ class CoreEngine:
 
             if self.device_config.status is not None:
                 self.logger.debug(f'Response: {read_input}')
+                if read_input and read_input[0] == 0x07:
+                    self.logger.debug(f'EVENT: {[hex(b) for b in read_input[:8]]}')
 
                 for mapping in self.device_config.status.response_mapping:
                     starts_with = f'{mapping.starts_with:02x}'
@@ -269,6 +271,22 @@ class CoreEngine:
                 self.redirect_to_media_sink()
             else:
                 self.redirect_audio_on_disconnect()
+
+        if key == 'eq_band_value' and self.device_status is not None:
+            band_index = self.device_status.get('eq_band_index')
+            if band_index is not None:
+                self._update_eq_band_file(band_index - 1, value)  # device uses 1-based index
+
+    def _update_eq_band_file(self, index: int, raw_value: int) -> None:
+        eq_file = Path.home() / '.config' / 'arctis_manager' / 'eq_bands.json'
+        try:
+            bands = json.loads(eq_file.read_text()) if eq_file.exists() else [20] * 10
+            if 0 <= index <= 9:
+                bands[index] = raw_value
+                eq_file.write_text(json.dumps(bands))
+                self.logger.info(f'EQ band {index} updated to raw={raw_value} ({(raw_value - 20) * 0.5:+.1f} dB)')
+        except Exception as e:
+            self.logger.warning(f'Failed to update EQ band file: {e}')
     
     def redirect_to_media_sink(self):
         if not self.general_settings.redirect_audio_on_connect or not self.is_device_online():
@@ -331,7 +349,9 @@ class CoreEngine:
             return
 
         endpoint = self.get_command_endpoint_address()
-        self.send_command(config.get_update_sequence(value), endpoint)
+        seq = config.get_update_sequence(value)
+        self.logger.info(f'send_command: {setting}={value} → {[hex(b) for b in seq]} on endpoint {endpoint}')
+        self.send_command(seq, endpoint)
 
     def send_command(self, command: list[int], endpoint: int) -> None:
         if self.device_config is None:

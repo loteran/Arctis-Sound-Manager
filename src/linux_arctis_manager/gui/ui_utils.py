@@ -3,13 +3,12 @@ from pathlib import Path
 
 from PySide6 import QtSvg
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QImage, QPainter, QPalette, QPixmap
-from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
 
 ICON_PATH = Path(__file__).parent / 'images' / 'steelseries_logo.svg'
 
-def get_icon_pixmap(icon_path: Path = ICON_PATH, color: QPalette.ColorRole = QPalette.ColorRole.Text) -> QPixmap:
-    brush_color = QApplication.palette().color(color)
+def get_icon_pixmap(icon_path: Path = ICON_PATH, color: str = '#ffffff') -> QPixmap:
+    brush_color = QColor(color)
 
     xml_tree = ET.parse(icon_path.absolute().as_posix())
     xml_root = xml_tree.getroot()

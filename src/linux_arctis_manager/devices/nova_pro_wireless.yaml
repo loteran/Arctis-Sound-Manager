@@ -60,6 +60,10 @@ device:
       - starts_with: 0x0725
         station_volume: 0x02
 
+      - starts_with: 0x0731
+        eq_band_index: 0x02
+        eq_band_value: 0x03
+
       - starts_with: 0x0745
         media_mix: 0x02
         chat_mix: 0x03
@@ -127,16 +131,11 @@ device:
         default: 0x0a # 100%
         update_sequence: [0x06, 0x37, 'value']
       mic_side_tone:
-        type: slider
-        min: 0x00
-        max: 0x03
-        step: 1
-        min_label: off
-        max_label: high
+        type: button_group
         values_mapping:
-          0x00: off
+          0x00: 'off'
           0x01: low
-          0x02: medium  
+          0x02: medium
           0x03: high
         default: 0x00 # off
         update_sequence: [0x06, 0x39, 'value']
@@ -177,6 +176,23 @@ device:
           on_label: range
         default: 0x00 # speed
         update_sequence: [0x06, 0xc3, 'value']
+    audio:
+      noise_cancelling:
+        hidden: true
+        type: slider
+        min: 0x00
+        max: 0x02
+        step: 1
+        default: 0x00 # off
+        update_sequence: [0x06, 0x89, 'value']
+      transparent_level:
+        hidden: true
+        type: slider
+        min: 0x01
+        max: 0x0a
+        step: 1
+        default: 0x05
+        update_sequence: [0x06, 0x85, 'value']
 
   status_parse:
     station_volume:

@@ -32,6 +32,8 @@ IMAGES_DIR = os.path.join(os.path.dirname(__file__), "images")
 HOME_ICON = os.path.join(IMAGES_DIR, "home_icon.svg")
 SETTINGS_ICON = os.path.join(IMAGES_DIR, "settings_icon.svg")
 HEADPHONE_ICON = os.path.join(IMAGES_DIR, "headphone_icon.svg")
+EQUALIZER_ICON = os.path.join(IMAGES_DIR, "equalizer_icon.svg")
+HELP_ICON = os.path.join(IMAGES_DIR, "help_icon.svg")
 GAME_ICON = os.path.join(IMAGES_DIR, "game_icon.svg")
 CHAT_ICON = os.path.join(IMAGES_DIR, "chat_icon.svg")
 MEDIA_ICON = os.path.join(IMAGES_DIR, "media_icon.svg")
@@ -145,6 +147,7 @@ class SidebarButton(QPushButton):
 
         self._label_widget = QLabel(label)
         self._label_widget.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._label_widget.setWordWrap(True)
         self._label_widget.setStyleSheet(
             f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
         )

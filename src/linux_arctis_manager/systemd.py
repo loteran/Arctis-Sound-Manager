@@ -27,7 +27,7 @@ def write_systemd_service(path: Path) -> None:
     daemon_path = shutil.which('lam-daemon') or Path(sys.argv[0]).resolve().parent / 'lam-daemon'
 
     template = f'''[Unit]
-Description=Arctis Manager
+Description=Arctis Sound Manager
 StartLimitInterval=1min
 StartLimitBurst=5
 

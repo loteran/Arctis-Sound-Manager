@@ -14,7 +14,7 @@ async def main_async():
 
     logger = logging.getLogger('Daemon')
     logger.info('-------------------------------')
-    logger.info('- Arctis Manager is starting. -')
+    logger.info('- Arctis Sound Manager is starting. -')
     logger.info(f'-{"v " + project_version():>27}  -')
     logger.info('-------------------------------')
 

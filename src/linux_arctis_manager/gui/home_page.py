@@ -371,12 +371,133 @@ class ToggleSwitch(QWidget):
         self._cb.setChecked(val)
 
 
+# ── Device status bar ─────────────────────────────────────────────────────────
+
+_STATUS_COLORS = {
+    "online":         "#04C5A8",   # teal
+    "cable_charging": "#2791CE",   # blue
+    "offline":        "#8D96AA",   # gray
+    None:             "#8D96AA",
+}
+
+_STATUS_LABELS = {
+    "online":         "Online",
+    "cable_charging": "Charging",
+    "offline":        "Offline",
+    None:             "—",
+}
+
+_PILL_QSS = (
+    "QWidget#pill {{ "
+    "  background-color: {bg}; "
+    "  border-radius: 14px; "
+    "  border: 1px solid {border}; "
+    "}}"
+)
+
+
+class _Pill(QWidget):
+    """Rounded pill: colored dot + text."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("pill")
+        self.setFixedHeight(32)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 0, 14, 0)
+        layout.setSpacing(8)
+
+        self._dot = QLabel("●")
+        self._dot.setStyleSheet("background: transparent; font-size: 9pt; border: none;")
+        layout.addWidget(self._dot)
+
+        self._text = QLabel("—")
+        self._text.setStyleSheet(
+            f"background: transparent; font-size: 11pt; font-weight: bold; color: {TEXT_PRIMARY}; border: none;"
+        )
+        layout.addWidget(self._text)
+        self._update_style("#8D96AA")
+
+    def set_value(self, text: str, color: str):
+        self._text.setText(text)
+        self._dot.setStyleSheet(
+            f"background: transparent; font-size: 9pt; color: {color}; border: none;"
+        )
+        self._update_style(color)
+
+    def _update_style(self, color: str):
+        self.setStyleSheet(
+            f"QWidget#pill {{ background-color: {BG_CARD}; border-radius: 14px; "
+            f"border: 1px solid {color}; }}"
+        )
+
+    def set_visible(self, visible: bool):
+        self.setVisible(visible)
+
+
+class _DeviceStatusBar(QWidget):
+    """Row of status pills: connection state, headset battery, DAC battery."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet("background: transparent;")
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+        layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+        self._conn_pill = _Pill()
+        self._headset_bat_pill = _Pill()
+        self._dac_bat_pill = _Pill()
+
+        layout.addWidget(self._conn_pill)
+        layout.addWidget(self._headset_bat_pill)
+        layout.addWidget(self._dac_bat_pill)
+
+        self.set_no_device()
+
+    def set_no_device(self):
+        self._conn_pill.set_value("No device detected", "#8D96AA")
+        self._headset_bat_pill.set_visible(False)
+        self._dac_bat_pill.set_visible(False)
+
+    def update(self, power_status, headset_bat, dac_bat):
+        color = _STATUS_COLORS.get(power_status, "#8D96AA")
+        label = _STATUS_LABELS.get(power_status, str(power_status) if power_status else "—")
+        self._conn_pill.set_value(label, color)
+
+        if headset_bat is not None:
+            bat_color = _battery_color(headset_bat)
+            self._headset_bat_pill.set_value(f"Headset  {headset_bat}%", bat_color)
+            self._headset_bat_pill.set_visible(True)
+        else:
+            self._headset_bat_pill.set_visible(False)
+
+        if dac_bat is not None:
+            bat_color = _battery_color(dac_bat)
+            self._dac_bat_pill.set_value(f"DAC  {dac_bat}%", bat_color)
+            self._dac_bat_pill.set_visible(True)
+        else:
+            self._dac_bat_pill.set_visible(False)
+
+
+def _battery_color(pct: int) -> str:
+    if pct <= 20:
+        return "#E04040"   # red
+    if pct <= 50:
+        return "#FFA040"   # orange
+    return "#04C5A8"       # teal
+
+
 # ── Home Page ──────────────────────────────────────────────────────────────────
 
 class HomePage(QWidget):
     """
     Home page showing:
-    - App title "Arctis Manager" bold white
+    - App title "Arctis Sound Manager" bold white
     - Subtitle: headset status in orange
     - Toggle row: Enable Game/Chat Volume Sliders
     - Row of audio cards (Game, Chat, Media, …)
@@ -399,7 +520,7 @@ class HomePage(QWidget):
         root.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         # ── App title ─────────────────────────────────────────────────────────
-        app_title = QLabel("Arctis Manager")
+        app_title = QLabel("Arctis Sound Manager")
         app_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         app_title.setStyleSheet(
             f"color: {TEXT_PRIMARY}; font-size: 28pt; font-weight: bold; background: transparent;"
@@ -407,12 +528,9 @@ class HomePage(QWidget):
         root.addWidget(app_title)
         root.addSpacing(8)
 
-        # ── Headset status subtitle ────────────────────────────────────────────
-        self._status_label = QLabel("Chargement du statut…")
-        self._status_label.setStyleSheet(
-            f"color: {ACCENT}; font-size: 12pt; background: transparent;"
-        )
-        root.addWidget(self._status_label)
+        # ── Headset status pills ───────────────────────────────────────────────
+        self._status_bar = _DeviceStatusBar()
+        root.addWidget(self._status_bar)
         root.addSpacing(24)
 
         # ── Enable sliders toggle row ──────────────────────────────────────────
@@ -563,18 +681,20 @@ class HomePage(QWidget):
     @Slot(object)
     def update_status(self, status: dict):
         if not status:
-            self._status_label.setText("Aucun appareil détecté")
+            self._status_bar.set_no_device()
             return
 
-        parts = []
-        for _category, status_obj in status.items():
-            for key, info in status_obj.items():
-                val = I18n.translate("status_values", info["value"])
-                suffix = "%" if info.get("type") == "percentage" else ""
-                label = I18n.translate("status", key)
-                parts.append(f"{label}: {val}{suffix}")
+        headset = status.get("headset", {})
+        gamedac = status.get("gamedac", {})
 
-        self._status_label.setText("  •  ".join(parts) if parts else "Appareil connecté")
+        power = headset.get("headset_power_status", {}).get("value")
+        headset_bat = headset.get("headset_battery_charge", {})
+        dac_bat = gamedac.get("charge_slot_battery_charge", {})
+
+        headset_bat_val = headset_bat.get("value") if headset_bat.get("type") == "percentage" else None
+        dac_bat_val = dac_bat.get("value") if dac_bat.get("type") == "percentage" else None
+
+        self._status_bar.update(power, headset_bat_val, dac_bat_val)
 
     # ── PulseAudio polling ────────────────────────────────────────────────────
 

@@ -5,16 +5,19 @@ import sys
 from argparse import ArgumentParser
 
 from PySide6.QtCore import QTimer
+from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication
 
-from linux_arctis_manager.gui.main_app import QMainApp
 from linux_arctis_manager.gui.systray_app import QSystrayApp
 from linux_arctis_manager.systemd import ensure_systemd_unit
+
+_SERVER_NAME = "ArctisManagerGui"
 
 
 def main():
     parser = ArgumentParser()
-    parser.add_argument('--systray', action='store_true', help='Run systray app, instead of opening the main window')
+    parser.add_argument('--systray', action='store_true',
+                        help='Start systray without opening window (for autostart at login)')
     parser.add_argument('--verbose', '-v', action='count', default=0, help='Increase verbosity (up to -vvvv)')
     parser.add_argument('--no-enforce-systemd', action='store_true', help='Do not enforce systemd unit')
     args = parser.parse_args()
@@ -28,14 +31,48 @@ def main():
     logging.basicConfig(level=log_level, format='%(name)20s %(levelname)8s | %(message)s')
 
     app = QApplication(sys.argv)
-    q_object = None
-    if args.systray:
-        q_object = QSystrayApp(app, log_level)
-        app.setQuitOnLastWindowClosed(False)
-    else:
-        q_object = QMainApp(app, log_level)
-        app.setQuitOnLastWindowClosed(True)
-    
+
+    # ── Single-instance guard ──────────────────────────────────────────────────
+    socket = QLocalSocket()
+    socket.connectToServer(_SERVER_NAME)
+    if socket.waitForConnected(300):
+        # Send the command and wait for "ok" to confirm the instance is alive.
+        msg = b"show" if not args.systray else b"alive"
+        socket.write(msg)
+        socket.flush()
+        if socket.waitForReadyRead(500):
+            socket.disconnectFromServer()
+            return
+        # No response → stale socket file, clean up and continue.
+        socket.disconnectFromServer()
+        QLocalServer.removeServer(_SERVER_NAME)
+
+    # ── First instance: start systray + IPC server ────────────────────────────
+    QLocalServer.removeServer(_SERVER_NAME)
+    server = QLocalServer()
+    server.listen(_SERVER_NAME)
+
+    app.setQuitOnLastWindowClosed(False)
+    q_object = QSystrayApp(app, log_level)
+
+    def _on_new_connection():
+        conn = server.nextPendingConnection()
+        if conn:
+            conn.waitForReadyRead(300)
+            data = bytes(conn.readAll())
+            conn.write(b"ok")
+            conn.flush()
+            conn.waitForBytesWritten(300)
+            conn.disconnectFromServer()
+            if data == b"show":
+                q_object.open_main_window()
+
+    server.newConnection.connect(_on_new_connection)
+
+    # Open the window once the event loop is running.
+    if not args.systray:
+        QTimer.singleShot(0, q_object.open_main_window)
+
     if not args.no_enforce_systemd:
         ensure_systemd_unit(True)
 
@@ -44,19 +81,17 @@ def main():
     timer.start(500)
 
     def stop_app(*_) -> None:
-        QTimer.singleShot(0, q_object.sig_stop)
         q_object.sig_stop()
         if timer.isActive():
             timer.stop()
+        server.close()
+        QLocalServer.removeServer(_SERVER_NAME)
 
     signal.signal(signal.SIGINT, stop_app)
     signal.signal(signal.SIGTERM, stop_app)
 
-    if app.quitOnLastWindowClosed():
-        app.lastWindowClosed.connect(stop_app)
+    asyncio.run(q_object.start())
 
-    if q_object:
-        asyncio.run(q_object.start())
 
 if __name__ == '__main__':
     main()

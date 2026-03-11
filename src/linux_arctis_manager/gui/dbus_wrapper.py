@@ -30,6 +30,8 @@ class DbusWrapper(QObject):
         self._stopping = True
 
     def request_status(self, one_time = False, frequency_seconds: int = 1) -> None:
+        if hasattr(self, '_stopping'):
+            del self._stopping
         request_thread = Thread(target=self.request_status_thread, kwargs={'frequency_seconds': 0 if one_time else frequency_seconds})
         request_thread.start()
 
