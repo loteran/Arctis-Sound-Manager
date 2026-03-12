@@ -35,7 +35,10 @@ VIDEO_APPS = {
 }
 
 TARGET_SINK = "Arctis_Media"
-POLL_INTERVAL = 1.0
+# Wake up on PulseAudio events; fall back to periodic check for native PW streams
+EVENT_TIMEOUT    = 5.0   # seconds to wait for a PA event before forced re-check
+EVENT_DEBOUNCE   = 0.15  # seconds to let rapid event bursts settle
+NATIVE_INTERVAL  = 5.0   # seconds between pw-dump calls (expensive subprocess)
 OVERRIDES_FILE = Path.home() / ".config" / "arctis_manager" / "routing_overrides.json"
 
 # Tracks where the router last placed each app (PA sink index).
@@ -70,17 +73,34 @@ def _sink_name(sinks, index: int) -> str | None:
     return s.name if s else None
 
 
+def _subscribe(pulse: pulsectl.Pulse) -> None:
+    """Subscribe to sink and sink-input events; stop the loop on any event."""
+    pulse.event_mask_set('sink', 'sink_input')
+    pulse.event_callback_set(pulse.event_listen_stop)
+
+
 def main():
     log.info("Starting video router — target sink: %s", TARGET_SINK)
     pulse = pulsectl.Pulse("arctis-video-router")
+    _subscribe(pulse)
+
+    last_native_check = 0.0
 
     while True:
         try:
+            # Block until a PA sink/sink-input event or EVENT_TIMEOUT seconds
+            try:
+                pulse.event_listen(timeout=EVENT_TIMEOUT)
+                # Event occurred — wait briefly for burst to settle
+                time.sleep(EVENT_DEBOUNCE)
+            except pulsectl.PulseLoopStop:
+                # Raised by event_listen_stop callback: re-arm and continue
+                _subscribe(pulse)
+
             sinks = pulse.sink_list()
             video_sink = next((s for s in sinks if TARGET_SINK in s.name), None)
 
             if video_sink is None:
-                time.sleep(POLL_INTERVAL)
                 continue
 
             # Si le default sink n'est pas un sink Arctis, le router s'efface
@@ -109,7 +129,6 @@ def main():
                             pulse.sink_input_move(si.index, default_sink.index)
                 _pa_placed.clear()
                 _native_placed.clear()
-                time.sleep(POLL_INTERVAL)
                 continue
 
             overrides = load_overrides()
@@ -155,6 +174,12 @@ def main():
                         _pa_placed[app] = si.sink
 
             # ── Native PipeWire streams (mpv, haruna…) ────────────────────────
+            # pw-dump is expensive — only run every NATIVE_INTERVAL seconds
+            now = time.monotonic()
+            if now - last_native_check < NATIVE_INTERVAL:
+                time.sleep(0)
+                continue
+            last_native_check = now
             native_streams = get_native_streams()
             for s in native_streams:
                 app = s["app_name"]
@@ -194,11 +219,11 @@ def main():
                 pass
             time.sleep(2)
             pulse = pulsectl.Pulse("arctis-video-router")
+            _subscribe(pulse)
+            last_native_check = 0.0
         except Exception as e:
             log.error("Error: %s", e)
-            time.sleep(POLL_INTERVAL)
-
-        time.sleep(POLL_INTERVAL)
+            time.sleep(1)
 
 
 if __name__ == "__main__":
