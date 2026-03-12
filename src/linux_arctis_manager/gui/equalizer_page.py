@@ -104,12 +104,24 @@ class _ToggleWorker(QThread):
             self.done.emit(False, self._old_mode)
             return
 
+        # Phase 1: restart PipeWire stack and wait for ALSA sinks to be recreated
         result = subprocess.run(
-            ["systemctl", "--user", "restart",
-             "pipewire", "wireplumber", "pipewire-pulse", "filter-chain", "arctis-manager"],
+            ["systemctl", "--user", "restart", "pipewire", "wireplumber", "pipewire-pulse"],
             check=False,
         )
+        if result.returncode != 0:
+            _apply_yaml(self._old_mode)
+            self.done.emit(False, self._old_mode)
+            return
 
+        # Wait for WirePlumber to recreate ALSA sink nodes before starting filter-chain
+        self.msleep(2000)
+
+        # Phase 2: restart filter-chain and arctis-manager
+        result = subprocess.run(
+            ["systemctl", "--user", "restart", "filter-chain", "arctis-manager"],
+            check=False,
+        )
         if result.returncode != 0:
             _apply_yaml(self._old_mode)
             self.done.emit(False, self._old_mode)
