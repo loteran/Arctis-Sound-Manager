@@ -259,3 +259,4 @@ scripts/
 │   └── sink-virtual-surround-7.1-hesuvi.conf  # PipeWire filter-chain config
 └── arctis-video-router.service             # Systemd service for lam-router
 ```
+If you want to buy me a coffee ;) --> https://ko-fi.com/loteran
