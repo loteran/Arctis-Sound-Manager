@@ -11,11 +11,14 @@ Changes are applied to PipeWire filter-chain via sonar_to_pipewire.py.
 from __future__ import annotations
 
 import json
+import math
 import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Qt, QTimer, Signal, Slot
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QHBoxLayout,
@@ -25,7 +28,6 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMenu,
     QPushButton,
-
     QSizePolicy,
     QSlider,
     QVBoxLayout,
@@ -587,6 +589,7 @@ class SonarChannelWidget(QWidget):
         self.setStyleSheet(f"background-color: {BG_MAIN};")
 
         root = QVBoxLayout(self)
+        self._root_layout = root   # exposed for subclasses
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(16)
 
@@ -1173,6 +1176,436 @@ class SmartVolumeWidget(QWidget):
         self._level_val.setText(str(value))
 
 
+# ── Micro processing persistence ──────────────────────────────────────────────
+
+_MICRO_PROC_FILE = _CFG / "sonar_micro_processing.json"
+_MICRO_PROC_DEFAULTS: dict = {
+    "noiseCanceling":   {"enabled": False, "value": 0.9},
+    "bgReduction":      {"enabled": False, "value": 0.0},
+    "impactReduction":  {"enabled": False, "value": 0.0},
+    "noiseGate":        {"enabled": False, "value": -60.0, "auto": False},
+    "compressor":       {"enabled": False, "value": 0.0},
+}
+
+
+def _load_micro_proc() -> dict:
+    if _MICRO_PROC_FILE.exists():
+        try:
+            saved = json.loads(_MICRO_PROC_FILE.read_text())
+            result = {k: (dict(v) if isinstance(v, dict) else v)
+                      for k, v in _MICRO_PROC_DEFAULTS.items()}
+            for k, v in saved.items():
+                if k in result and isinstance(result[k], dict) and isinstance(v, dict):
+                    result[k] = {**result[k], **v}
+                else:
+                    result[k] = v
+            return result
+        except Exception:
+            pass
+    return {k: (dict(v) if isinstance(v, dict) else v)
+            for k, v in _MICRO_PROC_DEFAULTS.items()}
+
+
+def _save_micro_proc(state: dict) -> None:
+    _CFG.mkdir(parents=True, exist_ok=True)
+    _MICRO_PROC_FILE.write_text(json.dumps(state, indent=2))
+
+
+# ── Waveform animation ────────────────────────────────────────────────────────
+
+class _WaveformWidget(QWidget):
+    """Animated two-phase waveform: noisy input (red) + processed output (grey)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(54)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._phase = 0.0
+        self._timer = QTimer(self)
+        self._timer.setInterval(50)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._timer.start()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self._timer.stop()
+
+    def _tick(self):
+        self._phase = (self._phase + 0.12) % (2 * math.pi * 50)
+        self.update()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.height()
+        mid = h / 2.0
+        p.fillRect(self.rect(), QColor(BG_CARD))
+        n = 260
+
+        # Noisy input (red) — left 55 %
+        path = QPainterPath()
+        for i in range(n):
+            t = i / (n - 1)
+            x = t * w * 0.55
+            amp = 14.0 * (0.6 + 0.4 * math.sin(t * math.pi))
+            y = (mid + amp * (math.sin(self._phase + i * 0.19)
+                               + 0.4 * math.sin(self._phase * 2.1 + i * 0.33)
+                               + 0.15 * math.sin(self._phase * 3.7 + i * 0.57)))
+            if i == 0:
+                path.moveTo(x, y)
+            else:
+                path.lineTo(x, y)
+        p.setPen(QPen(QColor("#C04040"), 1.5))
+        p.drawPath(path)
+
+        # Processed output (grey) — right 55 %
+        path2 = QPainterPath()
+        for i in range(n):
+            t = i / (n - 1)
+            x = w * 0.45 + t * w * 0.55
+            amp = 5.0 * math.sin(self._phase * 0.6 + i * 0.09)
+            y = mid + amp
+            if i == 0:
+                path2.moveTo(x, y)
+            else:
+                path2.lineTo(x, y)
+        p.setPen(QPen(QColor("#5A7080"), 1.5))
+        p.drawPath(path2)
+        p.end()
+
+
+# ── Shared card helpers ───────────────────────────────────────────────────────
+
+def _micro_card_style() -> str:
+    return f"""
+        QWidget#microCard {{
+            background-color: {BG_CARD};
+            border: 1px solid {BORDER};
+            border-radius: 12px;
+        }}
+        QLabel {{ background: transparent; border: none; }}
+        QSlider::groove:horizontal {{
+            height: 4px; background: {BG_BUTTON}; border-radius: 2px;
+        }}
+        QSlider::handle:horizontal {{
+            background: {ACCENT}; width: 14px; height: 14px;
+            margin: -5px 0; border-radius: 7px;
+        }}
+        QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 2px; }}
+        QCheckBox {{ color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent; }}
+        QCheckBox::indicator {{
+            width: 14px; height: 14px;
+            border: 1px solid {BORDER}; border-radius: 3px; background: {BG_BUTTON};
+        }}
+        QCheckBox::indicator:checked {{ background: {ACCENT}; border-color: {ACCENT}; }}
+    """
+
+
+def _make_header_row(title: str, toggle) -> QHBoxLayout:
+    row = QHBoxLayout()
+    row.setSpacing(10)
+    row.addWidget(toggle)
+    lbl = QLabel(title)
+    lbl.setStyleSheet(f"font-size: 10pt; font-weight: bold; color: {TEXT_PRIMARY};")
+    row.addWidget(lbl)
+    row.addStretch(1)
+    return row
+
+
+# ── ClearCast AI Noise Cancellation card ──────────────────────────────────────
+
+class _NoiseCancelingCard(QWidget):
+    state_changed = Signal()
+
+    def __init__(self, state: dict, parent=None):
+        super().__init__(parent)
+        self._state = state
+        self.setObjectName("microCard")
+        self.setStyleSheet(_micro_card_style())
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(20, 14, 20, 14)
+        root.setSpacing(8)
+
+        self._toggle = QToggle(is_checkbox=True)
+        self._toggle.setChecked(state["noiseCanceling"]["enabled"])
+        self._toggle.checkStateChanged.connect(self._on_toggle)
+        root.addLayout(_make_header_row("CLEARCAST AI NOISE CANCELLATION", self._toggle))
+
+        self._waveform = _WaveformWidget(self)
+        root.addWidget(self._waveform)
+
+        slider_row = QHBoxLayout()
+        slider_row.setSpacing(10)
+        lbl_min = QLabel("Min")
+        lbl_min.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt;")
+        slider_row.addWidget(lbl_min)
+        self._slider = _NoWheelSlider(Qt.Orientation.Horizontal)
+        self._slider.setMinimum(0)
+        self._slider.setMaximum(100)
+        self._slider.setValue(int(state["noiseCanceling"]["value"] * 100))
+        self._slider.valueChanged.connect(self._on_slider)
+        slider_row.addWidget(self._slider, 1)
+        lbl_max = QLabel("Max")
+        lbl_max.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt;")
+        slider_row.addWidget(lbl_max)
+        root.addLayout(slider_row)
+
+        self._set_enabled(state["noiseCanceling"]["enabled"])
+
+    def _set_enabled(self, enabled: bool):
+        self._slider.setEnabled(enabled)
+        self._waveform.setVisible(enabled)
+
+    def _on_toggle(self, checked):
+        self._state["noiseCanceling"]["enabled"] = bool(checked)
+        self._set_enabled(bool(checked))
+        self.state_changed.emit()
+
+    def _on_slider(self, value: int):
+        self._state["noiseCanceling"]["value"] = value / 100.0
+        self.state_changed.emit()
+
+
+# ── Noise Reduction card ──────────────────────────────────────────────────────
+
+class _NoiseReductionCard(QWidget):
+    state_changed = Signal()
+
+    def __init__(self, state: dict, parent=None):
+        super().__init__(parent)
+        self._state = state
+        self.setObjectName("microCard")
+        self.setStyleSheet(_micro_card_style())
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 14, 16, 14)
+        root.setSpacing(10)
+
+        title_row = QHBoxLayout()
+        title = QLabel("RÉDUCTION DU BRUIT")
+        title.setStyleSheet(f"font-size: 10pt; font-weight: bold; color: {TEXT_PRIMARY};")
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        root.addLayout(title_row)
+
+        root.addLayout(self._slider_row("Background", "bgReduction"))
+        root.addLayout(self._slider_row("Impact",     "impactReduction"))
+        root.addStretch(1)
+
+    def _slider_row(self, label: str, key: str) -> QHBoxLayout:
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        toggle = QToggle(is_checkbox=True)
+        toggle.setChecked(self._state[key]["enabled"])
+        toggle.checkStateChanged.connect(lambda c, k=key: self._on_toggle(k, bool(c)))
+        row.addWidget(toggle)
+        lbl = QLabel(label)
+        lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt; min-width: 68px;")
+        row.addWidget(lbl)
+        slider = _NoWheelSlider(Qt.Orientation.Horizontal)
+        slider.setMinimum(0)
+        slider.setMaximum(100)
+        slider.setValue(int(self._state[key]["value"] * 100))
+        slider.valueChanged.connect(lambda v, k=key: self._on_slider(k, v))
+        row.addWidget(slider, 1)
+        val_lbl = QLabel(f"{self._state[key]['value']:.2f}")
+        val_lbl.setFixedWidth(34)
+        val_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        val_lbl.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 9pt;")
+        row.addWidget(val_lbl)
+        setattr(self, f"_val_{key}", val_lbl)
+        return row
+
+    def _on_toggle(self, key: str, enabled: bool):
+        self._state[key]["enabled"] = enabled
+        self.state_changed.emit()
+
+    def _on_slider(self, key: str, value: int):
+        v = value / 100.0
+        self._state[key]["value"] = v
+        lbl = getattr(self, f"_val_{key}", None)
+        if lbl:
+            lbl.setText(f"{v:.2f}")
+        self.state_changed.emit()
+
+
+# ── Noise Gate card ───────────────────────────────────────────────────────────
+
+class _NoiseGateCard(QWidget):
+    state_changed = Signal()
+
+    def __init__(self, state: dict, parent=None):
+        super().__init__(parent)
+        self._state = state
+        self.setObjectName("microCard")
+        self.setStyleSheet(_micro_card_style())
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 14, 16, 14)
+        root.setSpacing(10)
+
+        self._toggle = QToggle(is_checkbox=True)
+        self._toggle.setChecked(state["noiseGate"]["enabled"])
+        self._toggle.checkStateChanged.connect(self._on_toggle)
+        root.addLayout(_make_header_row("NOISE GATE", self._toggle))
+
+        # Threshold slider
+        seuil_row = QHBoxLayout()
+        seuil_row.setSpacing(8)
+        seuil_lbl = QLabel("Seuil")
+        seuil_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt; min-width: 36px;")
+        seuil_row.addWidget(seuil_lbl)
+        self._seuil = _NoWheelSlider(Qt.Orientation.Horizontal)
+        self._seuil.setMinimum(-600)    # -60.0 dB × 10
+        self._seuil.setMaximum(-100)    # -10.0 dB × 10
+        self._seuil.setValue(int(state["noiseGate"]["value"] * 10))
+        self._seuil.valueChanged.connect(self._on_seuil)
+        seuil_row.addWidget(self._seuil, 1)
+        self._seuil_val = QLabel(f'{state["noiseGate"]["value"]:.1f} dB')
+        self._seuil_val.setFixedWidth(60)
+        self._seuil_val.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._seuil_val.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 9pt;")
+        seuil_row.addWidget(self._seuil_val)
+        root.addLayout(seuil_row)
+
+        # Auto checkbox
+        self._auto_cb = QCheckBox("Calcule automatiquement le seuil de l'effet noise gate")
+        self._auto_cb.setChecked(state["noiseGate"]["auto"])
+        self._auto_cb.toggled.connect(self._on_auto)
+        root.addWidget(self._auto_cb)
+
+        root.addStretch(1)
+        self._set_enabled(state["noiseGate"]["enabled"])
+
+    def _set_enabled(self, enabled: bool):
+        self._seuil.setEnabled(enabled and not self._state["noiseGate"]["auto"])
+        self._auto_cb.setEnabled(enabled)
+
+    def _on_toggle(self, checked):
+        self._state["noiseGate"]["enabled"] = bool(checked)
+        self._set_enabled(bool(checked))
+        self.state_changed.emit()
+
+    def _on_seuil(self, value: int):
+        db = value / 10.0
+        self._state["noiseGate"]["value"] = db
+        self._seuil_val.setText(f"{db:.1f} dB")
+        self.state_changed.emit()
+
+    def _on_auto(self, checked: bool):
+        self._state["noiseGate"]["auto"] = checked
+        self._seuil.setEnabled(self._state["noiseGate"]["enabled"] and not checked)
+        self.state_changed.emit()
+
+
+# ── Compressor / Volume Stabilizer card ───────────────────────────────────────
+
+class _CompressorCard(QWidget):
+    state_changed = Signal()
+
+    def __init__(self, state: dict, parent=None):
+        super().__init__(parent)
+        self._state = state
+        self.setObjectName("microCard")
+        self.setStyleSheet(_micro_card_style())
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(20, 14, 20, 14)
+        root.setSpacing(10)
+
+        self._toggle = QToggle(is_checkbox=True)
+        self._toggle.setChecked(state["compressor"]["enabled"])
+        self._toggle.checkStateChanged.connect(self._on_toggle)
+        root.addLayout(_make_header_row("COMPRESSEUR", self._toggle))
+
+        self._detail = QWidget()
+        self._detail.setStyleSheet("background: transparent;")
+        dl = QHBoxLayout(self._detail)
+        dl.setContentsMargins(0, 0, 0, 0)
+        dl.setSpacing(10)
+        niv_lbl = QLabel("Niveau")
+        niv_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt; min-width: 52px;")
+        dl.addWidget(niv_lbl)
+        self._slider = _NoWheelSlider(Qt.Orientation.Horizontal)
+        self._slider.setMinimum(0)
+        self._slider.setMaximum(100)
+        self._slider.setValue(int(state["compressor"]["value"] * 100))
+        self._slider.valueChanged.connect(self._on_slider)
+        dl.addWidget(self._slider, 1)
+        self._val_lbl = QLabel(f'{state["compressor"]["value"]:.2f}')
+        self._val_lbl.setFixedWidth(36)
+        self._val_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._val_lbl.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 9pt;")
+        dl.addWidget(self._val_lbl)
+        root.addWidget(self._detail)
+
+        self._set_enabled(state["compressor"]["enabled"])
+
+    def _set_enabled(self, enabled: bool):
+        self._detail.setVisible(enabled)
+
+    def _on_toggle(self, checked):
+        self._state["compressor"]["enabled"] = bool(checked)
+        self._set_enabled(bool(checked))
+        self.state_changed.emit()
+
+    def _on_slider(self, value: int):
+        v = value / 100.0
+        self._state["compressor"]["value"] = v
+        self._val_lbl.setText(f"{v:.2f}")
+        self.state_changed.emit()
+
+
+# ── Sonar Micro widget ────────────────────────────────────────────────────────
+
+class SonarMicroWidget(SonarChannelWidget):
+    """Micro tab: EQ preset + ClearCast + Noise Reduction + Noise Gate + Compressor."""
+
+    def __init__(self, parent=None):
+        super().__init__("micro", parent)
+        self._micro_state = _load_micro_proc()
+        root = self._root_layout
+
+        # Remove the trailing stretch from the parent layout
+        root.takeAt(root.count() - 1)
+
+        # ── ClearCast AI Noise Cancellation ──────────────────────────────────
+        self._nc_card = _NoiseCancelingCard(self._micro_state)
+        self._nc_card.state_changed.connect(self._on_micro_changed)
+        root.addWidget(self._nc_card)
+
+        # ── Noise Reduction (left 60 %) + Noise Gate (right 40 %) ────────────
+        side = QWidget()
+        side.setStyleSheet("background: transparent;")
+        side_hl = QHBoxLayout(side)
+        side_hl.setContentsMargins(0, 0, 0, 0)
+        side_hl.setSpacing(8)
+        self._nr_card = _NoiseReductionCard(self._micro_state)
+        self._ng_card = _NoiseGateCard(self._micro_state)
+        self._nr_card.state_changed.connect(self._on_micro_changed)
+        self._ng_card.state_changed.connect(self._on_micro_changed)
+        side_hl.addWidget(self._nr_card, 6)
+        side_hl.addWidget(self._ng_card, 4)
+        root.addWidget(side)
+
+        # ── Compressor / Volume Stabilizer ───────────────────────────────────
+        self._comp_card = _CompressorCard(self._micro_state)
+        self._comp_card.state_changed.connect(self._on_micro_changed)
+        root.addWidget(self._comp_card)
+
+        root.addStretch(1)
+
+    def _on_micro_changed(self):
+        _save_micro_proc(self._micro_state)
+        # Re-generate filter-chain conf (EQ part — DSP for noise/gate pending plugins)
+        self._schedule_apply()
+
+
 # ── Sonar page (top-level) ────────────────────────────────────────────────────
 
 class SonarPage(QWidget):
@@ -1226,7 +1659,7 @@ class SonarPage(QWidget):
 
         self._game_widget  = SonarChannelWidget("game")
         self._chat_widget  = SonarChannelWidget("chat")
-        self._micro_widget = SonarChannelWidget("micro")
+        self._micro_widget = SonarMicroWidget()
 
         self._tabs.addTab(self._game_widget,  "Game")
         self._tabs.addTab(self._chat_widget,  "Chat")
