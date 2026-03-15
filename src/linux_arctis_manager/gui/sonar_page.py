@@ -1571,6 +1571,13 @@ class SonarMicroWidget(SonarChannelWidget):
         self._micro_state = _load_micro_proc()
         root = self._root_layout
 
+        # Réduire l'écart entre l'EQ et les cartes de traitement
+        root.setSpacing(8)
+        self._eq_widget.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
+
         # Remove the trailing stretch from the parent layout
         root.takeAt(root.count() - 1)
 
