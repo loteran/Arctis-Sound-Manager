@@ -391,6 +391,7 @@ class EqCurveWidget(QWidget):
 
     def wheelEvent(self, event: QWheelEvent):
         if self._selected is None or self._selected >= len(self._bands):
+            event.ignore()
             return
         b = self._bands[self._selected]
         delta = event.angleDelta().y() / 120
@@ -398,6 +399,7 @@ class EqCurveWidget(QWidget):
         self._update_inspector(self._selected)
         self.bands_changed.emit(self.get_bands())
         self.update()
+        event.accept()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

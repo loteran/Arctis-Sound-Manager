@@ -33,6 +33,12 @@ from PySide6.QtWidgets import (
 )
 
 from linux_arctis_manager.gui.eq_curve_widget import EqBand, EqCurveWidget
+
+
+class _NoWheelSlider(QSlider):
+    """QSlider that ignores wheel events so the parent QScrollArea can scroll."""
+    def wheelEvent(self, event):
+        event.ignore()
 from linux_arctis_manager.gui.qt_widgets.q_toggle import QToggle
 from linux_arctis_manager.gui.theme import (
     ACCENT,
@@ -510,7 +516,7 @@ class _MacroSliders(QWidget):
             title.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10pt;")
             col.addWidget(title)
 
-            slider = QSlider(Qt.Orientation.Horizontal)
+            slider = _NoWheelSlider(Qt.Orientation.Horizontal)
             slider.setMinimum(-120)
             slider.setMaximum(120)
             slider.setValue(int(values.get(key, 0.0) * 10))
@@ -879,7 +885,7 @@ class SpatialAudioWidget(QWidget):
         lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10pt; min-width: 180px;")
         row.addWidget(lbl)
 
-        slider = QSlider(Qt.Orientation.Horizontal)
+        slider = _NoWheelSlider(Qt.Orientation.Horizontal)
         slider.setMinimum(0)
         slider.setMaximum(100)
         slider.setValue(self._state.get(key, 50))
@@ -1001,7 +1007,7 @@ class BoostVolumeWidget(QWidget):
         lbl_min = QLabel("0 dB")
         lbl_min.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt;")
         dl.addWidget(lbl_min)
-        self._slider = QSlider(Qt.Orientation.Horizontal)
+        self._slider = _NoWheelSlider(Qt.Orientation.Horizontal)
         self._slider.setMinimum(0)
         self._slider.setMaximum(120)   # 0 → +12 dB  (steps of 0.1 dB)
         self._slider.setValue(int(self._state["db"] * 10))
@@ -1119,7 +1125,7 @@ class SmartVolumeWidget(QWidget):
         level_lbl = QLabel("Niveau")
         level_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10pt; min-width: 60px;")
         level_row.addWidget(level_lbl)
-        self._level_slider = QSlider(Qt.Orientation.Horizontal)
+        self._level_slider = _NoWheelSlider(Qt.Orientation.Horizontal)
         self._level_slider.setMinimum(0)
         self._level_slider.setMaximum(100)
         self._level_slider.setValue(int(self._state.get("level", 0.0)))
