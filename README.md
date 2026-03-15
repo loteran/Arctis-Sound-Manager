@@ -144,6 +144,8 @@ The installer will:
 - Create desktop entries
 - Enable the `arctis-manager` systemd user service (device daemon)
 - Enable the `arctis-video-router` systemd user service (media auto-routing)
+- Copy device configs to `~/.config/arctis_manager/devices/` (required for Sonar EQ mode switch)
+- Enable the `filter-chain` systemd user service (required for Sonar EQ)
 
 After installation, launch the GUI from your application menu or run:
 ```bash
@@ -221,9 +223,11 @@ rm -rf ~/.config/arctis_manager
 # Uninstall the package
 pipx uninstall linux-arctis-manager
 
-# Optional: remove virtual surround
-rm ~/.config/pipewire/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf
+# Disable filter-chain service (Sonar EQ)
 systemctl --user disable --now filter-chain.service
+
+# Optional: remove virtual surround config
+rm ~/.config/pipewire/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf
 ```
 
 ---

@@ -50,6 +50,22 @@ cp "$REPO_DIR/scripts/arctis-video-router.service" "$SYSTEMD_USER_DIR/"
 systemctl --user daemon-reload
 systemctl --user enable --now arctis-video-router.service
 
+# 7. Copy device config to user config dir (needed for Sonar EQ mode switch)
+echo "==> Copying device config to user config dir..."
+ARCTIS_CONFIG_DIR="$HOME/.config/arctis_manager/devices"
+mkdir -p "$ARCTIS_CONFIG_DIR"
+DEVICES_SRC="$REPO_DIR/src/linux_arctis_manager/devices"
+if [ -d "$DEVICES_SRC" ]; then
+    cp "$DEVICES_SRC"/*.yaml "$ARCTIS_CONFIG_DIR/"
+    echo "    [ok] Device configs copied."
+else
+    echo "    [!] Device config source not found at $DEVICES_SRC — skipping."
+fi
+
+# 8. Enable filter-chain service (required for Sonar EQ)
+echo "==> Enabling filter-chain systemd service (required for Sonar EQ)..."
+systemctl --user enable --now filter-chain.service
+
 echo ""
 echo "==> Installation complete!"
 echo "    Run 'lam-gui' to open the interface, or find it in your application menu."
