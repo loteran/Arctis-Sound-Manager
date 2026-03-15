@@ -65,7 +65,11 @@ def load_overrides() -> dict:
 
 
 def save_overrides(overrides: dict) -> None:
-    OVERRIDES_FILE.write_text(json.dumps(overrides, indent=2))
+    # Atomic write: write to tmp then rename to avoid corruption if both
+    # gui and video_router write simultaneously
+    tmp = OVERRIDES_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(overrides, indent=2))
+    tmp.replace(OVERRIDES_FILE)
 
 
 def _sink_name(sinks, index: int) -> str | None:

@@ -33,7 +33,9 @@ def _load_overrides() -> dict:
 
 def _save_overrides(overrides: dict) -> None:
     OVERRIDES_FILE.parent.mkdir(parents=True, exist_ok=True)
-    OVERRIDES_FILE.write_text(json.dumps(overrides))
+    tmp = OVERRIDES_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(overrides))
+    tmp.replace(OVERRIDES_FILE)
 
 from linux_arctis_manager.gui.components import (
     CHAT_ICON,
