@@ -76,7 +76,7 @@ def _sink_name(sinks, index: int) -> str | None:
 def _subscribe(pulse: pulsectl.Pulse) -> None:
     """Subscribe to sink and sink-input events; stop the loop on any event."""
     pulse.event_mask_set('sink', 'sink_input')
-    pulse.event_callback_set(pulse.event_listen_stop)
+    pulse.event_callback_set(lambda _e: pulse.event_listen_stop())
 
 
 def main():
