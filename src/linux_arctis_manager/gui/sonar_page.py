@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMenu,
     QPushButton,
-    QScrollArea,
+
     QSizePolicy,
     QSlider,
     QVBoxLayout,
@@ -580,15 +580,8 @@ class SonarChannelWidget(QWidget):
 
         self.setStyleSheet(f"background-color: {BG_MAIN};")
 
-        scroll = QScrollArea(self)
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(scroll.Shape.NoFrame)
-        scroll.setStyleSheet("background: transparent;")
-
-        content = QWidget()
-        content.setStyleSheet(f"background-color: {BG_MAIN};")
-        root = QVBoxLayout(content)
-        root.setContentsMargins(0, 0, 16, 0)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(16)
 
         # ── Preset bar card ───────────────────────────────────────────────────
@@ -630,11 +623,6 @@ class SonarChannelWidget(QWidget):
 
         root.addWidget(eq_card)
         root.addStretch(1)
-
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        scroll.setWidget(content)
-        outer.addWidget(scroll)
 
         # Load initial preset
         self._load_initial()

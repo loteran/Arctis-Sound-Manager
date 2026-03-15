@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSlider,
     QVBoxLayout,
@@ -537,12 +538,15 @@ class EqualizerPage(QWidget):
         self._custom_stretch = root.count()   # index of stretch spacer (custom mode)
         root.addStretch(1)
 
-        # ── Sonar page (shown instead of _eq_card when mode == "sonar") ──────
+        # ── Sonar page — wrapped in a single QScrollArea for the whole page ────
         self._sonar_page = SonarPage(embedded=True)
-        self._sonar_page.setVisible(False)
-        root.addWidget(self._sonar_page, 1)
-        # No addStretch here: _sonar_page (stretch=1) fills remaining space in sonar mode;
-        # in custom mode it's hidden so extra space naturally falls to the bottom.
+        self._sonar_scroll = QScrollArea()
+        self._sonar_scroll.setWidget(self._sonar_page)
+        self._sonar_scroll.setWidgetResizable(True)
+        self._sonar_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        self._sonar_scroll.setStyleSheet("background: transparent;")
+        self._sonar_scroll.setVisible(False)
+        root.addWidget(self._sonar_scroll, 1)
 
         self._sig_eq_bands.connect(self._on_eq_bands_received)
         self._refresh()
@@ -612,8 +616,7 @@ class EqualizerPage(QWidget):
             self._desc_label.setText("SteelSeries Sonar audio processing is active. Click to switch back to your Custom EQ.")
             self._button.setText("Switch to Custom EQ")
             self._eq_card.setVisible(False)
-            self._sonar_page.setVisible(True)
-            # Remove stretch so sonar_page fills all remaining space
+            self._sonar_scroll.setVisible(True)
             if stretch_item:
                 root.setStretch(self._custom_stretch, 0)
         else:
@@ -623,8 +626,7 @@ class EqualizerPage(QWidget):
             self._desc_label.setText("Your Custom EQ is active. Click to enable Sonar processing.")
             self._button.setText("Switch to Sonar")
             self._eq_card.setVisible(True)
-            self._sonar_page.setVisible(False)
-            # Restore stretch so extra space goes below eq_card
+            self._sonar_scroll.setVisible(False)
             if stretch_item:
                 root.setStretch(self._custom_stretch, 1)
 
