@@ -183,6 +183,8 @@ class _ApplyWorker(QThread):
         self._aigus   = aigus
 
     def run(self):
+        import logging
+        log = logging.getLogger(__name__)
         try:
             boost_state = _load_boost()
             boost_db = boost_state["db"] if boost_state["enabled"] else 0.0
@@ -194,7 +196,8 @@ class _ApplyWorker(QThread):
                 generate_sonar_eq_conf(self._channel, self._bands,
                                        self._basses, self._voix, self._aigus,
                                        spatial_audio=spatial, boost_db=boost_db)
-            subprocess.run(["systemctl", "--user", "restart", "filter-chain"], check=False)
+            subprocess.run(["systemctl", "--user", "restart", "filter-chain"],
+                           check=False, timeout=15)
             self.msleep(900)
             # Re-set default sink so WirePlumber routes correctly
             if self._channel != "micro":
@@ -202,10 +205,11 @@ class _ApplyWorker(QThread):
                 subprocess.run(
                     ["pw-metadata", "0", "default.configured.audio.sink",
                      f'{{"name":"{sink}"}}'],
-                    check=False,
+                    check=False, timeout=5,
                 )
             self.done.emit(True)
-        except Exception:
+        except Exception as e:
+            log.error("_ApplyWorker error (channel=%s): %s", self._channel, e)
             self.done.emit(False)
 
 
@@ -568,6 +572,7 @@ class SonarChannelWidget(QWidget):
         super().__init__(parent)
         self._channel = channel
         self._worker: _ApplyWorker | None = None
+        self._pending_apply = False
         self._apply_timer = QTimer(self)
         self._apply_timer.setSingleShot(True)
         self._apply_timer.setInterval(_APPLY_DELAY)
@@ -694,9 +699,10 @@ class SonarChannelWidget(QWidget):
 
     def _do_apply(self):
         if self._worker and self._worker.isRunning():
-            # Re-schedule if a previous apply is still running
-            self._apply_timer.start()
+            # Worker still running — remember to apply once it finishes
+            self._pending_apply = True
             return
+        self._pending_apply = False
         basses, voix, aigus = self._macros.get_values()
         self._worker = _ApplyWorker(
             self._channel, list(self._cur_bands), basses, voix, aigus
@@ -710,6 +716,9 @@ class SonarChannelWidget(QWidget):
         self._status_lbl.setText("✓ applied" if ok else "⚠ error")
         QTimer.singleShot(2000, lambda: self._status_lbl.setText(""))
         self._worker = None
+        if self._pending_apply:
+            self._pending_apply = False
+            self._do_apply()
 
 
 # ── Boost de Volume / Smart Volume — persistence ─────────────────────────────

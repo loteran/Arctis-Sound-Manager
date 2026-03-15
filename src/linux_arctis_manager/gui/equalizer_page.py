@@ -108,7 +108,7 @@ class _ToggleWorker(QThread):
         # Phase 1: restart PipeWire stack and wait for ALSA sinks to be recreated
         result = subprocess.run(
             ["systemctl", "--user", "restart", "pipewire", "wireplumber", "pipewire-pulse"],
-            check=False,
+            check=False, timeout=20,
         )
         if result.returncode != 0:
             _apply_yaml(self._old_mode)
@@ -121,7 +121,7 @@ class _ToggleWorker(QThread):
         # Phase 2: restart filter-chain and arctis-manager
         result = subprocess.run(
             ["systemctl", "--user", "restart", "filter-chain", "arctis-manager"],
-            check=False,
+            check=False, timeout=20,
         )
         if result.returncode != 0:
             _apply_yaml(self._old_mode)
@@ -136,7 +136,7 @@ class _ToggleWorker(QThread):
         subprocess.run(
             ["notify-send", "-a", "Arctis EQ", "Arctis EQ",
              f'{"Sonar" if self._new_mode == "sonar" else "Custom EQ"} mode enabled'],
-            check=False,
+            check=False, timeout=5,
         )
         self.done.emit(True, self._new_mode)
 
