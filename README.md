@@ -1,6 +1,6 @@
 # Arctis Sound Manager
 
-A Linux GUI for SteelSeries Arctis headsets — manages device settings and provides a 4-channel audio mixer (Game / Chat / Media / HDMI) with automatic media routing.
+A Linux GUI for SteelSeries Arctis headsets — manages device settings and provides a 4-channel audio mixer (Game / Chat / Media / HDMI) with automatic media routing, and a full **Sonar EQ** system powered by PipeWire filter-chain.
 
 > Based on [Linux Arctis Manager](https://github.com/elegos/Linux-Arctis-Manager) by elegos.
 
@@ -15,7 +15,14 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 - **Persistent routing** — manual moves are remembered across app restarts
 - **Native PipeWire support** — detects apps that bypass PulseAudio (mpv, Haruna…)
 - **Volume sliders** per channel with live percentage display
-- **10-band equalizer** — per-band gain (31 Hz to 16 kHz), save/load presets, synced with device hardware
+- **Sonar EQ** — full SteelSeries Sonar-style parametric EQ system (v2.0):
+  - Interactive EQ curve with up to 10 bands per channel (Game / Chat / Micro)
+  - 297 Game presets, 8 Chat, 14 Mic imported from Sonar — searchable, with 9 favorite slots
+  - Macro sliders: Basses / Voix / Aigus (±12 dB)
+  - **Spatial Audio** toggle — routes Game channel through HeSuVi virtual 7.1 surround
+  - **Boost de Volume** — up to +12 dB gain node at the end of the filter chain
+  - All changes applied live via PipeWire filter-chain (biquad nodes)
+- **10-band equalizer** — Custom mode: per-band gain (31 Hz to 16 kHz), save/load presets
 - **ANC / Transparent mode indicator** — reflects the physical button state (Off / Transparent / ANC) in real time
 - **Device status page** — battery, mic mute, sidetone, and more depending on your device
 - **Help page** — built-in user manual in English, French and Spanish
@@ -26,7 +33,10 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 ### Home — 4-channel audio mixer
 ![Home](docs/images/screenshot_home.png)
 
-### Equalizer — 10-band EQ with presets
+### Sonar — Parametric EQ (Game / Chat / Micro) with presets, Spatial Audio and Boost
+![Sonar](docs/images/screenshot_sonar.png)
+
+### Equalizer — Custom mode 10-band EQ with presets
 ![Equalizer](docs/images/screenshot_equalizer.png)
 
 ### Headset / DAC — Device info and live status
@@ -44,16 +54,16 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 
 | Device | Mixer | Advanced features | Product ID(s) |
 |---|---|---|---|
-| Arctis 7 / Gen 2 | ❌ | ❌ | 1260, 12ad |
-| Arctis 7+ / PS5 / Xbox / Destiny | ❌ | ❌ | 220e, 2212, 2216, 2236 |
-| Arctis Nova 3 | ❌ | ❌ | 12ec |
-| Arctis Nova 5 | ❌ | ❌ | 2232, 2253 |
-| Arctis Nova 7P | ❌ | ❌ | 220a |
-| Arctis Nova 7X | ❌ | ❌ | 12d7 |
-| Arctis Nova 9 | ❌ | ❌ | 12c2 |
+| Arctis 7 / Gen 2 | ❓ | ❓ | 1260, 12ad |
+| Arctis 7+ / PS5 / Xbox / Destiny | ❓ | ❓ | 220e, 2212, 2216, 2236 |
+| Arctis Nova 3 | ❓ | ❓ | 12ec |
+| Arctis Nova 5 | ❓ | ❓ | 2232, 2253 |
+| Arctis Nova 7P | ❓ | ❓ | 220a |
+| Arctis Nova 7X | ❓ | ❓ | 12d7 |
+| Arctis Nova 9 | ❓ | ❓ | 12c2 |
 | **Arctis Nova Pro Wireless / X** | ✅ | ✅ | 12e0, 12e5 |
-| Arctis Pro GameDAC | ❌ | ❌ | 1280 |
-| Arctis Pro Wireless | ❌ | ❌ | 1290 |
+| Arctis Pro GameDAC | ❓ | ❓ | 1280 |
+| Arctis Pro Wireless | ❓ | ❓ | 1290 |
 
 ---
 
@@ -243,11 +253,14 @@ src/linux_arctis_manager/
 ├── gui/
 │   ├── home_page.py       # Audio mixer (Game/Chat/Media/HDMI cards)
 │   ├── headset_page.py    # Device info and live status
-│   ├── equalizer_page.py  # 10-band EQ with presets
+│   ├── equalizer_page.py  # EQ mode toggle (Custom / Sonar) + 10-band sliders
+│   ├── sonar_page.py      # Sonar EQ UI (Game/Chat/Micro tabs, presets, Spatial Audio, Boost)
+│   ├── eq_curve_widget.py # Interactive parametric EQ curve widget (biquad RBJ)
 │   ├── anc_widget.py      # ANC / Transparent mode indicator
 │   ├── help_page.py       # Built-in user manual (EN/FR/ES)
 │   ├── components.py      # Reusable widgets
 │   └── theme.py           # Color constants
+├── sonar_to_pipewire.py   # PipeWire filter-chain config generator (Sonar EQ)
 ├── pw_utils.py            # Native PipeWire stream detection
 ├── pactl.py               # PulseAudio virtual sink management
 └── devices/               # Per-device configuration files

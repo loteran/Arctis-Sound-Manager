@@ -115,7 +115,8 @@ def main():
                 # vers le nouveau default sink choisi dans KDE.
                 default_sink = next((s for s in sinks if s.name == default_sink_name), None)
                 if default_sink:
-                    arctis_virtual = {"Arctis_Game", "Arctis_Chat", "Arctis_Media", "Arctis_Video"}
+                    arctis_virtual = {"Arctis_Game", "Arctis_Chat", "Arctis_Media", "Arctis_Video",
+                                      "effect_input.sonar"}
                     idx_to_name = {s.index: s.name for s in sinks}
                     for si in pulse.sink_input_list():
                         app = si.proplist.get("application.name", "")

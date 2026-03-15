@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from linux_arctis_manager.gui.components import AccentButton
+from linux_arctis_manager.gui.sonar_page import SonarPage
 from linux_arctis_manager.gui.dbus_wrapper import DbusWrapper
 from linux_arctis_manager.gui.theme import (
     ACCENT,
@@ -398,16 +399,15 @@ class EqualizerPage(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(36, 28, 36, 28)
         root.setSpacing(0)
-        root.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         app_title = QLabel("Arctis Sound Manager")
         app_title.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 28pt; font-weight: bold; background: transparent;")
         root.addWidget(app_title)
         root.addSpacing(28)
 
-        eq_title = QLabel("Equalizer")
-        eq_title.setStyleSheet("color: #666666; font-size: 20pt; font-weight: bold; background: transparent;")
-        root.addWidget(eq_title)
+        self._eq_title = QLabel("Equalizer")
+        self._eq_title.setStyleSheet("color: #666666; font-size: 20pt; font-weight: bold; background: transparent;")
+        root.addWidget(self._eq_title)
         root.addSpacing(20)
 
         # ── Mode card ────────────────────────────────────────────────────────
@@ -534,7 +534,13 @@ class EqualizerPage(QWidget):
 
         eq_card_layout.addWidget(preset_row)
         root.addWidget(self._eq_card)
-        root.addStretch(1)
+
+        # ── Sonar page (shown instead of _eq_card when mode == "sonar") ──────
+        self._sonar_page = SonarPage(embedded=True)
+        self._sonar_page.setVisible(False)
+        root.addWidget(self._sonar_page, 1)
+        # No addStretch here: _sonar_page (stretch=1) fills remaining space in sonar mode;
+        # in custom mode it's hidden so extra space naturally falls to the bottom.
 
         self._sig_eq_bands.connect(self._on_eq_bands_received)
         self._refresh()
@@ -596,17 +602,21 @@ class EqualizerPage(QWidget):
     def _refresh(self):
         mode = _current_mode()
         if mode == "sonar":
+            self._eq_title.setText("Sonar")
             self._mode_label.setText("Sonar")
             self._mode_label.setStyleSheet(f"color: {ACCENT}; font-size: 13pt; font-weight: bold; background: transparent;")
             self._desc_label.setText("SteelSeries Sonar audio processing is active. Click to switch back to your Custom EQ.")
             self._button.setText("Switch to Custom EQ")
             self._eq_card.setVisible(False)
+            self._sonar_page.setVisible(True)
         else:
+            self._eq_title.setText("Equalizer")
             self._mode_label.setText("Custom EQ")
             self._mode_label.setStyleSheet("color: #04C5A8; font-size: 13pt; font-weight: bold; background: transparent;")
             self._desc_label.setText("Your Custom EQ is active. Click to enable Sonar processing.")
             self._button.setText("Switch to Sonar")
             self._eq_card.setVisible(True)
+            self._sonar_page.setVisible(False)
 
     @Slot()
     def _on_toggle(self):
