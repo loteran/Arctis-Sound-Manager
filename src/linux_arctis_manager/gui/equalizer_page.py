@@ -457,7 +457,7 @@ class EqualizerPage(QWidget):
         # ── EQ sliders card ──────────────────────────────────────────────────
         self._eq_card = QWidget()
         self._eq_card.setObjectName("eqSlidersCard")
-        self._eq_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self._eq_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         self._eq_card.setStyleSheet(f"""
             QWidget#eqSlidersCard {{
                 background-color: {BG_CARD};
@@ -534,6 +534,8 @@ class EqualizerPage(QWidget):
 
         eq_card_layout.addWidget(preset_row)
         root.addWidget(self._eq_card)
+        self._custom_stretch = root.count()   # index of stretch spacer (custom mode)
+        root.addStretch(1)
 
         # ── Sonar page (shown instead of _eq_card when mode == "sonar") ──────
         self._sonar_page = SonarPage(embedded=True)
@@ -601,6 +603,8 @@ class EqualizerPage(QWidget):
 
     def _refresh(self):
         mode = _current_mode()
+        root = self.layout()
+        stretch_item = root.itemAt(self._custom_stretch)
         if mode == "sonar":
             self._eq_title.setText("Sonar")
             self._mode_label.setText("Sonar")
@@ -609,6 +613,9 @@ class EqualizerPage(QWidget):
             self._button.setText("Switch to Custom EQ")
             self._eq_card.setVisible(False)
             self._sonar_page.setVisible(True)
+            # Remove stretch so sonar_page fills all remaining space
+            if stretch_item:
+                root.setStretch(self._custom_stretch, 0)
         else:
             self._eq_title.setText("Equalizer")
             self._mode_label.setText("Custom EQ")
@@ -617,6 +624,9 @@ class EqualizerPage(QWidget):
             self._button.setText("Switch to Sonar")
             self._eq_card.setVisible(True)
             self._sonar_page.setVisible(False)
+            # Restore stretch so extra space goes below eq_card
+            if stretch_item:
+                root.setStretch(self._custom_stretch, 1)
 
     @Slot()
     def _on_toggle(self):
