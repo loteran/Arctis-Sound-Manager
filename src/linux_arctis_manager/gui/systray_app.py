@@ -66,8 +66,12 @@ class QSystrayApp(QBaseDesktopApp):
         self.tray_icon.setContextMenu(self.menu)
     
     def start_polling(self):
+        # Rebuild the menu NOW, before the popup window is created by Qt.
+        # This avoids calling menu.clear() while the popup Wayland surface is
+        # already alive (which causes a use-after-free SIGSEGV in Qt Wayland).
+        self.menu_setup()
         self.do_polling = True
-    
+
     def stop_polling(self):
         self.do_polling = False
     
@@ -107,7 +111,11 @@ class QSystrayApp(QBaseDesktopApp):
             return
 
         self.last_device_status = status
-        self.menu_setup()
+        # Do NOT call menu_setup() here: the menu popup window may already be
+        # visible (Wayland surface exists) and clear()-ing it while paint events
+        # are queued causes a use-after-free SIGSEGV in QWaylandWindow.
+        # menu_setup() is called in start_polling() instead, just before Qt
+        # creates the popup surface.
 
     async def start(self):
         self.logger.info('Starting Systray app.')
