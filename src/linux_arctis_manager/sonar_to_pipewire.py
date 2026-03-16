@@ -119,17 +119,19 @@ def generate_sonar_eq_conf(
         link_lines.append(_link(names_L[i], names_L[i + 1]))
         link_lines.append(_link(names_R[i], names_R[i + 1]))
 
-    # Optional boost gain node at the end of the chain
+    # Optional boost gain node at the end of the chain.
+    # bq_highshelf at 10 Hz is used instead of label=gain — gain builtin is unavailable
+    # in some PipeWire 1.6.x builds. A highshelf at 10 Hz is flat across all audible
+    # frequencies (20 Hz – 20 kHz), making it a transparent master gain substitute.
     import math
     if abs(boost_db) >= 0.01:
-        linear = round(10 ** (boost_db / 20.0), 6)
         node_lines.append(
-            f"                    {{ type = builtin  name = boost_L  label = gain\n"
-            f"                      control = {{ Gain = {linear} }} }}"
+            f"                    {{ type = builtin  name = boost_L  label = bq_highshelf\n"
+            f"                      control = {{ Freq = 10.0  Q = 0.7071  Gain = {boost_db} }} }}"
         )
         node_lines.append(
-            f"                    {{ type = builtin  name = boost_R  label = gain\n"
-            f"                      control = {{ Gain = {linear} }} }}"
+            f"                    {{ type = builtin  name = boost_R  label = bq_highshelf\n"
+            f"                      control = {{ Freq = 10.0  Q = 0.7071  Gain = {boost_db} }} }}"
         )
         link_lines.append(_link(names_L[-1], "boost_L"))
         link_lines.append(_link(names_R[-1], "boost_R"))
@@ -231,10 +233,9 @@ def generate_sonar_micro_conf(
 
     import math
     if abs(boost_db) >= 0.01:
-        linear = round(10 ** (boost_db / 20.0), 6)
         node_lines.append(
-            f"                    {{ type = builtin  name = boost  label = gain\n"
-            f"                      control = {{ Gain = {linear} }} }}"
+            f"                    {{ type = builtin  name = boost  label = bq_highshelf\n"
+            f"                      control = {{ Freq = 10.0  Q = 0.7071  Gain = {boost_db} }} }}"
         )
         link_lines.append(_link(names[-1], "boost"))
         last_node = "boost"
