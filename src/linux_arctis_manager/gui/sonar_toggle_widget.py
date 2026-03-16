@@ -1,3 +1,4 @@
+import json
 import subprocess
 from pathlib import Path
 
@@ -8,8 +9,20 @@ from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPushButton, QSlider,
 from linux_arctis_manager.gui.dbus_wrapper import DbusWrapper
 
 
-STATE_FILE = Path.home() / '.config' / 'arctis_manager' / '.eq_mode'
-YAML_PATH = Path.home() / '.config' / 'arctis_manager' / 'devices' / 'nova_pro_wireless.yaml'
+STATE_FILE      = Path.home() / '.config' / 'arctis_manager' / '.eq_mode'
+YAML_PATH       = Path.home() / '.config' / 'arctis_manager' / 'devices' / 'nova_pro_wireless.yaml'
+_OVERRIDES_FILE = Path.home() / '.config' / 'arctis_manager' / 'routing_overrides.json'
+
+_SINK_REMAP = {
+    'sonar': {
+        'Arctis_Game': 'effect_input.sonar-game-eq',
+        'Arctis_Chat': 'effect_input.sonar-chat-eq',
+    },
+    'custom': {
+        'effect_input.sonar-game-eq': 'Arctis_Game',
+        'effect_input.sonar-chat-eq': 'Arctis_Chat',
+    },
+}
 
 EQ_BANDS = ['31', '62', '125', '250', '500', '1K', '2K', '4K', '8K', '16K']
 
@@ -23,6 +36,20 @@ _SONAR_OFF = {v: k for k, v in _SONAR_ON.items()}
 
 def _current_mode() -> str:
     return STATE_FILE.read_text().strip() if STATE_FILE.exists() else 'custom'
+
+
+def _update_routing_overrides(new_mode: str) -> None:
+    """Remap routing_overrides.json sink names when switching EQ mode."""
+    remap = _SINK_REMAP.get(new_mode, {})
+    if not remap or not _OVERRIDES_FILE.exists():
+        return
+    try:
+        overrides = json.loads(_OVERRIDES_FILE.read_text())
+        updated = {k: remap.get(v, v) for k, v in overrides.items()}
+        if updated != overrides:
+            _OVERRIDES_FILE.write_text(json.dumps(updated, indent=2))
+    except Exception:
+        pass
 
 
 def _apply_yaml(mode: str) -> bool:
@@ -66,6 +93,7 @@ class _ToggleWorker(QThread):
             self.msleep(1000)
 
         STATE_FILE.write_text(self._new_mode)
+        _update_routing_overrides(self._new_mode)
         subprocess.run(
             ['notify-send', '-a', 'Arctis EQ', 'Arctis EQ',
              f'{"Sonar" if self._new_mode == "sonar" else "Custom EQ"} mode enabled'],

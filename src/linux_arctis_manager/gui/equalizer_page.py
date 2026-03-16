@@ -36,9 +36,23 @@ from linux_arctis_manager.gui.theme import (
     TEXT_SECONDARY,
 )
 
-STATE_FILE   = Path.home() / ".config" / "arctis_manager" / ".eq_mode"
-YAML_PATH    = Path.home() / ".config" / "arctis_manager" / "devices" / "nova_pro_wireless.yaml"
-PRESETS_FILE = Path.home() / ".config" / "arctis_manager" / "eq_presets.json"
+STATE_FILE     = Path.home() / ".config" / "arctis_manager" / ".eq_mode"
+YAML_PATH      = Path.home() / ".config" / "arctis_manager" / "devices" / "nova_pro_wireless.yaml"
+PRESETS_FILE   = Path.home() / ".config" / "arctis_manager" / "eq_presets.json"
+_OVERRIDES_FILE = Path.home() / ".config" / "arctis_manager" / "routing_overrides.json"
+
+# Sink remapping applied when switching EQ mode, so the video router always
+# points apps to the right sink (EQ filter-chain in Sonar, raw loopback in Custom).
+_SINK_REMAP = {
+    "sonar": {
+        "Arctis_Game": "effect_input.sonar-game-eq",
+        "Arctis_Chat": "effect_input.sonar-chat-eq",
+    },
+    "custom": {
+        "effect_input.sonar-game-eq": "Arctis_Game",
+        "effect_input.sonar-chat-eq": "Arctis_Chat",
+    },
+}
 
 EQ_BANDS = ["31", "62", "125", "250", "500", "1K", "2K", "4K", "8K", "16K"]
 
@@ -82,6 +96,20 @@ def _load_presets() -> dict[str, list[int]]:
 
 def _save_presets(presets: dict[str, list[int]]) -> None:
     PRESETS_FILE.write_text(json.dumps(presets, indent=2))
+
+
+def _update_routing_overrides(new_mode: str) -> None:
+    """Remap routing_overrides.json sink names when switching EQ mode."""
+    remap = _SINK_REMAP.get(new_mode, {})
+    if not remap or not _OVERRIDES_FILE.exists():
+        return
+    try:
+        overrides = json.loads(_OVERRIDES_FILE.read_text())
+        updated = {k: remap.get(v, v) for k, v in overrides.items()}
+        if updated != overrides:
+            _OVERRIDES_FILE.write_text(json.dumps(updated, indent=2))
+    except Exception:
+        pass
 
 
 def _round_to_half(db: float) -> float:
@@ -134,6 +162,7 @@ class _ToggleWorker(QThread):
             self.msleep(1000)
 
         STATE_FILE.write_text(self._new_mode)
+        _update_routing_overrides(self._new_mode)
         subprocess.run(
             ["notify-send", "-a", "Arctis EQ", "Arctis EQ",
              f'{"Sonar" if self._new_mode == "sonar" else "Custom EQ"} mode enabled'],
