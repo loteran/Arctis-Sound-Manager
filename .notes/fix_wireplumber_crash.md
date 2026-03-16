@@ -4,7 +4,7 @@
 La session plante aléatoirement. WirePlumber crash avec SIGABRT (core-dump), ce qui entraîne l'arrêt de PipeWire et la mort de la session graphique.
 
 ## Cause racine
-LAM crée les virtual sinks `Arctis_Game` et `Arctis_Chat` en chargeant des modules via la couche de compatibilité PulseAudio (`pulsectl.module_load`) :
+LAM crée les virtual sinks `Arctis_Game`, `Arctis_Chat` et `Arctis_Media` en chargeant des modules via la couche de compatibilité PulseAudio (`pulsectl.module_load`) :
 - `module-null-sink` (pour le sink virtuel)
 - `module-loopback` (pour router vers le device physique)
 
@@ -34,7 +34,7 @@ if sink:
 
 **Contenu du fichier :**
 ```conf
-# Pre-create Arctis_Game and Arctis_Chat virtual sinks natively via PipeWire.
+# Pre-create Arctis_Game, Arctis_Chat and Arctis_Media virtual sinks natively via PipeWire.
 #
 # Without this, linux-arctis-manager creates them by loading PulseAudio
 # modules (module-null-sink + module-loopback) via pipewire-pulse, which
@@ -93,6 +93,28 @@ context.modules = [
       }
     }
   }
+  # Virtual sink: Media channel (browsers & video players) → physical Arctis device
+  {
+    name  = libpipewire-module-loopback
+    flags = [ nofail ]
+    args  = {
+      node.description = "Arctis Nova Pro Wireless Media"
+      capture.props    = {
+        node.name      = "Arctis_Media"
+        media.class    = Audio/Sink
+        audio.channels = 2
+        audio.position = [ FL FR ]
+      }
+      playback.props   = {
+        node.name         = "Arctis_Media_sink_out"
+        audio.channels    = 2
+        audio.position    = [ FL FR ]
+        stream.dont-remix = true
+        node.target       = "alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.analog-stereo"
+        latency.msec      = 50
+      }
+    }
+  }
 ]
 ```
 
@@ -114,7 +136,7 @@ context.modules = [
 
 ## Points d'attention lors de l'adaptation
 
-- Vérifier que les noms de node (`Arctis_Game`, `Arctis_Chat`) correspondent toujours aux constantes `PULSE_MEDIA_NODE_NAME` / `PULSE_CHAT_NODE_NAME` dans `constants.py`
+- Vérifier que les noms de node (`Arctis_Game`, `Arctis_Chat`, `Arctis_Media`) correspondent toujours aux constantes `PULSE_MEDIA_NODE_NAME` / `PULSE_CHAT_NODE_NAME` / `PULSE_VIDEO_NODE_NAME` dans `constants.py`
 - Vérifier que `create_virtual_sink()` dans `pactl.py` fait toujours le check d'existence en début de méthode (condition sine qua non du fix)
 - Le nom du device physique (`alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.analog-stereo`) est spécifique au Nova Pro Wireless — à adapter si d'autres devices sont supportés, ou rendre dynamique
 - Si le repo a changé la façon de gérer les virtual sinks, adapter en conséquence

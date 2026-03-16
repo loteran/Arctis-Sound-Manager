@@ -62,7 +62,15 @@ else
     echo "    [!] Device config source not found at $DEVICES_SRC — skipping."
 fi
 
-# 8. Enable filter-chain service (required for Sonar EQ)
+# 8. Deploy native PipeWire virtual sinks (fixes WirePlumber crash on 0.5.x)
+echo "==> Installing native PipeWire virtual sinks (WirePlumber crash fix)..."
+PIPEWIRE_CONF_DIR="$HOME/.config/pipewire/pipewire.conf.d"
+mkdir -p "$PIPEWIRE_CONF_DIR"
+cp "$REPO_DIR/scripts/pipewire/10-arctis-virtual-sinks.conf" "$PIPEWIRE_CONF_DIR/"
+systemctl --user restart pipewire pipewire-pulse || true
+echo "    [ok] Virtual sinks deployed."
+
+# 9. Enable filter-chain service (required for Sonar EQ)
 echo "==> Enabling filter-chain systemd service (required for Sonar EQ)..."
 systemctl --user enable --now filter-chain.service
 
