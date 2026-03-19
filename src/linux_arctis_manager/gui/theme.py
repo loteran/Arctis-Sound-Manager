@@ -13,7 +13,6 @@ BORDER = "#2A3038"
 # Audio channel accent colors
 COLOR_GAME = "#04C5A8"
 COLOR_CHAT = "#2791CE"
-COLOR_MEDIA = "#C4006C"
 COLOR_AUX = "#FB4A00"
 
 APP_QSS = f"""

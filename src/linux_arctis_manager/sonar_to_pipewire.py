@@ -81,6 +81,8 @@ def generate_sonar_eq_conf(
     if output_path is None:
         output_path = _CONF_DIR / f"sonar-{channel}-eq.conf"
 
+    boost_db = max(-12.0, min(12.0, boost_db))
+
     # Collect active filter nodes: preset bands + macro sliders (if non-zero)
     active_bands: list[EqBand] = [b for b in bands if b.enabled]
     macro_values = {"basses": basses_db, "voix": voix_db, "aigus": aigus_db}
@@ -199,6 +201,8 @@ def generate_sonar_micro_conf(
     """
     if output_path is None:
         output_path = _CONF_DIR / "sonar-micro-eq.conf"
+
+    boost_db = max(-12.0, min(12.0, boost_db))
 
     active_bands = [b for b in bands if b.enabled]
     macro_values = {"basses": basses_db, "voix": voix_db, "aigus": aigus_db}
@@ -375,3 +379,27 @@ def apply_sonar_channel(
         generate_sonar_eq_conf(channel, bands, basses_db, voix_db, aigus_db)
 
     subprocess.run(["systemctl", "--user", "restart", "filter-chain"], check=False, timeout=15)
+
+
+def check_and_fix_stale_configs() -> bool:
+    """Detect configs using the broken ``label = gain`` builtin and regenerate them.
+
+    Returns True if any config was regenerated.
+    """
+    fixed = False
+    for name in ("sonar-game-eq.conf", "sonar-chat-eq.conf", "sonar-micro-eq.conf"):
+        path = _CONF_DIR / name
+        if path.exists() and "label = gain" in path.read_text():
+            import logging
+            logging.getLogger(__name__).warning(
+                "Stale config detected (%s uses unsupported 'label = gain'), regenerating as bypass", name,
+            )
+            channel = name.replace("sonar-", "").replace("-eq.conf", "")
+            if channel == "micro":
+                _write_conf(path, _bypass_micro_conf())
+            else:
+                sink_name = f"effect_input.sonar-{channel}-eq"
+                target = _game_target(True) if channel == "game" else _CHANNEL_TARGET.get(channel, _PHYSICAL_OUT)
+                _write_conf(path, _bypass_conf(sink_name, target))
+            fixed = True
+    return fixed

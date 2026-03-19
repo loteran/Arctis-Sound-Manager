@@ -62,13 +62,19 @@ else
     echo "    [!] Device config source not found at $DEVICES_SRC — skipping."
 fi
 
-# 8. Deploy native PipeWire virtual sinks (fixes WirePlumber crash on 0.5.x)
-echo "==> Installing native PipeWire virtual sinks (WirePlumber crash fix)..."
+# 8. Deploy native PipeWire configs (fixes WirePlumber crash on 0.5.x + load order)
+echo "==> Installing native PipeWire configs..."
 PIPEWIRE_CONF_DIR="$HOME/.config/pipewire/pipewire.conf.d"
 mkdir -p "$PIPEWIRE_CONF_DIR"
+# Virtual sinks (Arctis_Game, Arctis_Chat, Arctis_Media)
 cp "$REPO_DIR/scripts/pipewire/10-arctis-virtual-sinks.conf" "$PIPEWIRE_CONF_DIR/"
+# HeSuVi surround sink — must be in pipewire.conf.d (not filter-chain.conf.d) so it
+# loads before filter-chain.service, preventing ENOENT when sonar-game-eq references it.
+cp "$REPO_DIR/scripts/pipewire/sink-virtual-surround-7.1-hesuvi.conf" "$PIPEWIRE_CONF_DIR/"
+# Remove stale copy from filter-chain.conf.d if present
+rm -f "$HOME/.config/pipewire/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf"
 systemctl --user restart pipewire pipewire-pulse || true
-echo "    [ok] Virtual sinks deployed."
+echo "    [ok] PipeWire configs deployed."
 
 # 9. Enable filter-chain service (required for Sonar EQ)
 echo "==> Enabling filter-chain systemd service (required for Sonar EQ)..."

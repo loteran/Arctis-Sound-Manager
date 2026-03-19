@@ -4,16 +4,22 @@
 set -e
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CONF_DST="$HOME/.config/pipewire/filter-chain.conf.d"
+# Deploy to pipewire.conf.d so PipeWire loads the HeSuVi sink before
+# filter-chain.service starts — prevents ENOENT when sonar-game-eq.conf
+# references effect_input.virtual-surround-7.1-hesuvi at graph startup.
+CONF_DST="$HOME/.config/pipewire/pipewire.conf.d"
 HRIR_DIR="$HOME/.local/share/pipewire/hrir_hesuvi"
 CONF_SRC="$REPO_DIR/scripts/pipewire/sink-virtual-surround-7.1-hesuvi.conf"
 
 echo "==> Setting up virtual surround 7.1 (HeSuVi / PipeWire filter-chain)..."
 
-# 1. Install the filter-chain config
+# Remove stale copy from filter-chain.conf.d if present
+rm -f "$HOME/.config/pipewire/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf"
+
+# 1. Install the config into pipewire.conf.d
 mkdir -p "$CONF_DST"
 cp "$CONF_SRC" "$CONF_DST/sink-virtual-surround-7.1-hesuvi.conf"
-echo "    [ok] Filter-chain config installed."
+echo "    [ok] HeSuVi config installed to pipewire.conf.d."
 
 # 2. Install HRIR file
 mkdir -p "$HRIR_DIR"

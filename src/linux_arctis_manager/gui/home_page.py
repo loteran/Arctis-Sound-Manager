@@ -40,8 +40,6 @@ def _save_overrides(overrides: dict) -> None:
 from linux_arctis_manager.gui.components import (
     CHAT_ICON,
     GAME_ICON,
-    HDMI_ICON,
-    MEDIA_ICON,
     SvgIconWidget,
 )
 from linux_arctis_manager.gui.theme import (
@@ -51,7 +49,6 @@ from linux_arctis_manager.gui.theme import (
     BORDER,
     COLOR_CHAT,
     COLOR_GAME,
-    COLOR_MEDIA,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
@@ -64,10 +61,6 @@ logger = logging.getLogger("HomePage")
 # PulseAudio sink name fragments to match
 SINK_MEDIA = "Arctis_Game"
 SINK_CHAT  = "Arctis_Chat"
-SINK_VIDEO = "Arctis_Media"
-SINK_HDMI  = "hdmi-surround"   # physical HDMI output
-
-COLOR_HDMI = "#8B5CF6"   # violet — HDMI surround card
 
 
 def _make_vertical_slider_qss(accent_color: str) -> str:
@@ -512,8 +505,6 @@ class HomePage(QWidget):
         self._pulse = None
         self._sink_media = None
         self._sink_chat = None
-        self._sink_video = None
-        self._sink_hdmi = None
         self._connected = False
 
         root = QVBoxLayout(self)
@@ -582,7 +573,7 @@ class HomePage(QWidget):
         self._cards_layout.setSpacing(20)
         self._cards_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Game card (Arctis_Media sink → "Game" in the reference)
+        # Game card
         self._game_card = AudioCard("Game", COLOR_GAME, GAME_ICON)
         self._game_card.set_on_change(self._on_media_volume_changed)
         self._game_card.set_on_drop(lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_MEDIA))
@@ -593,18 +584,6 @@ class HomePage(QWidget):
         self._chat_card.set_on_change(self._on_chat_volume_changed)
         self._chat_card.set_on_drop(lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_CHAT))
         self._cards_layout.addWidget(self._chat_card, stretch=1)
-
-        # Media card (Arctis_Video sink — browsers, video players)
-        self._media_card = AudioCard("Media", COLOR_MEDIA, MEDIA_ICON)
-        self._media_card.set_on_change(self._on_video_volume_changed)
-        self._media_card.set_on_drop(lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_VIDEO))
-        self._cards_layout.addWidget(self._media_card, stretch=1)
-
-        # HDMI card — routes directly to physical HDMI surround sink
-        self._hdmi_card = AudioCard("HDMI", COLOR_HDMI, HDMI_ICON)
-        self._hdmi_card.set_on_change(self._on_hdmi_volume_changed)
-        self._hdmi_card.set_on_drop(lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_HDMI))
-        self._cards_layout.addWidget(self._hdmi_card, stretch=1)
 
         cards_outer_layout.addWidget(self._cards_widget, stretch=6)
         cards_outer_layout.addStretch(1)
@@ -624,10 +603,9 @@ class HomePage(QWidget):
         _help_text = (
             "<b>How to use the mixer</b><br><br>"
             "<b>Game</b> — Games (Arctis_Game)<br>"
-            "<b>Chat</b> — Voice / Discord (Arctis_Chat)<br>"
-            "<b>Media</b> — Browsers &amp; video players (Arctis_Media)<br><br>"
+            "<b>Chat</b> — Voice / Discord (Arctis_Chat)<br><br>"
             "Sliders control the volume of each channel.<br>"
-            "The <b>G C M H</b> buttons on an app tag move<br>"
+            "The <b>G C</b> buttons on an app tag move<br>"
             "that audio stream to the desired channel."
         )
 
@@ -658,10 +636,8 @@ class HomePage(QWidget):
         # Register cards so _AppTag inline buttons know where to send streams
         # Format: (short_label, button_color, callback)
         _AppTag._cards_registry = [
-            ("G", COLOR_GAME,  lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_MEDIA)),
-            ("C", COLOR_CHAT,  lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_CHAT)),
-            ("M", COLOR_MEDIA, lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_VIDEO)),
-            ("H", COLOR_HDMI,  lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_HDMI)),
+            ("G", COLOR_GAME, lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_MEDIA)),
+            ("C", COLOR_CHAT, lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_CHAT)),
         ]
 
         # ── Polling timer ─────────────────────────────────────────────────────
@@ -675,8 +651,6 @@ class HomePage(QWidget):
     def _on_toggle_changed(self, enabled: bool):
         self._game_card.setEnabled(enabled)
         self._chat_card.setEnabled(enabled)
-        self._media_card.setEnabled(enabled)
-        self._hdmi_card.setEnabled(enabled)
 
     # ── D-Bus status signal handler ───────────────────────────────────────────
 
@@ -730,13 +704,9 @@ class HomePage(QWidget):
 
             sinks_media = _find_all(SINK_MEDIA)
             sinks_chat  = _find_all(SINK_CHAT)
-            sinks_video = _find_all(SINK_VIDEO)
-            sinks_hdmi  = _find_all(SINK_HDMI)
 
             sink_media = _primary(sinks_media)
             sink_chat  = _primary(sinks_chat)
-            sink_video = _primary(sinks_video)
-            sink_hdmi  = _primary(sinks_hdmi)
 
             if sink_media is None and sink_chat is None:
                 self._set_disconnected()
@@ -754,29 +724,11 @@ class HomePage(QWidget):
                 self._chat_card.set_volume(pct)
                 self._sink_chat = sink_chat
 
-            if sink_video is not None:
-                pct = round(sink_video.volume.value_flat * 100)
-                self._media_card.set_volume(pct)
-                self._sink_video = sink_video
-                self._media_card.set_connected()
-            else:
-                self._media_card.set_disconnected()
-
-            if sink_hdmi is not None:
-                pct = round(sink_hdmi.volume.value_flat * 100)
-                self._hdmi_card.set_volume(pct)
-                self._sink_hdmi = sink_hdmi
-                self._hdmi_card.set_connected()
-            else:
-                self._hdmi_card.set_disconnected()
-
             # Update application lists — pass all matching sinks to catch duplicates
             sink_inputs = pulse.sink_input_list()
             pulse_app_names = {si.proplist.get("application.name", "") for si in sink_inputs}
             self._update_apps(sink_inputs, sinks_media, self._game_card)
             self._update_apps(sink_inputs, sinks_chat,  self._chat_card)
-            self._update_apps(sink_inputs, sinks_video, self._media_card)
-            self._update_apps(sink_inputs, sinks_hdmi,  self._hdmi_card)
             # Also show native PipeWire streams (mpv, haruna…), skip duplicates
             self._update_native_apps(sinks, pulse_app_names)
 
@@ -814,8 +766,6 @@ class HomePage(QWidget):
         card_map = {
             SINK_MEDIA: self._game_card,
             SINK_CHAT:  self._chat_card,
-            SINK_VIDEO: self._media_card,
-            SINK_HDMI:  self._hdmi_card,
         }
 
         for s in native:
@@ -833,8 +783,6 @@ class HomePage(QWidget):
             self._disconnected_label.show()
             self._game_card.set_disconnected()
             self._chat_card.set_disconnected()
-            self._media_card.set_disconnected()
-            self._hdmi_card.set_disconnected()
 
     def _set_connected(self):
         if not self._connected:
@@ -862,14 +810,11 @@ class HomePage(QWidget):
             overrides = _load_overrides()
             overrides[app_name] = target_sink_name
             _save_overrides(overrides)
-            # Si on route vers un sink Arctis, repasser le default KDE sur Arctis_Game
-            # pour que le router reprenne la main (sinon le default reste HDMI et annule le move).
-            if target_sink_name != SINK_HDMI:
-                subprocess.Popen([
-                    "pw-metadata", "0",
-                    "default.configured.audio.sink",
-                    '{ "name": "Arctis_Game" }'
-                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.Popen([
+                "pw-metadata", "0",
+                "default.configured.audio.sink",
+                '{ "name": "Arctis_Game" }'
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception as exc:
             logger.warning("Error moving stream: %s", exc)
 
@@ -880,12 +825,6 @@ class HomePage(QWidget):
 
     def _on_chat_volume_changed(self, value: int):
         self._apply_volume(self._sink_chat, value)
-
-    def _on_video_volume_changed(self, value: int):
-        self._apply_volume(self._sink_video, value)
-
-    def _on_hdmi_volume_changed(self, value: int):
-        self._apply_volume(self._sink_hdmi, value)
 
     def _apply_volume(self, sink, value: int):
         pulse = self._get_pulse()

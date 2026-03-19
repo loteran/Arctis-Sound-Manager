@@ -54,6 +54,7 @@ from linux_arctis_manager.gui.theme import (
 )
 from linux_arctis_manager.sonar_to_pipewire import (
     _MACRO_PARAMS as MACRO_PARAMS,
+    check_and_fix_stale_configs,
     generate_sonar_eq_conf,
     generate_sonar_micro_conf,
 )
@@ -190,7 +191,28 @@ class _ApplyWorker(QThread):
         self._voix    = voix
         self._aigus   = aigus
 
+    # ── helpers ────────────────────────────────────────────────────────────
+    @staticmethod
+    def _wait_for_node(node_name: str, timeout_ms: int = 5000) -> bool:
+        """Poll pw-cli until *node_name* appears (or timeout)."""
+        import time
+        deadline = time.monotonic() + timeout_ms / 1000.0
+        while time.monotonic() < deadline:
+            try:
+                r = subprocess.run(
+                    ["pw-cli", "list-objects", "Node"],
+                    capture_output=True, text=True, timeout=2,
+                )
+                if node_name in r.stdout:
+                    return True
+            except Exception:
+                pass
+            time.sleep(0.15)
+        return False
+
+    # ── main ───────────────────────────────────────────────────────────────
     def run(self):
+        import json as _json
         import logging
         log = logging.getLogger(__name__)
         try:
@@ -204,18 +226,41 @@ class _ApplyWorker(QThread):
                 generate_sonar_eq_conf(self._channel, self._bands,
                                        self._basses, self._voix, self._aigus,
                                        spatial_audio=spatial, boost_db=boost_db)
-            subprocess.run(["systemctl", "--user", "restart", "filter-chain"],
-                           check=False, timeout=15)
-            self.msleep(900)
+
+            # Restart filter-chain and check result
+            result = subprocess.run(
+                ["systemctl", "--user", "restart", "filter-chain"],
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode != 0:
+                log.error("filter-chain restart failed (rc=%d): %s",
+                          result.returncode, result.stderr.strip())
+                self.done.emit(False)
+                return
+
+            # Wait for the sink/source to actually appear in PipeWire
+            if self._channel == "micro":
+                target_node = "effect_output.sonar-micro-eq"
+            else:
+                target_node = f"effect_input.sonar-{self._channel}-eq"
+
+            if not self._wait_for_node(target_node):
+                log.warning("Sonar node %s did not appear within timeout", target_node)
+                self.done.emit(False)
+                return
+
             # Re-set default sink so WirePlumber routes correctly
             if self._channel != "micro":
                 sink = f"effect_input.sonar-{self._channel}-eq"
                 subprocess.run(
                     ["pw-metadata", "0", "default.configured.audio.sink",
-                     f'{{"name":"{sink}"}}'],
+                     _json.dumps({"name": sink})],
                     check=False, timeout=5,
                 )
             self.done.emit(True)
+        except subprocess.TimeoutExpired:
+            log.error("_ApplyWorker timeout (channel=%s)", self._channel)
+            self.done.emit(False)
         except Exception as e:
             log.error("_ApplyWorker error (channel=%s): %s", self._channel, e)
             self.done.emit(False)
@@ -1618,6 +1663,14 @@ class SonarMicroWidget(SonarChannelWidget):
 class SonarPage(QWidget):
     def __init__(self, embedded: bool = False, parent: QWidget | None = None):
         super().__init__(parent)
+
+        # Fix stale configs that use the broken 'label = gain' builtin
+        if check_and_fix_stale_configs():
+            import logging
+            logging.getLogger(__name__).info("Stale Sonar configs fixed, restarting filter-chain")
+            subprocess.run(["systemctl", "--user", "restart", "filter-chain"],
+                           check=False, timeout=15)
+
         self.setStyleSheet(f"background-color: {BG_MAIN};")
 
         root = QVBoxLayout(self)
