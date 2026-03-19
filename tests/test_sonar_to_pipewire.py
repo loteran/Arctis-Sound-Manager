@@ -65,19 +65,53 @@ def test_macro_sliders_generate_filters():
     assert "macro_voix" not in text
 
 
-def test_spatial_audio_off_targets_physical():
+def test_game_always_targets_physical_output():
+    """Game EQ always targets the physical output — HeSuVi is a separate chain."""
+    for spatial in (True, False):
+        text = generate_sonar_eq_conf("game", [], 0.0, 0.0, 0.0,
+                                      output_path=Path("/dev/null"),
+                                      spatial_audio=spatial)
+        assert "alsa_output.usb-SteelSeries" in text
+        assert "virtual-surround" not in text
+
+
+def test_bypass_game_has_node_name_in_playback():
     text = generate_sonar_eq_conf("game", [], 0.0, 0.0, 0.0,
                                   output_path=Path("/dev/null"),
-                                  spatial_audio=False)
-    assert "alsa_output.usb-SteelSeries" in text
-    assert "virtual-surround" not in text
+                                  spatial_audio=True, boost_db=0.0)
+    assert 'node.name      = "effect_output.sonar-game-eq"' in text
 
 
-def test_spatial_audio_on_targets_hesuvi():
-    text = generate_sonar_eq_conf("game", [], 0.0, 0.0, 0.0,
+def test_bypass_chat_has_node_name_in_playback():
+    text = generate_sonar_eq_conf("chat", [], 0.0, 0.0, 0.0,
+                                  output_path=Path("/dev/null"),
+                                  boost_db=0.0)
+    assert 'node.name      = "effect_output.sonar-chat-eq"' in text
+
+
+def test_bypass_micro_has_node_name_in_playback():
+    text = generate_sonar_micro_conf([], 0.0, 0.0, 0.0,
+                                     output_path=Path("/dev/null"),
+                                     boost_db=0.0)
+    assert 'node.name      = "effect_output.sonar-micro-eq"' in text
+
+
+def test_active_game_has_node_name_in_playback():
+    bands = [EqBand(freq=1000, gain=3.0, q=0.7, type="peakingEQ", enabled=True)]
+    text = generate_sonar_eq_conf("game", bands, 0.0, 0.0, 0.0,
                                   output_path=Path("/dev/null"),
                                   spatial_audio=True)
-    assert "virtual-surround-7.1-hesuvi" in text
+    assert 'node.name      = "effect_output.sonar-game-eq"' in text
+
+
+def test_micro_capture_uses_unique_name():
+    """Micro capture must NOT reuse the physical ALSA device name."""
+    text = generate_sonar_micro_conf([], 0.0, 0.0, 0.0,
+                                     output_path=Path("/dev/null"),
+                                     boost_db=0.0)
+    assert 'node.name      = "effect_input.sonar-micro-eq"' in text
+    # Must use node.target for the physical device, not node.name
+    assert "node.target" in text
 
 
 def test_check_and_fix_stale_configs_fixes_gain(tmp_path):

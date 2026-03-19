@@ -22,11 +22,16 @@ _PHYSICAL_IN  = "alsa_input.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.mono-fal
 _SURROUND     = "effect_input.virtual-surround-7.1-hesuvi"
 
 def _game_target(spatial_audio: bool) -> str:
-    """Return the playback target for the game EQ channel."""
-    return _SURROUND if spatial_audio else _PHYSICAL_OUT
+    """Return the playback target for the game EQ channel.
+
+    Always targets the physical output — HeSuVi spatial audio is a separate
+    filter chain that apps route through independently.  Targeting HeSuVi
+    directly would cause a stereo→7.1 channel mismatch.
+    """
+    return _PHYSICAL_OUT
 
 _CHANNEL_TARGET: dict[str, str] = {
-    "game":  _SURROUND,   # overridden at call time via spatial_audio param
+    "game":  _PHYSICAL_OUT,
     "chat":  _PHYSICAL_OUT,
     # micro handled separately (Source/Virtual)
 }
@@ -38,7 +43,7 @@ _MACRO_PARAMS = {
     "aigus":  {"freq": 9000.0, "q": 0.80},
 }
 
-_CONF_DIR = Path.home() / ".config" / "pipewire" / "filter-chain.conf.d"
+_CONF_DIR = Path.home() / ".config" / "pipewire" / "pipewire.conf.d"
 
 
 # ── Low-level helpers ─────────────────────────────────────────────────────────
@@ -125,7 +130,6 @@ def generate_sonar_eq_conf(
     # bq_highshelf at 10 Hz is used instead of label=gain — gain builtin is unavailable
     # in some PipeWire 1.6.x builds. A highshelf at 10 Hz is flat across all audible
     # frequencies (20 Hz – 20 kHz), making it a transparent master gain substitute.
-    import math
     if abs(boost_db) >= 0.01:
         node_lines.append(
             f"                    {{ type = builtin  name = boost_L  label = bq_highshelf\n"
@@ -171,6 +175,7 @@ context.modules = [
         audio.position = [ FL FR ]
       }}
       playback.props = {{
+        node.name      = "effect_output.sonar-{channel}-eq"
         node.target    = "{target}"
         node.passive   = true
         audio.channels = 2
@@ -186,6 +191,9 @@ context.modules = [
 
 # ── Config generator — micro ──────────────────────────────────────────────────
 
+_MICRO_CONF_DIR = Path.home() / ".config" / "pipewire" / "filter-chain.conf.d"
+
+
 def generate_sonar_micro_conf(
     bands: list[EqBand],
     basses_db: float,
@@ -198,9 +206,13 @@ def generate_sonar_micro_conf(
     Build and optionally write a filter-chain .conf for the microphone EQ.
 
     Creates a virtual Source/Virtual node backed by the physical mic input.
+
+    NOTE: Micro configs are written to filter-chain.conf.d/ (NOT pipewire.conf.d/)
+    because loading them in the main daemon conflicts with the ALSA mono device.
+    The filter-chain service loads them separately.
     """
     if output_path is None:
-        output_path = _CONF_DIR / "sonar-micro-eq.conf"
+        output_path = _MICRO_CONF_DIR / "sonar-micro-eq.conf"
 
     boost_db = max(-12.0, min(12.0, boost_db))
 
@@ -235,7 +247,6 @@ def generate_sonar_micro_conf(
     for i in range(len(all_filters) - 1):
         link_lines.append(_link(names[i], names[i + 1]))
 
-    import math
     if abs(boost_db) >= 0.01:
         node_lines.append(
             f"                    {{ type = builtin  name = boost  label = bq_highshelf\n"
@@ -268,14 +279,16 @@ context.modules = [
         outputs = [ "{last_node}:Out" ]
       }}
       capture.props = {{
-        node.name      = "{_PHYSICAL_IN}"
-        node.passive   = true
+        node.name      = "effect_input.sonar-micro-eq"
+        node.target    = "{_PHYSICAL_IN}"
+        media.class    = Audio/Sink
         audio.channels = 1
         audio.position = [ MONO ]
       }}
       playback.props = {{
         node.name      = "effect_output.sonar-micro-eq"
         media.class    = Audio/Source/Virtual
+        node.passive   = true
         audio.channels = 1
         audio.position = [ MONO ]
       }}
@@ -312,6 +325,7 @@ context.modules = [
         audio.position = [ FL FR ]
       }}
       playback.props = {{
+        node.name      = "{sink_name.replace('effect_input.', 'effect_output.')}"
         node.target    = "{target}"
         node.passive   = true
         audio.channels = 2
@@ -339,14 +353,16 @@ context.modules = [
         outputs = [ "copy:Out" ]
       }}
       capture.props = {{
-        node.name      = "{_PHYSICAL_IN}"
-        node.passive   = true
+        node.name      = "effect_input.sonar-micro-eq"
+        node.target    = "{_PHYSICAL_IN}"
+        media.class    = Audio/Sink
         audio.channels = 1
         audio.position = [ MONO ]
       }}
       playback.props = {{
         node.name      = "effect_output.sonar-micro-eq"
         media.class    = Audio/Source/Virtual
+        node.passive   = true
         audio.channels = 1
         audio.position = [ MONO ]
       }}
@@ -370,36 +386,67 @@ def apply_sonar_channel(
     voix_db: float = 0.0,
     aigus_db: float = 0.0,
 ) -> None:
-    """Generate config and restart filter-chain.  channel = 'game'|'chat'|'micro'."""
+    """Generate config and restart the appropriate PipeWire service.
+
+    game/chat configs go to pipewire.conf.d/ (loaded by main daemon).
+    micro configs go to filter-chain.conf.d/ (loaded by filter-chain service).
+    """
     import subprocess
 
     if channel == "micro":
         generate_sonar_micro_conf(bands, basses_db, voix_db, aigus_db)
+        subprocess.run(["systemctl", "--user", "restart", "filter-chain"], check=False, timeout=15)
     else:
         generate_sonar_eq_conf(channel, bands, basses_db, voix_db, aigus_db)
-
-    subprocess.run(["systemctl", "--user", "restart", "filter-chain"], check=False, timeout=15)
+        subprocess.run(["systemctl", "--user", "restart", "pipewire"], check=False, timeout=15)
 
 
 def check_and_fix_stale_configs() -> bool:
-    """Detect configs using the broken ``label = gain`` builtin and regenerate them.
+    """Detect and migrate stale Sonar configs.
 
-    Returns True if any config was regenerated.
+    Checks for:
+    1. Configs using the broken ``label = gain`` builtin (PipeWire 1.6.x).
+    2. Game/chat configs left in old ``filter-chain.conf.d/`` (must be in
+       ``pipewire.conf.d/`` for WirePlumber to create playback links).
+    3. Micro configs accidentally placed in ``pipewire.conf.d/`` (causes ALSA
+       port exhaustion — micro must stay in ``filter-chain.conf.d/``).
+
+    Returns True if any config was regenerated or migrated.
     """
+    import logging
+    log = logging.getLogger(__name__)
     fixed = False
-    for name in ("sonar-game-eq.conf", "sonar-chat-eq.conf", "sonar-micro-eq.conf"):
+    old_dir = _CONF_DIR.parent / "filter-chain.conf.d"
+
+    # Game/chat: migrate from old dir to pipewire.conf.d
+    for name in ("sonar-game-eq.conf", "sonar-chat-eq.conf"):
+        old_path = old_dir / name
+        if old_path.exists():
+            log.warning("Removing stale config from old location: %s", old_path)
+            old_path.unlink()
+            fixed = True
+
         path = _CONF_DIR / name
         if path.exists() and "label = gain" in path.read_text():
-            import logging
-            logging.getLogger(__name__).warning(
-                "Stale config detected (%s uses unsupported 'label = gain'), regenerating as bypass", name,
-            )
+            log.warning("Stale config (%s uses 'label = gain'), regenerating", name)
             channel = name.replace("sonar-", "").replace("-eq.conf", "")
-            if channel == "micro":
-                _write_conf(path, _bypass_micro_conf())
-            else:
-                sink_name = f"effect_input.sonar-{channel}-eq"
-                target = _game_target(True) if channel == "game" else _CHANNEL_TARGET.get(channel, _PHYSICAL_OUT)
-                _write_conf(path, _bypass_conf(sink_name, target))
+            sink_name = f"effect_input.sonar-{channel}-eq"
+            target = _game_target(True) if channel == "game" else _CHANNEL_TARGET.get(channel, _PHYSICAL_OUT)
+            _write_conf(path, _bypass_conf(sink_name, target))
             fixed = True
+
+    # Micro: must NOT be in pipewire.conf.d (causes ALSA port exhaustion)
+    bad_micro = _CONF_DIR / "sonar-micro-eq.conf"
+    if bad_micro.exists():
+        log.warning("Removing micro config from pipewire.conf.d (must be in filter-chain.conf.d)")
+        bad_micro.unlink()
+        fixed = True
+
+    # Check micro in its correct location
+    micro_path = _MICRO_CONF_DIR / "sonar-micro-eq.conf"
+    if micro_path.exists() and "label = gain" in micro_path.read_text():
+        log.warning("Stale micro config uses 'label = gain', regenerating")
+        _write_conf(micro_path, _bypass_micro_conf())
+        fixed = True
+
     return fixed
