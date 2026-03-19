@@ -71,16 +71,17 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 
 - Linux with **PipeWire** (+ `pipewire-pulse`)
 - **Python 3.10+**
-- `pipx` — install with your package manager:
+- System libraries: `libusb`, `libpulse`, `libudev`
+- `pipx` — install everything with your package manager:
   ```bash
   # Arch / CachyOS / Manjaro
-  sudo pacman -S python-pipx
+  sudo pacman -S python-pipx libusb libpulse
 
   # Debian / Ubuntu
-  sudo apt install pipx
+  sudo apt install pipx libusb-1.0-0 libpulse0 libudev1
 
   # Fedora
-  sudo dnf install pipx
+  sudo dnf install pipx libusb1 pulseaudio-libs systemd-libs
   ```
 
 ---
