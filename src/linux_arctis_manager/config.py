@@ -54,11 +54,11 @@ class ConfigSetting(JsonSerializable):
 
     _js_exclude_fields = ['name', 'update_sequence']
 
-    def __init__(self, name: str, type: SettingType|str, default_value: int|str|None, update_sequence: list[int|Literal['value']] = [], **kwargs: Any):
+    def __init__(self, name: str, type: SettingType|str, default_value: int|str|None, update_sequence: list[int|Literal['value']] | None = None, **kwargs: Any):
         self.name = name
         self.type = type if isinstance(type, SettingType) else SettingType(type)
         self.default_value = default_value
-        self.update_sequence = update_sequence
+        self.update_sequence = update_sequence if update_sequence is not None else []
 
         for key, value in kwargs.items():
             setattr(self, key, value)

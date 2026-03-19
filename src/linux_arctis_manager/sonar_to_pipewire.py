@@ -374,4 +374,4 @@ def apply_sonar_channel(
     else:
         generate_sonar_eq_conf(channel, bands, basses_db, voix_db, aigus_db)
 
-    subprocess.run(["systemctl", "--user", "restart", "filter-chain"], check=False)
+    subprocess.run(["systemctl", "--user", "restart", "filter-chain"], check=False, timeout=15)

@@ -49,7 +49,7 @@ class ArctisManagerDbusStatusService(ServiceInterface):
                 if status in raw_status:
                     result[category][status] = {
                         'value': raw_status[status],
-                        'type': 'label' if type(raw_status[status]) == str else config.status_parse[status].type.value
+                        'type': 'label' if isinstance(raw_status[status], str) else config.status_parse[status].type.value
                     }
             if not result[category]:
                 del result[category]
@@ -92,6 +92,7 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
             if not isinstance(bands, list) or len(bands) != 10:
                 return False
             eq_file = Path.home() / '.config' / 'arctis_manager' / 'eq_bands.json'
+            eq_file.parent.mkdir(parents=True, exist_ok=True)
             eq_file.write_text(json.dumps(bands))
             self.core_engine.send_eq_command(bands)
             return True
@@ -122,8 +123,7 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
                 self.logger.error(f'Unknown general setting configuration: {setting}')
                 return False
             
-            # TODO add type checking in case of default_value is None
-            if type(config.default_value) != type(value) and config.default_value is not None:
+            if config.default_value is not None and not isinstance(value, type(config.default_value)):
                 self.logger.error(f'Value type mismatch: {type(config.default_value)} != {type(value)}')
                 return False
 
@@ -135,12 +135,12 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
         if self.core_engine.device_config and self.core_engine.device_settings:
             device_settings_keys = self.core_engine.device_settings.settings.keys()
             if setting in device_settings_keys:
-                config = next((config for section in self.core_engine.device_config.settings.keys() for config in self.core_engine.device_config.settings[section]), None)
+                config = next((config for section in self.core_engine.device_config.settings.keys() for config in self.core_engine.device_config.settings[section] if config.name == setting), None)
                 if not config:
                     self.logger.error(f'Unknown device setting configuration: {setting}')
                     return False
                 
-                if type(config.default_value) != type(value):
+                if not isinstance(value, type(config.default_value)):
                     self.logger.error(f'Value type mismatch: {type(config.default_value)} != {type(value)}')
                     return False
 
@@ -158,7 +158,7 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
             sinks: list[TypedPulseSinkInfo] = self.core_engine.pa_audio_manager.pulse.sink_list()
             for sink in sinks:
                 id = sink.proplist.get('node.nick', '')
-                name = sink.proplist.get('node.nick', '')
+                name = sink.proplist.get('node.description', sink.proplist.get('node.nick', ''))
 
                 if id and name:
                     result.append({ 'id': id, 'name': name })

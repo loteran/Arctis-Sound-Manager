@@ -175,11 +175,11 @@ class CoreEngine:
             current_usb_devices = usb.core.find(idVendor=self.device_config.vendor_id, idProduct=product_id)
             if current_usb_devices is None:
                 continue
-            elif type(current_usb_devices) == Device:
+            elif isinstance(current_usb_devices, Device):
                 current_usb_device = current_usb_devices
                 break
             else:
-                current_usb_device = next((d for d in current_usb_devices if type(d) == Device), None)
+                current_usb_device = next((d for d in current_usb_devices if isinstance(d, Device)), None)
 
             if current_usb_device is not None:
                 break
@@ -315,9 +315,9 @@ class CoreEngine:
         result: list[int] = []
 
         for byte in data:
-            if type(byte) == int:
+            if isinstance(byte, int):
                 result.append(byte)
-            elif type(byte) == str:
+            elif isinstance(byte, str):
                 uri = byte.split('.')
                 if uri[0] == 'settings':
                     result.append(self.device_settings.get(uri[1]))

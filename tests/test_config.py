@@ -30,15 +30,17 @@ def test_config_parse():
 
     assert config.status is not None
     assert config.status.request == 0x06b0
-    assert len(config.status.response_mapping) == 3
+    assert len(config.status.response_mapping) == 4
     assert config.status.response_mapping[0].starts_with == 0x0725
-    assert config.status.response_mapping[1].starts_with == 0x0745
-    assert config.status.response_mapping[2].starts_with == 0x06b0
+    assert config.status.response_mapping[1].starts_with == 0x0731
+    assert config.status.response_mapping[2].starts_with == 0x0745
+    assert config.status.response_mapping[3].starts_with == 0x06b0
     assert len(config.status.response_mapping[0].__dict__.keys()) == 2
     assert len(config.status.response_mapping[1].__dict__.keys()) == 3
-    assert len(config.status.response_mapping[2].__dict__.keys()) == 15
-    assert hasattr(config.status.response_mapping[2], 'headset_power_status')
-    assert getattr(config.status.response_mapping[2], 'headset_power_status') == 0x0f
+    assert len(config.status.response_mapping[2].__dict__.keys()) == 3
+    assert len(config.status.response_mapping[3].__dict__.keys()) == 15
+    assert hasattr(config.status.response_mapping[3], 'headset_power_status')
+    assert getattr(config.status.response_mapping[3], 'headset_power_status') == 0x0f
     assert len(config.status.representation.keys()) == 5
     assert list(config.status.representation.keys()) == ['headset', 'mic', 'gamedac', 'bluetooth', 'wireless']
     assert config.status.representation['gamedac'] == ['station_volume', 'charge_slot_battery_charge']
@@ -61,16 +63,18 @@ def test_config_parse():
 
     assert config.settings is not None
 
-    assert len(config.settings) == 4
+    assert len(config.settings) == 5
     assert 'headset' in config.settings
     assert 'microphone' in config.settings
     assert 'power_management' in config.settings
     assert 'wireless' in config.settings
+    assert 'audio' in config.settings
 
     assert len(config.settings['headset']) == 1
     assert len(config.settings['microphone']) == 3
     assert len(config.settings['power_management']) == 1
     assert len(config.settings['wireless']) == 1
+    assert len(config.settings['audio']) == 2
     
     headset_settings: list[ConfigSetting] = config.settings['headset']
     gain = next((s for s in headset_settings if s.name == 'gain'), None)
@@ -80,7 +84,7 @@ def test_config_parse():
     assert gain.default_value == 0x02
     gain_kwargs = gain.get_kwargs()
     assert len(gain_kwargs) == 1
-    assert gain_kwargs['values'] == {'off': 0x01, 'on': 0x02, 'off_label': 'high', 'on_label': 'low'}
+    assert gain_kwargs['values'] == {'off': 0x01, 'on': 0x02, 'off_label': 'low', 'on_label': 'high'}
 
 def test_ConfigStatusResponseMapping_get_status_values():
     mapping = ConfigStatusResponseMapping(starts_with=0x123b, status1=0x02, status2=0x03)
