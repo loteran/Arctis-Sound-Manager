@@ -182,6 +182,11 @@ def _save_macro(channel: str, values: dict[str, float]) -> None:
 class _ApplyWorker(QThread):
     done = Signal(bool)
 
+    # Minimum interval between filter-chain restarts (seconds).
+    # Rapid restarts can lock up the USB ALSA driver.
+    _MIN_RESTART_INTERVAL = 2.0
+    _last_restart: float = 0.0
+
     def __init__(self, channel: str, bands: list[EqBand],
                  basses: float, voix: float, aigus: float):
         super().__init__()
@@ -227,7 +232,16 @@ class _ApplyWorker(QThread):
                                        self._basses, self._voix, self._aigus,
                                        spatial_audio=spatial, boost_db=boost_db)
 
+            # Throttle restarts to avoid locking up the USB ALSA driver
+            import time
+            elapsed = time.monotonic() - _ApplyWorker._last_restart
+            if elapsed < _ApplyWorker._MIN_RESTART_INTERVAL:
+                wait = _ApplyWorker._MIN_RESTART_INTERVAL - elapsed
+                log.debug("Throttling filter-chain restart (%.1fs)", wait)
+                self.msleep(int(wait * 1000))
+
             # Restart filter-chain and check result
+            _ApplyWorker._last_restart = time.monotonic()
             result = subprocess.run(
                 ["systemctl", "--user", "restart", "filter-chain"],
                 capture_output=True, text=True, timeout=15,
@@ -252,11 +266,41 @@ class _ApplyWorker(QThread):
             # Re-set default sink so WirePlumber routes correctly
             if self._channel != "micro":
                 sink = f"effect_input.sonar-{self._channel}-eq"
+                sink_json = _json.dumps({"name": sink})
+                # Set both configured AND active default — WirePlumber
+                # may ignore configured alone on some setups.
                 subprocess.run(
-                    ["pw-metadata", "0", "default.configured.audio.sink",
-                     _json.dumps({"name": sink})],
+                    ["pw-metadata", "0", "default.configured.audio.sink", sink_json],
                     check=False, timeout=5,
                 )
+                subprocess.run(
+                    ["pw-metadata", "0", "default.audio.sink", sink_json],
+                    check=False, timeout=5,
+                )
+                # Move existing streams to the Sonar sink
+                try:
+                    r = subprocess.run(
+                        ["pactl", "list", "sink-inputs", "short"],
+                        capture_output=True, text=True, timeout=3,
+                    )
+                    sink_idx = subprocess.run(
+                        ["pactl", "list", "sinks", "short"],
+                        capture_output=True, text=True, timeout=3,
+                    )
+                    sonar_idx = None
+                    for line in sink_idx.stdout.splitlines():
+                        if sink in line:
+                            sonar_idx = line.split()[0]
+                            break
+                    if sonar_idx:
+                        for line in r.stdout.splitlines():
+                            si = line.split()[0]
+                            subprocess.run(
+                                ["pactl", "move-sink-input", si, sonar_idx],
+                                check=False, timeout=3,
+                            )
+                except Exception as e:
+                    log.warning("Could not move existing streams: %s", e)
             self.done.emit(True)
         except subprocess.TimeoutExpired:
             log.error("_ApplyWorker timeout (channel=%s)", self._channel)
