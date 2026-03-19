@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from threading import Thread
+from concurrent.futures import ThreadPoolExecutor
 from time import sleep
 
 from dbus_next.aio.message_bus import MessageBus
@@ -21,6 +21,7 @@ class DbusWrapper(QObject):
     sig_settings = Signal(object)
 
     logger = logging.getLogger('DbusWrapper')
+    _executor = ThreadPoolExecutor(max_workers=4)
 
     def __init__(self, parent: QObject|None = None):
         super().__init__(parent)
@@ -32,49 +33,50 @@ class DbusWrapper(QObject):
     def request_status(self, one_time = False, frequency_seconds: int = 1) -> None:
         if hasattr(self, '_stopping'):
             del self._stopping
-        request_thread = Thread(target=self.request_status_thread, kwargs={'frequency_seconds': 0 if one_time else frequency_seconds})
-        request_thread.start()
+        self._executor.submit(self.request_status_thread, frequency_seconds=0 if one_time else frequency_seconds)
 
     def request_settings(self, one_time = False, frequency_seconds: int = 1) -> None:
-        request_thread = Thread(target=self.request_settings_thread, kwargs={'frequency_seconds': 0 if one_time else frequency_seconds})
-        request_thread.start()
-    
+        self._executor.submit(self.request_settings_thread, frequency_seconds=0 if one_time else frequency_seconds)
+
     @staticmethod
     def request_list_options(list_name: str, qt_signal: SignalInstance):
-        request_thread = Thread(target=DbusWrapper.request_list_options_thread, kwargs={'list_name': list_name, 'qt_signal': qt_signal})
-        request_thread.start()
-    
+        DbusWrapper._executor.submit(DbusWrapper.request_list_options_thread, list_name=list_name, qt_signal=qt_signal)
+
     @staticmethod
     def request_list_options_thread(list_name: str, qt_signal: SignalInstance):
         asyncio.run(DbusWrapper.request_list_options_async(list_name, qt_signal))
-    
+
     @staticmethod
     async def request_list_options_async(list_name: str, qt_signal: SignalInstance):
         dbus_bus = await MessageBus().connect()
-        reply = await dbus_bus.call(Message(
-            destination=DBUS_BUS_NAME,
-            path=DBUS_SETTINGS_OBJECT_PATH,
-            interface=DBUS_SETTINGS_INTERFACE_NAME,
-            member='GetListOptions',
-            message_type=MessageType.METHOD_CALL,
-            signature='s',
-            body=[list_name],
-        ))
+        try:
+            reply = await dbus_bus.call(Message(
+                destination=DBUS_BUS_NAME,
+                path=DBUS_SETTINGS_OBJECT_PATH,
+                interface=DBUS_SETTINGS_INTERFACE_NAME,
+                member='GetListOptions',
+                message_type=MessageType.METHOD_CALL,
+                signature='s',
+                body=[list_name],
+            ))
 
-        if reply is None:
-            DbusWrapper.logger.error('Error getting settings: no reply')
+            if reply is None:
+                DbusWrapper.logger.error('Error getting settings: no reply')
 
-        elif reply.message_type == MessageType.ERROR:
-            DbusWrapper.logger.error('Error getting settings: %s', reply.body)
+            elif reply.message_type == MessageType.ERROR:
+                DbusWrapper.logger.error('Error getting settings: %s', reply.body)
 
-        else:
-            obj = {'name': list_name, 'list': json.loads(reply.body[0]) or []}
-            qt_signal.emit(obj)
+            else:
+                obj = {'name': list_name, 'list': json.loads(reply.body[0]) or []}
+                qt_signal.emit(obj)
+        except Exception as e:
+            DbusWrapper.logger.error('Error in request_list_options: %s', e)
+        finally:
+            dbus_bus.disconnect()
 
     @staticmethod
     def send_eq_command(bands: list[int]) -> None:
-        request_thread = Thread(target=DbusWrapper.send_eq_command_thread, kwargs={'bands': bands})
-        request_thread.start()
+        DbusWrapper._executor.submit(DbusWrapper.send_eq_command_thread, bands=bands)
 
     @staticmethod
     def send_eq_command_thread(bands: list[int]):
@@ -83,20 +85,24 @@ class DbusWrapper(QObject):
     @staticmethod
     async def send_eq_command_async(bands: list[int]):
         dbus_bus = await MessageBus().connect()
-        await dbus_bus.call(Message(
-            destination=DBUS_BUS_NAME,
-            path=DBUS_SETTINGS_OBJECT_PATH,
-            interface=DBUS_SETTINGS_INTERFACE_NAME,
-            member='SendEqCommand',
-            message_type=MessageType.METHOD_CALL,
-            signature='s',
-            body=[json.dumps(bands)],
-        ))
+        try:
+            await dbus_bus.call(Message(
+                destination=DBUS_BUS_NAME,
+                path=DBUS_SETTINGS_OBJECT_PATH,
+                interface=DBUS_SETTINGS_INTERFACE_NAME,
+                member='SendEqCommand',
+                message_type=MessageType.METHOD_CALL,
+                signature='s',
+                body=[json.dumps(bands)],
+            ))
+        except Exception as e:
+            DbusWrapper.logger.error('Error in send_eq_command: %s', e)
+        finally:
+            dbus_bus.disconnect()
 
     @staticmethod
     def get_eq_bands(qt_signal: SignalInstance) -> None:
-        request_thread = Thread(target=DbusWrapper.get_eq_bands_thread, kwargs={'qt_signal': qt_signal})
-        request_thread.start()
+        DbusWrapper._executor.submit(DbusWrapper.get_eq_bands_thread, qt_signal=qt_signal)
 
     @staticmethod
     def get_eq_bands_thread(qt_signal: SignalInstance):
@@ -105,38 +111,47 @@ class DbusWrapper(QObject):
     @staticmethod
     async def get_eq_bands_async(qt_signal: SignalInstance):
         dbus_bus = await MessageBus().connect()
-        reply = await dbus_bus.call(Message(
-            destination=DBUS_BUS_NAME,
-            path=DBUS_SETTINGS_OBJECT_PATH,
-            interface=DBUS_SETTINGS_INTERFACE_NAME,
-            member='GetEqBands',
-            message_type=MessageType.METHOD_CALL,
-        ))
-        if reply and reply.message_type == MessageType.METHOD_RETURN:
-            qt_signal.emit(json.loads(reply.body[0]))
+        try:
+            reply = await dbus_bus.call(Message(
+                destination=DBUS_BUS_NAME,
+                path=DBUS_SETTINGS_OBJECT_PATH,
+                interface=DBUS_SETTINGS_INTERFACE_NAME,
+                member='GetEqBands',
+                message_type=MessageType.METHOD_CALL,
+            ))
+            if reply and reply.message_type == MessageType.METHOD_RETURN:
+                qt_signal.emit(json.loads(reply.body[0]))
+        except Exception as e:
+            DbusWrapper.logger.error('Error in get_eq_bands: %s', e)
+        finally:
+            dbus_bus.disconnect()
 
     @staticmethod
     def change_setting(name: str, value: int|bool|str) -> None:
-        request_thread = Thread(target=DbusWrapper.change_setting_thread, kwargs={'name': name, 'value': value})
-        request_thread.start()
-    
+        DbusWrapper._executor.submit(DbusWrapper.change_setting_thread, name=name, value=value)
+
     @staticmethod
     def change_setting_thread(name: str, value: int|bool|str):
         asyncio.run(DbusWrapper.change_setting_async(name, value))
-    
+
     @staticmethod
     async def change_setting_async(name: str, value: int|bool|str):
         dbus_bus = await MessageBus().connect()
-        await dbus_bus.call(Message(
-            destination=DBUS_BUS_NAME,
-            path=DBUS_SETTINGS_OBJECT_PATH,
-            interface=DBUS_SETTINGS_INTERFACE_NAME,
-            member='SetSetting',
-            message_type=MessageType.METHOD_CALL,
-            signature='ss',
-            body=[name, json.dumps(value)],
-        ))
-    
+        try:
+            await dbus_bus.call(Message(
+                destination=DBUS_BUS_NAME,
+                path=DBUS_SETTINGS_OBJECT_PATH,
+                interface=DBUS_SETTINGS_INTERFACE_NAME,
+                member='SetSetting',
+                message_type=MessageType.METHOD_CALL,
+                signature='ss',
+                body=[name, json.dumps(value)],
+            ))
+        except Exception as e:
+            DbusWrapper.logger.error('Error in change_setting: %s', e)
+        finally:
+            dbus_bus.disconnect()
+
     def request_status_thread(self, frequency_seconds: int):
         asyncio.run(self.dbus_request_async(
             self.sig_status,
@@ -146,7 +161,7 @@ class DbusWrapper(QObject):
             DBUS_STATUS_INTERFACE_NAME,
             'GetStatus',
         ))
-    
+
     def request_settings_thread(self, frequency_seconds: int):
         asyncio.run(self.dbus_request_async(
             self.sig_settings,
@@ -156,29 +171,33 @@ class DbusWrapper(QObject):
             DBUS_SETTINGS_INTERFACE_NAME,
             'GetSettings',
         ))
-    
-    async def dbus_request_async(self, sig: SignalInstance, freq: int,destination: str, path: str, interface: str, member: str):
+
+    async def dbus_request_async(self, sig: SignalInstance, freq: int, destination: str, path: str, interface: str, member: str):
         while not hasattr(self, '_stopping'):
             dbus_bus = await MessageBus().connect()
-            reply = await dbus_bus.call(Message(
-                destination=destination,
-                path=path,
-                interface=interface,
-                member=member,
-                message_type=MessageType.METHOD_CALL
-            ))
+            try:
+                reply = await dbus_bus.call(Message(
+                    destination=destination,
+                    path=path,
+                    interface=interface,
+                    member=member,
+                    message_type=MessageType.METHOD_CALL
+                ))
 
-            if reply is None:
-                self.logger.error('Error getting settings: no reply')
+                if reply is None:
+                    self.logger.error('Error getting settings: no reply')
 
-            elif reply.message_type == MessageType.ERROR:
-                self.logger.error('Error getting settings: %s', reply.body)
+                elif reply.message_type == MessageType.ERROR:
+                    self.logger.error('Error getting settings: %s', reply.body)
 
-            else:
-                sig.emit(json.loads(reply.body[0]) or {})
+                else:
+                    sig.emit(json.loads(reply.body[0]) or {})
+            except Exception as e:
+                self.logger.error('Error in dbus_request: %s', e)
+            finally:
+                dbus_bus.disconnect()
 
             if freq == 0:
                 return
-            
-            sleep(freq)
 
+            sleep(freq)

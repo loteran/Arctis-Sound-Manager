@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import threading
 from pathlib import Path
 from typing import Any, Coroutine, Literal, cast
 
@@ -42,6 +43,7 @@ class CoreEngine:
     def __init__(self) -> None:
         self.media_mix = 100
         self.chat_mix = 100
+        self._device_lock = threading.RLock()
 
         self.general_settings = GeneralSettings.read_from_file()
 
@@ -89,19 +91,22 @@ class CoreEngine:
             self.pa_audio_manager.set_mix(self.media_mix, self.chat_mix)
     
     async def listen_endpoint_loop(self, interface_id: int):
-        if self.usb_device is None:
-            return
+        with self._device_lock:
+            if self.usb_device is None:
+                return
+            usb_device = self.usb_device
 
         endpoint, max_packet_size = self.guess_interface_endpoint('in', interface_id)
 
         if not endpoint:
-            self.logger.warning(f'Failed to find listen interface endpoint for device: {self.usb_device.idProduct:04x}:{self.usb_device.idVendor:04x}')
+            self.logger.warning(f'Failed to find listen interface endpoint for device: {usb_device.idProduct:04x}:{usb_device.idVendor:04x}')
             return
-        
+
         try:
-            read_input: list[int] = list(await asyncio.to_thread(self.usb_device.read, endpoint, max_packet_size, 200))
-            if self.device_config is None:
-                return
+            read_input: list[int] = list(await asyncio.to_thread(usb_device.read, endpoint, max_packet_size, 200))
+            with self._device_lock:
+                if self.device_config is None:
+                    return
 
             if self.device_config.status is not None:
                 self.logger.debug(f'Response: {read_input}')
@@ -135,15 +140,23 @@ class CoreEngine:
         listen_coroutines: list[asyncio.Task] = []
         while not self._stopping:
             if not self.usb_device:
+                # Cancel any leftover tasks from a previous connection
+                for task in listen_coroutines:
+                    task.cancel()
+                listen_coroutines = []
                 await asyncio.sleep(0.1)
                 continue
 
             if self.device_config is not None:
                 listen_coroutines = [asyncio.create_task(self.listen_endpoint_loop(interface_id)) for interface_id in self.device_config.listen_interface_indexes]
-            
+
             self.request_device_status()
-        
-            await asyncio.gather(*listen_coroutines)
+
+            await asyncio.gather(*listen_coroutines, return_exceptions=True)
+
+        # Cleanup on stop
+        for task in listen_coroutines:
+            task.cancel()
 
     def on_device_connected(self, vendor_id: int, product_id: int) -> None:
         for device_config in self.device_configurations:
@@ -221,9 +234,6 @@ class CoreEngine:
 
         # Configure the device
         self.init_device()
-
-        self.pa_audio_manager.wait_for_physical_device(self.usb_device.idVendor, self.usb_device.idProduct)
-        self.pa_audio_manager.sinks_setup(self.device_config.name, self.device_config.vendor_id, self.device_config.product_ids)
 
         self.redirect_to_media_sink()
     
@@ -428,7 +438,6 @@ class CoreEngine:
         self.send_command([self.device_config.status.request], endpoint)
 
     def teardown(self) -> None:
-        self.pa_audio_manager.sinks_teardown()
         if self.usb_device:
             try:
                 if self.device_config is not None:
@@ -437,9 +446,10 @@ class CoreEngine:
                     self.kernel_attach(self.usb_device, self.device_config)
             except usb.core.USBError as e:
                 self.logger.warning(f"Error re-attaching kernel driver: {e}")
-        
+
         self.redirect_audio_on_disconnect()
-        
-        self.usb_device = None
-        self.device_config = None
-        self.device_status = None
+
+        with self._device_lock:
+            self.usb_device = None
+            self.device_config = None
+            self.device_status = None

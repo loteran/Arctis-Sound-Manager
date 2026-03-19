@@ -56,14 +56,10 @@ class QSystrayApp(QBaseDesktopApp):
         self.menu = QMenu()
         self.menu_setup()
         self.do_polling = False
-        self.menu.aboutToShow.connect(self.start_polling)
-        self.menu.aboutToHide.connect(self.stop_polling)
-        
+
         self.new_status.connect(self.on_new_status)
         self.dbus_poll_thread = Thread(target=self.poll_dbus_thread, daemon=True)
         self.dbus_poll_thread.start()
-
-        self.tray_icon.setContextMenu(self.menu)
     
     def start_polling(self):
         # Rebuild the menu NOW, before the popup window is created by Qt.
@@ -88,23 +84,28 @@ class QSystrayApp(QBaseDesktopApp):
         self.logger.debug('Polling dbus...')
 
         dbus_bus = await MessageBus().connect()
-        reply = await dbus_bus.call(Message(
-            destination=DBUS_BUS_NAME,
-            path=DBUS_STATUS_OBJECT_PATH,
-            interface=DBUS_STATUS_INTERFACE_NAME,
-            member='GetStatus',
-            message_type=MessageType.METHOD_CALL
-        ))
+        try:
+            reply = await dbus_bus.call(Message(
+                destination=DBUS_BUS_NAME,
+                path=DBUS_STATUS_OBJECT_PATH,
+                interface=DBUS_STATUS_INTERFACE_NAME,
+                member='GetStatus',
+                message_type=MessageType.METHOD_CALL
+            ))
 
-        if reply is None:
-            self.logger.error('Error getting status: no reply')
-            return
+            if reply is None:
+                self.logger.error('Error getting status: no reply')
+                return
 
-        if reply.message_type == MessageType.ERROR:
-            self.logger.error('Error getting status: %s', reply.body)
-            return
+            if reply.message_type == MessageType.ERROR:
+                self.logger.error('Error getting status: %s', reply.body)
+                return
 
-        self.new_status.emit(json.loads(reply.body[0]) or {})
+            self.new_status.emit(json.loads(reply.body[0]) or {})
+        except Exception as e:
+            self.logger.error('Error polling dbus: %s', e)
+        finally:
+            dbus_bus.disconnect()
     
     def on_new_status(self, status: dict[str, dict[str, dict[str, str|int]]]):
         if self.last_device_status == status:
@@ -126,7 +127,8 @@ class QSystrayApp(QBaseDesktopApp):
         self.app.exec()
 
     def menu_setup(self) -> None:
-        self.menu.clear()
+        old_menu = self.menu
+        self.menu = QMenu()
         self._menu_actions = {}
 
         self._menu_actions['open_app'] = QAction(I18n.translate('ui', 'open_app'))
@@ -161,6 +163,12 @@ class QSystrayApp(QBaseDesktopApp):
         self._menu_actions['exit'] = QAction(I18n.translate('ui', 'exit'))
         self._menu_actions['exit'].triggered.connect(self.sig_stop)
         self.menu.addAction(self._menu_actions['exit'])
+
+        self.menu.aboutToShow.connect(self.start_polling)
+        self.menu.aboutToHide.connect(self.stop_polling)
+        self.tray_icon.setContextMenu(self.menu)
+        if old_menu is not None:
+            old_menu.deleteLater()
     
     def _sonar_state_file(self) -> Path:
         return Path.home() / '.config' / 'arctis_manager' / '.eq_mode'

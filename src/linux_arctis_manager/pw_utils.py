@@ -79,7 +79,7 @@ def move_native_stream(stream_node_id: int, target_sink_name: str, data: list | 
     target_id = None
     for obj in data:
         props = obj.get("info", {}).get("props", {})
-        if props.get("media.class") == "Audio/Sink" and target_sink_name in props.get("node.name", ""):
+        if props.get("media.class") == "Audio/Sink" and props.get("node.name", "") == target_sink_name:
             target_id = obj["id"]
             break
 

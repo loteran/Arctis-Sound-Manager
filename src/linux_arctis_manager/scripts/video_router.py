@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Route browsers and video players to Arctis_Media sink automatically.
+Apply manual routing overrides for audio streams.
 Respects manual overrides written by the GUI (routing_overrides.json).
 Detects manual moves done in KDE and saves them as persistent overrides.
 """
@@ -16,25 +16,6 @@ from linux_arctis_manager.pw_utils import get_native_streams, move_native_stream
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 log = logging.getLogger("video_router")
 
-VIDEO_APPS = {
-    "firefox",
-    "chromium",
-    "google-chrome",
-    "brave",
-    "opera",
-    "vivaldi",
-    "vlc",
-    "mpv",
-    "haruna",
-    "totem",
-    "celluloid",
-    "dragon",
-    "kaffeine",
-    "gwenview",
-    "clementine",
-}
-
-TARGET_SINK = "Arctis_Media"
 # Wake up on PulseAudio events; fall back to periodic check for native PW streams
 EVENT_TIMEOUT    = 5.0   # seconds to wait for a PA event before forced re-check
 EVENT_DEBOUNCE   = 0.15  # seconds to let rapid event bursts settle
@@ -47,12 +28,6 @@ _pa_placed: dict[str, int] = {}
 
 # Same for native PipeWire streams (sink node name).
 _native_placed: dict[str, str] = {}
-
-
-def is_video_app(app_name: str) -> bool:
-    return app_name.lower() in VIDEO_APPS or any(
-        v in app_name.lower() for v in VIDEO_APPS
-    )
 
 
 def load_overrides() -> dict:
@@ -84,7 +59,7 @@ def _subscribe(pulse: pulsectl.Pulse) -> None:
 
 
 def main():
-    log.info("Starting video router — target sink: %s", TARGET_SINK)
+    log.info("Starting routing override daemon")
     pulse = pulsectl.Pulse("arctis-video-router")
     _subscribe(pulse)
 
@@ -102,10 +77,6 @@ def main():
                 _subscribe(pulse)
 
             sinks = pulse.sink_list()
-            video_sink = next((s for s in sinks if TARGET_SINK in s.name), None)
-
-            if video_sink is None:
-                continue
 
             # Si le default sink n'est pas un sink Arctis, le router s'efface
             # et laisse KDE gérer le routing librement.
@@ -115,19 +86,16 @@ def main():
                 k in default_sink_name for k in ("Arctis_", "SteelSeries_Arctis", "effect_input")
             )
             if not arctis_is_default:
-                # Déplace les video apps bloquées sur des sinks Arctis virtuels
+                # Déplace les apps bloquées sur des sinks Arctis virtuels
                 # vers le nouveau default sink choisi dans KDE.
                 default_sink = next((s for s in sinks if s.name == default_sink_name), None)
                 if default_sink:
-                    arctis_virtual = {"Arctis_Game", "Arctis_Chat", "Arctis_Media", "Arctis_Video",
-                                      "effect_input.sonar"}
+                    arctis_virtual = {"Arctis_Game", "Arctis_Chat", "effect_input.sonar"}
                     idx_to_name = {s.index: s.name for s in sinks}
                     for si in pulse.sink_input_list():
                         app = si.proplist.get("application.name", "")
-                        if not app or not is_video_app(app):
+                        if not app:
                             continue
-                        # En mode non-Arctis, KDE a la priorité — ignorer les overrides Arctis.
-                        # Déplacer les apps bloquées sur des sinks Arctis virtuels vers le default.
                         on_arctis = any(k in idx_to_name.get(si.sink, "") for k in arctis_virtual)
                         if on_arctis and si.sink != default_sink.index:
                             log.info("Default non-Arctis: déplacement '%s' -> %s", app, default_sink_name)
@@ -157,24 +125,11 @@ def main():
 
                 if app in overrides:
                     wanted_sink_name = overrides[app]
-                    wanted_index = next(
-                        (idx for name, idx in sink_map.items() if wanted_sink_name in name),
-                        None
-                    )
+                    wanted_index = sink_map.get(wanted_sink_name)
                     if wanted_index is not None and si.sink != wanted_index:
                         log.info("Override: moving '%s' -> %s", app, wanted_sink_name)
                         pulse.sink_input_move(si.index, wanted_index)
                         _pa_placed[app] = wanted_index
-                    else:
-                        _pa_placed[app] = si.sink
-                    continue
-
-                # Auto-route video apps to Arctis_Media
-                if is_video_app(app):
-                    if si.sink != video_sink.index:
-                        log.info("Moving '%s' -> %s", app, TARGET_SINK)
-                        pulse.sink_input_move(si.index, video_sink.index)
-                        _pa_placed[app] = video_sink.index
                     else:
                         _pa_placed[app] = si.sink
 
@@ -193,7 +148,7 @@ def main():
                 if app in _native_placed:
                     placed = _native_placed[app]
                     current = s["sink_name"]
-                    if current and placed not in current:
+                    if current and current != placed:
                         log.info("Manual move detected (native): '%s' -> %s (saving override)", app, current)
                         overrides[app] = current
                         save_overrides(overrides)
@@ -201,7 +156,7 @@ def main():
 
                 if app in overrides:
                     wanted = overrides[app]
-                    if s["sink_name"] is None or wanted not in s["sink_name"]:
+                    if s["sink_name"] is None or s["sink_name"] != wanted:
                         log.info("Override native: moving '%s' -> %s", app, wanted)
                         move_native_stream(s["id"], wanted)
                         _native_placed[app] = wanted
@@ -209,12 +164,6 @@ def main():
                         _native_placed[app] = s["sink_name"]
                     continue
 
-                if is_video_app(app) and (s["sink_name"] is None or TARGET_SINK not in s["sink_name"]):
-                    log.info("Moving native '%s' -> %s", app, TARGET_SINK)
-                    move_native_stream(s["id"], TARGET_SINK)
-                    _native_placed[app] = TARGET_SINK
-                elif is_video_app(app):
-                    _native_placed[app] = s["sink_name"]
 
         except pulsectl.PulseDisconnected:
             log.warning("PulseAudio disconnected, reconnecting...")
@@ -226,6 +175,8 @@ def main():
             pulse = pulsectl.Pulse("arctis-video-router")
             _subscribe(pulse)
             last_native_check = 0.0
+            _pa_placed.clear()
+            _native_placed.clear()
         except Exception as e:
             log.error("Error: %s", e)
             time.sleep(1)
