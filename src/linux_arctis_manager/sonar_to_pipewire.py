@@ -43,7 +43,7 @@ _MACRO_PARAMS = {
     "aigus":  {"freq": 9000.0, "q": 0.80},
 }
 
-_CONF_DIR = Path.home() / ".config" / "pipewire" / "pipewire.conf.d"
+_CONF_DIR = Path.home() / ".config" / "pipewire" / "filter-chain.conf.d"
 
 
 # ── Low-level helpers ─────────────────────────────────────────────────────────
@@ -191,8 +191,6 @@ context.modules = [
 
 # ── Config generator — micro ──────────────────────────────────────────────────
 
-_MICRO_CONF_DIR = Path.home() / ".config" / "pipewire" / "filter-chain.conf.d"
-
 
 def generate_sonar_micro_conf(
     bands: list[EqBand],
@@ -212,7 +210,7 @@ def generate_sonar_micro_conf(
     The filter-chain service loads them separately.
     """
     if output_path is None:
-        output_path = _MICRO_CONF_DIR / "sonar-micro-eq.conf"
+        output_path = _CONF_DIR / "sonar-micro-eq.conf"
 
     boost_db = max(-12.0, min(12.0, boost_db))
 
@@ -386,67 +384,56 @@ def apply_sonar_channel(
     voix_db: float = 0.0,
     aigus_db: float = 0.0,
 ) -> None:
-    """Generate config and restart the appropriate PipeWire service.
+    """Generate config and restart the filter-chain service.
 
-    game/chat configs go to pipewire.conf.d/ (loaded by main daemon).
-    micro configs go to filter-chain.conf.d/ (loaded by filter-chain service).
+    All Sonar configs go to filter-chain.conf.d/ and are loaded by the
+    separate filter-chain service.  This avoids restarting the main PipeWire
+    daemon, preserving HeSuVi, Firefox streams, and other active audio.
     """
     import subprocess
 
     if channel == "micro":
         generate_sonar_micro_conf(bands, basses_db, voix_db, aigus_db)
-        subprocess.run(["systemctl", "--user", "restart", "filter-chain"], check=False, timeout=15)
     else:
         generate_sonar_eq_conf(channel, bands, basses_db, voix_db, aigus_db)
-        subprocess.run(["systemctl", "--user", "restart", "pipewire"], check=False, timeout=15)
+
+    subprocess.run(["systemctl", "--user", "restart", "filter-chain"], check=False, timeout=15)
 
 
 def check_and_fix_stale_configs() -> bool:
-    """Detect and migrate stale Sonar configs.
+    """Detect and fix stale Sonar configs.
 
     Checks for:
     1. Configs using the broken ``label = gain`` builtin (PipeWire 1.6.x).
-    2. Game/chat configs left in old ``filter-chain.conf.d/`` (must be in
-       ``pipewire.conf.d/`` for WirePlumber to create playback links).
-    3. Micro configs accidentally placed in ``pipewire.conf.d/`` (causes ALSA
-       port exhaustion — micro must stay in ``filter-chain.conf.d/``).
+    2. Sonar configs accidentally left in ``pipewire.conf.d/`` (must be in
+       ``filter-chain.conf.d/`` to avoid restarting the main daemon).
 
-    Returns True if any config was regenerated or migrated.
+    Returns True if any config was regenerated or cleaned.
     """
     import logging
     log = logging.getLogger(__name__)
     fixed = False
-    old_dir = _CONF_DIR.parent / "filter-chain.conf.d"
+    bad_dir = _CONF_DIR.parent / "pipewire.conf.d"
 
-    # Game/chat: migrate from old dir to pipewire.conf.d
-    for name in ("sonar-game-eq.conf", "sonar-chat-eq.conf"):
-        old_path = old_dir / name
-        if old_path.exists():
-            log.warning("Removing stale config from old location: %s", old_path)
-            old_path.unlink()
+    for name in ("sonar-game-eq.conf", "sonar-chat-eq.conf", "sonar-micro-eq.conf"):
+        # Remove stale copies from pipewire.conf.d (wrong location)
+        bad_path = bad_dir / name
+        if bad_path.exists():
+            log.warning("Removing sonar config from pipewire.conf.d: %s", bad_path)
+            bad_path.unlink()
             fixed = True
 
+        # Fix broken 'label = gain' in correct location
         path = _CONF_DIR / name
         if path.exists() and "label = gain" in path.read_text():
             log.warning("Stale config (%s uses 'label = gain'), regenerating", name)
             channel = name.replace("sonar-", "").replace("-eq.conf", "")
-            sink_name = f"effect_input.sonar-{channel}-eq"
-            target = _game_target(True) if channel == "game" else _CHANNEL_TARGET.get(channel, _PHYSICAL_OUT)
-            _write_conf(path, _bypass_conf(sink_name, target))
+            if channel == "micro":
+                _write_conf(path, _bypass_micro_conf())
+            else:
+                sink_name = f"effect_input.sonar-{channel}-eq"
+                target = _game_target(True) if channel == "game" else _CHANNEL_TARGET.get(channel, _PHYSICAL_OUT)
+                _write_conf(path, _bypass_conf(sink_name, target))
             fixed = True
-
-    # Micro: must NOT be in pipewire.conf.d (causes ALSA port exhaustion)
-    bad_micro = _CONF_DIR / "sonar-micro-eq.conf"
-    if bad_micro.exists():
-        log.warning("Removing micro config from pipewire.conf.d (must be in filter-chain.conf.d)")
-        bad_micro.unlink()
-        fixed = True
-
-    # Check micro in its correct location
-    micro_path = _MICRO_CONF_DIR / "sonar-micro-eq.conf"
-    if micro_path.exists() and "label = gain" in micro_path.read_text():
-        log.warning("Stale micro config uses 'label = gain', regenerating")
-        _write_conf(micro_path, _bypass_micro_conf())
-        fixed = True
 
     return fixed

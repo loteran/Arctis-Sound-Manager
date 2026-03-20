@@ -240,16 +240,15 @@ class _ApplyWorker(QThread):
                 log.debug("Throttling filter-chain restart (%.1fs)", wait)
                 self.msleep(int(wait * 1000))
 
-            # Restart the appropriate service
+            # Restart filter-chain service (NOT pipewire — preserves HeSuVi/streams)
             _ApplyWorker._last_restart = time.monotonic()
-            service = "filter-chain" if self._channel == "micro" else "pipewire"
             result = subprocess.run(
-                ["systemctl", "--user", "restart", service],
+                ["systemctl", "--user", "restart", "filter-chain"],
                 capture_output=True, text=True, timeout=15,
             )
             if result.returncode != 0:
-                log.error("%s restart failed (rc=%d): %s",
-                          service, result.returncode, result.stderr.strip())
+                log.error("filter-chain restart failed (rc=%d): %s",
+                          result.returncode, result.stderr.strip())
                 self.done.emit(False)
                 return
 
@@ -1712,8 +1711,8 @@ class SonarPage(QWidget):
         # Fix stale configs that use the broken 'label = gain' builtin
         if check_and_fix_stale_configs():
             import logging
-            logging.getLogger(__name__).info("Stale Sonar configs fixed, restarting pipewire")
-            subprocess.run(["systemctl", "--user", "restart", "pipewire"],
+            logging.getLogger(__name__).info("Stale Sonar configs fixed, restarting filter-chain")
+            subprocess.run(["systemctl", "--user", "restart", "filter-chain"],
                            check=False, timeout=15)
 
         self.setStyleSheet(f"background-color: {BG_MAIN};")
