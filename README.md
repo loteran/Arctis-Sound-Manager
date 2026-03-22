@@ -30,20 +30,20 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 
 ## Screenshots
 
-### Home — 4-channel audio mixer
-![Home](docs/images/screenshot_home.png)
+### Home — 3-channel audio mixer (Game / Chat / Media)
+![Home](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/develop/docs/images/screenshot_home.png)
 
 ### Sonar — Parametric EQ (Game / Chat / Micro) with presets, Spatial Audio and Boost
-![Sonar](docs/images/screenshot_sonar.png)
+![Sonar](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/develop/docs/images/screenshot_sonar.png)
 
 ### Equalizer — Custom mode 10-band EQ with presets
-![Equalizer](docs/images/screenshot_equalizer.png)
+![Equalizer](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/develop/docs/images/screenshot_equalizer.png)
 
 ### Headset / DAC — Device info and live status
-![Headset](docs/images/screenshot_headset.png)
+![Headset](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/develop/docs/images/screenshot_headset.png)
 
 ### Settings — Device configuration
-![Settings](docs/images/screenshot_settings.png)
+![Settings](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/develop/docs/images/screenshot_settings.png)
 
 ---
 
