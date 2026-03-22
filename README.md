@@ -45,9 +45,6 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 ### Settings — Device configuration
 ![Settings](docs/images/screenshot_settings.png)
 
-### Help — Built-in user manual (EN / FR / ES)
-![Help](docs/images/screenshot_help.png)
-
 ---
 
 ## Supported Devices
