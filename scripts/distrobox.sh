@@ -13,8 +13,8 @@ rm -rf dist 2>/dev/null || true
 uv build
 pipx install --force dist/*.whl
 mkdir -p ~/.local/share/applications
-lam-cli desktop write
-lam-cli udev write-rules --force --rules-path ~/91-steelseries-arctis.rules
+asm-cli desktop write
+asm-cli udev write-rules --force --rules-path ~/91-steelseries-arctis.rules
 "
 
 # Move udev rules to the correct location and reload udev
@@ -32,7 +32,7 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-ExecStart=__HOME__/.local/share/pipx/venvs/linux-arctis-manager/bin/lam-daemon
+ExecStart=__HOME__/.local/share/pipx/venvs/arctis-sound-manager/bin/asm-daemon
 Restart=on-failure
 RestartSec=1
 StartLimitIntervalSec=60

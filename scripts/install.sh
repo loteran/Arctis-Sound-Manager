@@ -32,11 +32,11 @@ find ./dist -name "*.whl" | head -n1 | xargs pipx install --force
 
 # 3. Setup udev rules (requires sudo)
 echo "==> Installing udev rules (requires sudo)..."
-lam-cli udev write-rules --force --reload
+asm-cli udev write-rules --force --reload
 
 # 4. Setup desktop entries
 echo "==> Installing desktop entries..."
-lam-cli desktop write
+asm-cli desktop write
 
 # 5. Install and enable the main daemon service
 echo "==> Enabling arctis-manager systemd service..."
@@ -54,7 +54,7 @@ systemctl --user enable --now arctis-video-router.service
 echo "==> Copying device config to user config dir..."
 ARCTIS_CONFIG_DIR="$HOME/.config/arctis_manager/devices"
 mkdir -p "$ARCTIS_CONFIG_DIR"
-DEVICES_SRC="$REPO_DIR/src/linux_arctis_manager/devices"
+DEVICES_SRC="$REPO_DIR/src/arctis_sound_manager/devices"
 if [ -d "$DEVICES_SRC" ]; then
     cp "$DEVICES_SRC"/*.yaml "$ARCTIS_CONFIG_DIR/"
     echo "    [ok] Device configs copied."
@@ -82,4 +82,4 @@ systemctl --user enable --now filter-chain.service
 
 echo ""
 echo "==> Installation complete!"
-echo "    Run 'lam-gui' to open the interface, or find it in your application menu."
+echo "    Run 'asm-gui' to open the interface, or find it in your application menu."

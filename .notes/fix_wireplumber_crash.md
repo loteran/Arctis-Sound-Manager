@@ -1,10 +1,10 @@
-# Fix : WirePlumber crash causé par linux-arctis-manager
+# Fix : WirePlumber crash causé par arctis-sound-manager
 
 ## Symptôme
 La session plante aléatoirement. WirePlumber crash avec SIGABRT (core-dump), ce qui entraîne l'arrêt de PipeWire et la mort de la session graphique.
 
 ## Cause racine
-LAM crée les virtual sinks `Arctis_Game`, `Arctis_Chat` et `Arctis_Media` en chargeant des modules via la couche de compatibilité PulseAudio (`pulsectl.module_load`) :
+ASM crée les virtual sinks `Arctis_Game`, `Arctis_Chat` et `Arctis_Media` en chargeant des modules via la couche de compatibilité PulseAudio (`pulsectl.module_load`) :
 - `module-null-sink` (pour le sink virtuel)
 - `module-loopback` (pour router vers le device physique)
 
@@ -25,7 +25,7 @@ if sink:
     return  # ← retourne sans charger de modules si le sink existe déjà
 ```
 
-**Il suffit donc de pré-créer les sinks nativement via PipeWire** pour que LAM ne charge jamais de modules PulseAudio.
+**Il suffit donc de pré-créer les sinks nativement via PipeWire** pour que ASM ne charge jamais de modules PulseAudio.
 
 ## Fichier de config à créer/installer
 
@@ -36,12 +36,12 @@ if sink:
 ```conf
 # Pre-create Arctis_Game, Arctis_Chat and Arctis_Media virtual sinks natively via PipeWire.
 #
-# Without this, linux-arctis-manager creates them by loading PulseAudio
+# Without this, arctis-sound-manager creates them by loading PulseAudio
 # modules (module-null-sink + module-loopback) via pipewire-pulse, which
 # triggers a use-after-free bug in WirePlumber 0.5.x Lua scripting and
 # crashes the session.
 #
-# LAM's create_virtual_sink() checks if the sink already exists (by node.name)
+# ASM's create_virtual_sink() checks if the sink already exists (by node.name)
 # and returns early if it does — so pre-creating them here prevents any
 # PulseAudio module loading entirely.
 #

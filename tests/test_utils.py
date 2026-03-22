@@ -1,6 +1,6 @@
 """Tests for utils — ObservableDict, JsonSerializable, project_version."""
 
-from linux_arctis_manager.utils import ObservableDict, project_version
+from arctis_sound_manager.utils import ObservableDict, project_version
 
 
 def test_observable_dict_notifies_on_change():

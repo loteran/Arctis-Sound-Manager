@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Arctis Sound Manager (system tray)
+Exec=/bin/sh -c 'exec asm-gui --systray >/dev/null 2>&1'
+Icon=arctis-manager
+Type=Application
+Terminal=false
+Categories=Utility;Application;
+StartupNotify=true

@@ -4,7 +4,7 @@ After=pipewire.service arctis-manager.service
 Requires=pipewire.service
 
 [Service]
-ExecStart=%h/.local/bin/lam-router
+ExecStart=%h/.local/bin/asm-router
 Restart=on-failure
 RestartSec=3
 

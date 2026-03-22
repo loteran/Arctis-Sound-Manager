@@ -2,7 +2,7 @@
 
 A Linux GUI for SteelSeries Arctis headsets — manages device settings and provides a 4-channel audio mixer (Game / Chat / Media / HDMI) with automatic media routing, and a full **Sonar EQ** system powered by PipeWire filter-chain.
 
-> Based on [Linux Arctis Manager](https://github.com/elegos/Linux-Arctis-Manager) by elegos.
+> Based on [Arctis Sound Manager](https://github.com/elegos/Linux-Arctis-Manager) by elegos.
 
 ---
 
@@ -150,7 +150,7 @@ The installer will:
 
 After installation, launch the GUI from your application menu or run:
 ```bash
-lam-gui
+asm-gui
 ```
 
 ---
@@ -166,7 +166,7 @@ The app creates 3 virtual audio sinks on top of your physical Arctis device, plu
 | **Arctis_Media** | Browsers, video players | M |
 | **HDMI** | Direct native surround (5.1 / 7.1) | H |
 
-The **media router** (`lam-router`) runs as a background service and automatically moves browsers and video players to `Arctis_Media`. Any app not in the list stays on whichever sink it was placed on.
+The **media router** (`asm-router`) runs as a background service and automatically moves browsers and video players to `Arctis_Media`. Any app not in the list stays on whichever sink it was placed on.
 
 To **manually move** an app stream, click the **G / C / M / H** buttons on its tag in the GUI. The choice is saved and respected even after the app restarts.
 
@@ -186,7 +186,7 @@ Example output:
 1605  alsa_output.pci-0000_09_00.1.hdmi-surround                              ...
 ```
 
-Then open `src/linux_arctis_manager/gui/home_page.py` and change the `SINK_HDMI` constant to match a unique fragment of your sink name:
+Then open `src/arctis_sound_manager/gui/home_page.py` and change the `SINK_HDMI` constant to match a unique fragment of your sink name:
 
 ```python
 # Before (default)
@@ -215,14 +215,14 @@ rm ~/.config/systemd/user/arctis-manager.service
 rm ~/.config/systemd/user/arctis-video-router.service
 
 # Remove desktop entries and udev rules
-lam-cli desktop remove
+asm-cli desktop remove
 sudo rm /usr/lib/udev/rules.d/91-steelseries-arctis.rules
 
 # Remove user config
 rm -rf ~/.config/arctis_manager
 
 # Uninstall the package
-pipx uninstall linux-arctis-manager
+pipx uninstall arctis-sound-manager
 
 # Disable filter-chain service (Sonar EQ)
 systemctl --user disable --now filter-chain.service
@@ -237,24 +237,24 @@ rm ~/.config/pipewire/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf
 
 ```bash
 # Run the daemon
-python src/linux_arctis_manager/scripts/daemon.py
+python src/arctis_sound_manager/scripts/daemon.py
 
 # Run the GUI (without enforcing systemd)
-python src/linux_arctis_manager/scripts/gui.py --no-enforce-systemd
+python src/arctis_sound_manager/scripts/gui.py --no-enforce-systemd
 
 # Run the media router
-python src/linux_arctis_manager/scripts/video_router.py
+python src/arctis_sound_manager/scripts/video_router.py
 ```
 
 ### Project structure
 
 ```
-src/linux_arctis_manager/
+src/arctis_sound_manager/
 ├── scripts/
-│   ├── daemon.py          # lam-daemon: device manager service
-│   ├── gui.py             # lam-gui: graphical interface
-│   ├── video_router.py    # lam-router: media auto-routing service
-│   └── cli.py             # lam-cli: setup utilities
+│   ├── daemon.py          # asm-daemon: device manager service
+│   ├── gui.py             # asm-gui: graphical interface
+│   ├── video_router.py    # asm-router: media auto-routing service
+│   └── cli.py             # asm-cli: setup utilities
 ├── gui/
 │   ├── home_page.py       # Audio mixer (Game/Chat/Media/HDMI cards)
 │   ├── headset_page.py    # Device info and live status
@@ -275,6 +275,6 @@ scripts/
 ├── setup-surround.sh                       # Optional virtual surround setup
 ├── pipewire/
 │   └── sink-virtual-surround-7.1-hesuvi.conf  # PipeWire filter-chain config
-└── arctis-video-router.service             # Systemd service for lam-router
+└── arctis-video-router.service             # Systemd service for asm-router
 ```
 If you want to buy me a coffee ;) --> https://ko-fi.com/loteran

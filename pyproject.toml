@@ -1,6 +1,6 @@
 [project]
-name = "linux-arctis-manager"
-version = "2.5.0"
+name = "arctis-sound-manager"
+version = "2.6.0"
 description = "A replacement for SteelSeries GG software, to manage your Arctis device on Linux!"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -14,10 +14,10 @@ dependencies = [
 ]
 
 [project.scripts]
-lam-daemon = "linux_arctis_manager.scripts.daemon:main"
-lam-cli = "linux_arctis_manager.scripts.cli:main"
-lam-gui = "linux_arctis_manager.scripts.gui:main"
-lam-router = "linux_arctis_manager.scripts.video_router:main"
+asm-daemon = "arctis_sound_manager.scripts.daemon:main"
+asm-cli = "arctis_sound_manager.scripts.cli:main"
+asm-gui = "arctis_sound_manager.scripts.gui:main"
+asm-router = "arctis_sound_manager.scripts.video_router:main"
 
 [build-system]
 requires = ["uv_build>=0.9.17,<0.11.0"]

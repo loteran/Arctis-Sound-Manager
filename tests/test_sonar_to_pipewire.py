@@ -3,8 +3,8 @@
 from pathlib import Path
 from unittest.mock import patch
 
-from linux_arctis_manager.gui.eq_curve_widget import EqBand
-from linux_arctis_manager.sonar_to_pipewire import (
+from arctis_sound_manager.gui.eq_curve_widget import EqBand
+from arctis_sound_manager.sonar_to_pipewire import (
     check_and_fix_stale_configs,
     generate_sonar_eq_conf,
     generate_sonar_micro_conf,
@@ -126,7 +126,7 @@ def test_check_and_fix_stale_configs_fixes_gain(tmp_path):
     )
     (tmp_path / "sonar-game-eq.conf").write_text(stale)
 
-    with patch("linux_arctis_manager.sonar_to_pipewire._CONF_DIR", tmp_path):
+    with patch("arctis_sound_manager.sonar_to_pipewire._CONF_DIR", tmp_path):
         assert check_and_fix_stale_configs() is True
 
     fixed = (tmp_path / "sonar-game-eq.conf").read_text()
@@ -145,5 +145,5 @@ def test_check_and_fix_stale_configs_noop_when_clean(tmp_path):
     )
     (tmp_path / "sonar-game-eq.conf").write_text(clean)
 
-    with patch("linux_arctis_manager.sonar_to_pipewire._CONF_DIR", tmp_path):
+    with patch("arctis_sound_manager.sonar_to_pipewire._CONF_DIR", tmp_path):
         assert check_and_fix_stale_configs() is False

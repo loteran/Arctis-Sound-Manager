@@ -3,7 +3,7 @@
 from pathlib import Path
 from unittest.mock import patch
 
-from linux_arctis_manager.settings import DeviceSettings, GeneralSettings
+from arctis_sound_manager.settings import DeviceSettings, GeneralSettings
 
 
 def test_device_settings_get_default():
@@ -19,7 +19,7 @@ def test_device_settings_setattr():
 
 
 def test_device_settings_write_read(tmp_path):
-    with patch("linux_arctis_manager.settings.SETTINGS_FOLDER", tmp_path):
+    with patch("arctis_sound_manager.settings.SETTINGS_FOLDER", tmp_path):
         ds = DeviceSettings(0x1038, 0x12e0)
         ds.gain = 2
         ds.mic_volume = 5
@@ -34,7 +34,7 @@ def test_device_settings_write_read(tmp_path):
 
 
 def test_device_settings_read_nonexistent(tmp_path):
-    with patch("linux_arctis_manager.settings.SETTINGS_FOLDER", tmp_path):
+    with patch("arctis_sound_manager.settings.SETTINGS_FOLDER", tmp_path):
         ds = DeviceSettings(0x1038, 0x12e0)
         ds.read_from_file()  # should not raise
 
@@ -47,7 +47,7 @@ def test_general_settings_defaults():
 
 
 def test_general_settings_write_read(tmp_path):
-    with patch("linux_arctis_manager.settings.SETTINGS_FOLDER", tmp_path):
+    with patch("arctis_sound_manager.settings.SETTINGS_FOLDER", tmp_path):
         gs = GeneralSettings(redirect_audio_on_connect=True)
         gs.write_to_file()
 
@@ -56,7 +56,7 @@ def test_general_settings_write_read(tmp_path):
 
 
 def test_general_settings_read_nonexistent(tmp_path):
-    with patch("linux_arctis_manager.settings.SETTINGS_FOLDER", tmp_path / "nope"):
+    with patch("arctis_sound_manager.settings.SETTINGS_FOLDER", tmp_path / "nope"):
         gs = GeneralSettings.read_from_file()
         assert gs.redirect_audio_on_connect is False
 

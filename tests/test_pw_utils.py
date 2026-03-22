@@ -1,6 +1,6 @@
 """Tests for pw_utils — native PipeWire stream detection and routing."""
 
-from linux_arctis_manager.pw_utils import get_native_streams, move_native_stream
+from arctis_sound_manager.pw_utils import get_native_streams, move_native_stream
 
 
 def _make_pw_dump(sinks=None, streams=None, links=None):

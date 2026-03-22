@@ -1,4 +1,4 @@
-from linux_arctis_manager.status_parser_fn import int_int_mapping, int_str_mapping, on_off, percentage
+from arctis_sound_manager.status_parser_fn import int_int_mapping, int_str_mapping, on_off, percentage
 
 
 def test_percentage():

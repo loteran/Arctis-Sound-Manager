@@ -81,7 +81,7 @@ device:
 
 ## YAML's device.settings.[section].[setting] types
 
-Linux Arctis Manager supports out of the box the following settings. Additional types need to be implemented in the code.
+Arctis Sound Manager supports out of the box the following settings. Additional types need to be implemented in the code.
 
 ```yaml
 # Linear multi-value setting (for example 1..n)
@@ -123,9 +123,9 @@ update_sequence: [0x06, 0x37, 'value']             # The setting's command updat
 
 ## YAML's device.status_parse.[status_name] types
 
-Linux Arctis Manager supports out of the box the following status types. Additional types need to be implemented in the code.
+Arctis Sound Manager supports out of the box the following status types. Additional types need to be implemented in the code.
 
-To add a new parser, define the function in the [status_parser_fn.py](./src/linux_arctis_manager/status_parser_fn.py) file and add the tests in the [relative file](./tests/test_status_parser_fn.py). New functions will be added to the application automatically.
+To add a new parser, define the function in the [status_parser_fn.py](./src/arctis_sound_manager/status_parser_fn.py) file and add the tests in the [relative file](./tests/test_status_parser_fn.py). New functions will be added to the application automatically.
 
 ```yaml
 # Percentage (0-100%)

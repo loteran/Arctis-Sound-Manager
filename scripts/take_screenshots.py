@@ -15,8 +15,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
-from linux_arctis_manager.gui.main_app import QMainApp
-from linux_arctis_manager.gui.theme import APP_QSS
+from arctis_sound_manager.gui.main_app import QMainApp
+from arctis_sound_manager.gui.theme import APP_QSS
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), '..', 'docs', 'images')
 

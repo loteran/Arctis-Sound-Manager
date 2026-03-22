@@ -7,7 +7,7 @@ PROJECT_DIR=$(cd "$CUR_DIR" && cd .. && pwd)
 cd "$PROJECT_DIR"
 
 WHEEL="$(find dist -name "*.whl" | head -n1)"
-CLI_NAME="lam-cli"
+CLI_NAME="asm-cli"
 
 echo "Testing installation of: $WHEEL"
 echo

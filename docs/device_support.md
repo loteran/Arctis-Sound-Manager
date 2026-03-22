@@ -1,6 +1,6 @@
 # Add the support to a new device
 
-Hello and welcome to this (hopefully) helpful guide. I will try to guide you through the process of reverse engineering the Arctis device, and to write the configuration file required to support it in the Linux Arctis Manager application!
+Hello and welcome to this (hopefully) helpful guide. I will try to guide you through the process of reverse engineering the Arctis device, and to write the configuration file required to support it in the Arctis Sound Manager application!
 
 ## Prerequisites
 
@@ -18,7 +18,7 @@ In particular we're going to focus on two different folders:
 
 In order to reload the configurations, you can either restart the service (`systemd --user restart arctis-manager`), or calling the config reload Dbus method.
 
-Every time you add a new configuration for the first time though, you'll need to run `lam-cli udev write-rules --force --reload` to write and reload the udev rules (this will prompt you for your sudoer password).
+Every time you add a new configuration for the first time though, you'll need to run `asm-cli udev write-rules --force --reload` to write and reload the udev rules (this will prompt you for your sudoer password).
 
 ## Wireshark tutorial
 
@@ -37,10 +37,10 @@ Please take a look at the [specs docs](device_configuration_file_specs.md) to ge
 - `product_ids`: the list of different product identifiers. Can be more than one in case of different SKUs, but actually same product.
 - `command_padding`: see below
 
-For all of these fields, you can either analyze the wireshark captured packets, or guess them via the `lam-cli tools arctis-devices` tool. This will show you the list of SteelSeries USB connected devices and the relative HID interfaces and endpoints. The tool needs to run on your Linux box.
+For all of these fields, you can either analyze the wireshark captured packets, or guess them via the `asm-cli tools arctis-devices` tool. This will show you the list of SteelSeries USB connected devices and the relative HID interfaces and endpoints. The tool needs to run on your Linux box.
 
 ```bash
-❯ lam-cli tools arctis-devices 
+❯ asm-cli tools arctis-devices 
 SteelSeries Arctis Nova Pro Wireless (1038:12e0)
         Configuration: 1
                 HID interface (num : alt): 3 : 0

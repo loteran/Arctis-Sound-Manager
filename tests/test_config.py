@@ -2,14 +2,14 @@ from pathlib import Path
 
 from ruamel.yaml import YAML
 
-from linux_arctis_manager.config import (ConfigSetting,
+from arctis_sound_manager.config import (ConfigSetting,
                                          ConfigStatusResponseMapping,
                                          DeviceConfiguration, PaddingPosition,
                                          SettingType, StatusParseType)
 
 
 def test_config_parse():
-    config_path = Path(__file__).parent.parent / 'src' / 'linux_arctis_manager' / 'devices' / 'nova_pro_wireless.yaml'
+    config_path = Path(__file__).parent.parent / 'src' / 'arctis_sound_manager' / 'devices' / 'nova_pro_wireless.yaml'
     yaml = YAML(typ='safe')
     config_yaml = yaml.load(config_path)
     config = DeviceConfiguration(config_yaml)
