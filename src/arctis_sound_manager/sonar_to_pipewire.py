@@ -47,8 +47,7 @@ _MACRO_PARAMS = {
     "aigus":  {"freq": 9000.0, "q": 0.80},
 }
 
-_CONF_DIR       = Path.home() / ".config" / "pipewire" / "pipewire.conf.d"
-_MICRO_CONF_DIR = Path.home() / ".config" / "pipewire" / "pipewire.conf.d" / "disabled"
+_CONF_DIR = Path.home() / ".config" / "pipewire" / "pipewire.conf.d"
 
 
 # ── Low-level helpers ─────────────────────────────────────────────────────────
@@ -290,10 +289,12 @@ def generate_sonar_micro_conf(
     """
     Build and optionally write a filter-chain .conf for the microphone EQ.
 
-    Creates a virtual Source/Virtual node backed by the physical mic input.
+    Creates a virtual Audio/Source node backed by the physical mic input.
+    Pattern: capture side is passive (faces hardware), playback side has
+    media.class = Audio/Source (faces applications).
     """
     if output_path is None:
-        output_path = _MICRO_CONF_DIR / "sonar-micro-eq.conf"
+        output_path = _CONF_DIR / "sonar-micro-eq.conf"
 
     boost_db = max(-12.0, min(12.0, boost_db))
 
@@ -361,15 +362,14 @@ context.modules = [
       }}
       capture.props = {{
         node.name      = "effect_input.sonar-micro-eq"
-        node.target    = "{_PHYSICAL_IN}"
-        media.class    = Audio/Sink
+        node.passive   = true
+        target.object  = "{_PHYSICAL_IN}"
         audio.channels = 1
         audio.position = [ MONO ]
       }}
       playback.props = {{
         node.name      = "effect_output.sonar-micro-eq"
-        media.class    = Audio/Source/Virtual
-        node.passive   = true
+        media.class    = Audio/Source
         audio.channels = 1
         audio.position = [ MONO ]
       }}
@@ -466,15 +466,14 @@ context.modules = [
       }}
       capture.props = {{
         node.name      = "effect_input.sonar-micro-eq"
-        node.target    = "{_PHYSICAL_IN}"
-        media.class    = Audio/Sink
+        node.passive   = true
+        target.object  = "{_PHYSICAL_IN}"
         audio.channels = 1
         audio.position = [ MONO ]
       }}
       playback.props = {{
         node.name      = "effect_output.sonar-micro-eq"
-        media.class    = Audio/Source/Virtual
-        node.passive   = true
+        media.class    = Audio/Source
         audio.channels = 1
         audio.position = [ MONO ]
       }}
@@ -563,13 +562,20 @@ def check_and_fix_stale_configs() -> bool:
                 _write_conf(path, _bypass_conf(sink_name, target, channels, position))
                 fixed = True
 
-    # Micro EQ: remove from active locations (causes PipeWire deadlock)
-    # It is stored disabled and only loaded on demand.
-    for check_dir in (_CONF_DIR, bad_dir):
-        micro_path = check_dir / "sonar-micro-eq.conf"
-        if micro_path.exists():
-            log.warning("Removing micro EQ from active config: %s", micro_path)
-            micro_path.unlink()
+    # Micro EQ: remove stale copies from filter-chain.conf.d
+    micro_bad = bad_dir / "sonar-micro-eq.conf"
+    if micro_bad.exists():
+        log.warning("Removing micro config from filter-chain.conf.d: %s", micro_bad)
+        micro_bad.unlink()
+        fixed = True
+
+    # Fix micro configs using old Audio/Source/Virtual or Audio/Sink pattern
+    micro_path = _CONF_DIR / "sonar-micro-eq.conf"
+    if micro_path.exists():
+        content = micro_path.read_text()
+        if "Audio/Source/Virtual" in content or "Audio/Sink" in content or "label = gain" in content:
+            log.warning("Stale micro config (wrong media.class or label=gain), regenerating")
+            _write_conf(micro_path, _bypass_micro_conf())
             fixed = True
 
     return fixed

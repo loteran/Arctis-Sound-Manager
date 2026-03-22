@@ -151,8 +151,21 @@ def test_micro_capture_uses_unique_name():
                                      output_path=Path("/dev/null"),
                                      boost_db=0.0)
     assert 'node.name      = "effect_input.sonar-micro-eq"' in text
-    # Must use node.target for the physical device, not node.name
-    assert "node.target" in text
+    # Must use target.object for the physical device, not node.name
+    assert "target.object" in text
+
+
+def test_micro_source_pattern():
+    """Micro uses correct source pattern: passive capture, Audio/Source playback."""
+    text = generate_sonar_micro_conf([], 0.0, 0.0, 0.0,
+                                     output_path=Path("/dev/null"))
+    # Capture side: passive, no media.class
+    assert "node.passive   = true" in text
+    # Playback side: Audio/Source (not Audio/Source/Virtual)
+    assert "media.class    = Audio/Source" in text
+    assert "Audio/Source/Virtual" not in text
+    # No Audio/Sink on capture side
+    assert "Audio/Sink" not in text
 
 
 def test_game_bypass_no_explicit_inputs_outputs():
@@ -224,3 +237,21 @@ def test_check_and_fix_stale_configs_noop_when_clean(tmp_path):
 
     with patch("arctis_sound_manager.sonar_to_pipewire._CONF_DIR", tmp_path):
         assert check_and_fix_stale_configs() is False
+
+
+def test_check_and_fix_stale_configs_fixes_micro_source_virtual(tmp_path):
+    """A micro config with Audio/Source/Virtual is stale — should be Audio/Source."""
+    stale = (
+        'context.modules = [\n'
+        '  { name = libpipewire-module-filter-chain\n'
+        '    args = { playback.props = { media.class = Audio/Source/Virtual } } }\n'
+        ']\n'
+    )
+    (tmp_path / "sonar-micro-eq.conf").write_text(stale)
+
+    with patch("arctis_sound_manager.sonar_to_pipewire._CONF_DIR", tmp_path):
+        assert check_and_fix_stale_configs() is True
+
+    fixed = (tmp_path / "sonar-micro-eq.conf").read_text()
+    assert "Audio/Source/Virtual" not in fixed
+    assert "media.class    = Audio/Source" in fixed

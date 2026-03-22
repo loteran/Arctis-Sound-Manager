@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0] - 22 March 2026
+
+### Fixed
+
+- **PipeWire deadlock (zero links)**: Sonar EQ filter-chain configs in `filter-chain.conf.d/` caused a WirePlumber deadlock on PipeWire 1.6.x — passive nodes from the separate filter-chain service prevented the ALSA sink from ever creating ports. All configs are now loaded by the main PipeWire daemon via `pipewire.conf.d/`.
+- **Micro EQ deadlock**: the microphone filter-chain used `media.class = Audio/Sink` + `node.target` on the capture side and `Audio/Source/Virtual` on the playback side — an inverted pattern that deadlocked PipeWire. Fixed to use the correct source pattern: `node.passive = true` + `target.object` on capture, `media.class = Audio/Source` on playback (per PipeWire docs).
+- **Game EQ channel mismatch**: Game EQ was 2ch stereo, bypassing HeSuVi 7.1 virtual surround. Now generates 8ch (FL FR FC LFE RL RR SL SR) with single filter nodes (PipeWire auto-duplicates per channel) and targets `effect_input.virtual-surround-7.1-hesuvi`.
+- **Video router service crash loop**: systemd unit still referenced old `lam-router` binary after the v2.6.0 rename to `asm-router`.
+- **Stale config detection**: `check_and_fix_stale_configs()` now detects and fixes 2ch game configs, old `Audio/Source/Virtual` micro configs, and removes stale copies from `filter-chain.conf.d/`.
+
+### Changed
+
+- `apply_sonar_channel()` restarts `pipewire` instead of `filter-chain` to avoid the WirePlumber deadlock.
+- Chat EQ remains 2ch stereo with L/R filter pairs targeting ALSA directly.
+- Deprecated `node.target` replaced with `target.object` for micro EQ capture props.
+
+### Added
+
+- 56 unit tests (+9 new): 8ch game, 2ch chat, HeSuVi target, auto-dup, source pattern, stale micro detection.
+
 ## [2.4.0] - 19 March 2026
 
 ### Fixed
