@@ -5,9 +5,13 @@ One config per channel (game / chat / micro).  Each config inserts a chain of
 biquad nodes between the virtual capture sink and its playback target.
 
 Routing:
-  game  → effect_input.virtual-surround-7.1-hesuvi  (keeps 7.1 HeSuVi processing)
-  chat  → alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.analog-stereo
-  micro → virtual source backed by the physical mic input  (Source/Virtual)
+  game  → effect_input.virtual-surround-7.1-hesuvi  (8ch 7.1 → HeSuVi virtualisation)
+  chat  → alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.analog-stereo  (2ch stereo)
+  micro → virtual source backed by the physical mic input  (Source/Virtual, 1ch mono)
+
+All configs are written to pipewire.conf.d/ and loaded by the main PipeWire daemon.
+The separate filter-chain service causes a WirePlumber deadlock (zero links) on
+PipeWire 1.6.x when passive nodes target the same ALSA sink as loopback modules.
 """
 from __future__ import annotations
 
@@ -21,19 +25,19 @@ _PHYSICAL_OUT = "alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.analog-
 _PHYSICAL_IN  = "alsa_input.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.mono-fallback"
 _SURROUND     = "effect_input.virtual-surround-7.1-hesuvi"
 
-def _game_target(spatial_audio: bool) -> str:
-    """Return the playback target for the game EQ channel.
-
-    Always targets the physical output — HeSuVi spatial audio is a separate
-    filter chain that apps route through independently.  Targeting HeSuVi
-    directly would cause a stereo→7.1 channel mismatch.
-    """
-    return _PHYSICAL_OUT
-
 _CHANNEL_TARGET: dict[str, str] = {
-    "game":  _PHYSICAL_OUT,
-    "chat":  _PHYSICAL_OUT,
-    # micro handled separately (Source/Virtual)
+    "game":  _SURROUND,       # 8ch → HeSuVi 7.1 virtualisation → 2ch → ALSA
+    "chat":  _PHYSICAL_OUT,   # 2ch stereo direct
+}
+
+_CHANNEL_CHANNELS: dict[str, int] = {
+    "game": 8,
+    "chat": 2,
+}
+
+_CHANNEL_POSITION: dict[str, str] = {
+    "game": "FL FR FC LFE RL RR SL SR",
+    "chat": "FL FR",
 }
 
 # Macro slider filter parameters (estimations from visual captures)
@@ -43,7 +47,8 @@ _MACRO_PARAMS = {
     "aigus":  {"freq": 9000.0, "q": 0.80},
 }
 
-_CONF_DIR = Path.home() / ".config" / "pipewire" / "filter-chain.conf.d"
+_CONF_DIR       = Path.home() / ".config" / "pipewire" / "pipewire.conf.d"
+_MICRO_CONF_DIR = Path.home() / ".config" / "pipewire" / "pipewire.conf.d" / "disabled"
 
 
 # ── Low-level helpers ─────────────────────────────────────────────────────────
@@ -74,14 +79,17 @@ def generate_sonar_eq_conf(
     """
     Build and optionally write a filter-chain .conf for a game/chat EQ channel.
 
-    Returns the config text.  If output_path is None, uses the default location
-    (~/.config/pipewire/filter-chain.conf.d/sonar-<channel>-eq.conf).
+    Game channel: 8ch 7.1, single filter nodes (PipeWire auto-duplicates per channel),
+    no explicit inputs/outputs, targets HeSuVi virtual surround.
+    Chat channel: 2ch stereo, L/R filter pairs, explicit inputs/outputs, targets ALSA.
     """
     if channel not in ("game", "chat"):
         raise ValueError(f"channel must be 'game' or 'chat', got {channel!r}")
 
-    target = _game_target(spatial_audio) if channel == "game" else _CHANNEL_TARGET[channel]
+    target = _CHANNEL_TARGET[channel]
     sink_name = f"effect_input.sonar-{channel}-eq"
+    channels = _CHANNEL_CHANNELS[channel]
+    position = _CHANNEL_POSITION[channel]
 
     if output_path is None:
         output_path = _CONF_DIR / f"sonar-{channel}-eq.conf"
@@ -106,11 +114,96 @@ def generate_sonar_eq_conf(
 
     # Passthrough / bypass if nothing to do
     if not all_filters:
-        text = _bypass_conf(sink_name, target)
+        text = _bypass_conf(sink_name, target, channels, position)
         _write_conf(output_path, text)
         return text
 
-    # Build node blocks and link chain (L + R for each filter)
+    if channels == 8:
+        text = _active_conf_8ch(channel, sink_name, target, position,
+                                all_filters, active_bands, macro_bands, boost_db)
+    else:
+        text = _active_conf_2ch(channel, sink_name, target, position,
+                                all_filters, active_bands, macro_bands, boost_db)
+
+    _write_conf(output_path, text)
+    return text
+
+
+def _active_conf_8ch(
+    channel: str, sink_name: str, target: str, position: str,
+    all_filters: list[tuple[str, EqBand]],
+    active_bands: list[EqBand],
+    macro_bands: list[tuple[str, EqBand]],
+    boost_db: float,
+) -> str:
+    """8ch config: single filter nodes, PipeWire auto-duplicates per channel."""
+    node_lines: list[str] = []
+    link_lines: list[str] = []
+    names = [n for n, _ in all_filters]
+
+    for (name, band), nm in zip(all_filters, names):
+        label = PW_LABEL.get(band.type, "bq_peaking")
+        node_lines.append(_node_block(nm, label, band.freq, band.q, band.gain))
+
+    for i in range(len(all_filters) - 1):
+        link_lines.append(_link(names[i], names[i + 1]))
+
+    if abs(boost_db) >= 0.01:
+        node_lines.append(
+            f"                    {{ type = builtin  name = boost  label = bq_highshelf\n"
+            f"                      control = {{ Freq = 10.0  Q = 0.7071  Gain = {boost_db} }} }}"
+        )
+        link_lines.append(_link(names[-1], "boost"))
+
+    nodes_text = "\n".join(node_lines)
+    links_block = ""
+    if link_lines:
+        links_text = "\n".join(link_lines)
+        links_block = f"""        links = [
+{links_text}
+        ]"""
+
+    return f"""\
+# Auto-generated by Arctis Sound Manager — DO NOT EDIT
+# Channel: {channel}  |  Active bands: {len(active_bands)}  |  Macros: {len(macro_bands)}
+context.modules = [
+  {{ name = libpipewire-module-filter-chain
+    flags = [ nofail ]
+    args = {{
+      node.description = "Sonar {channel.capitalize()} EQ"
+      filter.graph = {{
+        nodes = [
+{nodes_text}
+        ]
+{links_block}
+      }}
+      capture.props = {{
+        node.name      = "{sink_name}"
+        media.class    = Audio/Sink
+        audio.channels = 8
+        audio.position = [ {position} ]
+      }}
+      playback.props = {{
+        node.name      = "effect_output.sonar-{channel}-eq"
+        node.target    = "{target}"
+        node.passive   = true
+        audio.channels = 8
+        audio.position = [ {position} ]
+      }}
+    }}
+  }}
+]
+"""
+
+
+def _active_conf_2ch(
+    channel: str, sink_name: str, target: str, position: str,
+    all_filters: list[tuple[str, EqBand]],
+    active_bands: list[EqBand],
+    macro_bands: list[tuple[str, EqBand]],
+    boost_db: float,
+) -> str:
+    """2ch config: L/R filter pairs with explicit inputs/outputs."""
     node_lines: list[str] = []
     link_lines: list[str] = []
 
@@ -126,10 +219,6 @@ def generate_sonar_eq_conf(
         link_lines.append(_link(names_L[i], names_L[i + 1]))
         link_lines.append(_link(names_R[i], names_R[i + 1]))
 
-    # Optional boost gain node at the end of the chain.
-    # bq_highshelf at 10 Hz is used instead of label=gain — gain builtin is unavailable
-    # in some PipeWire 1.6.x builds. A highshelf at 10 Hz is flat across all audible
-    # frequencies (20 Hz – 20 kHz), making it a transparent master gain substitute.
     if abs(boost_db) >= 0.01:
         node_lines.append(
             f"                    {{ type = builtin  name = boost_L  label = bq_highshelf\n"
@@ -150,7 +239,7 @@ def generate_sonar_eq_conf(
     inputs_text  = f'"{names_L[0]}:In"  "{names_R[0]}:In"'
     outputs_text = f'"{last_L}:Out"  "{last_R}:Out"'
 
-    text = f"""\
+    return f"""\
 # Auto-generated by Arctis Sound Manager — DO NOT EDIT
 # Channel: {channel}  |  Active bands: {len(active_bands)}  |  Macros: {len(macro_bands)}
 context.modules = [
@@ -172,21 +261,19 @@ context.modules = [
         node.name      = "{sink_name}"
         media.class    = Audio/Sink
         audio.channels = 2
-        audio.position = [ FL FR ]
+        audio.position = [ {position} ]
       }}
       playback.props = {{
         node.name      = "effect_output.sonar-{channel}-eq"
         node.target    = "{target}"
         node.passive   = true
         audio.channels = 2
-        audio.position = [ FL FR ]
+        audio.position = [ {position} ]
       }}
     }}
   }}
 ]
 """
-    _write_conf(output_path, text)
-    return text
 
 
 # ── Config generator — micro ──────────────────────────────────────────────────
@@ -204,13 +291,9 @@ def generate_sonar_micro_conf(
     Build and optionally write a filter-chain .conf for the microphone EQ.
 
     Creates a virtual Source/Virtual node backed by the physical mic input.
-
-    NOTE: Micro configs are written to filter-chain.conf.d/ (NOT pipewire.conf.d/)
-    because loading them in the main daemon conflicts with the ALSA mono device.
-    The filter-chain service loads them separately.
     """
     if output_path is None:
-        output_path = _CONF_DIR / "sonar-micro-eq.conf"
+        output_path = _MICRO_CONF_DIR / "sonar-micro-eq.conf"
 
     boost_db = max(-12.0, min(12.0, boost_db))
 
@@ -300,7 +383,38 @@ context.modules = [
 
 # ── Bypass / passthrough ──────────────────────────────────────────────────────
 
-def _bypass_conf(sink_name: str, target: str) -> str:
+def _bypass_conf(sink_name: str, target: str, channels: int, position: str) -> str:
+    """Generate a bypass config. 8ch uses auto-dup (no inputs/outputs), 2ch uses L/R."""
+    if channels == 8:
+        return f"""\
+# Auto-generated by Arctis Sound Manager — passthrough (all gains = 0)
+context.modules = [
+  {{ name = libpipewire-module-filter-chain
+    flags = [ nofail ]
+    args = {{
+      node.description = "Sonar EQ (bypass)"
+      filter.graph = {{
+        nodes = [
+                    {{ type = builtin  name = copy  label = copy }}
+        ]
+      }}
+      capture.props = {{
+        node.name      = "{sink_name}"
+        media.class    = Audio/Sink
+        audio.channels = 8
+        audio.position = [ {position} ]
+      }}
+      playback.props = {{
+        node.name      = "{sink_name.replace('effect_input.', 'effect_output.')}"
+        node.target    = "{target}"
+        node.passive   = true
+        audio.channels = 8
+        audio.position = [ {position} ]
+      }}
+    }}
+  }}
+]
+"""
     return f"""\
 # Auto-generated by Arctis Sound Manager — passthrough (all gains = 0)
 context.modules = [
@@ -320,14 +434,14 @@ context.modules = [
         node.name      = "{sink_name}"
         media.class    = Audio/Sink
         audio.channels = 2
-        audio.position = [ FL FR ]
+        audio.position = [ {position} ]
       }}
       playback.props = {{
         node.name      = "{sink_name.replace('effect_input.', 'effect_output.')}"
         node.target    = "{target}"
         node.passive   = true
         audio.channels = 2
-        audio.position = [ FL FR ]
+        audio.position = [ {position} ]
       }}
     }}
   }}
@@ -384,11 +498,11 @@ def apply_sonar_channel(
     voix_db: float = 0.0,
     aigus_db: float = 0.0,
 ) -> None:
-    """Generate config and restart the filter-chain service.
+    """Generate config and restart PipeWire to reload filter-chain modules.
 
-    All Sonar configs go to filter-chain.conf.d/ and are loaded by the
-    separate filter-chain service.  This avoids restarting the main PipeWire
-    daemon, preserving HeSuVi, Firefox streams, and other active audio.
+    All Sonar configs go to pipewire.conf.d/ and are loaded by the main
+    PipeWire daemon.  This requires a PipeWire restart but avoids the
+    WirePlumber deadlock caused by the separate filter-chain service.
     """
     import subprocess
 
@@ -397,7 +511,7 @@ def apply_sonar_channel(
     else:
         generate_sonar_eq_conf(channel, bands, basses_db, voix_db, aigus_db)
 
-    subprocess.run(["systemctl", "--user", "restart", "filter-chain"], check=False, timeout=15)
+    subprocess.run(["systemctl", "--user", "restart", "pipewire"], check=False, timeout=15)
 
 
 def check_and_fix_stale_configs() -> bool:
@@ -405,35 +519,57 @@ def check_and_fix_stale_configs() -> bool:
 
     Checks for:
     1. Configs using the broken ``label = gain`` builtin (PipeWire 1.6.x).
-    2. Sonar configs accidentally left in ``pipewire.conf.d/`` (must be in
-       ``filter-chain.conf.d/`` to avoid restarting the main daemon).
+    2. Sonar configs left in ``filter-chain.conf.d/`` (must be in
+       ``pipewire.conf.d/`` — the filter-chain service causes a WirePlumber
+       deadlock on PipeWire 1.6.x).
+    3. Configs with wrong channel count (2ch game should be 8ch).
 
     Returns True if any config was regenerated or cleaned.
     """
     import logging
     log = logging.getLogger(__name__)
     fixed = False
-    bad_dir = _CONF_DIR.parent / "pipewire.conf.d"
+    bad_dir = _CONF_DIR.parent / "filter-chain.conf.d"
 
-    for name in ("sonar-game-eq.conf", "sonar-chat-eq.conf", "sonar-micro-eq.conf"):
-        # Remove stale copies from pipewire.conf.d (wrong location)
+    for name in ("sonar-game-eq.conf", "sonar-chat-eq.conf"):
+        # Remove stale copies from filter-chain.conf.d (wrong location)
         bad_path = bad_dir / name
         if bad_path.exists():
-            log.warning("Removing sonar config from pipewire.conf.d: %s", bad_path)
+            log.warning("Removing sonar config from filter-chain.conf.d: %s", bad_path)
             bad_path.unlink()
             fixed = True
 
-        # Fix broken 'label = gain' in correct location
+        # Fix broken 'label = gain' or wrong channel count in correct location
         path = _CONF_DIR / name
-        if path.exists() and "label = gain" in path.read_text():
-            log.warning("Stale config (%s uses 'label = gain'), regenerating", name)
-            channel = name.replace("sonar-", "").replace("-eq.conf", "")
-            if channel == "micro":
-                _write_conf(path, _bypass_micro_conf())
-            else:
+        if path.exists():
+            content = path.read_text()
+            needs_regen = False
+
+            if "label = gain" in content:
+                log.warning("Stale config (%s uses 'label = gain'), regenerating", name)
+                needs_regen = True
+
+            # Game EQ must be 8ch for HeSuVi virtual surround
+            if name == "sonar-game-eq.conf" and "audio.channels = 2" in content:
+                log.warning("Stale config (%s uses 2ch, should be 8ch), regenerating", name)
+                needs_regen = True
+
+            if needs_regen:
+                channel = name.replace("sonar-", "").replace("-eq.conf", "")
                 sink_name = f"effect_input.sonar-{channel}-eq"
-                target = _game_target(True) if channel == "game" else _CHANNEL_TARGET.get(channel, _PHYSICAL_OUT)
-                _write_conf(path, _bypass_conf(sink_name, target))
+                target = _CHANNEL_TARGET.get(channel, _PHYSICAL_OUT)
+                channels = _CHANNEL_CHANNELS.get(channel, 2)
+                position = _CHANNEL_POSITION.get(channel, "FL FR")
+                _write_conf(path, _bypass_conf(sink_name, target, channels, position))
+                fixed = True
+
+    # Micro EQ: remove from active locations (causes PipeWire deadlock)
+    # It is stored disabled and only loaded on demand.
+    for check_dir in (_CONF_DIR, bad_dir):
+        micro_path = check_dir / "sonar-micro-eq.conf"
+        if micro_path.exists():
+            log.warning("Removing micro EQ from active config: %s", micro_path)
+            micro_path.unlink()
             fixed = True
 
     return fixed
