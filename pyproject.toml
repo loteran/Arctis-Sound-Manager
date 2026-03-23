@@ -1,6 +1,6 @@
 [project]
 name = "arctis-sound-manager"
-version = "2.7.1"
+version = "2.7.2"
 description = "A replacement for SteelSeries GG software, to manage your Arctis device on Linux!"
 readme = "README.md"
 requires-python = ">=3.10"

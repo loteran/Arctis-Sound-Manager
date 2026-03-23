@@ -48,6 +48,24 @@ _MACRO_PARAMS = {
 
 _CONF_DIR = Path.home() / ".config" / "pipewire" / "filter-chain.conf.d"
 
+# ── Smart Volume presets (LADSPA SC4M compressor) ────────────────────────────
+#
+# Each mode defines base compressor parameters.  The *level* (0-100) scales
+# the ratio from 1 (bypass) up to the mode's max ratio and adjusts the
+# makeup gain proportionally.
+#
+# SC4M ports: RMS/peak, Attack (ms), Release (ms), Threshold (dB),
+#             Ratio (1:n), Knee (dB), Makeup (dB)
+
+_SMART_PRESETS: dict[str, dict] = {
+    "quiet":    {"threshold": -30.0, "ratio": 6.0, "makeup": 4.0,
+                 "attack": 5.0,  "release": 200.0, "knee": 8.0},
+    "balanced": {"threshold": -20.0, "ratio": 4.0, "makeup": 8.0,
+                 "attack": 10.0, "release": 200.0, "knee": 6.0},
+    "loud":     {"threshold": -12.0, "ratio": 3.0, "makeup": 12.0,
+                 "attack": 15.0, "release": 300.0, "knee": 4.0},
+}
+
 
 # ── Low-level helpers ─────────────────────────────────────────────────────────
 
@@ -58,8 +76,38 @@ def _node_block(name: str, label: str, freq: float, q: float, gain: float) -> st
     )
 
 
+def _sc4m_node(name: str, preset: dict, level: float) -> str:
+    """Generate a LADSPA SC4M compressor node.
+
+    *level* (0-100) scales ratio from 1.0 to the preset's max and adjusts
+    makeup gain proportionally.
+    """
+    t = max(0.0, min(100.0, level)) / 100.0
+    ratio  = 1.0 + (preset["ratio"] - 1.0) * t
+    makeup = preset["makeup"] * t
+    return (
+        f'                    {{ type = ladspa  name = {name}  plugin = sc4m_1916  label = sc4m\n'
+        f'                      control = {{ "RMS/peak" = 0  "Attack time (ms)" = {preset["attack"]}'
+        f'  "Release time (ms)" = {preset["release"]}'
+        f'  "Threshold level (dB)" = {preset["threshold"]}'
+        f'  "Ratio (1:n)" = {ratio:.1f}'
+        f'  "Knee radius (dB)" = {preset["knee"]}'
+        f'  "Makeup gain (dB)" = {makeup:.1f} }} }}'
+    )
+
+
 def _link(out: str, inp: str) -> str:
     return f'                    {{ output = "{out}:Out"  input = "{inp}:In" }}'
+
+
+def _link_to_ladspa(out: str, inp: str) -> str:
+    """Link from a builtin node (Out) to a LADSPA node (Input)."""
+    return f'                    {{ output = "{out}:Out"  input = "{inp}:Input" }}'
+
+
+def _link_from_ladspa(out: str, inp: str) -> str:
+    """Link from a LADSPA node (Output) to a builtin node (In)."""
+    return f'                    {{ output = "{out}:Output"  input = "{inp}:In" }}'
 
 
 # ── Config generator — game / chat ────────────────────────────────────────────
@@ -73,6 +121,7 @@ def generate_sonar_eq_conf(
     output_path: Path | None = None,
     spatial_audio: bool = True,
     boost_db: float = 0.0,
+    smart_volume: dict | None = None,
 ) -> str:
     """
     Build and optionally write a filter-chain .conf for a game/chat EQ channel.
@@ -118,10 +167,12 @@ def generate_sonar_eq_conf(
 
     if channels == 8:
         text = _active_conf_8ch(channel, sink_name, target, position,
-                                all_filters, active_bands, macro_bands, boost_db)
+                                all_filters, active_bands, macro_bands,
+                                boost_db, smart_volume)
     else:
         text = _active_conf_2ch(channel, sink_name, target, position,
-                                all_filters, active_bands, macro_bands, boost_db)
+                                all_filters, active_bands, macro_bands,
+                                boost_db, smart_volume)
 
     _write_conf(output_path, text)
     return text
@@ -133,11 +184,13 @@ def _active_conf_8ch(
     active_bands: list[EqBand],
     macro_bands: list[tuple[str, EqBand]],
     boost_db: float,
+    smart_volume: dict | None = None,
 ) -> str:
     """8ch config: single filter nodes, PipeWire auto-duplicates per channel."""
     node_lines: list[str] = []
     link_lines: list[str] = []
     names = [n for n, _ in all_filters]
+    last_name = names[-1]
 
     for (name, band), nm in zip(all_filters, names):
         label = PW_LABEL.get(band.type, "bq_peaking")
@@ -151,7 +204,15 @@ def _active_conf_8ch(
             f"                    {{ type = builtin  name = boost  label = bq_highshelf\n"
             f"                      control = {{ Freq = 10.0  Q = 0.7071  Gain = {boost_db} }} }}"
         )
-        link_lines.append(_link(names[-1], "boost"))
+        link_lines.append(_link(last_name, "boost"))
+        last_name = "boost"
+
+    if smart_volume and smart_volume.get("enabled"):
+        mode = smart_volume.get("loudness", "balanced")
+        level = smart_volume.get("level", 50)
+        preset = _SMART_PRESETS.get(mode, _SMART_PRESETS["balanced"])
+        node_lines.append(_sc4m_node("compressor", preset, level))
+        link_lines.append(_link_to_ladspa(last_name, "compressor"))
 
     nodes_text = "\n".join(node_lines)
     links_block = ""
@@ -200,6 +261,7 @@ def _active_conf_2ch(
     active_bands: list[EqBand],
     macro_bands: list[tuple[str, EqBand]],
     boost_db: float,
+    smart_volume: dict | None = None,
 ) -> str:
     """2ch config: L/R filter pairs with explicit inputs/outputs."""
     node_lines: list[str] = []
@@ -232,10 +294,23 @@ def _active_conf_2ch(
     else:
         last_L, last_R = names_L[-1], names_R[-1]
 
+    if smart_volume and smart_volume.get("enabled"):
+        mode = smart_volume.get("loudness", "balanced")
+        level = smart_volume.get("level", 50)
+        preset = _SMART_PRESETS.get(mode, _SMART_PRESETS["balanced"])
+        node_lines.append(_sc4m_node("comp_L", preset, level))
+        node_lines.append(_sc4m_node("comp_R", preset, level))
+        link_lines.append(_link_to_ladspa(last_L, "comp_L"))
+        link_lines.append(_link_to_ladspa(last_R, "comp_R"))
+        last_L, last_R = "comp_L", "comp_R"
+
     nodes_text   = "\n".join(node_lines)
     links_text   = "\n".join(link_lines)
     inputs_text  = f'"{names_L[0]}:In"  "{names_R[0]}:In"'
-    outputs_text = f'"{last_L}:Out"  "{last_R}:Out"'
+    # LADSPA nodes use "Output" port name, builtins use "Out"
+    is_ladspa = smart_volume and smart_volume.get("enabled")
+    out_port = "Output" if is_ladspa else "Out"
+    outputs_text = f'"{last_L}:{out_port}"  "{last_R}:{out_port}"'
 
     return f"""\
 # Auto-generated by Arctis Sound Manager — DO NOT EDIT

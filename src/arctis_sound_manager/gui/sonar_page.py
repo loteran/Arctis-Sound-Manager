@@ -306,6 +306,7 @@ class _ApplyWorker(QThread):
         try:
             boost_state = _load_boost()
             boost_db = boost_state["db"] if boost_state["enabled"] else 0.0
+            smart_state = _load_smart_volume()
             if self._channel == "micro":
                 generate_sonar_micro_conf(self._bands, self._basses, self._voix, self._aigus,
                                           boost_db=boost_db)
@@ -313,7 +314,8 @@ class _ApplyWorker(QThread):
                 spatial = _load_spatial_audio()["enabled"] if self._channel == "game" else True
                 generate_sonar_eq_conf(self._channel, self._bands,
                                        self._basses, self._voix, self._aigus,
-                                       spatial_audio=spatial, boost_db=boost_db)
+                                       spatial_audio=spatial, boost_db=boost_db,
+                                       smart_volume=smart_state)
 
             # Snapshot active streams BEFORE restart so we can restore them
             saved_sink_inputs = self._snapshot_sink_inputs(log)
@@ -1248,7 +1250,7 @@ class BoostVolumeWidget(QWidget):
         return self._state["db"] if self._state["enabled"] else 0.0
 
     def _on_toggle(self, checked):
-        self._state["enabled"] = bool(checked)
+        self._state["enabled"] = checked == Qt.CheckState.Checked
         _save_boost(self._state)
         self._detail.setVisible(self._state["enabled"])
         self.state_changed.emit()
@@ -1265,13 +1267,11 @@ class BoostVolumeWidget(QWidget):
 
 class SmartVolumeWidget(QWidget):
     """
-    Smart Volume — UI + saved state.
-    Actual DSP implementation pending USB captures to confirm
-    whether it's software-side (compressor) or a USB command to the DAC.
+    Smart Volume — dynamic compressor (LADSPA SC4M) controlled via PipeWire filter-chain.
     """
     state_changed = Signal()
 
-    _LOUDNESS_OPTIONS = [("Balanced", "balanced"), ("Cinema", "cinema"), ("Speech", "speech")]
+    _LOUDNESS_OPTIONS = [("Quiet", "quiet"), ("Balanced", "balanced"), ("Loud", "loud")]
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -1289,16 +1289,17 @@ class SmartVolumeWidget(QWidget):
                 height: 4px; background: {BG_BUTTON}; border-radius: 2px;
             }}
             QSlider::handle:horizontal {{
-                background: {TEXT_SECONDARY}; width: 14px; height: 14px;
+                background: {ACCENT}; width: 14px; height: 14px;
                 margin: -5px 0; border-radius: 7px;
             }}
+            QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 2px; }}
         """)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 16, 20, 16)
         root.setSpacing(12)
 
-        # Toggle + title + pending note
+        # Toggle + title
         row1 = QHBoxLayout()
         row1.setSpacing(12)
         self._toggle = QToggle(is_checkbox=True)
@@ -1309,9 +1310,6 @@ class SmartVolumeWidget(QWidget):
         title.setStyleSheet(f"font-size: 12pt; font-weight: bold; color: {TEXT_PRIMARY};")
         row1.addWidget(title)
         row1.addStretch(1)
-        note = QLabel("en attente de captures USB")
-        note.setStyleSheet(f"color: {BORDER}; font-size: 8pt;")
-        row1.addWidget(note)
         root.addLayout(row1)
 
         # Detail section
@@ -1333,14 +1331,13 @@ class SmartVolumeWidget(QWidget):
             btn.setFixedHeight(28)
             btn.setProperty("mode_value", value)
             btn.clicked.connect(lambda _, v=value: self._on_loudness(v))
-            btn.setEnabled(False)
             self._loudness_btns[value] = btn
             loudness_row.addWidget(btn)
         loudness_row.addStretch(1)
         dl.addLayout(loudness_row)
         self._refresh_loudness()
 
-        # Level slider (disabled, pending USB)
+        # Level slider
         level_row = QHBoxLayout()
         level_row.setSpacing(10)
         level_lbl = QLabel("Niveau")
@@ -1349,12 +1346,10 @@ class SmartVolumeWidget(QWidget):
         self._level_slider = _NoWheelSlider(Qt.Orientation.Horizontal)
         self._level_slider.setMinimum(0)
         self._level_slider.setMaximum(100)
-        self._level_slider.setValue(int(self._state.get("level", 0.0)))
-        self._level_slider.setEnabled(False)
-        self._level_slider.setToolTip("Pending USB captures")
+        self._level_slider.setValue(int(self._state.get("level", 50)))
         self._level_slider.valueChanged.connect(self._on_level)
         level_row.addWidget(self._level_slider, 1)
-        self._level_val = QLabel(str(int(self._state.get("level", 0))))
+        self._level_val = QLabel(str(int(self._state.get("level", 50))))
         self._level_val.setFixedWidth(28)
         self._level_val.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self._level_val.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10pt;")
@@ -1378,7 +1373,7 @@ class SmartVolumeWidget(QWidget):
             """)
 
     def _on_toggle(self, checked):
-        self._state["enabled"] = bool(checked)
+        self._state["enabled"] = checked == Qt.CheckState.Checked
         _save_smart_volume(self._state)
         self._detail.setVisible(self._state["enabled"])
         self.state_changed.emit()
@@ -1387,11 +1382,13 @@ class SmartVolumeWidget(QWidget):
         self._state["loudness"] = value
         _save_smart_volume(self._state)
         self._refresh_loudness()
+        self.state_changed.emit()
 
     def _on_level(self, value: int):
         self._state["level"] = float(value)
         _save_smart_volume(self._state)
         self._level_val.setText(str(value))
+        self.state_changed.emit()
 
 
 # ── Micro processing persistence ──────────────────────────────────────────────
@@ -1913,6 +1910,7 @@ class SonarPage(QWidget):
 
         root.addSpacing(8)
         self._smart = SmartVolumeWidget()
+        self._smart.state_changed.connect(self._on_smart_changed)
         root.addWidget(self._smart)
 
         # Show/hide settings based on active tab
@@ -1933,3 +1931,8 @@ class SonarPage(QWidget):
         self._game_widget._schedule_apply()
         self._chat_widget._schedule_apply()
         self._micro_widget._schedule_apply()
+
+    def _on_smart_changed(self):
+        """Smart Volume changed — re-apply game and chat channels."""
+        self._game_widget._schedule_apply()
+        self._chat_widget._schedule_apply()

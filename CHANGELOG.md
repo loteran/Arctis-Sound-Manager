@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.2] - 23 March 2026
+
+### Added
+
+- **Smart Volume**: dynamic compressor using LADSPA SC4M plugin with three modes (Quiet/Balanced/Loud) and adjustable level. Applied to Game and Chat channels via PipeWire filter-chain.
+
+### Fixed
+
+- **Toggle on/off broken**: `bool(Qt.CheckState.Unchecked)` always returned `True` in PySide6 — Boost Volume, Smart Volume, and Spatial Audio toggles were stuck on. Fixed to use `checked == Qt.CheckState.Checked`.
+
 ## [2.7.1] - 23 March 2026
 
 ### Fixed
