@@ -16,7 +16,8 @@ import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Qt, QTimer, Signal, Slot
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -35,6 +36,22 @@ from PySide6.QtWidgets import (
 )
 
 from arctis_sound_manager.gui.eq_curve_widget import EqBand, EqCurveWidget
+
+_IMAGES_DIR = Path(__file__).parent / "images"
+
+
+def _svg_icon(svg_name: str, color: str, size: int = 20) -> QIcon:
+    """Load an SVG from images dir, replace stroke color, return QIcon."""
+    svg_data = (_IMAGES_DIR / svg_name).read_text(encoding="utf-8")
+    svg_data = svg_data.replace('stroke="currentColor"', f'stroke="{color}"')
+    pixmap = QPixmap(size, size)
+    pixmap.fill(QColor(0, 0, 0, 0))
+    renderer = QSvgRenderer(svg_data.encode("utf-8"))
+    if renderer.isValid():
+        painter = QPainter(pixmap)
+        renderer.render(painter)
+        painter.end()
+    return QIcon(pixmap)
 
 
 class _NoWheelSlider(QSlider):
@@ -310,7 +327,7 @@ class _ApplyWorker(QThread):
                 log.debug("Throttling filter-chain restart (%.1fs)", wait)
                 self.msleep(int(wait * 1000))
 
-            # Restart filter-chain service (NOT pipewire — preserves HeSuVi/streams)
+            # Restart filter-chain service (configs in filter-chain.conf.d/)
             _ApplyWorker._last_restart = time.monotonic()
             result = subprocess.run(
                 ["systemctl", "--user", "restart", "filter-chain"],
@@ -455,6 +472,8 @@ class _PresetSearchDialog(QDialog):
 # ── Favorite slot button ──────────────────────────────────────────────────────
 
 class _FavoriteSlot(QPushButton):
+    remove_requested = Signal()
+
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setFixedSize(52, 42)
@@ -467,6 +486,22 @@ class _FavoriteSlot(QPushButton):
 
     def get_preset(self) -> str | None:
         return self._name
+
+    def contextMenuEvent(self, event):
+        if not self._name:
+            return
+        menu = QMenu(self)
+        menu.setStyleSheet(f"""
+            QMenu {{
+                background: {BG_CARD};
+                border: 1px solid {BORDER};
+                color: {TEXT_PRIMARY};
+            }}
+            QMenu::item:selected {{ background: {ACCENT}; }}
+        """)
+        act_remove = menu.addAction(f"Remove \"{self._name}\"")
+        if menu.exec(event.globalPos()) == act_remove:
+            self.remove_requested.emit()
 
     def _refresh(self):
         if self._name:
@@ -527,12 +562,23 @@ class _PresetBar(QWidget):
         row1.addWidget(self._name_label)
         row1.addStretch(1)
 
-        star_btn = QPushButton("★")
+        star_btn = QPushButton()
         star_btn.setFixedSize(32, 32)
         star_btn.setToolTip("Add to favorites")
+        star_btn.setIcon(_svg_icon("star_icon.svg", TEXT_PRIMARY))
+        star_btn.setIconSize(star_btn.size() * 0.55)
         star_btn.setStyleSheet(self._icon_btn_ss())
         star_btn.clicked.connect(self._on_star)
         row1.addWidget(star_btn)
+
+        reset_btn = QPushButton()
+        reset_btn.setFixedSize(32, 32)
+        reset_btn.setToolTip("Reset to Flat")
+        reset_btn.setIcon(_svg_icon("reset_icon.svg", TEXT_PRIMARY))
+        reset_btn.setIconSize(reset_btn.size() * 0.55)
+        reset_btn.setStyleSheet(self._icon_btn_ss())
+        reset_btn.clicked.connect(lambda: self._load_and_emit("Flat"))
+        row1.addWidget(reset_btn)
 
         more_btn = QPushButton("…")
         more_btn.setFixedSize(32, 32)
@@ -576,6 +622,7 @@ class _PresetBar(QWidget):
         for i in range(_MAX_FAV):
             slot = _FavoriteSlot()
             slot.clicked.connect(lambda checked, idx=i: self._on_fav_slot(idx))
+            slot.remove_requested.connect(lambda idx=i: self._on_fav_remove(idx))
             row3.addWidget(slot)
             self._slots.append(slot)
         row3.addStretch(1)
@@ -645,6 +692,12 @@ class _PresetBar(QWidget):
             self._load_and_emit("Flat")
         elif action == act_clear:
             self._favs = []
+            _save_favorites(self._channel, self._favs)
+            self._refresh_display()
+
+    def _on_fav_remove(self, idx: int):
+        if idx < len(self._favs):
+            self._favs.pop(idx)
             _save_favorites(self._channel, self._favs)
             self._refresh_display()
 
@@ -1861,6 +1914,15 @@ class SonarPage(QWidget):
         root.addSpacing(8)
         self._smart = SmartVolumeWidget()
         root.addWidget(self._smart)
+
+        # Show/hide settings based on active tab
+        self._tabs.currentChanged.connect(self._on_tab_changed)
+
+    def _on_tab_changed(self, index: int):
+        visible = index == 0  # Game tab
+        self._spatial.setVisible(visible)
+        self._boost.setVisible(visible)
+        self._smart.setVisible(visible)
 
     def _on_spatial_changed(self):
         """Spatial audio toggle changed — re-apply game channel conf."""

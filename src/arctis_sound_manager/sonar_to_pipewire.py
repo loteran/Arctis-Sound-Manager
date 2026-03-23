@@ -9,9 +9,8 @@ Routing:
   chat  → alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.analog-stereo  (2ch stereo)
   micro → virtual source backed by the physical mic input  (Source/Virtual, 1ch mono)
 
-All configs are written to pipewire.conf.d/ and loaded by the main PipeWire daemon.
-The separate filter-chain service causes a WirePlumber deadlock (zero links) on
-PipeWire 1.6.x when passive nodes target the same ALSA sink as loopback modules.
+All configs are written to filter-chain.conf.d/ and loaded by the filter-chain service.
+Restarting only filter-chain (not pipewire) preserves active audio streams.
 """
 from __future__ import annotations
 
@@ -47,7 +46,7 @@ _MACRO_PARAMS = {
     "aigus":  {"freq": 9000.0, "q": 0.80},
 }
 
-_CONF_DIR = Path.home() / ".config" / "pipewire" / "pipewire.conf.d"
+_CONF_DIR = Path.home() / ".config" / "pipewire" / "filter-chain.conf.d"
 
 
 # ── Low-level helpers ─────────────────────────────────────────────────────────
@@ -518,9 +517,8 @@ def check_and_fix_stale_configs() -> bool:
 
     Checks for:
     1. Configs using the broken ``label = gain`` builtin (PipeWire 1.6.x).
-    2. Sonar configs left in ``filter-chain.conf.d/`` (must be in
-       ``pipewire.conf.d/`` — the filter-chain service causes a WirePlumber
-       deadlock on PipeWire 1.6.x).
+    2. Sonar configs left in ``pipewire.conf.d/`` (must be in
+       ``filter-chain.conf.d/`` — restarting pipewire is too disruptive).
     3. Configs with wrong channel count (2ch game should be 8ch).
 
     Returns True if any config was regenerated or cleaned.
@@ -528,13 +526,13 @@ def check_and_fix_stale_configs() -> bool:
     import logging
     log = logging.getLogger(__name__)
     fixed = False
-    bad_dir = _CONF_DIR.parent / "filter-chain.conf.d"
+    bad_dir = _CONF_DIR.parent / "pipewire.conf.d"
 
     for name in ("sonar-game-eq.conf", "sonar-chat-eq.conf"):
-        # Remove stale copies from filter-chain.conf.d (wrong location)
+        # Remove stale copies from pipewire.conf.d (wrong location)
         bad_path = bad_dir / name
         if bad_path.exists():
-            log.warning("Removing sonar config from filter-chain.conf.d: %s", bad_path)
+            log.warning("Removing sonar config from pipewire.conf.d: %s", bad_path)
             bad_path.unlink()
             fixed = True
 
@@ -562,10 +560,10 @@ def check_and_fix_stale_configs() -> bool:
                 _write_conf(path, _bypass_conf(sink_name, target, channels, position))
                 fixed = True
 
-    # Micro EQ: remove stale copies from filter-chain.conf.d
+    # Micro EQ: remove stale copies from pipewire.conf.d
     micro_bad = bad_dir / "sonar-micro-eq.conf"
     if micro_bad.exists():
-        log.warning("Removing micro config from filter-chain.conf.d: %s", micro_bad)
+        log.warning("Removing micro config from pipewire.conf.d: %s", micro_bad)
         micro_bad.unlink()
         fixed = True
 

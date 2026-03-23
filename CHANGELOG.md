@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.1] - 23 March 2026
+
+### Fixed
+
+- **Boost Volume non-functional**: Sonar EQ configs were written to `pipewire.conf.d/` but the apply worker restarted `filter-chain` (wrong service). Configs now go to `filter-chain.conf.d/` and only `filter-chain` is restarted, preserving active audio streams.
+- **Stale config cleanup**: `check_and_fix_stale_configs()` now removes orphaned sonar configs from `pipewire.conf.d/`.
+
+### Added
+
+- **Remove favorite preset**: right-click on a favorite slot to remove it from favorites.
+
 ## [2.7.0] - 22 March 2026
 
 ### Fixed
