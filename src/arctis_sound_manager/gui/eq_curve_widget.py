@@ -193,7 +193,7 @@ class EqCurveWidget(QWidget):
         self._drag_start_pos: tuple[float, float] | None = None
 
         self.setMinimumHeight(200)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.setMouseTracking(True)
         self.setCursor(Qt.CursorShape.CrossCursor)
 

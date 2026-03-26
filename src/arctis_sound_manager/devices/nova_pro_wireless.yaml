@@ -178,7 +178,6 @@ device:
         update_sequence: [0x06, 0xc3, 'value']
     audio:
       noise_cancelling:
-        hidden: true
         type: slider
         min: 0x00
         max: 0x02
@@ -186,7 +185,6 @@ device:
         default: 0x00 # off
         update_sequence: [0x06, 0x89, 'value']
       transparent_level:
-        hidden: true
         type: slider
         min: 0x01
         max: 0x0a

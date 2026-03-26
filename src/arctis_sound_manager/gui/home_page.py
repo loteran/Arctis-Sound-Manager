@@ -182,7 +182,7 @@ class AudioCard(QWidget):
         apps_layout.setContentsMargins(12, 10, 12, 10)
         apps_layout.setSpacing(6)
 
-        apps_title = QLabel("Applications")
+        apps_title = QLabel(I18n.translate("ui", "applications"))
         apps_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         apps_title.setStyleSheet(
             f"color: {TEXT_PRIMARY}; font-size: 9pt; font-weight: bold; background: transparent;"
@@ -378,12 +378,10 @@ _STATUS_COLORS = {
     None:             "#8D96AA",
 }
 
-_STATUS_LABELS = {
-    "online":         "Online",
-    "cable_charging": "Charging",
-    "offline":        "Offline",
-    None:             "—",
-}
+def _status_label(key):
+    if key is None:
+        return "—"
+    return I18n.translate("status_values", key)
 
 _PILL_QSS = (
     "QWidget#pill {{ "
@@ -464,7 +462,7 @@ class _DeviceStatusBar(QWidget):
 
     def update(self, power_status, headset_bat, dac_bat):
         color = _STATUS_COLORS.get(power_status, "#8D96AA")
-        label = _STATUS_LABELS.get(power_status, str(power_status) if power_status else "—")
+        label = _status_label(power_status)
         self._conn_pill.set_value(label, color)
 
         if headset_bat is not None:
@@ -517,7 +515,7 @@ class HomePage(QWidget):
         root.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         # ── App title ─────────────────────────────────────────────────────────
-        app_title = QLabel("Arctis Sound Manager")
+        app_title = QLabel(I18n.translate("ui", "app_name"))
         app_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         app_title.setStyleSheet(
             f"color: {TEXT_PRIMARY}; font-size: 28pt; font-weight: bold; background: transparent;"
@@ -537,7 +535,7 @@ class HomePage(QWidget):
         toggle_layout.setContentsMargins(0, 0, 0, 0)
         toggle_layout.setSpacing(16)
 
-        toggle_lbl = QLabel("Enable Game/Chat Volume Sliders")
+        toggle_lbl = QLabel(I18n.translate("ui", "enable_volume_sliders"))
         toggle_lbl.setStyleSheet(
             f"color: {TEXT_PRIMARY}; font-size: 11pt; background: transparent;"
         )
@@ -553,7 +551,7 @@ class HomePage(QWidget):
         root.addSpacing(24)
 
         # ── "Disconnected" label ───────────────────────────────────────────────
-        self._disconnected_label = QLabel("Headset not connected")
+        self._disconnected_label = QLabel(I18n.translate("ui", "headset_not_connected"))
         self._disconnected_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._disconnected_label.setStyleSheet(
             f"color: {TEXT_SECONDARY}; font-size: 14pt; font-style: italic; background: transparent;"
@@ -578,19 +576,19 @@ class HomePage(QWidget):
         self._cards_layout.setContentsMargins(0, 0, 0, 0)
 
         # Game card
-        self._game_card = AudioCard("Game", COLOR_GAME, GAME_ICON)
+        self._game_card = AudioCard(I18n.translate("ui", "game"), COLOR_GAME, GAME_ICON)
         self._game_card.set_on_change(self._on_media_volume_changed)
         self._game_card.set_on_drop(lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_GAME))
         self._cards_layout.addWidget(self._game_card, stretch=1)
 
         # Chat card (Arctis_Chat sink)
-        self._chat_card = AudioCard("Chat", COLOR_CHAT, CHAT_ICON)
+        self._chat_card = AudioCard(I18n.translate("ui", "chat"), COLOR_CHAT, CHAT_ICON)
         self._chat_card.set_on_change(self._on_chat_volume_changed)
         self._chat_card.set_on_drop(lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_CHAT))
         self._cards_layout.addWidget(self._chat_card, stretch=1)
 
         # Media card (Arctis_Media sink)
-        self._media_card = AudioCard("Media", COLOR_AUX, MEDIA_ICON)
+        self._media_card = AudioCard(I18n.translate("ui", "media"), COLOR_AUX, MEDIA_ICON)
         self._media_card.set_on_change(self._on_aux_volume_changed)
         self._media_card.set_on_drop(lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_MEDIA))
         self._cards_layout.addWidget(self._media_card, stretch=1)
@@ -610,14 +608,14 @@ class HomePage(QWidget):
         _help_icon_path = str(
             __import__("pathlib").Path(__file__).parent / "images" / "help_icon.png"
         )
+        _t = lambda k: I18n.translate("ui", k)
         _help_text = (
-            "<b>How to use the mixer</b><br><br>"
-            "<b>Game</b> — Games (Arctis_Game)<br>"
-            "<b>Chat</b> — Voice / Discord (Arctis_Chat)<br>"
-            "<b>Media</b> — Music / Videos (Arctis_Media)<br><br>"
-            "Sliders control the volume of each channel.<br>"
-            "The <b>G C M</b> buttons on an app tag move<br>"
-            "that audio stream to the desired channel."
+            f"<b>{_t('help_mixer_title')}</b><br><br>"
+            f"<b>{_t('help_mixer_game')}</b><br>"
+            f"<b>{_t('help_mixer_chat')}</b><br>"
+            f"<b>{_t('help_mixer_media')}</b><br><br>"
+            f"{_t('help_mixer_sliders')}<br>"
+            f"{_t('help_mixer_buttons')}"
         )
 
         self._help_btn = QPushButton()

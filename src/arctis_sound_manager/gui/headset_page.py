@@ -54,7 +54,7 @@ class HeadsetPage(QWidget):
         layout.setSpacing(0)
 
         # Title
-        app_title = QLabel("Arctis Sound Manager")
+        app_title = QLabel(I18n.translate("ui", "app_name"))
         app_title.setStyleSheet(
             f"color: {TEXT_PRIMARY}; font-size: 28pt; font-weight: bold; background: transparent;"
         )
@@ -62,7 +62,7 @@ class HeadsetPage(QWidget):
         layout.addSpacing(28)
 
         # Devices section
-        layout.addWidget(SectionTitle("Devices"))
+        layout.addWidget(SectionTitle(I18n.translate("ui", "devices")))
         layout.addSpacing(20)
 
         # Device card
@@ -88,7 +88,7 @@ class HeadsetPage(QWidget):
         di_layout.setContentsMargins(0, 0, 0, 0)
         di_layout.setSpacing(2)
 
-        self._device_name_label = QLabel("Aucun appareil")
+        self._device_name_label = QLabel(I18n.translate("ui", "no_device"))
         self._device_name_label.setStyleSheet(
             f"color: {TEXT_PRIMARY}; font-size: 12pt; font-weight: bold; background: transparent;"
         )

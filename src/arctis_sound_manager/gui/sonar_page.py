@@ -15,6 +15,8 @@ import math
 import subprocess
 from pathlib import Path
 
+from arctis_sound_manager.i18n import I18n
+
 from PySide6.QtCore import QThread, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtSvg import QSvgRenderer
@@ -22,6 +24,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QDialogButtonBox,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -38,6 +41,9 @@ from PySide6.QtWidgets import (
 from arctis_sound_manager.gui.eq_curve_widget import EqBand, EqCurveWidget
 
 _IMAGES_DIR = Path(__file__).parent / "images"
+
+def _t(key: str) -> str:
+    return I18n.translate("ui", key)
 
 
 def _svg_icon(svg_name: str, color: str, size: int = 20) -> QIcon:
@@ -410,7 +416,7 @@ class _ApplyWorker(QThread):
 class _PresetSearchDialog(QDialog):
     def __init__(self, presets: dict[str, Path], parent: QWidget | None = None):
         super().__init__(parent)
-        self.setWindowTitle("Search preset")
+        self.setWindowTitle(_t("search_preset"))
         self.setMinimumSize(340, 480)
         self.selected_name: str | None = None
         self._all = list(presets.keys())
@@ -419,7 +425,7 @@ class _PresetSearchDialog(QDialog):
         layout.setSpacing(8)
 
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Search…")
+        self._search.setPlaceholderText(_t("search_dots"))
         self._search.setStyleSheet(f"""
             QLineEdit {{
                 background: {BG_BUTTON};
@@ -523,7 +529,7 @@ class _FavoriteSlot(QPushButton):
             """)
         else:
             self.setText("")
-            self.setToolTip("Empty slot")
+            self.setToolTip(_t("empty_slot"))
             self.setStyleSheet(f"""
                 QPushButton {{
                     background: {BG_CARD};
@@ -566,7 +572,7 @@ class _PresetBar(QWidget):
 
         star_btn = QPushButton()
         star_btn.setFixedSize(32, 32)
-        star_btn.setToolTip("Add to favorites")
+        star_btn.setToolTip(_t("add_to_favorites"))
         star_btn.setIcon(_svg_icon("star_icon.svg", TEXT_PRIMARY))
         star_btn.setIconSize(star_btn.size() * 0.55)
         star_btn.setStyleSheet(self._icon_btn_ss())
@@ -575,19 +581,12 @@ class _PresetBar(QWidget):
 
         reset_btn = QPushButton()
         reset_btn.setFixedSize(32, 32)
-        reset_btn.setToolTip("Reset to Flat")
+        reset_btn.setToolTip(_t("reset_to_flat"))
         reset_btn.setIcon(_svg_icon("reset_icon.svg", TEXT_PRIMARY))
         reset_btn.setIconSize(reset_btn.size() * 0.55)
         reset_btn.setStyleSheet(self._icon_btn_ss())
         reset_btn.clicked.connect(lambda: self._load_and_emit("Flat"))
         row1.addWidget(reset_btn)
-
-        more_btn = QPushButton("…")
-        more_btn.setFixedSize(32, 32)
-        more_btn.setToolTip("More options")
-        more_btn.setStyleSheet(self._icon_btn_ss())
-        more_btn.clicked.connect(self._on_more)
-        row1.addWidget(more_btn)
 
         root.addLayout(row1)
 
@@ -595,7 +594,7 @@ class _PresetBar(QWidget):
         row2 = QHBoxLayout()
         row2.setSpacing(8)
 
-        search_btn = QPushButton("🔍  Search preset")
+        search_btn = QPushButton(f"🔍  {_t('search_preset')}")
         search_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent;
@@ -648,7 +647,7 @@ class _PresetBar(QWidget):
 
     def _refresh_display(self):
         self._name_label.setText(self._active)
-        self._fav_count.setText(f"Favorites ({len(self._favs)}/{_MAX_FAV})")
+        self._fav_count.setText(f"{_t('favorites')} ({len(self._favs)}/{_MAX_FAV})")
         for i, slot in enumerate(self._slots):
             slot.set_preset(self._favs[i] if i < len(self._favs) else None)
 
@@ -677,25 +676,6 @@ class _PresetBar(QWidget):
             _save_favorites(self._channel, self._favs)
             self._refresh_display()
 
-    def _on_more(self):
-        menu = QMenu(self)
-        menu.setStyleSheet(f"""
-            QMenu {{
-                background: {BG_CARD};
-                border: 1px solid {BORDER};
-                color: {TEXT_PRIMARY};
-            }}
-            QMenu::item:selected {{ background: {ACCENT}; }}
-        """)
-        act_reset = menu.addAction("Reset to Flat")
-        act_clear = menu.addAction("Clear favorites")
-        action = menu.exec(self.mapToGlobal(self.sender().pos()))
-        if action == act_reset:
-            self._load_and_emit("Flat")
-        elif action == act_clear:
-            self._favs = []
-            _save_favorites(self._channel, self._favs)
-            self._refresh_display()
 
     def _on_fav_remove(self, idx: int):
         if idx < len(self._favs):
@@ -714,7 +694,7 @@ class _PresetBar(QWidget):
 class _MacroSliders(QWidget):
     macros_changed = Signal(float, float, float)   # basses, voix, aigus
 
-    _LABELS = [("Basses", "basses"), ("Voix", "voix"), ("Aigus", "aigus")]
+    _KEYS = [("bass", "basses"), ("voice", "voix"), ("treble", "aigus")]
 
     def __init__(self, channel: str, parent: QWidget | None = None):
         super().__init__(parent)
@@ -729,7 +709,8 @@ class _MacroSliders(QWidget):
         self._sliders: dict[str, QSlider] = {}
         self._labels:  dict[str, QLabel]  = {}
 
-        for label_text, key in self._LABELS:
+        for i18n_key, key in self._KEYS:
+            label_text = _t(i18n_key)
             col = QVBoxLayout()
             col.setSpacing(4)
 
@@ -829,7 +810,7 @@ class SonarChannelWidget(QWidget):
         ecl.setSpacing(12)
 
         eq_header = QHBoxLayout()
-        eq_header.addWidget(QLabel("Equalizer"))
+        eq_header.addWidget(QLabel(_t("equalizer")))
         eq_header.addStretch(1)
         self._status_lbl = QLabel()
         self._status_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt;")
@@ -837,12 +818,13 @@ class SonarChannelWidget(QWidget):
         ecl.addLayout(eq_header)
 
         self._eq_widget = EqCurveWidget(eq_card)
-        self._eq_widget.setMinimumHeight(220)
+        self._eq_widget.setMinimumHeight(200)
+        self._eq_widget.setMaximumHeight(260)
         self._eq_widget.bands_changed.connect(self._on_bands_changed)
         ecl.addWidget(self._eq_widget)
 
         # Macro sliders
-        macro_sep = QLabel("Macro")
+        macro_sep = QLabel(_t("macro"))
         macro_sep.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;")
         ecl.addWidget(macro_sep)
 
@@ -851,7 +833,45 @@ class SonarChannelWidget(QWidget):
         ecl.addWidget(self._macros)
 
         root.addWidget(eq_card)
-        root.addStretch(1)
+
+        # ── Settings card (game / chat only) ─────────────────────────────────
+        if channel in ("game", "chat"):
+            settings_card = QWidget()
+            settings_card.setObjectName("settingsCard")
+            settings_card.setStyleSheet(f"""
+                QWidget#settingsCard {{
+                    background-color: {BG_CARD};
+                    border: 1px solid {BORDER};
+                    border-radius: 12px;
+                }}
+            """)
+            scl = QVBoxLayout(settings_card)
+            scl.setContentsMargins(0, 0, 0, 0)
+            scl.setSpacing(0)
+
+            if channel == "game":
+                self._spatial = SpatialAudioWidget()
+                scl.addWidget(self._spatial)
+                sep = QFrame()
+                sep.setFrameShape(QFrame.Shape.HLine)
+                sep.setStyleSheet(f"background: {BORDER}; border: none; max-height: 1px;")
+                scl.addWidget(sep)
+
+            self._boost = BoostVolumeWidget()
+            scl.addWidget(self._boost)
+
+            sep2 = QFrame()
+            sep2.setFrameShape(QFrame.Shape.HLine)
+            sep2.setStyleSheet(f"background: {BORDER}; border: none; max-height: 1px;")
+            scl.addWidget(sep2)
+
+            self._smart = SmartVolumeWidget()
+            scl.addWidget(self._smart)
+
+            if channel == "chat":
+                scl.addStretch(1)
+
+            root.addWidget(settings_card)
 
         # Load initial preset
         self._load_initial()
@@ -911,7 +931,7 @@ class SonarChannelWidget(QWidget):
     # ── Apply ─────────────────────────────────────────────────────────────────
 
     def _schedule_apply(self):
-        self._status_lbl.setText("pending…")
+        self._status_lbl.setText(_t("pending"))
         self._apply_timer.start()
 
     def _do_apply(self):
@@ -926,11 +946,11 @@ class SonarChannelWidget(QWidget):
         )
         self._worker.done.connect(self._on_apply_done)
         self._worker.start()
-        self._status_lbl.setText("applying…")
+        self._status_lbl.setText(_t("applying"))
 
     @Slot(bool)
     def _on_apply_done(self, ok: bool):
-        self._status_lbl.setText("✓ applied" if ok else "⚠ error")
+        self._status_lbl.setText(_t("applied") if ok else _t("error"))
         QTimer.singleShot(2000, lambda: self._status_lbl.setText(""))
         self._worker = None
         if self._pending_apply:
@@ -993,13 +1013,7 @@ class SpatialAudioWidget(QWidget):
         self._state = _load_spatial_audio()
         self._updating = False
 
-        self.setObjectName("spatialCard")
         self.setStyleSheet(f"""
-            QWidget#spatialCard {{
-                background-color: {BG_CARD};
-                border: 1px solid {BORDER};
-                border-radius: 12px;
-            }}
             QLabel {{ background: transparent; border: none; }}
             QSlider::groove:horizontal {{
                 height: 4px; background: {BG_BUTTON}; border-radius: 2px;
@@ -1024,12 +1038,12 @@ class SpatialAudioWidget(QWidget):
         self._toggle.checkStateChanged.connect(self._on_toggle)
         row1.addWidget(self._toggle)
 
-        title = QLabel("Spatial Audio")
+        title = QLabel(_t("spatial_audio"))
         title.setStyleSheet(f"font-size: 12pt; font-weight: bold; color: {TEXT_PRIMARY};")
         row1.addWidget(title)
         row1.addStretch(1)
 
-        note = QLabel("Game channel")
+        note = QLabel(_t("game_channel"))
         note.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt;")
         row1.addWidget(note)
         root.addLayout(row1)
@@ -1044,13 +1058,13 @@ class SpatialAudioWidget(QWidget):
         # Immersion slider
         detail_layout.addWidget(self._slider_row(
             "Performance / Immersion", "immersion",
-            "(Linux : en attente de captures USB)"
+            _t("pending_usb")
         ))
 
         # Distance slider
         detail_layout.addWidget(self._slider_row(
             "Distance", "distance",
-            "(Linux : en attente de captures USB)"
+            _t("pending_usb")
         ))
 
         root.addWidget(self._detail)
@@ -1135,13 +1149,7 @@ class BoostVolumeWidget(QWidget):
         super().__init__(parent)
         self._state = _load_boost()
 
-        self.setObjectName("boostCard")
         self.setStyleSheet(f"""
-            QWidget#boostCard {{
-                background-color: {BG_CARD};
-                border: 1px solid {BORDER};
-                border-radius: 12px;
-            }}
             QLabel {{ background: transparent; border: none; }}
             QSlider::groove:horizontal {{
                 height: 4px; background: {BG_BUTTON}; border-radius: 2px;
@@ -1164,7 +1172,7 @@ class BoostVolumeWidget(QWidget):
         self._toggle.setChecked(self._state["enabled"])
         self._toggle.checkStateChanged.connect(self._on_toggle)
         row1.addWidget(self._toggle)
-        title = QLabel("Boost de Volume")
+        title = QLabel(_t("volume_boost"))
         title.setStyleSheet(f"font-size: 12pt; font-weight: bold; color: {TEXT_PRIMARY};")
         row1.addWidget(title)
         row1.addStretch(1)
@@ -1226,19 +1234,13 @@ class SmartVolumeWidget(QWidget):
     """
     state_changed = Signal()
 
-    _LOUDNESS_OPTIONS = [("Quiet", "quiet"), ("Balanced", "balanced"), ("Loud", "loud")]
+    _LOUDNESS_KEYS = ["quiet", "balanced", "loud"]
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self._state = _load_smart_volume()
 
-        self.setObjectName("smartCard")
         self.setStyleSheet(f"""
-            QWidget#smartCard {{
-                background-color: {BG_CARD};
-                border: 1px solid {BORDER};
-                border-radius: 12px;
-            }}
             QLabel {{ background: transparent; border: none; }}
             QSlider::groove:horizontal {{
                 height: 4px; background: {BG_BUTTON}; border-radius: 2px;
@@ -1261,7 +1263,7 @@ class SmartVolumeWidget(QWidget):
         self._toggle.setChecked(self._state["enabled"])
         self._toggle.checkStateChanged.connect(self._on_toggle)
         row1.addWidget(self._toggle)
-        title = QLabel("Smart Volume")
+        title = QLabel(_t("smart_volume"))
         title.setStyleSheet(f"font-size: 12pt; font-weight: bold; color: {TEXT_PRIMARY};")
         row1.addWidget(title)
         row1.addStretch(1)
@@ -1277,11 +1279,12 @@ class SmartVolumeWidget(QWidget):
         # Loudness mode
         loudness_row = QHBoxLayout()
         loudness_row.setSpacing(8)
-        loudness_lbl = QLabel("Mode")
+        loudness_lbl = QLabel(_t("mode"))
         loudness_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10pt; min-width: 60px;")
         loudness_row.addWidget(loudness_lbl)
         self._loudness_btns: dict[str, QPushButton] = {}
-        for label, value in self._LOUDNESS_OPTIONS:
+        for value in self._LOUDNESS_KEYS:
+            label = _t(value)
             btn = QPushButton(label)
             btn.setFixedHeight(28)
             btn.setProperty("mode_value", value)
@@ -1295,7 +1298,7 @@ class SmartVolumeWidget(QWidget):
         # Level slider
         level_row = QHBoxLayout()
         level_row.setSpacing(10)
-        level_lbl = QLabel("Niveau")
+        level_lbl = QLabel(_t("level"))
         level_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10pt; min-width: 60px;")
         level_row.addWidget(level_lbl)
         self._level_slider = _NoWheelSlider(Qt.Orientation.Horizontal)
@@ -1452,11 +1455,6 @@ class _WaveformWidget(QWidget):
 
 def _micro_card_style() -> str:
     return f"""
-        QWidget#microCard {{
-            background-color: {BG_CARD};
-            border: 1px solid {BORDER};
-            border-radius: 12px;
-        }}
         QLabel {{ background: transparent; border: none; }}
         QSlider::groove:horizontal {{
             height: 4px; background: {BG_BUTTON}; border-radius: 2px;
@@ -1511,7 +1509,7 @@ class _NoiseCancelingCard(QWidget):
 
         slider_row = QHBoxLayout()
         slider_row.setSpacing(10)
-        lbl_min = QLabel("Min")
+        lbl_min = QLabel(_t("min"))
         lbl_min.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt;")
         slider_row.addWidget(lbl_min)
         self._slider = _NoWheelSlider(Qt.Orientation.Horizontal)
@@ -1520,7 +1518,7 @@ class _NoiseCancelingCard(QWidget):
         self._slider.setValue(int(state["noiseCanceling"]["value"] * 100))
         self._slider.valueChanged.connect(self._on_slider)
         slider_row.addWidget(self._slider, 1)
-        lbl_max = QLabel("Max")
+        lbl_max = QLabel(_t("max"))
         lbl_max.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt;")
         slider_row.addWidget(lbl_max)
         root.addLayout(slider_row)
@@ -1557,7 +1555,7 @@ class _NoiseReductionCard(QWidget):
         root.setSpacing(10)
 
         title_row = QHBoxLayout()
-        title = QLabel("RÉDUCTION DU BRUIT")
+        title = QLabel(_t("noise_reduction").upper())
         title.setStyleSheet(f"font-size: 10pt; font-weight: bold; color: {TEXT_PRIMARY};")
         title_row.addWidget(title)
         title_row.addStretch(1)
@@ -1622,12 +1620,12 @@ class _NoiseGateCard(QWidget):
         self._toggle = QToggle(is_checkbox=True)
         self._toggle.setChecked(state["noiseGate"]["enabled"])
         self._toggle.checkStateChanged.connect(self._on_toggle)
-        root.addLayout(_make_header_row("NOISE GATE", self._toggle))
+        root.addLayout(_make_header_row(_t("noise_gate").upper(), self._toggle))
 
         # Threshold slider
         seuil_row = QHBoxLayout()
         seuil_row.setSpacing(8)
-        seuil_lbl = QLabel("Seuil")
+        seuil_lbl = QLabel(_t("threshold"))
         seuil_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt; min-width: 36px;")
         seuil_row.addWidget(seuil_lbl)
         self._seuil = _NoWheelSlider(Qt.Orientation.Horizontal)
@@ -1691,14 +1689,14 @@ class _CompressorCard(QWidget):
         self._toggle = QToggle(is_checkbox=True)
         self._toggle.setChecked(state["compressor"]["enabled"])
         self._toggle.checkStateChanged.connect(self._on_toggle)
-        root.addLayout(_make_header_row("COMPRESSEUR", self._toggle))
+        root.addLayout(_make_header_row(_t("compressor").upper(), self._toggle))
 
         self._detail = QWidget()
         self._detail.setStyleSheet("background: transparent;")
         dl = QHBoxLayout(self._detail)
         dl.setContentsMargins(0, 0, 0, 0)
         dl.setSpacing(10)
-        niv_lbl = QLabel("Niveau")
+        niv_lbl = QLabel(_t("level"))
         niv_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt; min-width: 52px;")
         dl.addWidget(niv_lbl)
         self._slider = _NoWheelSlider(Qt.Orientation.Horizontal)
@@ -1743,24 +1741,35 @@ class SonarMicroWidget(SonarChannelWidget):
 
         # Réduire l'écart entre l'EQ et les cartes de traitement
         root.setSpacing(8)
-        self._eq_widget.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Preferred,
-        )
 
-        # Remove the trailing stretch from the parent layout
-        root.takeAt(root.count() - 1)
+        # ── Micro processing card ────────────────────────────────────────────
+        micro_settings = QWidget()
+        micro_settings.setObjectName("microSettingsCard")
+        micro_settings.setStyleSheet(f"""
+            QWidget#microSettingsCard {{
+                background-color: {BG_CARD};
+                border: 1px solid {BORDER};
+                border-radius: 12px;
+            }}
+        """)
+        msl = QVBoxLayout(micro_settings)
+        msl.setContentsMargins(0, 0, 0, 0)
+        msl.setSpacing(0)
 
-        # ── ClearCast AI Noise Cancellation ──────────────────────────────────
         self._nc_card = _NoiseCancelingCard(self._micro_state)
         self._nc_card.state_changed.connect(self._on_micro_changed)
-        root.addWidget(self._nc_card)
+        msl.addWidget(self._nc_card)
 
-        # ── Noise Reduction (left 60 %) + Noise Gate (right 40 %) ────────────
+        sep1 = QFrame()
+        sep1.setFrameShape(QFrame.Shape.HLine)
+        sep1.setStyleSheet(f"background: {BORDER}; border: none; max-height: 1px;")
+        msl.addWidget(sep1)
+
+        # Noise Reduction + Noise Gate side by side
         side = QWidget()
         side.setStyleSheet("background: transparent;")
         side_hl = QHBoxLayout(side)
-        side_hl.setContentsMargins(0, 0, 0, 0)
+        side_hl.setContentsMargins(20, 12, 20, 12)
         side_hl.setSpacing(8)
         self._nr_card = _NoiseReductionCard(self._micro_state)
         self._ng_card = _NoiseGateCard(self._micro_state)
@@ -1768,13 +1777,18 @@ class SonarMicroWidget(SonarChannelWidget):
         self._ng_card.state_changed.connect(self._on_micro_changed)
         side_hl.addWidget(self._nr_card, 6)
         side_hl.addWidget(self._ng_card, 4)
-        root.addWidget(side)
+        msl.addWidget(side)
 
-        # ── Compressor / Volume Stabilizer ───────────────────────────────────
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.Shape.HLine)
+        sep2.setStyleSheet(f"background: {BORDER}; border: none; max-height: 1px;")
+        msl.addWidget(sep2)
+
         self._comp_card = _CompressorCard(self._micro_state)
         self._comp_card.state_changed.connect(self._on_micro_changed)
-        root.addWidget(self._comp_card)
+        msl.addWidget(self._comp_card)
 
+        root.addWidget(micro_settings)
         root.addStretch(1)
 
     def _on_micro_changed(self):
@@ -1803,12 +1817,12 @@ class SonarPage(QWidget):
         root.setSpacing(0)
 
         if not embedded:
-            title = QLabel("Arctis Sound Manager")
+            title = QLabel(_t("app_name"))
             title.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 28pt; font-weight: bold; background: transparent;")
             root.addWidget(title)
             root.addSpacing(4)
 
-            subtitle = QLabel("Sonar")
+            subtitle = QLabel(_t("sonar"))
             subtitle.setStyleSheet("color: #666666; font-size: 20pt; font-weight: bold; background: transparent;")
             root.addWidget(subtitle)
             root.addSpacing(20)
@@ -1846,36 +1860,18 @@ class SonarPage(QWidget):
         self._chat_widget  = SonarChannelWidget("chat")
         self._micro_widget = SonarMicroWidget()
 
-        self._tabs.addTab(self._game_widget,  "Game")
-        self._tabs.addTab(self._chat_widget,  "Chat")
-        self._tabs.addTab(self._micro_widget, "Micro")
+        self._tabs.addTab(self._game_widget,  _t("game"))
+        self._tabs.addTab(self._chat_widget,  _t("chat"))
+        self._tabs.addTab(self._micro_widget, _t("micro"))
 
         root.addWidget(self._tabs, 1)
 
-        # ── Global section — Spatial Audio ────────────────────────────────────
-        root.addSpacing(12)
-        self._spatial = SpatialAudioWidget()
-        self._spatial.state_changed.connect(self._on_spatial_changed)
-        root.addWidget(self._spatial)
-
-        root.addSpacing(8)
-        self._boost = BoostVolumeWidget()
-        self._boost.state_changed.connect(self._on_boost_changed)
-        root.addWidget(self._boost)
-
-        root.addSpacing(8)
-        self._smart = SmartVolumeWidget()
-        self._smart.state_changed.connect(self._on_smart_changed)
-        root.addWidget(self._smart)
-
-        # Show/hide settings based on active tab
-        self._tabs.currentChanged.connect(self._on_tab_changed)
-
-    def _on_tab_changed(self, index: int):
-        visible = index == 0  # Game tab
-        self._spatial.setVisible(visible)
-        self._boost.setVisible(visible)
-        self._smart.setVisible(visible)
+        # ── Connect settings signals from tab widgets ────────────────────────
+        self._game_widget._spatial.state_changed.connect(self._on_spatial_changed)
+        self._game_widget._boost.state_changed.connect(self._on_boost_changed)
+        self._game_widget._smart.state_changed.connect(self._on_smart_changed)
+        self._chat_widget._boost.state_changed.connect(self._on_boost_changed)
+        self._chat_widget._smart.state_changed.connect(self._on_smart_changed)
 
     def _on_spatial_changed(self):
         """Spatial audio toggle changed — re-apply game channel conf."""
