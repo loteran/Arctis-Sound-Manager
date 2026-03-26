@@ -133,10 +133,17 @@ def generate_sonar_eq_conf(
     if channel not in ("game", "chat"):
         raise ValueError(f"channel must be 'game' or 'chat', got {channel!r}")
 
-    target = _CHANNEL_TARGET[channel]
+    # Spatial audio OFF → game routes directly to physical stereo output (2ch)
+    if channel == "game" and not spatial_audio:
+        target = _PHYSICAL_OUT
+        channels = 2
+        position = "FL FR"
+    else:
+        target = _CHANNEL_TARGET[channel]
+        channels = _CHANNEL_CHANNELS[channel]
+        position = _CHANNEL_POSITION[channel]
+
     sink_name = f"effect_input.sonar-{channel}-eq"
-    channels = _CHANNEL_CHANNELS[channel]
-    position = _CHANNEL_POSITION[channel]
 
     if output_path is None:
         output_path = _CONF_DIR / f"sonar-{channel}-eq.conf"

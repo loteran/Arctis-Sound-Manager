@@ -1041,22 +1041,6 @@ class SpatialAudioWidget(QWidget):
         detail_layout.setContentsMargins(0, 0, 0, 0)
         detail_layout.setSpacing(12)
 
-        # Mode selector: Casque / Haut-parleur
-        mode_row = QHBoxLayout()
-        mode_row.setSpacing(8)
-        mode_lbl = QLabel("Mode")
-        mode_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10pt; min-width: 80px;")
-        mode_row.addWidget(mode_lbl)
-
-        self._mode_casque = self._pill_btn("Casque", "headphones")
-        self._mode_speakers = self._pill_btn("Haut-parleur", "speakers")
-        mode_row.addWidget(self._mode_casque)
-        mode_row.addWidget(self._mode_speakers)
-        mode_row.addStretch(1)
-        detail_layout.addLayout(mode_row)
-
-        self._refresh_mode_buttons()
-
         # Immersion slider
         detail_layout.addWidget(self._slider_row(
             "Performance / Immersion", "immersion",
@@ -1073,29 +1057,6 @@ class SpatialAudioWidget(QWidget):
         self._detail.setVisible(self._state["enabled"])
 
     # ── Helpers ───────────────────────────────────────────────────────────────
-
-    def _pill_btn(self, label: str, value: str) -> QPushButton:
-        btn = QPushButton(label)
-        btn.setFixedHeight(28)
-        btn.setProperty("mode_value", value)
-        btn.clicked.connect(lambda: self._on_mode(value))
-        return btn
-
-    def _refresh_mode_buttons(self):
-        active = self._state["mode"]
-        for btn in (self._mode_casque, self._mode_speakers):
-            selected = btn.property("mode_value") == active
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background: {"" + ACCENT if selected else BG_BUTTON};
-                    color: {"#fff" if selected else TEXT_SECONDARY};
-                    border: 1px solid {ACCENT if selected else BORDER};
-                    border-radius: 6px;
-                    padding: 0 14px;
-                    font-size: 10pt;
-                }}
-                QPushButton:hover {{ border-color: {ACCENT}; color: {TEXT_PRIMARY}; }}
-            """)
 
     def _slider_row(self, label: str, key: str, pending_note: str) -> QWidget:
         w = QWidget()
@@ -1152,12 +1113,6 @@ class SpatialAudioWidget(QWidget):
         _save_spatial_audio(self._state)
         self._detail.setVisible(enabled)
         self.state_changed.emit()
-
-    def _on_mode(self, value: str):
-        self._state["mode"] = value
-        _save_spatial_audio(self._state)
-        self._refresh_mode_buttons()
-        # Note: mode change doesn't affect routing yet (pending USB)
 
     def _on_slider(self, key: str, value: int):
         self._state[key] = value
