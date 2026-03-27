@@ -250,11 +250,13 @@ context.modules = [
         audio.position = [ {position} ]
       }}
       playback.props = {{
-        node.name      = "effect_output.sonar-{channel}-eq"
-        node.target    = "{target}"
-        node.passive   = true
-        audio.channels = 8
-        audio.position = [ {position} ]
+        node.name           = "effect_output.sonar-{channel}-eq"
+        node.target         = "{target}"
+        node.dont-fallback  = true
+        node.linger         = true
+        node.passive        = true
+        audio.channels      = 8
+        audio.position      = [ {position} ]
       }}
     }}
   }}
@@ -344,11 +346,13 @@ context.modules = [
         audio.position = [ {position} ]
       }}
       playback.props = {{
-        node.name      = "effect_output.sonar-{channel}-eq"
-        node.target    = "{target}"
-        node.passive   = true
-        audio.channels = 2
-        audio.position = [ {position} ]
+        node.name           = "effect_output.sonar-{channel}-eq"
+        node.target         = "{target}"
+        node.dont-fallback  = true
+        node.linger         = true
+        node.passive        = true
+        audio.channels      = 2
+        audio.position      = [ {position} ]
       }}
     }}
   }}
@@ -486,11 +490,13 @@ context.modules = [
         audio.position = [ {position} ]
       }}
       playback.props = {{
-        node.name      = "{sink_name.replace('effect_input.', 'effect_output.')}"
-        node.target    = "{target}"
-        node.passive   = true
-        audio.channels = 8
-        audio.position = [ {position} ]
+        node.name           = "{sink_name.replace('effect_input.', 'effect_output.')}"
+        node.target         = "{target}"
+        node.dont-fallback  = true
+        node.linger         = true
+        node.passive        = true
+        audio.channels      = 8
+        audio.position      = [ {position} ]
       }}
     }}
   }}
@@ -518,11 +524,13 @@ context.modules = [
         audio.position = [ {position} ]
       }}
       playback.props = {{
-        node.name      = "{sink_name.replace('effect_input.', 'effect_output.')}"
-        node.target    = "{target}"
-        node.passive   = true
-        audio.channels = 2
-        audio.position = [ {position} ]
+        node.name           = "{sink_name.replace('effect_input.', 'effect_output.')}"
+        node.target         = "{target}"
+        node.dont-fallback  = true
+        node.linger         = true
+        node.passive        = true
+        audio.channels      = 2
+        audio.position      = [ {position} ]
       }}
     }}
   }}

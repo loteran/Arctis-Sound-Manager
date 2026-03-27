@@ -21,6 +21,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
   - Macro sliders: Basses / Voix / Aigus (±12 dB)
   - **Spatial Audio** toggle — routes Game channel through HeSuVi virtual 7.1 surround
   - **Boost de Volume** — up to +12 dB gain node at the end of the filter chain
+  - **Smart Volume** — dynamic compressor (Quiet / Balanced / Loud) to even out volume differences
   - All changes applied live via PipeWire filter-chain (biquad nodes)
 - **10-band equalizer** — Custom mode: per-band gain (31 Hz to 16 kHz), save/load presets
 - **ANC / Transparent mode indicator** — reflects the physical button state (Off / Transparent / ANC) in real time
@@ -30,7 +31,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 
 ## Screenshots
 
-### Home — 3-channel audio mixer (Game / Chat / Media)
+### Home — 4-channel audio mixer (Game / Chat / Media / HDMI)
 ![Home](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/develop/docs/images/screenshot_home.png)
 
 ### Sonar — Parametric EQ (Game / Chat / Micro) with presets, Spatial Audio and Boost
@@ -271,7 +272,8 @@ scripts/
 ├── install.sh                              # Main installer
 ├── setup-surround.sh                       # Optional virtual surround setup
 ├── pipewire/
-│   └── sink-virtual-surround-7.1-hesuvi.conf  # PipeWire filter-chain config
+│   ├── 10-arctis-virtual-sinks.conf           # Native PipeWire loopback sinks (Game/Chat/Media)
+│   └── sink-virtual-surround-7.1-hesuvi.conf  # HeSuVi 7.1 virtual surround filter-chain
 └── arctis-video-router.service             # Systemd service for asm-router
 ```
 If you want to buy me a coffee ;) --> https://ko-fi.com/loteran
