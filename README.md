@@ -19,7 +19,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
   - Interactive EQ curve with up to 10 bands per channel (Game / Chat / Micro)
   - 297 Game presets, 8 Chat, 14 Mic imported from Sonar — searchable, with 9 favorite slots
   - Macro sliders: Basses / Voix / Aigus (±12 dB)
-  - **Spatial Audio** toggle — routes Game channel through HeSuVi virtual 7.1 surround
+  - **Spatial Audio** — routes Game channel through HeSuVi virtual 7.1 surround, with **Immersion** (0–12 dB gain) and **Distance** (plate reverb) sliders
   - **Boost de Volume** — up to +12 dB gain node at the end of the filter chain
   - **Smart Volume** — dynamic compressor (Quiet / Balanced / Loud) to even out volume differences
   - All changes applied live via PipeWire filter-chain (biquad nodes)

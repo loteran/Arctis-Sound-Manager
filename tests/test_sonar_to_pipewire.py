@@ -120,14 +120,14 @@ def test_bypass_game_has_node_name_in_playback():
     text = generate_sonar_eq_conf("game", [], 0.0, 0.0, 0.0,
                                   output_path=Path("/dev/null"),
                                   spatial_audio=True, boost_db=0.0)
-    assert 'node.name      = "effect_output.sonar-game-eq"' in text
+    assert 'node.name           = "effect_output.sonar-game-eq"' in text
 
 
 def test_bypass_chat_has_node_name_in_playback():
     text = generate_sonar_eq_conf("chat", [], 0.0, 0.0, 0.0,
                                   output_path=Path("/dev/null"),
                                   boost_db=0.0)
-    assert 'node.name      = "effect_output.sonar-chat-eq"' in text
+    assert 'node.name           = "effect_output.sonar-chat-eq"' in text
 
 
 def test_bypass_micro_has_node_name_in_playback():
@@ -142,7 +142,7 @@ def test_active_game_has_node_name_in_playback():
     text = generate_sonar_eq_conf("game", bands, 0.0, 0.0, 0.0,
                                   output_path=Path("/dev/null"),
                                   spatial_audio=True)
-    assert 'node.name      = "effect_output.sonar-game-eq"' in text
+    assert 'node.name           = "effect_output.sonar-game-eq"' in text
 
 
 def test_micro_capture_uses_unique_name():

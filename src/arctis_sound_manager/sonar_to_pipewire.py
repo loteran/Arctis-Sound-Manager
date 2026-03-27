@@ -667,3 +667,197 @@ def check_and_fix_stale_configs() -> bool:
             fixed = True
 
     return fixed
+
+
+# ── Config generator — HeSuVi 7.1 virtual surround ──────────────────────────
+
+_HESUVI_CHANNELS = ("FL", "FR", "FC", "LFE", "RL", "RR", "SL", "SR")
+
+# Convolver definitions: (name, hrir channel index)
+# Order matches the static config exactly.
+_HESUVI_CONVOLVERS = [
+    ("convFL_L",  0), ("convFL_R",  1),
+    ("convSL_L",  2), ("convSL_R",  3),
+    ("convRL_L",  4), ("convRL_R",  5),
+    ("convFC_L",  6), ("convFR_R",  7),
+    ("convFR_L",  8), ("convSR_R",  9),
+    ("convSR_L", 10), ("convRR_R", 11),
+    ("convRR_L", 12), ("convFC_R", 13),
+    # LFE treated as FC
+    ("convLFE_L", 6), ("convLFE_R", 13),
+]
+
+# copy→convolver feed mapping: gain node → list of convolver inputs
+# (matches the static config link order)
+_HESUVI_COPY_CONV_LINKS = [
+    ("FL",  ["convFL_L",  "convFL_R"]),
+    ("SL",  ["convSL_L",  "convSL_R"]),
+    ("RL",  ["convRL_L",  "convRL_R"]),
+    ("FC",  ["convFC_L"]),
+    ("FR",  ["convFR_R",  "convFR_L"]),
+    ("SR",  ["convSR_R",  "convSR_L"]),
+    ("RR",  ["convRR_R",  "convRR_L"]),
+    ("FC",  ["convFC_R"]),
+    ("LFE", ["convLFE_L", "convLFE_R"]),
+]
+
+# convolver→mixer feed mapping (matches the static config link order)
+_HESUVI_CONV_MIX_LINKS = [
+    ("convFL_L",  "mixL", 1), ("convFL_R",  "mixR", 1),
+    ("convSL_L",  "mixL", 2), ("convSL_R",  "mixR", 2),
+    ("convRL_L",  "mixL", 3), ("convRL_R",  "mixR", 3),
+    ("convFC_L",  "mixL", 4), ("convFC_R",  "mixR", 4),
+    ("convFR_R",  "mixR", 5), ("convFR_L",  "mixL", 5),
+    ("convSR_R",  "mixR", 6), ("convSR_L",  "mixL", 6),
+    ("convRR_R",  "mixR", 7), ("convRR_L",  "mixL", 7),
+    ("convLFE_R", "mixR", 8), ("convLFE_L", "mixL", 8),
+]
+
+
+def generate_hesuvi_conf(
+    immersion_pct: int = 50,
+    distance_pct: int = 50,
+    output_path: Path | None = None,
+) -> str:
+    """Generate a dynamic HeSuVi 7.1 virtual surround PipeWire filter-chain config.
+
+    Parameters
+    ----------
+    immersion_pct:
+        0-100, maps linearly to 0.0-12.0 dB gain applied uniformly to all
+        8 channels *before* the HRTF convolution via bq_highshelf nodes.
+    distance_pct:
+        0-100, maps linearly to 0.0-1.0 wet mix for the LADSPA plate reverb
+        applied *after* the stereo mixers.
+    output_path:
+        Where to write the config.  Defaults to
+        ``_CONF_DIR / "sink-virtual-surround-7.1-hesuvi.conf"``.
+
+    Returns
+    -------
+    str
+        The generated config text (also written to *output_path*).
+    """
+    if output_path is None:
+        output_path = _CONF_DIR / "sink-virtual-surround-7.1-hesuvi.conf"
+
+    immersion_pct = max(0, min(100, immersion_pct))
+    distance_pct = max(0, min(100, distance_pct))
+
+    immersion_db = immersion_pct / 100.0 * 12.0
+    distance_wet = distance_pct / 100.0
+
+    # ── Nodes ────────────────────────────────────────────────────────────
+    node_lines: list[str] = []
+    I = "                    "  # noqa: E741 — indentation constant
+
+    # 1. Copy nodes
+    node_lines.append(f"{I}# duplicate inputs")
+    for ch in _HESUVI_CHANNELS:
+        node_lines.append(f'{I}{{ type = builtin  label = copy  name = copy{ch} }}')
+
+    # 2. Gain nodes (Immersion — bq_highshelf between copy and convolvers)
+    node_lines.append(f"{I}# immersion gain")
+    for ch in _HESUVI_CHANNELS:
+        node_lines.append(
+            f'{I}{{ type = builtin  name = gain{ch}  label = bq_highshelf'
+            f'  control = {{ Freq = 10  Q = 0.7071  Gain = {immersion_db:.1f} }} }}'
+        )
+
+    # 3. Convolver nodes
+    node_lines.append(f"{I}# apply hrir — HeSuVi 14-channel WAV")
+    for conv_name, ch_idx in _HESUVI_CONVOLVERS:
+        node_lines.append(
+            f'{I}{{ type = builtin  label = convolver  name = {conv_name}'
+            f'  config = {{ filename = "hrir_hesuvi/hrir.wav" channel = {ch_idx:2d} }} }}'
+        )
+
+    # 4. Mixer nodes
+    node_lines.append(f"{I}# stereo output mixers")
+    node_lines.append(f"{I}{{ type = builtin  label = mixer  name = mixL }}")
+    node_lines.append(f"{I}{{ type = builtin  label = mixer  name = mixR }}")
+
+    # 5. Plate reverb nodes (Distance)
+    node_lines.append(f"{I}# distance reverb (LADSPA plate)")
+    node_lines.append(
+        f'{I}{{ type = ladspa  name = plate_L  plugin = plate_1423  label = plate'
+        f'  control = {{ "Reverb time" = 2.5  "Damping" = 0.5  "Dry/wet mix" = {distance_wet:.2f} }} }}'
+    )
+    node_lines.append(
+        f'{I}{{ type = ladspa  name = plate_R  plugin = plate_1423  label = plate'
+        f'  control = {{ "Reverb time" = 2.5  "Damping" = 0.5  "Dry/wet mix" = {distance_wet:.2f} }} }}'
+    )
+
+    # ── Links ────────────────────────────────────────────────────────────
+    link_lines: list[str] = []
+    L = "                    "  # indentation constant
+
+    # copy → gain links
+    link_lines.append(f"{L}# copy → gain")
+    for ch in _HESUVI_CHANNELS:
+        link_lines.append(f'{L}{{ output = "copy{ch}:Out"  input = "gain{ch}:In" }}')
+
+    # gain → convolver links
+    link_lines.append(f"{L}# gain → convolvers")
+    for ch, conv_list in _HESUVI_COPY_CONV_LINKS:
+        for conv in conv_list:
+            link_lines.append(
+                f'{L}{{ output = "gain{ch}:Out"  input = "{conv}:In" }}'
+            )
+
+    # convolver → mixer links
+    link_lines.append(f"{L}# convolvers → mixers")
+    for conv_name, mixer, idx in _HESUVI_CONV_MIX_LINKS:
+        link_lines.append(
+            f'{L}{{ output = "{conv_name}:Out"  input = "{mixer}:In {idx}" }}'
+        )
+
+    # mixer → plate reverb links
+    link_lines.append(f"{L}# mixers → plate reverb")
+    link_lines.append(f'{L}{{ output = "mixL:Out"  input = "plate_L:Input" }}')
+    link_lines.append(f'{L}{{ output = "mixR:Out"  input = "plate_R:Input" }}')
+
+    nodes_text = "\n".join(node_lines)
+    links_text = "\n".join(link_lines)
+
+    text = f"""\
+# Auto-generated by Arctis Sound Manager — DO NOT EDIT
+# HeSuVi 7.1 Virtual Surround  |  Immersion: {immersion_pct}%  |  Distance: {distance_pct}%
+context.modules = [
+  {{ name = libpipewire-module-filter-chain
+    flags = [ nofail ]
+    args = {{
+      node.description = "Virtual Surround Sink"
+      media.name       = "Virtual Surround Sink"
+      filter.graph = {{
+        nodes = [
+{nodes_text}
+        ]
+        links = [
+{links_text}
+        ]
+        inputs  = [ "copyFL:In" "copyFR:In" "copyFC:In" "copyLFE:In" "copyRL:In" "copyRR:In" "copySL:In" "copySR:In" ]
+        outputs = [ "plate_L:Left output" "plate_R:Right output" ]
+      }}
+      capture.props = {{
+        node.name      = "effect_input.virtual-surround-7.1-hesuvi"
+        media.class    = Audio/Sink
+        audio.channels = 8
+        audio.position = [ FL FR FC LFE RL RR SL SR ]
+      }}
+      playback.props = {{
+        node.name          = "effect_output.virtual-surround-7.1-hesuvi"
+        node.passive       = true
+        node.target        = "{_PHYSICAL_OUT}"
+        node.dont-fallback = true
+        node.linger        = true
+        audio.channels     = 2
+        audio.position     = [ FL FR ]
+      }}
+    }}
+  }}
+]
+"""
+
+    _write_conf(output_path, text)
+    return text

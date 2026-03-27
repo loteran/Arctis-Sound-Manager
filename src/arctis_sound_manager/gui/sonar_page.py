@@ -323,6 +323,16 @@ class _ApplyWorker(QThread):
                                        spatial_audio=spatial, boost_db=boost_db,
                                        smart_volume=smart_state)
 
+            # ── Regenerate HeSuVi config with current Spatial Audio parameters ──
+            if self._channel == "game":
+                spatial_state = _load_spatial_audio()
+                if spatial_state["enabled"]:
+                    from arctis_sound_manager.sonar_to_pipewire import generate_hesuvi_conf
+                    generate_hesuvi_conf(
+                        immersion_pct=spatial_state.get("immersion", 50),
+                        distance_pct=spatial_state.get("distance", 50),
+                    )
+
             # Snapshot active streams BEFORE restart so we can restore them
             saved_sink_inputs = self._snapshot_sink_inputs(log)
             saved_source_outputs = self._snapshot_source_outputs(log)
@@ -1056,23 +1066,17 @@ class SpatialAudioWidget(QWidget):
         detail_layout.setSpacing(12)
 
         # Immersion slider
-        detail_layout.addWidget(self._slider_row(
-            "Performance / Immersion", "immersion",
-            _t("pending_usb")
-        ))
+        detail_layout.addWidget(self._slider_row("Performance / Immersion", "immersion"))
 
         # Distance slider
-        detail_layout.addWidget(self._slider_row(
-            "Distance", "distance",
-            _t("pending_usb")
-        ))
+        detail_layout.addWidget(self._slider_row("Distance", "distance"))
 
         root.addWidget(self._detail)
         self._detail.setVisible(self._state["enabled"])
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
-    def _slider_row(self, label: str, key: str, pending_note: str) -> QWidget:
+    def _slider_row(self, label: str, key: str) -> QWidget:
         w = QWidget()
         w.setStyleSheet("background: transparent;")
         row = QHBoxLayout(w)
@@ -1088,17 +1092,6 @@ class SpatialAudioWidget(QWidget):
         slider.setMaximum(100)
         slider.setValue(self._state.get(key, 50))
         slider.setFixedWidth(160)
-        slider.setToolTip(pending_note)
-        slider.setEnabled(False)   # disabled until USB impl
-        slider.setStyleSheet(f"""
-            QSlider::groove:horizontal {{
-                height: 4px; background: {BG_BUTTON}; border-radius: 2px;
-            }}
-            QSlider::handle:horizontal {{
-                background: {TEXT_SECONDARY}; width: 14px; height: 14px;
-                margin: -5px 0; border-radius: 7px;
-            }}
-        """)
         slider.valueChanged.connect(lambda v, k=key: self._on_slider(k, v))
         row.addWidget(slider)
 
@@ -1108,9 +1101,6 @@ class SpatialAudioWidget(QWidget):
         val_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10pt;")
         row.addWidget(val_lbl)
 
-        note = QLabel(pending_note)
-        note.setStyleSheet(f"color: {BORDER}; font-size: 8pt;")
-        row.addWidget(note)
         row.addStretch(1)
 
         # Store val_lbl ref on slider for update
@@ -1134,6 +1124,7 @@ class SpatialAudioWidget(QWidget):
         lbl = self.__dict__.get(f"_val_lbl_{key}")
         if lbl:
             lbl.setText(str(value))
+        self.state_changed.emit()
 
 
 # ── Boost de Volume widget ────────────────────────────────────────────────────
