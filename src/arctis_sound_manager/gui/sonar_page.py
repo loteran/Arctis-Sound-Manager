@@ -349,8 +349,10 @@ class _ApplyWorker(QThread):
                     pass
 
             if self._channel == "micro":
+                micro_proc = _load_micro_proc()
                 generate_sonar_micro_conf(self._bands, self._basses, self._voix, self._aigus,
-                                          boost_db=boost_db)
+                                          boost_db=boost_db,
+                                          noise_canceling=micro_proc.get("noiseCanceling"))
             else:
                 spatial = _load_spatial_audio()["enabled"] if self._channel == "game" else True
                 generate_sonar_eq_conf(self._channel, self._bands,

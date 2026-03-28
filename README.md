@@ -73,13 +73,13 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 - `pipx` — install everything with your package manager:
   ```bash
   # Arch / CachyOS / Manjaro
-  sudo pacman -S python-pipx libusb libpulse
+  sudo pacman -S python-pipx libusb libpulse noise-suppression-for-voice
 
   # Debian / Ubuntu
-  sudo apt install pipx libusb-1.0-0 libpulse0 libudev1
+  sudo apt install pipx libusb-1.0-0 libpulse0 libudev1 libnoise-suppression-for-voice
 
   # Fedora
-  sudo dnf install pipx libusb1 pulseaudio-libs systemd-libs
+  sudo dnf install pipx libusb1 pulseaudio-libs systemd-libs noise-suppression-for-voice
   ```
 
 ---
