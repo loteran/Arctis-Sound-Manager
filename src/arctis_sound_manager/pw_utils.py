@@ -50,6 +50,7 @@ def get_native_streams(data: list | None = None) -> list[dict]:
                 "id":       oid,
                 "app_name": app,
                 "pid":      str(props.get("application.process.id", "0")),
+                "props":    props,
             }
 
     # Resolve connected sink via links

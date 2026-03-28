@@ -244,8 +244,9 @@ context.modules = [
 {links_block}
       }}
       capture.props = {{
-        node.name      = "{sink_name}"
-        media.class    = Audio/Sink
+        node.name         = "{sink_name}"
+        media.class       = Audio/Sink
+        priority.session  = 0
         audio.channels = 8
         audio.position = [ {position} ]
       }}
@@ -339,8 +340,9 @@ context.modules = [
         outputs = [ {outputs_text} ]
       }}
       capture.props = {{
-        node.name      = "{sink_name}"
-        media.class    = Audio/Sink
+        node.name         = "{sink_name}"
+        media.class       = Audio/Sink
+        priority.session  = 0
         audio.channels = 2
         audio.position = [ {position} ]
       }}
@@ -482,8 +484,9 @@ context.modules = [
         ]
       }}
       capture.props = {{
-        node.name      = "{sink_name}"
-        media.class    = Audio/Sink
+        node.name         = "{sink_name}"
+        media.class       = Audio/Sink
+        priority.session  = 0
         audio.channels = 8
         audio.position = [ {position} ]
       }}
@@ -515,8 +518,9 @@ context.modules = [
         outputs = [ "copy_L:Out" "copy_R:Out" ]
       }}
       capture.props = {{
-        node.name      = "{sink_name}"
-        media.class    = Audio/Sink
+        node.name         = "{sink_name}"
+        media.class       = Audio/Sink
+        priority.session  = 0
         audio.channels = 2
         audio.position = [ {position} ]
       }}

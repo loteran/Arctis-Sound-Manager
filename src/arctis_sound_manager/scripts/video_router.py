@@ -22,6 +22,37 @@ EVENT_DEBOUNCE   = 0.15  # seconds to let rapid event bursts settle
 NATIVE_INTERVAL  = 5.0   # seconds between pw-dump calls (expensive subprocess)
 OVERRIDES_FILE = Path.home() / ".config" / "arctis_manager" / "routing_overrides.json"
 
+# effect_input sinks are internal filter-chain nodes — apps should never
+# target them directly.  Remap to the corresponding Arctis virtual sink.
+_EFFECT_REMAP = {
+    "effect_input.sonar-game-eq": "Arctis_Game",
+    "effect_input.sonar-chat-eq": "Arctis_Chat",
+}
+
+# Auto-routing: binaries that indicate a game (wine/proton/gamescope)
+_GAME_BINARIES = {"wine64-preloader", "wine-preloader", "wine", "wine64",
+                   "proton", "gamescope", "reaper"}
+
+# Auto-routing: known browser application names → Media channel
+_BROWSER_APPS = {"Firefox", "Chromium", "Google Chrome", "Brave", "Vivaldi",
+                 "Opera", "Microsoft Edge", "Zen Browser"}
+
+# Known VoIP / chat apps → Chat channel
+_CHAT_APPS = {"WEBRTC VoiceEngine", "Discord", "TeamSpeak", "Mumble",
+              "Element", "Signal"}
+
+
+def _auto_route(app: str, proplist: dict) -> str | None:
+    """Return an Arctis sink name for an app based on heuristics, or None."""
+    binary = proplist.get("application.process.binary", "")
+    if binary in _GAME_BINARIES:
+        return "Arctis_Game"
+    if app in _BROWSER_APPS:
+        return "Arctis_Media"
+    if app in _CHAT_APPS:
+        return "Arctis_Chat"
+    return None
+
 # Tracks where the router last placed each app (PA sink index).
 # Used to detect manual moves done outside the router (e.g. KDE audio mixer).
 _pa_placed: dict[str, int] = {}
@@ -83,7 +114,7 @@ def main():
             server_info = pulse.server_info()
             default_sink_name = server_info.default_sink_name or ""
             arctis_is_default = any(
-                k in default_sink_name for k in ("Arctis_", "SteelSeries_Arctis", "effect_input")
+                k in default_sink_name for k in ("Arctis_", "SteelSeries_Arctis")
             )
             if not arctis_is_default:
                 # Déplace les apps bloquées sur des sinks Arctis virtuels
@@ -118,10 +149,20 @@ def main():
                 if app in _pa_placed and si.sink != _pa_placed[app]:
                     current_name = _sink_name(sinks, si.sink)
                     if current_name:
-                        log.info("Manual move detected: '%s' -> %s (saving override)", app, current_name)
-                        overrides[app] = current_name
+                        # Never save effect_input sinks as overrides
+                        save_name = _EFFECT_REMAP.get(current_name, current_name)
+                        log.info("Manual move detected: '%s' -> %s (saving override)", app, save_name)
+                        overrides[app] = save_name
                         save_overrides(overrides)
                     _pa_placed[app] = si.sink
+
+                # Auto-route new apps that have no override yet
+                if app not in overrides:
+                    auto = _auto_route(app, si.proplist)
+                    if auto:
+                        log.info("Auto-route: '%s' -> %s", app, auto)
+                        overrides[app] = auto
+                        save_overrides(overrides)
 
                 if app in overrides:
                     wanted_sink_name = overrides[app]
@@ -149,10 +190,20 @@ def main():
                     placed = _native_placed[app]
                     current = s["sink_name"]
                     if current and current != placed:
-                        log.info("Manual move detected (native): '%s' -> %s (saving override)", app, current)
-                        overrides[app] = current
+                        # Never save effect_input sinks as overrides
+                        save_name = _EFFECT_REMAP.get(current, current)
+                        log.info("Manual move detected (native): '%s' -> %s (saving override)", app, save_name)
+                        overrides[app] = save_name
                         save_overrides(overrides)
                         _native_placed[app] = current
+
+                # Auto-route new native apps that have no override yet
+                if app and app not in overrides:
+                    auto = _auto_route(app, s.get("props", {}))
+                    if auto:
+                        log.info("Auto-route (native): '%s' -> %s", app, auto)
+                        overrides[app] = auto
+                        save_overrides(overrides)
 
                 if app in overrides:
                     wanted = overrides[app]

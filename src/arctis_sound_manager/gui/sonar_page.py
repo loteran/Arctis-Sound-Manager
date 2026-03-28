@@ -241,17 +241,38 @@ class _ApplyWorker(QThread):
     # ── stream snapshot helpers ──────────────────────────────────────────
 
     @staticmethod
-    def _snapshot_sink_inputs(log) -> list[str]:
-        """Return list of sink-input IDs before restart."""
+    def _snapshot_sink_inputs(log) -> dict[str, list[str]]:
+        """Return sink-input IDs grouped by their current sink name.
+
+        Returns {sink_name: [sink_input_id, ...]} so streams can be
+        restored to the same Arctis channel after filter-chain restart.
+        """
+        result: dict[str, list[str]] = {}
         try:
             r = subprocess.run(
                 ["pactl", "list", "sink-inputs", "short"],
                 capture_output=True, text=True, timeout=3,
             )
-            return [line.split()[0] for line in r.stdout.splitlines() if line.strip()]
+            # Build sink index→name map
+            sr = subprocess.run(
+                ["pactl", "list", "sinks", "short"],
+                capture_output=True, text=True, timeout=3,
+            )
+            idx_to_name = {}
+            for line in sr.stdout.splitlines():
+                parts = line.split()
+                if len(parts) >= 2:
+                    idx_to_name[parts[0]] = parts[1]
+
+            for line in r.stdout.splitlines():
+                parts = line.split()
+                if len(parts) >= 2:
+                    si_id, sink_idx = parts[0], parts[1]
+                    sink_name = idx_to_name.get(sink_idx, "")
+                    result.setdefault(sink_name, []).append(si_id)
         except Exception as e:
             log.warning("Could not snapshot sink-inputs: %s", e)
-            return []
+        return result
 
     @staticmethod
     def _snapshot_source_outputs(log) -> list[str]:
@@ -368,7 +389,9 @@ class _ApplyWorker(QThread):
                 self.done.emit(False)
                 return
 
-            # Re-set default sink/source so WirePlumber routes correctly
+            # Restore streams to their original sinks.
+            # With loopback-based routing, apps stay on Arctis_Game/Chat;
+            # only the micro source needs to be re-set explicitly.
             if self._channel == "micro":
                 source = "effect_output.sonar-micro-eq"
                 source_json = _json.dumps({"name": source})
@@ -380,7 +403,6 @@ class _ApplyWorker(QThread):
                     ["pw-metadata", "0", "default.audio.source", source_json],
                     check=False, timeout=5,
                 )
-                # Move source-outputs (mic streams) back to the Sonar source
                 source_idx = self._find_pactl_index(source, "source", log)
                 if source_idx and saved_source_outputs:
                     self._move_streams_with_retry(
@@ -390,27 +412,21 @@ class _ApplyWorker(QThread):
                     log.warning("Sonar micro source not found in pactl, "
                                 "cannot restore mic streams")
             else:
-                sink = f"effect_input.sonar-{self._channel}-eq"
-                sink_json = _json.dumps({"name": sink})
-                # Set both configured AND active default — WirePlumber
-                # may ignore configured alone on some setups.
-                subprocess.run(
-                    ["pw-metadata", "0", "default.configured.audio.sink", sink_json],
-                    check=False, timeout=5,
-                )
-                subprocess.run(
-                    ["pw-metadata", "0", "default.audio.sink", sink_json],
-                    check=False, timeout=5,
-                )
-                # Move saved sink-inputs back to the Sonar sink
-                sonar_idx = self._find_pactl_index(sink, "sink", log)
-                if sonar_idx and saved_sink_inputs:
-                    self._move_streams_with_retry(
-                        saved_sink_inputs, sonar_idx, "sink", log,
-                    )
-                elif not sonar_idx:
-                    log.warning("Sonar sink %s not found in pactl, "
-                                "cannot restore audio streams", sink)
+                # Game/Chat: restore each stream to its original Arctis sink.
+                # Remap effect_input sinks to their Arctis equivalents.
+                _effect_remap = {
+                    "effect_input.sonar-game-eq": "Arctis_Game",
+                    "effect_input.sonar-chat-eq": "Arctis_Chat",
+                }
+                for sink_name, si_ids in saved_sink_inputs.items():
+                    target = _effect_remap.get(sink_name, sink_name)
+                    target_idx = self._find_pactl_index(target, "sink", log)
+                    if target_idx:
+                        self._move_streams_with_retry(
+                            si_ids, target_idx, "sink", log,
+                        )
+                    else:
+                        log.warning("Sink %s not found, cannot restore streams", target)
 
             self.done.emit(True)
         except subprocess.TimeoutExpired:
