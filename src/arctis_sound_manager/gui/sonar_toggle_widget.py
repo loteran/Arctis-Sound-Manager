@@ -7,16 +7,20 @@ from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPushButton, QSlider,
                                 QVBoxLayout, QWidget)
 
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
+from arctis_sound_manager.sonar_to_pipewire import generate_virtual_sinks_conf
 
 
 STATE_FILE      = Path.home() / '.config' / 'arctis_manager' / '.eq_mode'
 YAML_PATH       = Path.home() / '.config' / 'arctis_manager' / 'devices' / 'nova_pro_wireless.yaml'
 _OVERRIDES_FILE = Path.home() / '.config' / 'arctis_manager' / 'routing_overrides.json'
 
+# With the loopback-based routing, apps always target Arctis_Game/Chat.
+# The virtual sinks conf routes to EQ or hardware based on mode.
+# On toggle, fix any overrides that still point to effect_input sinks.
 _SINK_REMAP = {
     'sonar': {
-        'Arctis_Game': 'effect_input.sonar-game-eq',
-        'Arctis_Chat': 'effect_input.sonar-chat-eq',
+        'effect_input.sonar-game-eq': 'Arctis_Game',
+        'effect_input.sonar-chat-eq': 'Arctis_Chat',
     },
     'custom': {
         'effect_input.sonar-game-eq': 'Arctis_Game',
@@ -76,6 +80,9 @@ class _ToggleWorker(QThread):
         if not _apply_yaml(self._new_mode):
             self.done.emit(False, self._old_mode)
             return
+
+        # Update virtual sink targets before restarting PipeWire
+        generate_virtual_sinks_conf(sonar=(self._new_mode == 'sonar'))
 
         result = subprocess.run(
             ['systemctl', '--user', 'restart',
