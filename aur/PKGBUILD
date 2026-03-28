@@ -8,7 +8,7 @@ url="https://github.com/loteran/Arctis-Sound-Manager"
 license=('GPL-3.0-or-later')
 depends=(
     'python>=3.10'
-    'python-pyside6'
+    'pyside6'
     'python-dbus-next'
     'python-pulsectl'
     'python-pyudev'
