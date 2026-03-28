@@ -76,8 +76,28 @@ rm -f "$HOME/.config/pipewire/filter-chain.conf.d/sink-virtual-surround-7.1-hesu
 systemctl --user restart pipewire pipewire-pulse || true
 echo "    [ok] PipeWire configs deployed."
 
-# 9. Enable filter-chain service (required for Sonar EQ)
-echo "==> Enabling filter-chain systemd service (required for Sonar EQ)..."
+# 9. Install HRIR file for virtual surround (if not already present)
+HRIR_DIR="$HOME/.local/share/pipewire/hrir_hesuvi"
+mkdir -p "$HRIR_DIR"
+if [ -f "$HRIR_DIR/hrir.wav" ]; then
+    echo "    [ok] HRIR file already present — skipping download."
+else
+    echo "==> Downloading default HRIR file (KEMAR Gardner 1995)..."
+    HRIR_URL="https://github.com/nicehash/HeSuVi/raw/master/hrir/44/KEMAR%20Gardner%201995/kemar.wav"
+    if command -v curl &>/dev/null; then
+        curl -L -o "$HRIR_DIR/hrir.wav" "$HRIR_URL"
+    elif command -v wget &>/dev/null; then
+        wget -O "$HRIR_DIR/hrir.wav" "$HRIR_URL"
+    else
+        echo "  [!] Neither curl nor wget found. Download the HRIR file manually:"
+        echo "      Source: https://github.com/nicehash/HeSuVi/tree/master/hrir/44"
+        echo "      Save it as: $HRIR_DIR/hrir.wav"
+    fi
+    [ -f "$HRIR_DIR/hrir.wav" ] && echo "    [ok] HRIR file downloaded."
+fi
+
+# 10. Enable filter-chain service (required for Sonar EQ and virtual surround)
+echo "==> Enabling filter-chain systemd service..."
 systemctl --user enable --now filter-chain.service
 
 echo ""

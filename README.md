@@ -90,7 +90,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 > Use it if you want to install virtual surround independently of Arctis Sound Manager, or on a fresh OS with a single command (`bash install.sh`).
 > It also includes WirePlumber priority rules to ensure the Arctis is always preferred over HDMI as the default sink.
 
-If you use a **stereo headset** and want virtual 7.1 surround sound (games, movies…), you can set it up via the included script **before** installing Arctis Sound Manager.
+Virtual 7.1 surround is now **included automatically** with `install.sh` — it downloads the HRIR file and deploys the PipeWire filter-chain config. No separate setup needed.
 
 It works by creating a PipeWire filter-chain sink that applies HRTF convolution (HeSuVi) to any 7.1 source and outputs stereo to your headset.
 
@@ -101,18 +101,12 @@ It works by creating a PipeWire filter-chain sink that applies HRTF convolution 
                   └──────────────────────────┘
 ```
 
-### How to set it up
+### Manual setup (alternative)
+
+If you prefer to set up surround separately, or if you only want the standalone surround without the full Arctis Sound Manager:
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/loteran/Arctis-Sound-Manager.git
-cd Arctis-Sound-Manager
-
-# 2. Run the surround setup (BEFORE install.sh)
 bash scripts/setup-surround.sh
-
-# 3. Then install Arctis Sound Manager
-bash scripts/install.sh
 ```
 
 The setup script will:
@@ -144,7 +138,8 @@ The installer will:
 - Enable the `arctis-manager` systemd user service (device daemon)
 - Enable the `arctis-video-router` systemd user service (media auto-routing)
 - Copy device configs to `~/.config/arctis_manager/devices/` (required for Sonar EQ mode switch)
-- Enable the `filter-chain` systemd user service (required for Sonar EQ)
+- Download the default HRIR file for virtual surround (HeSuVi)
+- Enable the `filter-chain` systemd user service (required for Sonar EQ and virtual surround)
 
 After installation, launch the GUI from your application menu or run:
 ```bash
