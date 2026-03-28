@@ -245,7 +245,7 @@ context.modules = [
       }}
       capture.props = {{
         node.name         = "{sink_name}"
-        media.class       = Audio/Sink
+        media.class       = Audio/Sink/Internal
         priority.session  = 0
         audio.channels = 8
         audio.position = [ {position} ]
@@ -341,7 +341,7 @@ context.modules = [
       }}
       capture.props = {{
         node.name         = "{sink_name}"
-        media.class       = Audio/Sink
+        media.class       = Audio/Sink/Internal
         priority.session  = 0
         audio.channels = 2
         audio.position = [ {position} ]
@@ -454,7 +454,7 @@ context.modules = [
       }}
       playback.props = {{
         node.name      = "effect_output.sonar-micro-eq"
-        media.class    = Audio/Source
+        media.class    = Audio/Source/Internal
         audio.channels = 1
         audio.position = [ MONO ]
       }}
@@ -485,7 +485,7 @@ context.modules = [
       }}
       capture.props = {{
         node.name         = "{sink_name}"
-        media.class       = Audio/Sink
+        media.class       = Audio/Sink/Internal
         priority.session  = 0
         audio.channels = 8
         audio.position = [ {position} ]
@@ -519,7 +519,7 @@ context.modules = [
       }}
       capture.props = {{
         node.name         = "{sink_name}"
-        media.class       = Audio/Sink
+        media.class       = Audio/Sink/Internal
         priority.session  = 0
         audio.channels = 2
         audio.position = [ {position} ]
@@ -562,7 +562,7 @@ context.modules = [
       }}
       playback.props = {{
         node.name      = "effect_output.sonar-micro-eq"
-        media.class    = Audio/Source
+        media.class    = Audio/Source/Internal
         audio.channels = 1
         audio.position = [ MONO ]
       }}
@@ -921,7 +921,7 @@ context.modules = [
       }}
       capture.props = {{
         node.name      = "effect_input.virtual-surround-7.1-hesuvi"
-        media.class    = Audio/Sink
+        media.class    = Audio/Sink/Internal
         audio.channels = 8
         audio.position = [ FL FR FC LFE RL RR SL SR ]
       }}
