@@ -31,12 +31,12 @@ device:
     - [0x06, 0xc3, 'settings.wireless_mode']      # 2.4G mode (0x00: speed, 0x01: range)
     - [0x06, 0x2e, 0x00]                          # Set equalizer preset (0)
     - [0x06, 0xc1, 'settings.pm_shutdown']        # Set inactive time (to 30 minutes, see INACTIVE_TIME_MINUTES)
-    - [0x06, 0x85, 0x0a]
+    - [0x06, 0xb9, 0x0a]
     - [0x06, 0x37, 'settings.mic_volume']         # Mic volume 100% (01 (mute) - a0 (100%))
     - [0x06, 0xb2]
     - [0x06, 0x47, 0x64, 0x00, 0x64]
     - [0x06, 0x83, 0x01]
-    - [0x06, 0x89, 0x00]
+    - [0x06, 0xbd, 0x00]
     - [0x06, 0x27, 'settings.gain']               # Audio Gain (0x01: low, 0x02: high)
     - [0x06, 0xb3, 0x00]
     - [0x06, 0x39, 'settings.mic_side_tone']      # Set the sidetone to 0 (off) -> possible values: 0 (off 1 (low 2 (medium 3 (high)
@@ -67,6 +67,12 @@ device:
       - starts_with: 0x0745
         media_mix: 0x02
         chat_mix: 0x03
+
+      - starts_with: 0x07bd
+        noise_cancelling: 0x02
+
+      - starts_with: 0x07b9
+        transparent_noise_cancelling_level: 0x02
 
       - starts_with: 0x06b0
         bluetooth_powerup_state: 0x02
@@ -179,18 +185,20 @@ device:
     audio:
       noise_cancelling:
         type: slider
+        hidden: true
         min: 0x00
         max: 0x02
         step: 1
         default: 0x00 # off
-        update_sequence: [0x06, 0x89, 'value']
+        update_sequence: [0x06, 0xbd, 'value']
       transparent_level:
         type: slider
+        hidden: true
         min: 0x01
         max: 0x0a
         step: 1
         default: 0x05
-        update_sequence: [0x06, 0x85, 'value']
+        update_sequence: [0x06, 0xb9, 'value']
 
   status_parse:
     station_volume:

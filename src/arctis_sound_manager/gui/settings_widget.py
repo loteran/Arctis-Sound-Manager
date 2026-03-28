@@ -148,6 +148,7 @@ class QSettingsWidget(QWidget):
 
             slider_value = slider_value_callback(config)
             widget_value_label = QLabel(slider_value(value))
+            widget_value_label.setFixedWidth(80)
             widget_layout.addWidget(widget_value_label)
 
             slider.valueChanged.connect(lambda value: widget_value_label.setText(slider_value(value)))
@@ -223,7 +224,9 @@ class QSettingsWidget(QWidget):
             widget = QLabel(f'UNKNOWN TYPE: {config.type}')
 
         if widget:
-            main_layout.addWidget(QLabel(I18n.get_instance().translate('settings', config.name)))
-            main_layout.addWidget(widget)
-        
+            label = QLabel(I18n.get_instance().translate('settings', config.name))
+            label.setFixedWidth(180)
+            main_layout.addWidget(label)
+            main_layout.addWidget(widget, 1)
+
         return main_widget if widget else None

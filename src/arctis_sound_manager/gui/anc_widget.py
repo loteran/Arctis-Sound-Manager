@@ -136,7 +136,7 @@ class QAncWidget(QWidget):
         if is_transparent and level is not None:
             perc = int(level)
             self._level_slider.blockSignals(True)
-            self._level_slider.setValue(perc // 10 if perc > 10 else max(1, perc))
+            self._level_slider.setValue(max(1, perc // 10))
             self._level_slider.blockSignals(False)
             self._level_label.setText(f"{perc}%")
 

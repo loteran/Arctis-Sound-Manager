@@ -454,7 +454,7 @@ context.modules = [
       }}
       playback.props = {{
         node.name      = "effect_output.sonar-micro-eq"
-        media.class    = Audio/Source/Internal
+        media.class    = Audio/Source
         audio.channels = 1
         audio.position = [ MONO ]
       }}
@@ -562,7 +562,7 @@ context.modules = [
       }}
       playback.props = {{
         node.name      = "effect_output.sonar-micro-eq"
-        media.class    = Audio/Source/Internal
+        media.class    = Audio/Source
         audio.channels = 1
         audio.position = [ MONO ]
       }}

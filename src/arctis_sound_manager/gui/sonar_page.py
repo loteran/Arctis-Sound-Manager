@@ -80,6 +80,7 @@ from arctis_sound_manager.sonar_to_pipewire import (
     check_and_fix_stale_configs,
     generate_sonar_eq_conf,
     generate_sonar_micro_conf,
+    generate_virtual_sinks_conf,
 )
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -334,6 +335,19 @@ class _ApplyWorker(QThread):
             boost_state = _load_boost()
             boost_db = boost_state["db"] if boost_state["enabled"] else 0.0
             smart_state = _load_smart_volume()
+            # Snapshot old Game EQ channel count before overwriting config,
+            # so we can detect spatial audio toggle (2ch↔8ch) later.
+            _old_game_ch = None
+            if self._channel == "game":
+                import re as _re
+                _eq_path = Path.home() / ".config" / "pipewire" / "filter-chain.conf.d" / "sonar-game-eq.conf"
+                try:
+                    _m = _re.search(r"audio\.channels\s*=\s*(\d+)", _eq_path.read_text())
+                    if _m:
+                        _old_game_ch = int(_m.group(1))
+                except Exception:
+                    pass
+
             if self._channel == "micro":
                 generate_sonar_micro_conf(self._bands, self._basses, self._voix, self._aigus,
                                           boost_db=boost_db)
@@ -366,14 +380,27 @@ class _ApplyWorker(QThread):
                 log.debug("Throttling filter-chain restart (%.1fs)", wait)
                 self.msleep(int(wait * 1000))
 
-            # Restart filter-chain service (configs in filter-chain.conf.d/)
+            # Check whether the Game EQ channel count changed (spatial toggle).
+            # A full pipewire restart is needed so the loopback reconnects
+            # to the new sink with the correct channel count.
             _ApplyWorker._last_restart = time.monotonic()
+            need_full_restart = False
+            if self._channel == "game" and _old_game_ch is not None:
+                new_ch = 8 if spatial else 2
+                need_full_restart = _old_game_ch != new_ch
+
+            # Restart audio services.
+            # Always restart pipewire after filter-chain so loopbacks
+            # reconnect to the recreated EQ nodes.
+            if need_full_restart:
+                generate_virtual_sinks_conf(sonar=True)
             result = subprocess.run(
-                ["systemctl", "--user", "restart", "filter-chain"],
+                ["systemctl", "--user", "restart",
+                 "pipewire", "wireplumber", "pipewire-pulse", "filter-chain"],
                 capture_output=True, text=True, timeout=15,
             )
             if result.returncode != 0:
-                log.error("filter-chain restart failed (rc=%d): %s",
+                log.error("audio restart failed (rc=%d): %s",
                           result.returncode, result.stderr.strip())
                 self.done.emit(False)
                 return
@@ -384,14 +411,14 @@ class _ApplyWorker(QThread):
             else:
                 target_node = f"effect_input.sonar-{self._channel}-eq"
 
-            if not self._wait_for_node(target_node):
+            if not self._wait_for_node(target_node, timeout_ms=8000):
                 log.warning("Sonar node %s did not appear within timeout", target_node)
                 self.done.emit(False)
                 return
 
-            # Restore streams to their original sinks.
-            # With loopback-based routing, apps stay on Arctis_Game/Chat;
-            # only the micro source needs to be re-set explicitly.
+            # After pipewire restart, stream IDs are invalid;
+            # asm-router re-applies overrides automatically.
+            # Only the micro default source needs explicit restore.
             if self._channel == "micro":
                 source = "effect_output.sonar-micro-eq"
                 source_json = _json.dumps({"name": source})
