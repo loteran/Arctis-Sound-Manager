@@ -86,13 +86,83 @@ HELP_CONTENT: dict[str, dict] = {
             {
                 "heading": "Equalizer",
                 "body": (
-                    "The Equalizer page lets you adjust the frequency response of your headset.\n\n"
-                    "• Each slider controls one frequency band (31 Hz → 16 kHz).\n"
-                    "• Drag a slider up to boost that frequency, down to cut it.\n"
-                    "• Changes are sent to the device immediately.\n"
-                    "• The page polls the device every 500 ms when visible, so hardware changes "
-                    "(e.g. adjusting bands from the DAC) are reflected automatically.\n\n"
-                    "Tip: a flat EQ (all sliders at 0 dB) is the neutral starting point."
+                    "The Equalizer page lets you adjust the frequency response of your headset. "
+                    "Two modes are available: Custom and Sonar.\n\n"
+                    "── Custom mode ──\n"
+                    "A 10-band equalizer (31 Hz → 16 kHz). Drag a slider up to boost, down to cut. "
+                    "Changes are sent to the device immediately. You can save and load presets.\n\n"
+                    "── Sonar mode ──\n"
+                    "Switches to the full Sonar EQ system powered by PipeWire filter-chain "
+                    "(see the Sonar EQ section below)."
+                ),
+            },
+            {
+                "heading": "Sonar EQ",
+                "body": (
+                    "The Sonar EQ page provides a full SteelSeries Sonar-style parametric EQ "
+                    "system with three independent channels: Game, Chat and Micro.\n\n"
+                    "── EQ curve ──\n"
+                    "Each channel has an interactive parametric EQ with up to 10 bands. "
+                    "Click the curve to add a band, drag to adjust frequency and gain, "
+                    "scroll to change Q (bandwidth).\n\n"
+                    "── Presets ──\n"
+                    "297 Game presets, 8 Chat and 14 Mic presets imported from SteelSeries Sonar. "
+                    "Use the search bar to filter, and mark up to 9 favorites for quick access.\n\n"
+                    "── Macro sliders ──\n"
+                    "Three quick-adjust sliders below the curve: Basses, Voix (Mids) and Aigus "
+                    "(Treble), each ±12 dB.\n\n"
+                    "── Spatial Audio (Game only) ──\n"
+                    "Routes the Game channel through HeSuVi virtual 7.1 surround. "
+                    "Immersion (0–12 dB gain) and Distance (plate reverb) sliders let you "
+                    "fine-tune the spatial effect.\n\n"
+                    "── Volume Boost ──\n"
+                    "Adds up to +12 dB gain at the end of the filter chain.\n\n"
+                    "── Smart Volume ──\n"
+                    "Dynamic compressor with three profiles (Quiet / Balanced / Loud) to "
+                    "even out volume differences between sources.\n\n"
+                    "All changes are applied live via PipeWire filter-chain (biquad nodes)."
+                ),
+            },
+            {
+                "heading": "Micro Processing",
+                "body": (
+                    "The Micro tab in Sonar EQ includes audio processing features for your "
+                    "microphone, applied in real time via PipeWire filter-chain.\n\n"
+                    "── ClearCast AI Noise Cancellation ──\n"
+                    "Uses rnnoise (neural network) to isolate your voice and remove "
+                    "background noise in real time. The slider adjusts the VAD (Voice Activity "
+                    "Detection) threshold sensitivity.\n"
+                    "Requires: noise-suppression-for-voice package.\n\n"
+                    "── Noise Reduction ──\n"
+                    "• Background — high-pass filter that cuts low-frequency rumble "
+                    "(fans, air conditioning). Slider adjusts the cutoff frequency.\n"
+                    "• Impact — high-shelf filter that softens transient noises "
+                    "(keyboard clicks, impacts). Slider adjusts attenuation intensity.\n\n"
+                    "── Noise Gate ──\n"
+                    "Cuts audio below a dB threshold — silences the mic when you are not "
+                    "speaking. Adjustable threshold from -60 to -10 dB. "
+                    "Auto mode lets the system calculate the optimal threshold.\n"
+                    "Requires: swh-plugins package.\n\n"
+                    "── Compressor ──\n"
+                    "Volume stabilizer that evens out loud and quiet passages. "
+                    "The slider controls compression intensity (threshold, ratio and makeup gain). "
+                    "Useful for keeping a consistent mic level in voice chat.\n"
+                    "Requires: swh-plugins package.\n\n"
+                    "Processing chain order: EQ → Boost → Noise Reduction → Noise Gate → "
+                    "ClearCast → Compressor."
+                ),
+            },
+            {
+                "heading": "ANC / Transparent mode",
+                "body": (
+                    "The ANC widget on the Headset page lets you control Active Noise Cancelling "
+                    "directly from the GUI.\n\n"
+                    "Three modes are available:\n"
+                    "• Off — noise cancelling disabled\n"
+                    "• Transparent — lets outside sound through (adjustable level 10–100%)\n"
+                    "• ANC — full active noise cancelling\n\n"
+                    "Changes made from the headset buttons are reflected in real time in the GUI, "
+                    "and vice-versa."
                 ),
             },
             {
@@ -101,7 +171,8 @@ HELP_CONTENT: dict[str, dict] = {
                     "This page displays technical information about the connected device:\n\n"
                     "• Device name and model\n"
                     "• USB Vendor ID and Product ID\n"
-                    "• Active noise cancelling (ANC) state: Off / Transparent / ANC\n\n"
+                    "• Battery level and charging status\n"
+                    "• ANC / Transparent mode state and controls\n\n"
                     "This information is useful for troubleshooting or reporting issues."
                 ),
             },
@@ -114,7 +185,8 @@ HELP_CONTENT: dict[str, dict] = {
                     "• Chat mix balance\n"
                     "• Sleep timer\n"
                     "• LED brightness\n"
-                    "• Wireless transmitter power\n\n"
+                    "• Wireless transmitter power\n"
+                    "• Redirect audio on disconnect (choose fallback output device)\n\n"
                     "Each setting is applied to the device as soon as you change it."
                 ),
             },
@@ -134,31 +206,25 @@ HELP_CONTENT: dict[str, dict] = {
             {
                 "heading": "Surround sound",
                 "body": (
-                    "Arctis Sound Manager supports virtual surround sound through PipeWire and "
-                    "HeSuVi-compatible convolution filters.\n\n"
+                    "Arctis Sound Manager supports virtual 7.1 surround sound through PipeWire "
+                    "and HeSuVi-compatible HRTF convolution filters.\n\n"
                     "── How it works ──\n"
-                    "A virtual 7.1 surround sink is created in PipeWire. Audio routed to it is "
-                    "processed by HRTF convolution filters (HeSuVi) and then folded down to "
-                    "stereo for your headset. The result is a convincing spatial audio "
-                    "experience on any stereo headphone.\n\n"
+                    "A virtual 7.1 sink is created in PipeWire. Audio routed to it is processed "
+                    "by HRTF convolution (HeSuVi) and folded down to stereo for your headset.\n\n"
                     "── Setup ──\n"
-                    "1. Install HeSuVi (https://sourceforge.net/projects/hesuvi/) or use "
-                    "an equivalent set of stereo HRTF .wav files.\n"
-                    "2. Configure a PipeWire convolution filter module pointing to the HeSuVi "
-                    "impulse responses. Place the config in:\n"
-                    "   ~/.config/pipewire/pipewire.conf.d/hesuvi.conf\n"
-                    "3. Reload PipeWire:  systemctl --user restart pipewire\n"
-                    "4. A virtual sink named 'hesuvi' (or similar) will appear. Route your "
-                    "game audio to it from Arctis Sound Manager by moving the Game stream to HDMI "
-                    "or by setting the hesuvi sink as the default in your system settings.\n\n"
-                    "── EQ toggle (tray) ──\n"
-                    "The tray menu has an EQ toggle button that switches between the Custom "
-                    "preset (your own EQ curve) and the Sonar preset. This toggle writes to\n"
-                    "   ~/.config/arctis_manager/.eq_mode\n"
-                    "and runs the toggle_sonar.py script you can customize in that folder.\n\n"
-                    "── Recommended tool ──\n"
-                    "IrateGoose is a GUI that simplifies the entire PipeWire surround setup:\n"
-                    "   https://github.com/Barafu/IrateGoose"
+                    "Run the included setup script BEFORE installing:\n"
+                    "   bash scripts/setup-surround.sh\n"
+                    "   bash scripts/install.sh\n\n"
+                    "The script installs the PipeWire filter-chain config and downloads a default "
+                    "HRIR file. A 'Virtual Surround Sink' will appear in your audio settings.\n\n"
+                    "── Spatial Audio (Sonar) ──\n"
+                    "When using Sonar EQ mode, the Game channel can route through HeSuVi "
+                    "automatically via the Spatial Audio toggle. This provides integrated "
+                    "surround with Immersion and Distance controls — no manual setup needed.\n\n"
+                    "── Custom HRIR ──\n"
+                    "Replace ~/.local/share/pipewire/hrir_hesuvi/hrir.wav with any "
+                    "14-channel HeSuVi-compatible WAV, then restart:\n"
+                    "   systemctl --user restart filter-chain.service"
                 ),
             },
             {
@@ -250,14 +316,83 @@ HELP_CONTENT: dict[str, dict] = {
             {
                 "heading": "Égaliseur",
                 "body": (
-                    "La page Égaliseur permet d'ajuster la réponse en fréquence du casque.\n\n"
-                    "• Chaque slider contrôle une bande de fréquence (31 Hz → 16 kHz).\n"
-                    "• Montez un slider pour amplifier cette fréquence, descendez pour la couper.\n"
-                    "• Les modifications sont envoyées à l'appareil immédiatement.\n"
-                    "• La page interroge l'appareil toutes les 500 ms quand elle est visible, "
-                    "donc les modifications faites depuis le DAC sont répercutées automatiquement.\n\n"
-                    "Conseil : un égaliseur à plat (tous les sliders à 0 dB) est le point "
-                    "de départ neutre."
+                    "La page Égaliseur permet d'ajuster la réponse en fréquence du casque. "
+                    "Deux modes sont disponibles : Personnalisé et Sonar.\n\n"
+                    "── Mode Personnalisé ──\n"
+                    "Égaliseur 10 bandes (31 Hz → 16 kHz). Montez un slider pour amplifier, "
+                    "descendez pour atténuer. Sauvegarde et chargement de presets disponibles.\n\n"
+                    "── Mode Sonar ──\n"
+                    "Bascule vers le système Sonar EQ complet via PipeWire filter-chain "
+                    "(voir la section Sonar EQ ci-dessous)."
+                ),
+            },
+            {
+                "heading": "Sonar EQ",
+                "body": (
+                    "La page Sonar EQ offre un système d'égalisation paramétrique complet de type "
+                    "SteelSeries Sonar avec trois canaux indépendants : Game, Chat et Micro.\n\n"
+                    "── Courbe EQ ──\n"
+                    "Chaque canal dispose d'un EQ paramétrique interactif avec jusqu'à 10 bandes. "
+                    "Cliquez sur la courbe pour ajouter une bande, glissez pour ajuster fréquence "
+                    "et gain, scrollez pour modifier le Q (largeur de bande).\n\n"
+                    "── Presets ──\n"
+                    "297 presets Game, 8 Chat et 14 Micro importés de SteelSeries Sonar. "
+                    "Barre de recherche et jusqu'à 9 favoris en accès rapide.\n\n"
+                    "── Macro sliders ──\n"
+                    "Trois curseurs rapides sous la courbe : Basses, Voix et Aigus, "
+                    "chacun ±12 dB.\n\n"
+                    "── Spatial Audio (Game uniquement) ──\n"
+                    "Route le canal Game via le surround virtuel 7.1 HeSuVi. "
+                    "Les curseurs Immersion (0–12 dB) et Distance (réverbération) permettent "
+                    "d'affiner l'effet spatial.\n\n"
+                    "── Boost de Volume ──\n"
+                    "Ajoute jusqu'à +12 dB de gain en fin de chaîne.\n\n"
+                    "── Smart Volume ──\n"
+                    "Compresseur dynamique avec trois profils (Silencieux / Équilibré / Fort) "
+                    "pour uniformiser les différences de volume entre les sources.\n\n"
+                    "Toutes les modifications sont appliquées en direct via PipeWire."
+                ),
+            },
+            {
+                "heading": "Traitement Micro",
+                "body": (
+                    "L'onglet Micro dans Sonar EQ inclut des fonctionnalités de traitement "
+                    "audio pour votre microphone, appliquées en temps réel via PipeWire.\n\n"
+                    "── ClearCast AI Noise Cancellation ──\n"
+                    "Utilise rnnoise (réseau neuronal) pour isoler votre voix et supprimer "
+                    "le bruit de fond en temps réel. Le curseur ajuste la sensibilité du "
+                    "seuil de détection vocale (VAD).\n"
+                    "Nécessite : paquet noise-suppression-for-voice.\n\n"
+                    "── Noise Reduction ──\n"
+                    "• Background — filtre passe-haut qui coupe les bruits basse fréquence "
+                    "(ventilateurs, climatisation). Le curseur ajuste la fréquence de coupure.\n"
+                    "• Impact — filtre high-shelf qui atténue les bruits transitoires "
+                    "(clics de clavier, impacts). Le curseur ajuste l'intensité.\n\n"
+                    "── Noise Gate ──\n"
+                    "Coupe l'audio sous un seuil en dB — rend le micro silencieux quand vous ne "
+                    "parlez pas. Seuil réglable de -60 à -10 dB. "
+                    "Le mode Auto calcule le seuil optimal.\n"
+                    "Nécessite : paquet swh-plugins.\n\n"
+                    "── Compresseur ──\n"
+                    "Stabilisateur de volume qui uniformise les passages forts et faibles. "
+                    "Le curseur contrôle l'intensité de la compression. "
+                    "Utile pour garder un niveau micro constant en chat vocal.\n"
+                    "Nécessite : paquet swh-plugins.\n\n"
+                    "Ordre de la chaîne : EQ → Boost → Noise Reduction → Noise Gate → "
+                    "ClearCast → Compresseur."
+                ),
+            },
+            {
+                "heading": "ANC / Mode Transparent",
+                "body": (
+                    "Le widget ANC sur la page Casque permet de contrôler la réduction de bruit "
+                    "active directement depuis l'interface.\n\n"
+                    "Trois modes sont disponibles :\n"
+                    "• Off — réduction de bruit désactivée\n"
+                    "• Transparent — laisse passer le son extérieur (niveau réglable 10–100%)\n"
+                    "• ANC — réduction de bruit active complète\n\n"
+                    "Les changements faits depuis les boutons du casque sont reflétés en temps "
+                    "réel dans l'interface, et vice-versa."
                 ),
             },
             {
@@ -266,7 +401,8 @@ HELP_CONTENT: dict[str, dict] = {
                     "Cette page affiche des informations techniques sur l'appareil connecté :\n\n"
                     "• Nom et modèle de l'appareil\n"
                     "• Identifiant USB (Vendor ID et Product ID)\n"
-                    "• État de la réduction de bruit active (ANC) : Désactivé / Transparent / ANC\n\n"
+                    "• Niveau de batterie et état de charge\n"
+                    "• Contrôles ANC / Mode Transparent\n\n"
                     "Ces informations sont utiles pour le dépannage ou pour signaler un problème."
                 ),
             },
@@ -279,7 +415,8 @@ HELP_CONTENT: dict[str, dict] = {
                     "• Balance Chat Mix\n"
                     "• Minuterie de mise en veille\n"
                     "• Luminosité des LED\n"
-                    "• Puissance du transmetteur sans fil\n\n"
+                    "• Puissance du transmetteur sans fil\n"
+                    "• Redirection audio en cas de déconnexion (choix du périphérique de secours)\n\n"
                     "Chaque paramètre est appliqué à l'appareil dès sa modification."
                 ),
             },
@@ -299,31 +436,26 @@ HELP_CONTENT: dict[str, dict] = {
             {
                 "heading": "Son surround",
                 "body": (
-                    "Arctis Sound Manager prend en charge le son surround virtuel via PipeWire et des "
-                    "filtres de convolution compatibles HeSuVi.\n\n"
+                    "Arctis Sound Manager prend en charge le son surround virtuel 7.1 via PipeWire "
+                    "et des filtres de convolution HRTF compatibles HeSuVi.\n\n"
                     "── Fonctionnement ──\n"
-                    "Un sink 7.1 virtuel est créé dans PipeWire. Le son qui y est acheminé est "
-                    "traité par des filtres HRTF (HeSuVi) puis réduit en stéréo pour le casque. "
-                    "Le résultat est une spatialisation audio convaincante sur tout casque stéréo.\n\n"
+                    "Un sink 7.1 virtuel est créé dans PipeWire. Le son est traité par convolution "
+                    "HRTF (HeSuVi) puis réduit en stéréo pour le casque.\n\n"
                     "── Mise en place ──\n"
-                    "1. Installez HeSuVi (https://sourceforge.net/projects/hesuvi/) ou utilisez "
-                    "un jeu de fichiers HRTF stéréo .wav équivalent.\n"
-                    "2. Configurez un module de convolution PipeWire pointant vers les réponses "
-                    "impulsionnelles HeSuVi. Placez la config dans :\n"
-                    "   ~/.config/pipewire/pipewire.conf.d/hesuvi.conf\n"
-                    "3. Rechargez PipeWire :  systemctl --user restart pipewire\n"
-                    "4. Un sink virtuel nommé 'hesuvi' (ou similaire) apparaît. Routez votre "
-                    "audio jeu vers lui depuis Arctis Sound Manager via les boutons H ou en le "
-                    "définissant comme sortie par défaut dans les paramètres système.\n\n"
-                    "── Bascule EQ (tray) ──\n"
-                    "Le menu du tray contient un bouton qui bascule entre le préréglage "
-                    "Personnalisé (votre courbe EQ) et le préréglage Sonar. Ce bouton écrit dans\n"
-                    "   ~/.config/arctis_manager/.eq_mode\n"
-                    "et exécute le script toggle_sonar.py que vous pouvez personnaliser.\n\n"
-                    "── Outil recommandé ──\n"
-                    "IrateGoose est une interface graphique qui simplifie toute la configuration "
-                    "du surround PipeWire :\n"
-                    "   https://github.com/Barafu/IrateGoose"
+                    "Lancez le script inclus AVANT l'installation :\n"
+                    "   bash scripts/setup-surround.sh\n"
+                    "   bash scripts/install.sh\n\n"
+                    "Le script installe la config PipeWire filter-chain et télécharge un fichier "
+                    "HRIR par défaut. Un sink 'Virtual Surround Sink' apparaît dans vos paramètres "
+                    "audio.\n\n"
+                    "── Spatial Audio (Sonar) ──\n"
+                    "En mode Sonar EQ, le canal Game peut router automatiquement via HeSuVi "
+                    "grâce au toggle Spatial Audio. Cela fournit un surround intégré avec les "
+                    "contrôles Immersion et Distance — sans configuration manuelle.\n\n"
+                    "── HRIR personnalisé ──\n"
+                    "Remplacez ~/.local/share/pipewire/hrir_hesuvi/hrir.wav par tout WAV "
+                    "HeSuVi 14 canaux, puis redémarrez :\n"
+                    "   systemctl --user restart filter-chain.service"
                 ),
             },
             {
@@ -420,14 +552,82 @@ HELP_CONTENT: dict[str, dict] = {
                 "heading": "Ecualizador",
                 "body": (
                     "La página del Ecualizador permite ajustar la respuesta en frecuencia de los "
-                    "auriculares.\n\n"
-                    "• Cada deslizador controla una banda de frecuencia (31 Hz → 16 kHz).\n"
-                    "• Sube el deslizador para realzar esa frecuencia, bájalo para atenuarla.\n"
-                    "• Los cambios se envían al dispositivo de forma inmediata.\n"
-                    "• La página consulta el dispositivo cada 500 ms cuando es visible, por lo "
-                    "que los cambios realizados desde el DAC se reflejan automáticamente.\n\n"
-                    "Consejo: un EQ plano (todos los deslizadores a 0 dB) es el punto de "
-                    "partida neutro."
+                    "auriculares. Dos modos disponibles: Personalizado y Sonar.\n\n"
+                    "── Modo Personalizado ──\n"
+                    "Ecualizador de 10 bandas (31 Hz → 16 kHz). Sube para realzar, baja para "
+                    "atenuar. Permite guardar y cargar presets.\n\n"
+                    "── Modo Sonar ──\n"
+                    "Cambia al sistema completo Sonar EQ mediante PipeWire filter-chain "
+                    "(ver la sección Sonar EQ a continuación)."
+                ),
+            },
+            {
+                "heading": "Sonar EQ",
+                "body": (
+                    "La página Sonar EQ ofrece un sistema de ecualización paramétrica completo "
+                    "de tipo SteelSeries Sonar con tres canales independientes: Game, Chat y Micro.\n\n"
+                    "── Curva EQ ──\n"
+                    "Cada canal dispone de un EQ paramétrico interactivo con hasta 10 bandas. "
+                    "Haz clic en la curva para añadir una banda, arrastra para ajustar frecuencia "
+                    "y ganancia, desplaza para cambiar el Q (ancho de banda).\n\n"
+                    "── Presets ──\n"
+                    "297 presets Game, 8 Chat y 14 Micro importados de SteelSeries Sonar. "
+                    "Barra de búsqueda y hasta 9 favoritos de acceso rápido.\n\n"
+                    "── Macro sliders ──\n"
+                    "Tres deslizadores rápidos bajo la curva: Graves, Voces y Agudos, "
+                    "cada uno ±12 dB.\n\n"
+                    "── Spatial Audio (solo Game) ──\n"
+                    "Enruta el canal Game a través del surround virtual 7.1 HeSuVi. "
+                    "Los deslizadores Inmersión (0–12 dB) y Distancia (reverberación) permiten "
+                    "ajustar el efecto espacial.\n\n"
+                    "── Boost de Volumen ──\n"
+                    "Añade hasta +12 dB de ganancia al final de la cadena.\n\n"
+                    "── Smart Volume ──\n"
+                    "Compresor dinámico con tres perfiles (Silencioso / Equilibrado / Alto) "
+                    "para uniformizar las diferencias de volumen entre fuentes.\n\n"
+                    "Todos los cambios se aplican en directo mediante PipeWire."
+                ),
+            },
+            {
+                "heading": "Procesamiento de Micrófono",
+                "body": (
+                    "La pestaña Micro en Sonar EQ incluye funciones de procesamiento de audio "
+                    "para tu micrófono, aplicadas en tiempo real mediante PipeWire.\n\n"
+                    "── ClearCast AI Noise Cancellation ──\n"
+                    "Usa rnnoise (red neuronal) para aislar tu voz y eliminar el ruido de "
+                    "fondo en tiempo real. El deslizador ajusta la sensibilidad del umbral "
+                    "de detección vocal (VAD).\n"
+                    "Requiere: paquete noise-suppression-for-voice.\n\n"
+                    "── Noise Reduction ──\n"
+                    "• Background — filtro pasa-altos que corta ruidos de baja frecuencia "
+                    "(ventiladores, aire acondicionado). El deslizador ajusta la frecuencia.\n"
+                    "• Impact — filtro high-shelf que atenúa ruidos transitorios "
+                    "(clics de teclado, impactos). El deslizador ajusta la intensidad.\n\n"
+                    "── Noise Gate ──\n"
+                    "Corta el audio por debajo de un umbral en dB — silencia el micro cuando "
+                    "no hablas. Umbral ajustable de -60 a -10 dB. "
+                    "El modo Auto calcula el umbral óptimo.\n"
+                    "Requiere: paquete swh-plugins.\n\n"
+                    "── Compresor ──\n"
+                    "Estabilizador de volumen que uniformiza pasajes fuertes y suaves. "
+                    "El deslizador controla la intensidad de la compresión. "
+                    "Útil para mantener un nivel de micro constante en chat de voz.\n"
+                    "Requiere: paquete swh-plugins.\n\n"
+                    "Orden de la cadena: EQ → Boost → Noise Reduction → Noise Gate → "
+                    "ClearCast → Compresor."
+                ),
+            },
+            {
+                "heading": "ANC / Modo Transparente",
+                "body": (
+                    "El widget ANC en la página de Auriculares permite controlar la cancelación "
+                    "activa de ruido directamente desde la interfaz.\n\n"
+                    "Tres modos disponibles:\n"
+                    "• Off — cancelación de ruido desactivada\n"
+                    "• Transparente — deja pasar el sonido exterior (nivel ajustable 10–100%)\n"
+                    "• ANC — cancelación de ruido activa completa\n\n"
+                    "Los cambios realizados desde los botones del auricular se reflejan en tiempo "
+                    "real en la interfaz, y viceversa."
                 ),
             },
             {
@@ -436,8 +636,8 @@ HELP_CONTENT: dict[str, dict] = {
                     "Esta página muestra información técnica sobre el dispositivo conectado:\n\n"
                     "• Nombre y modelo del dispositivo\n"
                     "• Identificador USB (Vendor ID y Product ID)\n"
-                    "• Estado de cancelación activa de ruido (ANC): Desactivado / Transparente / "
-                    "ANC\n\n"
+                    "• Nivel de batería y estado de carga\n"
+                    "• Controles ANC / Modo Transparente\n\n"
                     "Esta información es útil para solucionar problemas o reportar incidencias."
                 ),
             },
@@ -451,7 +651,8 @@ HELP_CONTENT: dict[str, dict] = {
                     "• Balance Chat Mix\n"
                     "• Temporizador de suspensión\n"
                     "• Brillo de LEDs\n"
-                    "• Potencia del transmisor inalámbrico\n\n"
+                    "• Potencia del transmisor inalámbrico\n"
+                    "• Redirección de audio al desconectar (dispositivo de respaldo)\n\n"
                     "Cada ajuste se aplica al dispositivo en cuanto lo modificas."
                 ),
             },
@@ -472,32 +673,26 @@ HELP_CONTENT: dict[str, dict] = {
             {
                 "heading": "Sonido envolvente",
                 "body": (
-                    "Arctis Sound Manager admite sonido envolvente virtual mediante PipeWire y filtros "
-                    "de convolución compatibles con HeSuVi.\n\n"
+                    "Arctis Sound Manager admite sonido envolvente virtual 7.1 mediante PipeWire "
+                    "y filtros de convolución HRTF compatibles con HeSuVi.\n\n"
                     "── Cómo funciona ──\n"
-                    "Se crea un sink 7.1 virtual en PipeWire. El audio enrutado a él es procesado "
-                    "por filtros HRTF (HeSuVi) y luego reducido a estéreo para los auriculares. "
-                    "El resultado es una experiencia de audio espacial convincente en cualquier "
-                    "auricular estéreo.\n\n"
+                    "Se crea un sink 7.1 virtual en PipeWire. El audio es procesado por "
+                    "convolución HRTF (HeSuVi) y reducido a estéreo para los auriculares.\n\n"
                     "── Configuración ──\n"
-                    "1. Instala HeSuVi (https://sourceforge.net/projects/hesuvi/) o usa un "
-                    "conjunto de archivos HRTF estéreo .wav equivalente.\n"
-                    "2. Configura un módulo de convolución en PipeWire apuntando a las respuestas "
-                    "al impulso de HeSuVi. Coloca la config en:\n"
-                    "   ~/.config/pipewire/pipewire.conf.d/hesuvi.conf\n"
-                    "3. Recarga PipeWire:  systemctl --user restart pipewire\n"
-                    "4. Aparecerá un sink virtual llamado 'hesuvi' (o similar). Enruta el audio "
-                    "de juegos hacia él desde Arctis Sound Manager usando el botón H o estableciéndolo "
-                    "como salida predeterminada en los ajustes del sistema.\n\n"
-                    "── Cambio de EQ (bandeja) ──\n"
-                    "El menú de la bandeja incluye un botón que alterna entre el perfil "
-                    "Personalizado (tu curva EQ) y el perfil Sonar. Este botón escribe en\n"
-                    "   ~/.config/arctis_manager/.eq_mode\n"
-                    "y ejecuta el script toggle_sonar.py que puedes personalizar.\n\n"
-                    "── Herramienta recomendada ──\n"
-                    "IrateGoose es una interfaz gráfica que simplifica toda la configuración "
-                    "del surround en PipeWire:\n"
-                    "   https://github.com/Barafu/IrateGoose"
+                    "Ejecuta el script incluido ANTES de instalar:\n"
+                    "   bash scripts/setup-surround.sh\n"
+                    "   bash scripts/install.sh\n\n"
+                    "El script instala la config PipeWire filter-chain y descarga un archivo "
+                    "HRIR predeterminado. Un sink 'Virtual Surround Sink' aparecerá en tus "
+                    "ajustes de audio.\n\n"
+                    "── Spatial Audio (Sonar) ──\n"
+                    "En modo Sonar EQ, el canal Game puede enrutar automáticamente a través de "
+                    "HeSuVi mediante el toggle Spatial Audio. Esto proporciona surround integrado "
+                    "con controles de Inmersión y Distancia — sin configuración manual.\n\n"
+                    "── HRIR personalizado ──\n"
+                    "Reemplaza ~/.local/share/pipewire/hrir_hesuvi/hrir.wav con cualquier WAV "
+                    "HeSuVi de 14 canales, luego reinicia:\n"
+                    "   systemctl --user restart filter-chain.service"
                 ),
             },
             {

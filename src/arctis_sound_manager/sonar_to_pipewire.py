@@ -110,6 +110,11 @@ def _link_from_ladspa(out: str, inp: str) -> str:
     return f'                    {{ output = "{out}:Output"  input = "{inp}:In" }}'
 
 
+def _link_ladspa(out: str, inp: str) -> str:
+    """Link from a LADSPA node (Output) to another LADSPA node (Input)."""
+    return f'                    {{ output = "{out}:Output"  input = "{inp}:Input" }}'
+
+
 # ── Config generator — game / chat ────────────────────────────────────────────
 
 def generate_sonar_eq_conf(
@@ -371,6 +376,7 @@ def generate_sonar_micro_conf(
     output_path: Path | None = None,
     boost_db: float = 0.0,
     noise_canceling: dict | None = None,
+    noise_reduction: dict | None = None,
 ) -> str:
     """
     Build and optionally write a filter-chain .conf for the microphone EQ.
@@ -400,7 +406,18 @@ def generate_sonar_micro_conf(
     )
 
     nc = noise_canceling or {}
-    if not all_filters and not nc.get("enabled", False):
+    nr = noise_reduction or {}
+    bg = nr.get("bgReduction", {})
+    impact = nr.get("impactReduction", {})
+    ng = nr.get("noiseGate", {})
+    comp = nr.get("compressor", {})
+    has_processing = (nc.get("enabled", False)
+                      or bg.get("enabled", False)
+                      or impact.get("enabled", False)
+                      or ng.get("enabled", False)
+                      or comp.get("enabled", False))
+
+    if not all_filters and not has_processing:
         text = _bypass_micro_conf()
         _write_conf(output_path, text)
         return text
@@ -408,7 +425,7 @@ def generate_sonar_micro_conf(
     node_lines: list[str] = []
     link_lines: list[str] = []
 
-    # If no EQ filters but rnnoise is enabled, insert a 0 dB passthrough node
+    # If no EQ filters but processing nodes are enabled, insert a 0 dB passthrough
     if not all_filters:
         all_filters = [("pass", EqBand(freq=10.0, gain=0.0, q=0.707, type="peakingEQ", enabled=True))]
     names = [n for n, _ in all_filters]
@@ -430,6 +447,63 @@ def generate_sonar_micro_conf(
     else:
         last_node = names[-1]
 
+    # Track whether last_node is LADSPA (uses Input/Output ports) or builtin (In/Out)
+    last_is_ladspa = False
+
+    def _smart_link(new_name: str, new_is_ladspa: bool) -> str:
+        """Pick the right link helper based on source/dest node types."""
+        nonlocal last_is_ladspa
+        if last_is_ladspa and new_is_ladspa:
+            return _link_ladspa(last_node, new_name)
+        elif last_is_ladspa:
+            return _link_from_ladspa(last_node, new_name)
+        elif new_is_ladspa:
+            return _link_to_ladspa(last_node, new_name)
+        else:
+            return _link(last_node, new_name)
+
+    # ── Background noise reduction (high-pass: cuts low-frequency rumble) ──
+    if bg.get("enabled", False):
+        # value 0→1 maps cutoff 30→350 Hz
+        bg_val = max(0.0, min(1.0, bg.get("value", 0.0)))
+        hp_freq = 30.0 + bg_val * 320.0
+        node_lines.append(
+            f"                    {{ type = builtin  name = nr_bg  label = bq_highpass\n"
+            f"                      control = {{ Freq = {hp_freq:.1f}  Q = 0.7071  Gain = 0.0 }} }}"
+        )
+        link_lines.append(_smart_link("nr_bg", False))
+        last_node = "nr_bg"
+        last_is_ladspa = False
+
+    # ── Impact noise reduction (high-shelf cut: softens transients) ──
+    if impact.get("enabled", False):
+        # value 0→1 maps gain 0→-12 dB at 4 kHz
+        impact_val = max(0.0, min(1.0, impact.get("value", 0.0)))
+        impact_gain = -impact_val * 12.0
+        if abs(impact_gain) >= 0.01:
+            node_lines.append(
+                f"                    {{ type = builtin  name = nr_impact  label = bq_highshelf\n"
+                f"                      control = {{ Freq = 4000.0  Q = 0.7071  Gain = {impact_gain:.1f} }} }}"
+            )
+            link_lines.append(_smart_link("nr_impact", False))
+            last_node = "nr_impact"
+            last_is_ladspa = False
+
+    # ── Noise gate (LADSPA swh-plugins gate_1410) ──
+    if ng.get("enabled", False):
+        threshold = max(-60.0, min(-10.0, ng.get("value", -40.0)))
+        node_lines.append(
+            f"                    {{ type = ladspa  name = ngate  plugin = gate_1410  label = gate\n"
+            f"                      control = {{ \"Threshold (dB)\" {threshold:.1f}"
+            f"  \"Attack (ms)\" 5.0  \"Hold (ms)\" 50.0  \"Decay (ms)\" 100.0"
+            f"  \"Range (dB)\" -90.0"
+            f"  \"Output select (-1 = key listen, 0 = gate, 1 = bypass)\" 0"
+            f" }} }}"
+        )
+        link_lines.append(_smart_link("ngate", True))
+        last_node = "ngate"
+        last_is_ladspa = True
+
     # ── rnnoise noise cancellation ──
     if nc.get("enabled", False):
         vad_threshold = max(0.0, min(100.0, nc.get("value", 0.5) * 100))
@@ -438,14 +512,36 @@ def generate_sonar_micro_conf(
             f"                      plugin = librnnoise_ladspa  label = noise_suppressor_mono\n"
             f"                      control = {{ \"VAD Threshold (%)\" {vad_threshold:.1f} }} }}"
         )
-        link_lines.append(_link_to_ladspa(last_node, "rnnoise"))
+        link_lines.append(_smart_link("rnnoise", True))
         last_node = "rnnoise"
+        last_is_ladspa = True
+
+    # ── Compressor / volume stabilizer (LADSPA sc4m_1916) ──
+    if comp.get("enabled", False):
+        # value 0→1 maps compression intensity
+        comp_val = max(0.0, min(1.0, comp.get("value", 0.0)))
+        comp_threshold = -10.0 - comp_val * 20.0   # -10 → -30 dB
+        comp_ratio = 2.0 + comp_val * 6.0           # 2:1 → 8:1
+        comp_makeup = comp_val * 10.0                # 0 → 10 dB
+        node_lines.append(
+            f"                    {{ type = ladspa  name = comp  plugin = sc4m_1916  label = sc4m\n"
+            f"                      control = {{ \"RMS/peak\" 0.5"
+            f"  \"Attack time (ms)\" 10.0  \"Release time (ms)\" 150.0"
+            f"  \"Threshold level (dB)\" {comp_threshold:.1f}"
+            f"  \"Ratio (1:n)\" {comp_ratio:.1f}"
+            f"  \"Knee radius (dB)\" 6.0"
+            f"  \"Makeup gain (dB)\" {comp_makeup:.1f}"
+            f" }} }}"
+        )
+        link_lines.append(_smart_link("comp", True))
+        last_node = "comp"
+        last_is_ladspa = True
 
     nodes_text  = "\n".join(node_lines)
     links_text  = "\n".join(link_lines)
 
     # LADSPA nodes use port name "Output", builtin nodes use "Out"
-    last_out_port = "Output" if last_node == "rnnoise" else "Out"
+    last_out_port = "Output" if last_is_ladspa else "Out"
 
     text = f"""\
 # Auto-generated by Arctis Sound Manager — DO NOT EDIT
