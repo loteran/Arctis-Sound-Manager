@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.github.loteran.arctis-sound-manager</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <name>Arctis Sound Manager</name>
+  <summary>Linux GUI for SteelSeries Arctis headsets</summary>
+  <description>
+    <p>
+      Arctis Sound Manager is a Linux application for configuring SteelSeries Arctis
+      headsets. It provides a 4-channel audio mixer (Game / Chat / Media / HDMI),
+      a full Sonar parametric EQ system, virtual 7.1 surround sound, and device management.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>4-channel audio mixer with automatic media routing</li>
+      <li>Sonar EQ — parametric EQ with 297+ presets, Spatial Audio, Smart Volume</li>
+      <li>Micro processing — AI Noise Cancellation, Noise Gate, Compressor</li>
+      <li>ANC / Transparent mode control from GUI and headset</li>
+      <li>Virtual 7.1 surround via HeSuVi HRTF convolution</li>
+      <li>10-band Custom EQ with save/load presets</li>
+      <li>Device status — battery, mic mute, sidetone</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">ArctisManager.desktop</launchable>
+  <icon type="stock">arctis-manager</icon>
+
+  <url type="homepage">https://github.com/loteran/Arctis-Sound-Manager</url>
+  <url type="bugtracker">https://github.com/loteran/Arctis-Sound-Manager/issues</url>
+
+  <developer id="com.github.loteran">
+    <name>loteran</name>
+  </developer>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Home — 4-channel audio mixer</caption>
+      <image>https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_home.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Sonar — Parametric EQ with presets</caption>
+      <image>https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_sonar.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Equalizer — 10-band Custom EQ</caption>
+      <image>https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_equalizer.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Headset / DAC — Device info</caption>
+      <image>https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_headset.png</image>
+    </screenshot>
+  </screenshots>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="1.0.0" date="2026-03-28">
+      <description>
+        <p>First stable release with full Sonar EQ, micro processing, ANC control, and AUR package.</p>
+      </description>
+    </release>
+  </releases>
+
+  <categories>
+    <category>Audio</category>
+    <category>Utility</category>
+  </categories>
+
+  <provides>
+    <binary>asm-gui</binary>
+  </provides>
+</component>

@@ -118,4 +118,8 @@ SERVICE
     # Device configs
     install -Dm644 src/arctis_sound_manager/devices/*.yaml \
         -t "$pkgdir/usr/share/$pkgname/devices/"
+
+    # AppStream metainfo
+    install -Dm644 src/arctis_sound_manager/desktop/com.github.loteran.arctis-sound-manager.metainfo.xml \
+        "$pkgdir/usr/share/metainfo/com.github.loteran.arctis-sound-manager.metainfo.xml"
 }

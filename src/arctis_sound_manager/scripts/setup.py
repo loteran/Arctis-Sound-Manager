@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 _SHARE_DIR = Path("/usr/share/arctis-sound-manager")
@@ -48,7 +47,7 @@ def main() -> None:
     # ── HRIR file ──
     hrir_file = _HRIR_DIR / "hrir.wav"
     if hrir_file.exists():
-        print(f"  [ok] HRIR file already present — skipping download")
+        print("  [ok] HRIR file already present — skipping download")
     else:
         _HRIR_DIR.mkdir(parents=True, exist_ok=True)
         print("  Downloading default HRIR file (KEMAR Gardner 1995)...")
