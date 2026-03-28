@@ -32,19 +32,19 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 ## Screenshots
 
 ### Home — 4-channel audio mixer (Game / Chat / Media / HDMI)
-![Home](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/develop/docs/images/screenshot_home.png)
+![Home](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_home.png)
 
 ### Sonar — Parametric EQ (Game / Chat / Micro) with presets, Spatial Audio and Boost
-![Sonar](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/develop/docs/images/screenshot_sonar.png)
+![Sonar](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_sonar.png)
 
 ### Equalizer — Custom mode 10-band EQ with presets
-![Equalizer](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/develop/docs/images/screenshot_equalizer.png)
+![Equalizer](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_equalizer.png)
 
 ### Headset / DAC — Device info and live status
-![Headset](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/develop/docs/images/screenshot_headset.png)
+![Headset](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_headset.png)
 
 ### Settings — Device configuration
-![Settings](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/develop/docs/images/screenshot_settings.png)
+![Settings](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_settings.png)
 
 ---
 
@@ -124,7 +124,7 @@ After setup, a new audio sink called **"Virtual Surround Sink"** appears in your
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/loteran/Arctis-Sound-Manager.git
+git clone --branch main https://github.com/loteran/Arctis-Sound-Manager.git
 cd Arctis-Sound-Manager
 
 # 2. Run the installer
