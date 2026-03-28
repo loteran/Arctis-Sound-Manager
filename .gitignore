@@ -8,3 +8,8 @@ wheels/
 
 # Virtual environments
 .venv
+aur/src/
+aur/pkg/
+aur/*.tar.gz
+aur/*.tar.zst
+aur/*.pkg.tar.*
