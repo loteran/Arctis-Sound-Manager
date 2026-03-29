@@ -89,7 +89,7 @@ _CFG          = Path.home() / ".config" / "arctis_manager"
 _PRESETS_DIR  = _CFG / "sonar_presets"
 _RAW_DIR      = Path("/mnt/NVMe/sonar_easyeffects_presets/sonar_raw_presets")
 
-_CHANNEL_TAG  = {"game": "[Game]", "chat": "[Chat]", "micro": "[Mic]"}
+_CHANNEL_TAG  = {"game": "[Game]", "chat": "[Chat]", "micro": "[Mic]", "output": "[Game]"}
 _MAX_FAV      = 9
 _APPLY_DELAY  = 600   # ms debounce before restarting filter-chain
 
@@ -212,13 +212,15 @@ class _ApplyWorker(QThread):
     _last_restart: float = 0.0
 
     def __init__(self, channel: str, bands: list[EqBand],
-                 basses: float, voix: float, aigus: float):
+                 basses: float, voix: float, aigus: float,
+                 target_override: str | None = None):
         super().__init__()
         self._channel = channel
         self._bands   = bands
         self._basses  = basses
         self._voix    = voix
         self._aigus   = aigus
+        self._target_override = target_override
 
     # ── helpers ────────────────────────────────────────────────────────────
     @staticmethod
@@ -359,7 +361,8 @@ class _ApplyWorker(QThread):
                 generate_sonar_eq_conf(self._channel, self._bands,
                                        self._basses, self._voix, self._aigus,
                                        spatial_audio=spatial, boost_db=boost_db,
-                                       smart_volume=smart_state)
+                                       smart_volume=smart_state,
+                                       target_override=self._target_override)
 
             # ── Regenerate HeSuVi config with current Spatial Audio parameters ──
             if self._channel == "game":
@@ -393,15 +396,21 @@ class _ApplyWorker(QThread):
                 need_full_restart = _old_game_ch != new_ch
 
             # Restart audio services.
-            # Always restart pipewire after filter-chain so loopbacks
-            # reconnect to the recreated EQ nodes.
-            if need_full_restart:
-                generate_virtual_sinks_conf(sonar=True)
-            result = subprocess.run(
-                ["systemctl", "--user", "restart",
-                 "pipewire", "wireplumber", "pipewire-pulse", "filter-chain"],
-                capture_output=True, text=True, timeout=15,
-            )
+            # For the "output" channel we only restart filter-chain so
+            # active streams on pipewire/wireplumber are not killed.
+            if self._channel == "output":
+                result = subprocess.run(
+                    ["systemctl", "--user", "restart", "filter-chain"],
+                    capture_output=True, text=True, timeout=15,
+                )
+            else:
+                if need_full_restart:
+                    generate_virtual_sinks_conf(sonar=True)
+                result = subprocess.run(
+                    ["systemctl", "--user", "restart",
+                     "pipewire", "wireplumber", "pipewire-pulse", "filter-chain"],
+                    capture_output=True, text=True, timeout=15,
+                )
             if result.returncode != 0:
                 log.error("audio restart failed (rc=%d): %s",
                           result.returncode, result.stderr.strip())
@@ -448,6 +457,8 @@ class _ApplyWorker(QThread):
                     "effect_input.sonar-game-eq": "Arctis_Game",
                     "effect_input.sonar-chat-eq": "Arctis_Chat",
                 }
+                if self._channel == "output":
+                    _effect_remap["effect_input.sonar-output-eq"] = "effect_input.sonar-output-eq"
                 for sink_name, si_ids in saved_sink_inputs.items():
                     target = _effect_remap.get(sink_name, sink_name)
                     target_idx = self._find_pactl_index(target, "sink", log)
@@ -836,6 +847,7 @@ class SonarChannelWidget(QWidget):
     def __init__(self, channel: str, parent: QWidget | None = None):
         super().__init__(parent)
         self._channel = channel
+        self._target_override: str | None = None
         self._worker: _ApplyWorker | None = None
         self._pending_apply = False
         self._apply_timer = QTimer(self)
@@ -890,8 +902,22 @@ class SonarChannelWidget(QWidget):
 
         root.addWidget(eq_card)
 
-        # ── Settings card (game / chat only) ─────────────────────────────────
-        if channel in ("game", "chat"):
+        # ── Settings card (game / chat / output) ─────────────────────────────
+        if channel == "output":
+            settings_card = QWidget()
+            settings_card.setObjectName("settingsCard")
+            settings_card.setStyleSheet(f"""
+                QWidget#settingsCard {{
+                    background-color: {BG_CARD};
+                    border: 1px solid {BORDER};
+                    border-radius: 12px;
+                }}
+            """)
+            scl = QVBoxLayout(settings_card)
+            scl.setContentsMargins(0, 0, 0, 0)
+            scl.addStretch(1)
+            root.addWidget(settings_card)
+        elif channel in ("game", "chat"):
             settings_card = QWidget()
             settings_card.setObjectName("settingsCard")
             settings_card.setStyleSheet(f"""
@@ -924,7 +950,7 @@ class SonarChannelWidget(QWidget):
             self._smart = SmartVolumeWidget()
             scl.addWidget(self._smart)
 
-            if channel == "chat":
+            if channel in ("chat", "output"):
                 scl.addStretch(1)
 
             root.addWidget(settings_card)
@@ -998,7 +1024,8 @@ class SonarChannelWidget(QWidget):
         self._pending_apply = False
         basses, voix, aigus = self._macros.get_values()
         self._worker = _ApplyWorker(
-            self._channel, list(self._cur_bands), basses, voix, aigus
+            self._channel, list(self._cur_bands), basses, voix, aigus,
+            target_override=self._target_override,
         )
         self._worker.done.connect(self._on_apply_done)
         self._worker.start()
@@ -1893,15 +1920,20 @@ class SonarPage(QWidget):
             }}
         """)
 
-        self._game_widget  = SonarChannelWidget("game")
-        self._chat_widget  = SonarChannelWidget("chat")
-        self._micro_widget = SonarMicroWidget()
+        self._game_widget   = SonarChannelWidget("game")
+        self._chat_widget   = SonarChannelWidget("chat")
+        self._micro_widget  = SonarMicroWidget()
+        self._output_widget = SonarChannelWidget("output")
 
-        self._tabs.addTab(self._game_widget,  _t("game"))
-        self._tabs.addTab(self._chat_widget,  _t("chat"))
-        self._tabs.addTab(self._micro_widget, _t("micro"))
+        self._tabs.addTab(self._game_widget,   _t("game"))
+        self._tabs.addTab(self._chat_widget,   _t("chat"))
+        self._tabs.addTab(self._micro_widget,  _t("micro"))
+        self._tabs.addTab(self._output_widget, _t("output"))
 
         root.addWidget(self._tabs, 1)
+
+        # Load external output target from settings
+        self._load_output_target()
 
         # ── Connect settings signals from tab widgets ────────────────────────
         self._game_widget._spatial.state_changed.connect(self._on_spatial_changed)
@@ -1909,6 +1941,39 @@ class SonarPage(QWidget):
         self._game_widget._smart.state_changed.connect(self._on_smart_changed)
         self._chat_widget._boost.state_changed.connect(self._on_boost_changed)
         self._chat_widget._smart.state_changed.connect(self._on_smart_changed)
+
+    def _load_output_target(self):
+        """Read external_output_device from settings and set it on the output widget.
+
+        Falls back to auto-detecting the first non-SteelSeries ALSA output sink.
+        """
+        import pulsectl
+        from ruamel.yaml import YAML
+
+        nick: str | None = None
+        settings_file = Path.home() / ".config" / "arctis_manager" / "settings" / "general_settings.yaml"
+        if settings_file.exists():
+            try:
+                raw = YAML(typ='safe').load(settings_file) or {}
+                nick = raw.get("external_output_device")
+            except Exception:
+                pass
+
+        try:
+            with pulsectl.Pulse("asm-output-lookup") as p:
+                for s in p.sink_list():
+                    if nick:
+                        if s.proplist.get("node.nick", "") == nick:
+                            self._output_widget._target_override = s.name
+                            return
+                    else:
+                        # Auto-detect: first alsa_output not from SteelSeries
+                        if s.name.startswith("alsa_output") \
+                                and s.proplist.get("device.vendor.id", "") != "0x1038":
+                            self._output_widget._target_override = s.name
+                            return
+        except Exception:
+            pass
 
     def _on_spatial_changed(self):
         """Spatial audio toggle changed — re-apply game channel conf."""

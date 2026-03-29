@@ -154,9 +154,17 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
     @method('GetListOptions')
     def get_list_options(self, list_name: 's') -> 's': # type: ignore
         result = []
-        if list_name == 'pulse_audio_devices':
+        if list_name in ('pulse_audio_devices', 'external_audio_devices'):
             sinks: list[TypedPulseSinkInfo] = self.core_engine.pa_audio_manager.pulse.sink_list()
             for sink in sinks:
+                node_name = sink.proplist.get('node.name', '')
+                # For external_audio_devices, only show physical non-SteelSeries sinks
+                if list_name == 'external_audio_devices':
+                    if not node_name.startswith('alsa_output'):
+                        continue
+                    if sink.proplist.get('device.vendor.id', '') == '0x1038':
+                        continue
+
                 id = sink.proplist.get('node.nick', '')
                 name = sink.proplist.get('node.description', sink.proplist.get('node.nick', ''))
 
