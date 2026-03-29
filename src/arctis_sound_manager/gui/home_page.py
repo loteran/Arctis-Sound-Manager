@@ -6,8 +6,8 @@ import json
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Slot
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import Qt, QTimer, QUrl, Slot
+from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QHBoxLayout,
@@ -531,6 +531,50 @@ class HomePage(QWidget):
         root.addWidget(app_title)
         root.addSpacing(8)
 
+        # ── Update banner (hidden by default) ─────────────────────────────────
+        self._update_banner = QWidget()
+        self._update_banner.setObjectName("updateBanner")
+        self._update_banner.setStyleSheet(f"""
+            QWidget#updateBanner {{
+                background-color: {BG_CARD};
+                border: 1px solid {ACCENT};
+                border-radius: 8px;
+                padding: 4px 12px;
+            }}
+        """)
+        banner_layout = QHBoxLayout(self._update_banner)
+        banner_layout.setContentsMargins(12, 6, 12, 6)
+        banner_layout.setSpacing(8)
+
+        self._update_label = QLabel()
+        self._update_label.setStyleSheet(
+            f"color: {TEXT_PRIMARY}; font-size: 10pt; background: transparent; border: none;"
+        )
+        banner_layout.addWidget(self._update_label, 1)
+
+        self._update_link_btn = QPushButton(I18n.translate("ui", "view_release"))
+        self._update_link_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._update_link_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none; color: {ACCENT}; "
+            f"font-size: 10pt; text-decoration: underline; }}"
+            f"QPushButton:hover {{ color: #FF6A28; }}"
+        )
+        banner_layout.addWidget(self._update_link_btn)
+
+        dismiss_btn = QPushButton("\u2715")
+        dismiss_btn.setFixedSize(20, 20)
+        dismiss_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        dismiss_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none; color: {TEXT_SECONDARY}; font-size: 12pt; }}"
+            f"QPushButton:hover {{ color: {TEXT_PRIMARY}; }}"
+        )
+        dismiss_btn.clicked.connect(self._update_banner.hide)
+        banner_layout.addWidget(dismiss_btn)
+
+        self._update_banner.hide()
+        root.addWidget(self._update_banner)
+        root.addSpacing(4)
+
         # ── Headset status pills ───────────────────────────────────────────────
         self._status_bar = _DeviceStatusBar()
         root.addWidget(self._status_bar)
@@ -701,6 +745,20 @@ class HomePage(QWidget):
     def update_settings(self, settings: dict):
         general = settings.get("general", {})
         self._ext_device_nick = general.get("external_output_device") or None
+
+    # ── Update notification ────────────────────────────────────────────────────
+
+    @Slot(str, str)
+    def on_update_available(self, version: str, url: str):
+        if not version:
+            return
+        self._update_label.setText(
+            I18n.translate("ui", "update_available").replace("{version}", version)
+        )
+        self._update_link_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl(url))
+        )
+        self._update_banner.show()
 
     # ── PulseAudio polling ────────────────────────────────────────────────────
 

@@ -82,6 +82,13 @@ class QMainApp(QBaseDesktopApp):
         # Start on home page
         self._switch_page(0)
 
+        # Check for updates (non-blocking background thread)
+        from arctis_sound_manager.update_checker import UpdateCheckWorker
+        from arctis_sound_manager.utils import project_version
+        self._update_worker = UpdateCheckWorker(project_version())
+        self._update_worker.result.connect(self._home_page.on_update_available)
+        self._update_worker.start()
+
         self.destroyed.connect(self.sig_stop)
         self.main_window.visibilityChanged.connect(self._on_visibility_changed)
 
