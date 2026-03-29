@@ -6,8 +6,8 @@ import json
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Slot
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import Qt, QTimer, QUrl, Slot
+from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QHBoxLayout,
@@ -40,6 +40,7 @@ def _save_overrides(overrides: dict) -> None:
 from arctis_sound_manager.gui.components import (
     CHAT_ICON,
     GAME_ICON,
+    HDMI_ICON,
     MEDIA_ICON,
     SvgIconWidget,
 )
@@ -51,6 +52,7 @@ from arctis_sound_manager.gui.theme import (
     COLOR_AUX,
     COLOR_CHAT,
     COLOR_GAME,
+    COLOR_HDMI,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
@@ -64,6 +66,7 @@ logger = logging.getLogger("HomePage")
 SINK_GAME  = "Arctis_Game"
 SINK_CHAT  = "Arctis_Chat"
 SINK_MEDIA = "Arctis_Media"
+STEELSERIES_VENDOR_ID = "0x1038"
 
 
 def _make_vertical_slider_qss(accent_color: str) -> str:
@@ -140,11 +143,11 @@ class AudioCard(QWidget):
             icon = SvgIconWidget(svg_path, accent_color, size=72, width=96)
             header_layout.addWidget(icon)
 
-        name_lbl = QLabel(channel_name)
-        name_lbl.setStyleSheet(
+        self._name_lbl = QLabel(channel_name)
+        self._name_lbl.setStyleSheet(
             f"color: {accent_color}; font-size: 14pt; font-weight: normal; background: transparent;"
         )
-        header_layout.addWidget(name_lbl)
+        header_layout.addWidget(self._name_lbl)
         top_layout.addWidget(header_row)
 
 
@@ -233,6 +236,9 @@ class AudioCard(QWidget):
             self._apply_normal_style()
 
     # ── Public API ─────────────────────────────────────────────────────────────
+
+    def set_name(self, name: str):
+        self._name_lbl.setText(name)
 
     def set_on_drop(self, callback):
         self._on_drop_callback = callback
@@ -507,6 +513,8 @@ class HomePage(QWidget):
         self._sink_game = None
         self._sink_chat = None
         self._sink_media = None
+        self._sink_ext = None
+        self._ext_device_nick: str | None = None  # from settings
         self._connected = False
 
         root = QVBoxLayout(self)
@@ -522,6 +530,50 @@ class HomePage(QWidget):
         )
         root.addWidget(app_title)
         root.addSpacing(8)
+
+        # ── Update banner (hidden by default) ─────────────────────────────────
+        self._update_banner = QWidget()
+        self._update_banner.setObjectName("updateBanner")
+        self._update_banner.setStyleSheet(f"""
+            QWidget#updateBanner {{
+                background-color: {BG_CARD};
+                border: 1px solid {ACCENT};
+                border-radius: 8px;
+                padding: 4px 12px;
+            }}
+        """)
+        banner_layout = QHBoxLayout(self._update_banner)
+        banner_layout.setContentsMargins(12, 6, 12, 6)
+        banner_layout.setSpacing(8)
+
+        self._update_label = QLabel()
+        self._update_label.setStyleSheet(
+            f"color: {TEXT_PRIMARY}; font-size: 10pt; background: transparent; border: none;"
+        )
+        banner_layout.addWidget(self._update_label, 1)
+
+        self._update_link_btn = QPushButton(I18n.translate("ui", "view_release"))
+        self._update_link_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._update_link_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none; color: {ACCENT}; "
+            f"font-size: 10pt; text-decoration: underline; }}"
+            f"QPushButton:hover {{ color: #FF6A28; }}"
+        )
+        banner_layout.addWidget(self._update_link_btn)
+
+        dismiss_btn = QPushButton("\u2715")
+        dismiss_btn.setFixedSize(20, 20)
+        dismiss_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        dismiss_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none; color: {TEXT_SECONDARY}; font-size: 12pt; }}"
+            f"QPushButton:hover {{ color: {TEXT_PRIMARY}; }}"
+        )
+        dismiss_btn.clicked.connect(self._update_banner.hide)
+        banner_layout.addWidget(dismiss_btn)
+
+        self._update_banner.hide()
+        root.addWidget(self._update_banner)
+        root.addSpacing(4)
 
         # ── Headset status pills ───────────────────────────────────────────────
         self._status_bar = _DeviceStatusBar()
@@ -593,6 +645,11 @@ class HomePage(QWidget):
         self._media_card.set_on_drop(lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_MEDIA))
         self._cards_layout.addWidget(self._media_card, stretch=1)
 
+        # External output card (HDMI, sound card, USB speakers, etc.)
+        self._ext_card = AudioCard(I18n.translate("ui", "output"), COLOR_HDMI, HDMI_ICON)
+        self._ext_card.set_on_change(self._on_ext_volume_changed)
+        self._cards_layout.addWidget(self._ext_card, stretch=1)
+
         cards_outer_layout.addWidget(self._cards_widget, stretch=6)
         cards_outer_layout.addStretch(1)
 
@@ -613,7 +670,8 @@ class HomePage(QWidget):
             f"<b>{_t('help_mixer_title')}</b><br><br>"
             f"<b>{_t('help_mixer_game')}</b><br>"
             f"<b>{_t('help_mixer_chat')}</b><br>"
-            f"<b>{_t('help_mixer_media')}</b><br><br>"
+            f"<b>{_t('help_mixer_media')}</b><br>"
+            f"<b>{_t('help_mixer_output')}</b><br><br>"
             f"{_t('help_mixer_sliders')}<br>"
             f"{_t('help_mixer_buttons')}"
         )
@@ -648,6 +706,7 @@ class HomePage(QWidget):
             ("G", COLOR_GAME, lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_GAME)),
             ("C", COLOR_CHAT, lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_CHAT)),
             ("M", COLOR_AUX,  lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_MEDIA)),
+            ("O", COLOR_HDMI, lambda si, app, pid: self._on_stream_drop_ext(si, app, pid)),
         ]
 
         # ── Polling timer ─────────────────────────────────────────────────────
@@ -682,6 +741,25 @@ class HomePage(QWidget):
         dac_bat_val = dac_bat.get("value") if dac_bat.get("type") == "percentage" else None
 
         self._status_bar.update(power, headset_bat_val, dac_bat_val)
+
+    @Slot(object)
+    def update_settings(self, settings: dict):
+        general = settings.get("general", {})
+        self._ext_device_nick = general.get("external_output_device") or None
+
+    # ── Update notification ────────────────────────────────────────────────────
+
+    @Slot(str, str)
+    def on_update_available(self, version: str, url: str):
+        if not version:
+            return
+        self._update_label.setText(
+            I18n.translate("ui", "update_available").replace("{version}", version)
+        )
+        self._update_link_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl(url))
+        )
+        self._update_banner.show()
 
     # ── PulseAudio polling ────────────────────────────────────────────────────
 
@@ -742,12 +820,46 @@ class HomePage(QWidget):
                 self._media_card.set_volume(pct)
                 self._sink_media = sink_media
 
+            # External output sink (non-Arctis physical sink)
+            if self._ext_device_nick:
+                # User chose a specific device in settings
+                sink_ext = next(
+                    (s for s in sinks
+                     if s.proplist.get("node.nick", "") == self._ext_device_nick),
+                    None,
+                )
+            else:
+                # Auto-detect: first physical non-SteelSeries sink
+                sink_ext = next(
+                    (s for s in sinks
+                     if s.name.startswith("alsa_output")
+                     and s.proplist.get("device.vendor.id", "") != STEELSERIES_VENDOR_ID),
+                    None,
+                )
+            if sink_ext is not None:
+                pct = round(sink_ext.volume.value_flat * 100)
+                self._ext_card.set_volume(pct)
+                nick = sink_ext.proplist.get("node.nick", "")
+                self._ext_card.set_name(nick or I18n.translate("ui", "output"))
+                self._sink_ext = sink_ext
+                self._ext_card.set_connected()
+            else:
+                self._ext_card.set_disconnected()
+
             # Update application lists — pass all matching sinks to catch duplicates
             sink_inputs = pulse.sink_input_list()
             pulse_app_names = {si.proplist.get("application.name", "") for si in sink_inputs}
             self._update_apps(sink_inputs, sinks_game,  self._game_card)
             self._update_apps(sink_inputs, sinks_chat,  self._chat_card)
             self._update_apps(sink_inputs, sinks_media, self._media_card)
+            if sink_ext is not None:
+                # Include both the physical sink and the EQ sink so apps
+                # routed through the output EQ still appear on this card.
+                ext_sinks = [sink_ext]
+                sink_eq = next((s for s in sinks if s.name == "effect_input.sonar-output-eq"), None)
+                if sink_eq is not None:
+                    ext_sinks.append(sink_eq)
+                self._update_apps(sink_inputs, ext_sinks, self._ext_card)
             # Also show native PipeWire streams (mpv, haruna…), skip duplicates
             self._update_native_apps(sinks, pulse_app_names)
 
@@ -840,6 +952,20 @@ class HomePage(QWidget):
         except Exception as exc:
             logger.warning("Error moving stream: %s", exc)
 
+    def _on_stream_drop_ext(self, si_index: int, app_name: str, pid: int):
+        """Route stream to the output EQ sink when available, else physical sink."""
+        EQ_SINK = "effect_input.sonar-output-eq"
+        try:
+            import pulsectl
+            with pulsectl.Pulse("asm-ext-check") as p:
+                if any(s.name == EQ_SINK for s in p.sink_list()):
+                    self._on_stream_drop(si_index, app_name, pid, EQ_SINK)
+                    return
+        except Exception:
+            pass
+        if self._sink_ext is not None:
+            self._on_stream_drop(si_index, app_name, pid, self._sink_ext.name)
+
     # ── Volume change callbacks ───────────────────────────────────────────────
 
     def _on_media_volume_changed(self, value: int):
@@ -850,6 +976,9 @@ class HomePage(QWidget):
 
     def _on_aux_volume_changed(self, value: int):
         self._apply_volume(self._sink_media, value)
+
+    def _on_ext_volume_changed(self, value: int):
+        self._apply_volume(self._sink_ext, value)
 
     def _apply_volume(self, sink, value: int):
         pulse = self._get_pulse()

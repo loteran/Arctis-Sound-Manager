@@ -14,6 +14,7 @@ BORDER = "#2A3038"
 COLOR_GAME = "#04C5A8"
 COLOR_CHAT = "#2791CE"
 COLOR_AUX = "#FB4A00"
+COLOR_HDMI = "#9B59B6"
 
 APP_QSS = f"""
 /* ── Global ── */

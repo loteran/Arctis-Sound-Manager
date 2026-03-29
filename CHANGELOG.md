@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] - 29 March 2026
+
+### Added
+
+- **External output volume**: HDMI/sound card volume card on home page with auto-detection of non-SteelSeries sinks.
+- **Stream routing to output**: "O" button on app tags routes streams through the output EQ node.
+- **Sonar Output EQ**: new Equalizer tab with 8ch 7.1 parametric EQ for external output (no HeSuVi surround).
+- **Configurable output device**: Settings dropdown to select external output sink.
+- **Update notification**: banner on home page when a newer release is available (checks GitHub once/day).
+- **Clean exit**: Exit from systray stops all ASM services and restarts pipewire.
+
+### Fixed
+
+- **Output EQ not applying**: filter-chain capture node used `Audio/Sink/Internal`; changed to `Audio/Sink` for the output channel.
+- **Audio loss on preset apply**: output channel now only restarts `filter-chain` instead of full pipewire stack.
+- **Apps invisible after routing to output**: streams routed through EQ now appear on the Output card.
+- **Settings layout**: fixed label widths, toggle alignment, dropdown sizing.
+
 ## [1.0.1] - 29 March 2026
 
 ### Fixed

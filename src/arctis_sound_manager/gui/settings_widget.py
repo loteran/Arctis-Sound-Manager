@@ -225,8 +225,13 @@ class QSettingsWidget(QWidget):
 
         if widget:
             label = QLabel(I18n.get_instance().translate('settings', config.name))
-            label.setFixedWidth(180)
+            label.setFixedWidth(260)
+            label.setWordWrap(True)
             main_layout.addWidget(label)
-            main_layout.addWidget(widget, 1)
+            if config.type == SettingType.TOGGLE:
+                main_layout.addWidget(widget)
+                main_layout.addStretch(1)
+            else:
+                main_layout.addWidget(widget, 1)
 
         return main_widget if widget else None
