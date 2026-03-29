@@ -1,8 +1,0 @@
-{
-    "files.insertFinalNewline": true,
-    "editor.codeActionsOnSave": {
-        "source.organizeImports": "explicit"
-    },
-    "python.testing.pytestEnabled": true,
-    "python.testing.unittestEnabled": false
-}
