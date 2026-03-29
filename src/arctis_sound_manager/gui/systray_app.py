@@ -60,7 +60,7 @@ class QSystrayApp(QBaseDesktopApp):
         self.new_status.connect(self.on_new_status)
         self.dbus_poll_thread = Thread(target=self.poll_dbus_thread, daemon=True)
         self.dbus_poll_thread.start()
-    
+
     def start_polling(self):
         # Rebuild the menu NOW, before the popup window is created by Qt.
         # This avoids calling menu.clear() while the popup Wayland surface is
@@ -70,7 +70,7 @@ class QSystrayApp(QBaseDesktopApp):
 
     def stop_polling(self):
         self.do_polling = False
-    
+
     def poll_dbus_thread(self):
         while not self.is_stopping():
             if self.do_polling:
@@ -79,7 +79,7 @@ class QSystrayApp(QBaseDesktopApp):
             else:
                 # Wait for do_polling faster
                 sleep(.5)
-    
+
     async def dbus_poll(self):
         self.logger.debug('Polling dbus...')
 
@@ -106,7 +106,7 @@ class QSystrayApp(QBaseDesktopApp):
             self.logger.error('Error polling dbus: %s', e)
         finally:
             dbus_bus.disconnect()
-    
+
     def on_new_status(self, status: dict[str, dict[str, dict[str, str|int]]]):
         if self.last_device_status == status:
             return
@@ -131,35 +131,27 @@ class QSystrayApp(QBaseDesktopApp):
         self.menu = QMenu()
         self._menu_actions = {}
 
+        # Open App
         self._menu_actions['open_app'] = QAction(I18n.translate('ui', 'open_app'))
         self._menu_actions['open_app'].triggered.connect(self.open_main_window)
         self.menu.addAction(self._menu_actions['open_app'])
 
-        sections = 0
+        # Headset status (power only)
         for _, status_obj in self.last_device_status.items():
             if not status_obj:
                 continue
-
-            self.menu.addSeparator()
-            sections += 1
-
-            for status, status_o in status_obj.items():
-                self._menu_actions['status_' + status] = QAction(
-                    f"{I18n.translate('status', status)}: "
-                    f"{I18n.translate('status_values', status_o['value'])}"
-                    f"{'%' if status_o['type'] == 'percentage' else ''}"
+            power = status_obj.get('headset_power_status')
+            if power:
+                self.menu.addSeparator()
+                self._menu_actions['headset_status'] = QAction(
+                    f"{I18n.translate('ui', 'headset_status')}: "
+                    f"{I18n.translate('status_values', power['value'])}"
                 )
-                self.menu.addAction(self._menu_actions['status_' + status])
-
-        if sections:
-            self.menu.addSeparator()
-
-        self._menu_actions['toggle_sonar'] = QAction(self._sonar_toggle_label())
-        self._menu_actions['toggle_sonar'].triggered.connect(self.toggle_sonar)
-        self.menu.addAction(self._menu_actions['toggle_sonar'])
+                self.menu.addAction(self._menu_actions['headset_status'])
 
         self.menu.addSeparator()
 
+        # Exit
         self._menu_actions['exit'] = QAction(I18n.translate('ui', 'exit'))
         self._menu_actions['exit'].triggered.connect(self.sig_stop)
         self.menu.addAction(self._menu_actions['exit'])
@@ -169,20 +161,6 @@ class QSystrayApp(QBaseDesktopApp):
         self.tray_icon.setContextMenu(self.menu)
         if old_menu is not None:
             old_menu.deleteLater()
-    
-    def _sonar_state_file(self) -> Path:
-        return Path.home() / '.config' / 'arctis_manager' / '.eq_mode'
-
-    def _sonar_toggle_label(self) -> str:
-        state_file = self._sonar_state_file()
-        current = state_file.read_text().strip() if state_file.exists() else 'custom'
-        if current == 'sonar':
-            return 'EQ : Sonar → Custom'
-        return 'EQ : Custom → Sonar'
-
-    def toggle_sonar(self):
-        script = Path.home() / '.config' / 'arctis_manager' / 'toggle_sonar.py'
-        subprocess.Popen(['python3', str(script)])
 
     def is_stopping(self):
         return hasattr(self, '_stopping') and self._stopping
@@ -199,11 +177,27 @@ class QSystrayApp(QBaseDesktopApp):
     def sig_stop(self):
         if self.is_stopping():
             return
-        
+
         if hasattr(self, '_main_app'):
             self._main_app.sig_stop()
 
         self._stopping = True
-
         self.logger.debug('Received shutdown signal, shutting down.')
+
+        # Stop all ASM services and schedule a pipewire restart
+        # so the system behaves as if ASM was not installed.
+        subprocess.run(
+            ["systemctl", "--user", "stop",
+             "arctis-manager.service", "arctis-video-router.service", "filter-chain"],
+            capture_output=True, timeout=10,
+        )
+        # Deferred restart: the app exits first, then pipewire restarts
+        # without ASM configs (filter-chain is already stopped).
+        subprocess.Popen(
+            ["bash", "-c",
+             "sleep 1 && systemctl --user restart pipewire wireplumber pipewire-pulse"],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+
         self.app.quit()
