@@ -22,6 +22,6 @@ pkgbase = arctis-sound-manager
 	optdepends = noise-suppression-for-voice: ClearCast AI Noise Cancellation (rnnoise)
 	optdepends = swh-plugins: Noise Gate and Compressor for mic processing
 	source = arctis-sound-manager-1.0.4.tar.gz::https://github.com/loteran/Arctis-Sound-Manager/archive/refs/tags/v1.0.4.tar.gz
-	sha256sums = 542b690db0f2929922b820d1a4e43e20e461e9eae92d8571c5e8d9070e5fa720
+	sha256sums = ca747378a304adde6cc48e90d4a0862634995f7bb799d4dddeeb0993a1e2a35d
 
 pkgname = arctis-sound-manager
