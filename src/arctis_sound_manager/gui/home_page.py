@@ -670,7 +670,8 @@ class HomePage(QWidget):
             f"<b>{_t('help_mixer_title')}</b><br><br>"
             f"<b>{_t('help_mixer_game')}</b><br>"
             f"<b>{_t('help_mixer_chat')}</b><br>"
-            f"<b>{_t('help_mixer_media')}</b><br><br>"
+            f"<b>{_t('help_mixer_media')}</b><br>"
+            f"<b>{_t('help_mixer_output')}</b><br><br>"
             f"{_t('help_mixer_sliders')}<br>"
             f"{_t('help_mixer_buttons')}"
         )
