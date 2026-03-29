@@ -122,6 +122,20 @@ After setup, a new audio sink called **"Virtual Surround Sink"** appears in your
 
 ## Installation
 
+### Arch Linux / CachyOS / Manjaro (AUR)
+
+```bash
+paru -S arctis-sound-manager
+```
+
+Then run the post-install setup to deploy user configs and download the HRIR file:
+
+```bash
+asm-setup
+```
+
+### Other distros (from source)
+
 ```bash
 # 1. Clone the repository
 git clone --branch main https://github.com/loteran/Arctis-Sound-Manager.git
