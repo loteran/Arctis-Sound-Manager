@@ -9,7 +9,8 @@ Source:         %{url}/archive/refs/tags/v%{version}.tar.gz
 
 BuildArch:      noarch
 BuildRequires:  python3-devel
-BuildRequires:  pyproject-rpm-macros
+BuildRequires:  python3-pip
+BuildRequires:  python3-setuptools
 BuildRequires:  systemd-rpm-macros
 BuildRequires:  desktop-file-utils
 BuildRequires:  libappstream-glib
@@ -37,15 +38,14 @@ ANC/Transparent mode control, and device management via PipeWire.
 %prep
 %autosetup -n Arctis-Sound-Manager-%{version}
 
-%generate_buildrequires
-%pyproject_buildrequires
-
 %build
-%pyproject_wheel
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+uv build --wheel
 
 %install
-%pyproject_install
-%pyproject_save_files arctis_sound_manager
+export PATH="$HOME/.local/bin:$PATH"
+pip3 install --root=%{buildroot} --prefix=/usr --no-deps --no-build-isolation dist/*.whl
 
 # udev rules
 install -Dm644 /dev/stdin %{buildroot}%{_udevrulesdir}/91-steelseries-arctis.rules <<'RULES'
@@ -131,9 +131,11 @@ udevadm control --reload-rules || :
 %postun
 %systemd_user_postun arctis-manager.service arctis-video-router.service
 
-%files -f %{pyproject_files}
+%files
 %license LICENSE
 %doc README.md CHANGELOG.md
+%{python3_sitelib}/arctis_sound_manager/
+%{python3_sitelib}/arctis_sound_manager-*.dist-info/
 %{_bindir}/asm-daemon
 %{_bindir}/asm-gui
 %{_bindir}/asm-cli
