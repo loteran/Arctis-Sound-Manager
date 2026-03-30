@@ -25,7 +25,6 @@
   </description>
 
   <launchable type="desktop-id">ArctisManager.desktop</launchable>
-  <icon type="stock">arctis-manager</icon>
   <icon type="remote" width="128" height="128">https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/arctis-manager-icon.png</icon>
 
   <url type="homepage">https://github.com/loteran/Arctis-Sound-Manager</url>
