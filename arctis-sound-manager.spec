@@ -5,12 +5,12 @@ Summary:        Linux GUI for SteelSeries Arctis headsets
 
 License:        GPL-3.0-or-later
 URL:            https://github.com/loteran/Arctis-Sound-Manager
-Source:         %{url}/archive/refs/tags/v%{version}.tar.gz
+Source0:        %{url}/archive/refs/tags/v%{version}.tar.gz
+Source1:        arctis_sound_manager-%{version}-py3-none-any.whl
 
 BuildArch:      noarch
 BuildRequires:  python3-devel
 BuildRequires:  python3-pip
-BuildRequires:  python3-setuptools
 BuildRequires:  systemd-rpm-macros
 BuildRequires:  desktop-file-utils
 BuildRequires:  libappstream-glib
@@ -39,13 +39,10 @@ ANC/Transparent mode control, and device management via PipeWire.
 %autosetup -n Arctis-Sound-Manager-%{version}
 
 %build
-curl -LsSf https://astral.sh/uv/install.sh | sh
-export PATH="$HOME/.local/bin:$PATH"
-uv build --wheel
+# Wheel is pre-built in SRPM via .copr/Makefile
 
 %install
-export PATH="$HOME/.local/bin:$PATH"
-pip3 install --root=%{buildroot} --prefix=/usr --no-deps --no-build-isolation dist/*.whl
+pip3 install --root=%{buildroot} --prefix=/usr --no-deps --no-build-isolation %{SOURCE1}
 
 # udev rules
 install -Dm644 /dev/stdin %{buildroot}%{_udevrulesdir}/91-steelseries-arctis.rules <<'RULES'
@@ -155,5 +152,5 @@ udevadm control --reload-rules || :
 - Update notifications and clean exit
 - ANC/Transparent mode restore on device init
 
-* Sat Mar 29 2026 loteran <https://github.com/loteran> - 1.0.0-1
+* Sun Mar 29 2026 loteran <https://github.com/loteran> - 1.0.0-1
 - Initial release
