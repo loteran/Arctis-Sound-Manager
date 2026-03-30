@@ -1,5 +1,5 @@
 Name:           arctis-sound-manager
-Version:        1.0.4
+Version:        1.0.5
 Release:        1%{?dist}
 Summary:        Linux GUI for SteelSeries Arctis headsets
 
@@ -147,7 +147,13 @@ udevadm control --reload-rules || :
 %{_datadir}/%{name}/
 
 %changelog
-* Mon Mar 30 2026 loteran <https://github.com/loteran> - 1.0.4-1
+* Mon Mar 30 2026 loteran <https://github.com/loteran> - 1.0.5-1
+- Fix desktop entry for Fedora desktop-file-validate
+- Add remote icon and AppStream metainfo for package manager GUIs
+- Widen uv_build version range
+- Add COPR packaging for Fedora
+
+* Sun Mar 29 2026 loteran <https://github.com/loteran> - 1.0.4-1
 - External output EQ, volume control, stream routing
 - Update notifications and clean exit
 - ANC/Transparent mode restore on device init
