@@ -34,7 +34,20 @@ find ./dist -name "*.whl" | head -n1 | xargs pipx install --force
 echo "==> Installing udev rules (requires sudo)..."
 asm-cli udev write-rules --force --reload
 
-# 4. Setup desktop entries
+# 4. Install app icon (requires sudo)
+echo "==> Installing app icon (requires sudo)..."
+sudo install -Dm644 "$REPO_DIR/src/arctis_sound_manager/gui/images/steelseries_logo.svg" \
+    /usr/share/icons/hicolor/scalable/apps/arctis-manager.svg
+gtk-update-icon-cache /usr/share/icons/hicolor/ 2>/dev/null || true
+echo "    [ok] Icon installed."
+
+# 5. Install AppStream metainfo (requires sudo)
+echo "==> Installing AppStream metainfo..."
+sudo install -Dm644 "$REPO_DIR/src/arctis_sound_manager/desktop/com.github.loteran.arctis-sound-manager.metainfo.xml" \
+    /usr/share/metainfo/com.github.loteran.arctis-sound-manager.metainfo.xml
+echo "    [ok] Metainfo installed."
+
+# 6. Setup desktop entries
 echo "==> Installing desktop entries..."
 asm-cli desktop write
 
