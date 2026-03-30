@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=Arctis Sound Manager
-Exec=/bin/sh -c 'exec asm-gui >/dev/null 2>&1'
+Exec=asm-gui
 Icon=arctis-manager
 Type=Application
 Terminal=false
-Categories=Utility;Application;
+Categories=Audio;Utility;
