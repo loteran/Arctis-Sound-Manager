@@ -4,4 +4,4 @@ Exec=asm-gui
 Icon=arctis-manager
 Type=Application
 Terminal=false
-Categories=Audio;Utility;
+Categories=AudioVideo;Audio;Utility;
