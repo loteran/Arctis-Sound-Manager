@@ -4,7 +4,9 @@ srpm:
 	export PATH="$$HOME/.local/bin:$$PATH" && \
 	cd .. && \
 	uv build --wheel && \
+	VERSION=$$(grep '^Version:' arctis-sound-manager.spec | awk '{print $$2}') && \
 	mkdir -p .rpmbuild/SOURCES && \
+	curl -Lo .rpmbuild/SOURCES/v$$VERSION.tar.gz \
+	    "https://github.com/loteran/Arctis-Sound-Manager/archive/refs/tags/v$$VERSION.tar.gz" && \
 	cp dist/*.whl .rpmbuild/SOURCES/ && \
-	spectool -g -C .rpmbuild/SOURCES -R arctis-sound-manager.spec && \
 	rpmbuild -D "_topdir $$PWD/.rpmbuild" -D "_srcrpmdir $(outdir)" -D "_sourcedir $$PWD/.rpmbuild/SOURCES" -bs arctis-sound-manager.spec

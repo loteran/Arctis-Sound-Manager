@@ -21,7 +21,7 @@ asm-router = "arctis_sound_manager.scripts.video_router:main"
 asm-setup = "arctis_sound_manager.scripts.setup:main"
 
 [build-system]
-requires = ["uv_build>=0.9.17,<0.11.0"]
+requires = ["uv_build>=0.9.17,<0.12"]
 build-backend = "uv_build"
 
 [dependency-groups]
