@@ -1,0 +1,35 @@
+Source: arctis-sound-manager
+Section: sound
+Priority: optional
+Maintainer: loteran <axel.valadon@gmail.com>
+Build-Depends: debhelper-compat (= 13),
+               python3 (>= 3.10),
+               python3-pip,
+               python3-venv
+Standards-Version: 4.6.2
+Homepage: https://github.com/loteran/Arctis-Sound-Manager
+Rules-Requires-Root: no
+
+Package: arctis-sound-manager
+Architecture: all
+Depends: ${misc:Depends},
+         python3 (>= 3.10),
+         python3-pyside6.qtcore,
+         python3-pyside6.qtgui,
+         python3-pyside6.qtwidgets,
+         python3-pyside6.qtsvg,
+         python3-pyside6.qtnetwork,
+         python3-pulsectl,
+         python3-pyudev,
+         python3-usb,
+         python3-ruamel.yaml,
+         pipewire,
+         pipewire-pulse,
+         libusb-1.0-0
+Recommends: noise-suppression-for-voice,
+            swh-plugins
+Description: Linux GUI for SteelSeries Arctis headsets
+ Arctis Sound Manager is a Linux application for configuring SteelSeries Arctis
+ headsets. It provides a 4-channel audio mixer (Game / Chat / Media / HDMI),
+ a full Sonar parametric EQ system with 297+ presets, virtual 7.1 surround sound,
+ ANC/Transparent mode control, and device management via PipeWire.

@@ -1,0 +1,27 @@
+arctis-sound-manager (1.0.7-1) noble; urgency=medium
+
+  * One-click auto-update button in update notification banner
+
+ -- loteran <axel.valadon@gmail.com>  Tue, 01 Apr 2026 00:00:00 +0200
+
+arctis-sound-manager (1.0.6-1) noble; urgency=medium
+
+  * Debian/Ubuntu packaging with .deb build script
+  * Launchpad PPA (ppa:loteran/arctis-sound-manager)
+  * GitHub Actions: auto-build .deb and upload to PPA on release
+
+ -- loteran <axel.valadon@gmail.com>  Tue, 01 Apr 2026 00:00:00 +0200
+
+arctis-sound-manager (1.0.4-1) noble; urgency=medium
+
+  * External output EQ, volume control, stream routing
+  * Update notifications and clean exit
+  * ANC/Transparent mode restore on device init
+
+ -- loteran <axel.valadon@gmail.com>  Sun, 29 Mar 2026 00:00:00 +0200
+
+arctis-sound-manager (1.0.0-1) noble; urgency=medium
+
+  * Initial release
+
+ -- loteran <axel.valadon@gmail.com>  Sun, 29 Mar 2026 00:00:00 +0200

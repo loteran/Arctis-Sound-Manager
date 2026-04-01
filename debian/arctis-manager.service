@@ -1,0 +1,13 @@
+[Unit]
+Description=Arctis Sound Manager
+StartLimitInterval=1min
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/asm-daemon
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

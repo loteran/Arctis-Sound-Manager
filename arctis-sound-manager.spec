@@ -1,5 +1,5 @@
 Name:           arctis-sound-manager
-Version:        1.0.5
+Version:        1.0.7
 Release:        1%{?dist}
 Summary:        Linux GUI for SteelSeries Arctis headsets
 
@@ -147,6 +147,12 @@ udevadm control --reload-rules || :
 %{_datadir}/%{name}/
 
 %changelog
+* Tue Apr 01 2026 loteran <https://github.com/loteran> - 1.0.7-1
+- Add one-click auto-update from GUI
+
+* Tue Apr 01 2026 loteran <https://github.com/loteran> - 1.0.6-1
+- Add Debian/Ubuntu packaging (.deb + Launchpad PPA)
+
 * Mon Mar 30 2026 loteran <https://github.com/loteran> - 1.0.5-1
 - Fix desktop entry for Fedora desktop-file-validate
 - Add remote icon and AppStream metainfo for package manager GUIs

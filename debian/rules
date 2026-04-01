@@ -1,0 +1,77 @@
+#!/usr/bin/make -f
+
+export DH_VERBOSE = 1
+export PYTHONDONTWRITEBYTECODE = 1
+
+PKG  = arctis-sound-manager
+DEST = debian/$(PKG)
+PYLIB = $(DEST)/usr/lib/python3/dist-packages
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	# If pre-built wheels exist (PPA / CI), use them; otherwise build
+	if [ -d debian/wheels ]; then \
+	    echo "Using pre-built wheels from debian/wheels/"; \
+	else \
+	    mkdir -p debian/wheels; \
+	    python3 -m pip wheel --no-deps --wheel-dir=debian/wheels .; \
+	    python3 -m pip download --no-deps --dest=debian/wheels dbus-next; \
+	fi
+
+override_dh_auto_install:
+	# ── Python package ──────────────────────────────────────
+	mkdir -p $(PYLIB) $(DEST)/usr/bin
+	python3 -m pip install --target=$(PYLIB) --no-deps debian/wheels/arctis_sound_manager-*.whl
+	# Bundle dbus-next (not in Ubuntu repos)
+	python3 -m pip install --target=$(PYLIB) --no-deps debian/wheels/dbus_next-*.whl
+	# Clean bytecode (dpkg handles recompilation)
+	find $(PYLIB) -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+
+	# ── Console scripts ─────────────────────────────────────
+	printf '#!/usr/bin/python3\nimport sys\nfrom arctis_sound_manager.scripts.daemon import main\nsys.exit(main())\n'         > $(DEST)/usr/bin/asm-daemon
+	printf '#!/usr/bin/python3\nimport sys\nfrom arctis_sound_manager.scripts.cli import main\nsys.exit(main())\n'            > $(DEST)/usr/bin/asm-cli
+	printf '#!/usr/bin/python3\nimport sys\nfrom arctis_sound_manager.scripts.gui import main\nsys.exit(main())\n'            > $(DEST)/usr/bin/asm-gui
+	printf '#!/usr/bin/python3\nimport sys\nfrom arctis_sound_manager.scripts.video_router import main\nsys.exit(main())\n'   > $(DEST)/usr/bin/asm-router
+	printf '#!/usr/bin/python3\nimport sys\nfrom arctis_sound_manager.scripts.setup import main\nsys.exit(main())\n'          > $(DEST)/usr/bin/asm-setup
+	chmod 755 $(DEST)/usr/bin/asm-*
+
+	# ── udev rules ──────────────────────────────────────────
+	install -Dm644 debian/91-steelseries-arctis.rules \
+	    $(DEST)/usr/lib/udev/rules.d/91-steelseries-arctis.rules
+
+	# ── Systemd user services ──────────────────────────────
+	install -Dm644 debian/arctis-manager.service \
+	    $(DEST)/usr/lib/systemd/user/arctis-manager.service
+	install -Dm644 debian/arctis-video-router.service \
+	    $(DEST)/usr/lib/systemd/user/arctis-video-router.service
+
+	# ── Desktop entry ───────────────────────────────────────
+	install -Dm644 src/arctis_sound_manager/desktop/ArctisManager.desktop \
+	    $(DEST)/usr/share/applications/ArctisManager.desktop
+
+	# ── Icon ────────────────────────────────────────────────
+	install -Dm644 src/arctis_sound_manager/gui/images/steelseries_logo.svg \
+	    $(DEST)/usr/share/icons/hicolor/scalable/apps/arctis-manager.svg
+
+	# ── AppStream metainfo ──────────────────────────────────
+	install -Dm644 src/arctis_sound_manager/desktop/com.github.loteran.arctis-sound-manager.metainfo.xml \
+	    $(DEST)/usr/share/metainfo/com.github.loteran.arctis-sound-manager.metainfo.xml
+
+	# ── PipeWire configs ────────────────────────────────────
+	install -Dm644 scripts/pipewire/10-arctis-virtual-sinks.conf \
+	    $(DEST)/usr/share/$(PKG)/pipewire/10-arctis-virtual-sinks.conf
+	install -Dm644 scripts/pipewire/sink-virtual-surround-7.1-hesuvi.conf \
+	    $(DEST)/usr/share/$(PKG)/pipewire/sink-virtual-surround-7.1-hesuvi.conf
+
+	# ── Device configs ──────────────────────────────────────
+	install -d $(DEST)/usr/share/$(PKG)/devices
+	install -Dm644 src/arctis_sound_manager/devices/*.yaml \
+	    -t $(DEST)/usr/share/$(PKG)/devices/
+
+override_dh_auto_test:
+	@true
+
+override_dh_auto_clean:
+	rm -rf dist build *.egg-info debian/wheels
