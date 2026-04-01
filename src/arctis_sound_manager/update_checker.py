@@ -51,10 +51,19 @@ def _version_gt(a: str, b: str) -> bool:
     return sa > sb
 
 
-class UpdateCheckWorker(QThread):
-    """Emit (version, url) if a newer release exists, else ("", "")."""
+def _find_wheel_url(assets: list[dict]) -> str:
+    """Find the .whl asset URL from a GitHub release."""
+    for asset in assets:
+        name = asset.get("name", "")
+        if name.endswith(".whl") and "arctis_sound_manager" in name:
+            return asset["browser_download_url"]
+    return ""
 
-    result = Signal(str, str)
+
+class UpdateCheckWorker(QThread):
+    """Emit (version, url, wheel_url) if a newer release exists, else ("", "", "")."""
+
+    result = Signal(str, str, str)
 
     def __init__(self, current_version: str):
         super().__init__()
@@ -65,43 +74,43 @@ class UpdateCheckWorker(QThread):
             self._check()
         except Exception as exc:
             log.debug("Update check failed: %s", exc)
-            self.result.emit("", "")
+            self.result.emit("", "", "")
 
     def _check(self):
         if _parse_version(self._current) is None:
-            self.result.emit("", "")
+            self.result.emit("", "", "")
             return
 
         # Try cache first
-        latest_str, url = self._read_cache()
+        latest_str, url, wheel_url = self._read_cache()
         if latest_str is None:
-            latest_str, url = self._fetch()
+            latest_str, url, wheel_url = self._fetch()
             if latest_str:
-                self._write_cache(latest_str, url)
+                self._write_cache(latest_str, url, wheel_url)
 
         if not latest_str:
-            self.result.emit("", "")
+            self.result.emit("", "", "")
             return
 
         if _version_gt(latest_str, self._current):
-            self.result.emit(latest_str, url)
+            self.result.emit(latest_str, url, wheel_url)
         else:
-            self.result.emit("", "")
+            self.result.emit("", "", "")
 
-    def _read_cache(self) -> tuple[str | None, str]:
+    def _read_cache(self) -> tuple[str | None, str, str]:
         if not _CACHE_FILE.exists():
-            return None, ""
+            return None, "", ""
         try:
             data = json.loads(_CACHE_FILE.read_text())
             last = datetime.fromisoformat(data["last_check"])
             age_hours = (datetime.now(timezone.utc) - last).total_seconds() / 3600
             if age_hours < _CACHE_TTL_HOURS:
-                return data["latest_version"], data["release_url"]
+                return data["latest_version"], data["release_url"], data.get("wheel_url", "")
         except Exception:
             pass
-        return None, ""
+        return None, "", ""
 
-    def _fetch(self) -> tuple[str, str]:
+    def _fetch(self) -> tuple[str, str, str]:
         is_beta = "b" in self._current or "dev" in self._current
         if is_beta:
             api_url = f"https://api.github.com/repos/{_REPO}/releases?per_page=5"
@@ -116,17 +125,82 @@ class UpdateCheckWorker(QThread):
             for rel in data:
                 if not rel.get("draft", False):
                     tag = rel["tag_name"].lstrip("v")
-                    return tag, rel["html_url"]
-            return "", ""
+                    wheel_url = _find_wheel_url(rel.get("assets", []))
+                    return tag, rel["html_url"], wheel_url
+            return "", "", ""
         else:
             tag = data["tag_name"].lstrip("v")
-            return tag, data["html_url"]
+            wheel_url = _find_wheel_url(data.get("assets", []))
+            return tag, data["html_url"], wheel_url
 
     @staticmethod
-    def _write_cache(version: str, url: str):
+    def _write_cache(version: str, url: str, wheel_url: str):
         _CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
         _CACHE_FILE.write_text(json.dumps({
             "last_check": datetime.now(timezone.utc).isoformat(),
             "latest_version": version,
             "release_url": url,
+            "wheel_url": wheel_url,
         }))
+
+
+class UpdateInstallWorker(QThread):
+    """Download a wheel and install it. Emits (success, message)."""
+
+    finished = Signal(bool, str)
+
+    def __init__(self, wheel_url: str):
+        super().__init__()
+        self._wheel_url = wheel_url
+
+    def run(self):
+        import shutil
+        import subprocess
+        import tempfile
+
+        try:
+            # Download wheel
+            tmp = tempfile.mkdtemp(prefix="asm_update_")
+            filename = self._wheel_url.rsplit("/", 1)[-1]
+            wheel_path = Path(tmp) / filename
+            log.info("Downloading %s", self._wheel_url)
+            req = urllib.request.Request(self._wheel_url)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                wheel_path.write_bytes(resp.read())
+
+            # Detect install method and install
+            pipx = shutil.which("pipx")
+            if pipx:
+                log.info("Installing via pipx")
+                r = subprocess.run(
+                    [pipx, "install", str(wheel_path), "--force"],
+                    capture_output=True, text=True, timeout=120,
+                )
+            else:
+                log.info("Installing via pip")
+                pip = shutil.which("pip3") or shutil.which("pip")
+                if pip:
+                    r = subprocess.run(
+                        [pip, "install", "--user", "--force-reinstall", str(wheel_path)],
+                        capture_output=True, text=True, timeout=120,
+                    )
+                else:
+                    r = subprocess.run(
+                        ["python3", "-m", "pip", "install", "--user", "--force-reinstall", str(wheel_path)],
+                        capture_output=True, text=True, timeout=120,
+                    )
+
+            # Cleanup temp
+            shutil.rmtree(tmp, ignore_errors=True)
+
+            if r.returncode == 0:
+                # Clear update cache so the banner disappears on restart
+                _CACHE_FILE.unlink(missing_ok=True)
+                self.finished.emit(True, "")
+            else:
+                log.error("Install failed: %s", r.stderr)
+                self.finished.emit(False, r.stderr.strip().split("\n")[-1])
+
+        except Exception as exc:
+            log.error("Update install failed: %s", exc)
+            self.finished.emit(False, str(exc))

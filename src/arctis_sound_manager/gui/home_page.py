@@ -561,6 +561,16 @@ class HomePage(QWidget):
         )
         banner_layout.addWidget(self._update_link_btn)
 
+        self._update_install_btn = QPushButton(I18n.translate("ui", "install_update"))
+        self._update_install_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._update_install_btn.setStyleSheet(
+            f"QPushButton {{ background: {ACCENT}; border: none; border-radius: 4px; "
+            f"color: #fff; font-size: 10pt; padding: 3px 12px; }}"
+            f"QPushButton:hover {{ background: #FF6A28; }}"
+        )
+        self._update_install_btn.hide()
+        banner_layout.addWidget(self._update_install_btn)
+
         dismiss_btn = QPushButton("\u2715")
         dismiss_btn.setFixedSize(20, 20)
         dismiss_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -749,8 +759,8 @@ class HomePage(QWidget):
 
     # ── Update notification ────────────────────────────────────────────────────
 
-    @Slot(str, str)
-    def on_update_available(self, version: str, url: str):
+    @Slot(str, str, str)
+    def on_update_available(self, version: str, url: str, wheel_url: str = ""):
         if not version:
             return
         self._update_label.setText(
@@ -759,7 +769,35 @@ class HomePage(QWidget):
         self._update_link_btn.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl(url))
         )
+        if wheel_url:
+            self._wheel_url = wheel_url
+            self._update_install_btn.show()
+            self._update_install_btn.clicked.connect(self._do_install_update)
         self._update_banner.show()
+
+    def _do_install_update(self):
+        from arctis_sound_manager.update_checker import UpdateInstallWorker
+
+        self._update_install_btn.setEnabled(False)
+        self._update_install_btn.setText(I18n.translate("ui", "updating"))
+        self._install_worker = UpdateInstallWorker(self._wheel_url)
+        self._install_worker.finished.connect(self._on_install_finished)
+        self._install_worker.start()
+
+    @Slot(bool, str)
+    def _on_install_finished(self, success: bool, error_msg: str):
+        if success:
+            self._update_label.setText(I18n.translate("ui", "update_installed"))
+            self._update_install_btn.hide()
+            self._update_link_btn.hide()
+            # Restart daemon + GUI
+            import subprocess, sys, os
+            subprocess.Popen(["systemctl", "--user", "restart", "arctis-manager"])
+            os.execv(sys.executable, [sys.executable, "-m", "arctis_sound_manager.scripts.gui"])
+        else:
+            self._update_install_btn.setText(I18n.translate("ui", "install_update"))
+            self._update_install_btn.setEnabled(True)
+            self._update_label.setText(f"Update failed: {error_msg}")
 
     # ── PulseAudio polling ────────────────────────────────────────────────────
 
