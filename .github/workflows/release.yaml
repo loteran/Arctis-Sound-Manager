@@ -30,12 +30,17 @@ jobs:
           python3 --version | awk '{split($2,v,"."); print v[1]"."v[2]}' > .python-version
           uv build
 
+      - name: Build .deb package
+        run: bash debian/build-deb.sh
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           body: ${{ steps.changelog.outputs.notes }}
-          files: dist/*
+          files: |
+            dist/*
+            build/deb/*.deb
           draft: false
           prerelease: false

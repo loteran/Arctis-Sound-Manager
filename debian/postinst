@@ -1,0 +1,20 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "configure" ]; then
+    udevadm control --reload-rules 2>/dev/null || true
+    udevadm trigger 2>/dev/null || true
+    echo ""
+    echo "  Arctis Sound Manager installed!"
+    echo ""
+    echo "  Run 'asm-setup' to deploy PipeWire configs and"
+    echo "  download the HRIR file for virtual surround."
+    echo ""
+    echo "  Then enable the services:"
+    echo "    systemctl --user enable --now arctis-manager"
+    echo "    systemctl --user enable --now arctis-video-router"
+    echo ""
+fi
+
+#DEBHELPER#
+exit 0

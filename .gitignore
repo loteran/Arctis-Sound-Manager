@@ -4,6 +4,7 @@ __pycache__/
 build/
 dist/
 wheels/
+debian/wheels/
 *.egg-info
 
 # Virtual environments
