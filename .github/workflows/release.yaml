@@ -40,7 +40,8 @@ jobs:
           name: ${{ github.ref_name }}
           body: ${{ steps.changelog.outputs.notes }}
           files: |
-            dist/*
+            dist/*.whl
+            dist/*.tar.gz
             build/deb/*.deb
           draft: false
           prerelease: false
