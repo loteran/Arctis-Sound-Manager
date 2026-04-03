@@ -79,7 +79,10 @@ class PulseAudioManager:
         self.pulse.default_set(sink)
     
     def get_default_device(self) -> TypedPulseSinkInfo|None:
-        server_info = self.pulse.server_info()
+        try:
+            server_info = self.pulse.server_info()
+        except Exception:
+            return None
         default_sink_name: str|None = getattr(server_info, 'default_sink_name', None)
 
         if default_sink_name is None:
