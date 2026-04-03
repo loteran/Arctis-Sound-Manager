@@ -1,8 +1,10 @@
 import asyncio
 import logging
 import signal
+import sys
 from types import FrameType
 
+from arctis_sound_manager.bug_reporter import write_crash_report
 from arctis_sound_manager.core import CoreEngine
 from arctis_sound_manager.dbus_service import DbusManager
 from arctis_sound_manager.scripts.dbus_awake import DbusAwake
@@ -38,6 +40,15 @@ def sigterm_handler(
     DbusManager.getInstance().stop()
 
 def main():
+    def _crash_handler(exc_type, exc_value, exc_tb):
+        logging.getLogger('Daemon').critical(
+            'Unhandled exception — writing crash report', exc_info=(exc_type, exc_value, exc_tb)
+        )
+        write_crash_report(exc_type, exc_value, exc_tb, source='daemon')
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+    sys.excepthook = _crash_handler
+
     signal.signal(signal.SIGINT, sigterm_handler)
     signal.signal(signal.SIGTERM, sigterm_handler)
 

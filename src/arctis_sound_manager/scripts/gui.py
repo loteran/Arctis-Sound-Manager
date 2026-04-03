@@ -8,6 +8,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication
 
+from arctis_sound_manager.bug_reporter import read_crash_report, write_crash_report
 from arctis_sound_manager.gui.systray_app import QSystrayApp
 from arctis_sound_manager.systemd import ensure_systemd_unit
 
@@ -31,6 +32,12 @@ def main():
     logging.basicConfig(level=log_level, format='%(name)20s %(levelname)8s | %(message)s')
 
     app = QApplication(sys.argv)
+
+    # ── Crash handler ─────────────────────────────────────────────────────────
+    def _gui_crash_handler(exc_type, exc_value, exc_tb):
+        write_crash_report(exc_type, exc_value, exc_tb, source='gui')
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+    sys.excepthook = _gui_crash_handler
 
     # ── Single-instance guard ──────────────────────────────────────────────────
     socket = QLocalSocket()
@@ -68,6 +75,14 @@ def main():
                 q_object.open_main_window()
 
     server.newConnection.connect(_on_new_connection)
+
+    # ── Crash report from previous session ────────────────────────────────────
+    crash = read_crash_report()
+    if crash:
+        from arctis_sound_manager.gui.report_dialog import ReportBugDialog
+        def _show_crash():
+            ReportBugDialog(traceback_str=crash.get('traceback'), is_crash=True).exec()
+        QTimer.singleShot(1500, _show_crash)
 
     # Open the window once the event loop is running.
     if not args.systray:
