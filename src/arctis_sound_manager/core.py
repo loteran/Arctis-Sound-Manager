@@ -8,7 +8,8 @@ from typing import Any, Coroutine, Literal, cast
 import usb
 from usb.core import Device
 
-from arctis_sound_manager.config import (DeviceConfiguration,
+from arctis_sound_manager.config import (CommandTransport,
+                                         DeviceConfiguration,
                                          load_device_configurations,
                                          parsed_status)
 from arctis_sound_manager.constants import (PULSE_CHAT_NODE_NAME,
@@ -331,11 +332,19 @@ class CoreEngine:
 
         return result
     
+    def _get_command_interface(self, config: DeviceConfiguration) -> int:
+        """Returns the USB interface number used for commands."""
+        return config.command_interface_index[0]
+
     def get_command_endpoint_address(self):
         if self.device_config is None:
             raise Exception('Device configuration is not available')
         if self.usb_device is None:
             raise Exception('USB device is not available')
+
+        # ctrl_output and ctrl_feature use HID SET_REPORT via ctrl_transfer (no interrupt OUT)
+        if self.device_config.command_transport != CommandTransport.INTERRUPT:
+            return 0
 
         endpoint, _ = self.guess_interface_endpoint('out', self.device_config.command_interface_index[0], self.device_config.command_interface_index[1])
         if endpoint is None:
@@ -384,23 +393,34 @@ class CoreEngine:
         command_lst = [int.from_bytes([int(command_str[i:i+2], 16)], 'big') for i in range(0, len(command_str), 2)]
 
         try:
-            self.usb_device.write(endpoint, command_lst)
+            if endpoint != 0:
+                self.usb_device.write(endpoint, command_lst)
+            else:
+                # HID SET_REPORT via ctrl_transfer (device has no interrupt OUT endpoint)
+                bmRequestType = usb.util.build_request_type(
+                    direction=usb.util.CTRL_OUT,
+                    type=usb.util.CTRL_TYPE_CLASS,
+                    recipient=usb.util.CTRL_RECIPIENT_INTERFACE
+                )
+                wValue = 0x0300 if self.device_config.command_transport == CommandTransport.CTRL_FEATURE else 0x0200
+                wIndex = self.device_config.command_interface_index[0]
+                self.usb_device.ctrl_transfer(bmRequestType, 0x09, wValue, wIndex, command_lst)
         except usb.core.USBError as e:
             self.logger.warning(f"Error sending command: {e}")
 
     def kernel_detach(self, usb_device: TypedDevice, config: DeviceConfiguration) -> None:
         self.logger.info(f"Detaching kernel driver for device: {usb_device.idVendor:04x}:{usb_device.idProduct:04x} ({config.name})")
 
-        interfaces = list(set([config.command_interface_index[0], *config.listen_interface_indexes]))
+        interfaces = list(set([self._get_command_interface(config), *config.listen_interface_indexes]))
         for interface in interfaces:
             if usb_device.is_kernel_driver_active(interface):
                 self.logger.info(f"Kernel driver active on interface {interface}, detaching...")
                 usb_device.detach_kernel_driver(interface)
-    
+
     def kernel_attach(self, usb_device: TypedDevice, config: DeviceConfiguration) -> None:
         self.logger.info(f"Re-attaching kernel driver for device: {usb_device.idProduct:04x}:{usb_device.idVendor:04x} ({config.name})")
 
-        interfaces = list(set([config.command_interface_index[0], *config.listen_interface_indexes]))
+        interfaces = list(set([self._get_command_interface(config), *config.listen_interface_indexes]))
         for interface in interfaces:
             if not usb_device.is_kernel_driver_active(interface):
                 self.logger.info(f"Kernel driver inactive on interface {interface}, re-attaching...")
@@ -441,7 +461,7 @@ class CoreEngine:
         if self.usb_device:
             try:
                 if self.device_config is not None:
-                    usb.util.release_interface(self.usb_device, self.device_config.command_interface_index[0])
+                    usb.util.release_interface(self.usb_device, self._get_command_interface(self.device_config))
                 if self.device_config and usb.core.find(idVendor=self.device_config.vendor_id):
                     self.kernel_attach(self.usb_device, self.device_config)
             except usb.core.USBError as e:

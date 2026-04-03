@@ -1,0 +1,60 @@
+device:
+  name: SteelSeries Arctis Nova 3
+  vendor_id: 0x1038
+  product_ids:
+    - 0x12ec # Arctis Nova 3
+  command_padding:
+    length: 64
+    position: end
+    filler: 0x00
+
+  # Vendor HID interface 4 (usagepage 0xffc0, usageid 0x1) — feature reports
+  command_transport: ctrl_feature
+  command_interface_index: [4, 0]
+  listen_interface_indexes: [4]
+
+  device_init:
+    - [0x06, 0x39, 'settings.mic_side_tone']
+    - [0x06, 0x09]
+    - [0x06, 0x37, 'settings.mic_volume']
+    - [0x06, 0x09]
+    - [0x06, 0xae, 'settings.mic_mute_led_brightness']
+    - [0x06, 0x09]
+
+  # No status polling — wired device, always connected
+  status:
+    request: 0x0000
+    response_mapping: []
+    representation: {}
+
+  settings:
+    microphone:
+      mic_side_tone:
+        type: button_group
+        values_mapping:
+          0x00: off
+          0x01: low
+          0x02: medium
+          0x03: high
+        default: 0x00
+        update_sequence: [0x06, 0x39, 'value']
+      mic_volume:
+        type: slider
+        min: 0x00
+        max: 0x0a
+        step: 1
+        min_label: mic_muted
+        max_label: perc_100
+        default: 0x0a
+        update_sequence: [0x06, 0x37, 'value']
+      mic_mute_led_brightness:
+        type: button_group
+        values_mapping:
+          0x00: off
+          0x01: low
+          0x02: medium
+          0x03: high
+        default: 0x03
+        update_sequence: [0x06, 0xae, 'value']
+
+  status_parse: {}

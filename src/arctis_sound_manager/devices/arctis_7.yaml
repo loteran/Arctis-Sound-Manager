@@ -1,0 +1,77 @@
+device:
+  name: SteelSeries Arctis 7/Pro Gaming
+  vendor_id: 0x1038
+  product_ids:
+    - 0x1260 # Arctis 7
+    - 0x12ad # Arctis 7 2019
+    - 0x1252 # Arctis Pro 2019
+    - 0x1280 # Arctis Pro GameDAC
+  command_padding:
+    length: 31
+    position: end
+    filler: 0x00
+
+  # Vendor HID interface (interrupt OUT endpoint available)
+  command_interface_index: [5, 0]
+  listen_interface_indexes: [5]
+
+  device_init:
+    - ['status.request']         # get battery
+    - [0x06, 0x24]               # get chatmix
+    - [0x06, 0x35, 0x01, 0x00, 'settings.mic_side_tone']  # sidetone
+    - [0x06, 0x51, 'settings.pm_shutdown']                 # auto-off
+    - [0x06, 0x09]               # save
+
+  status:
+    request: 0x0618
+    response_mapping:
+      - starts_with: 0x0618
+        headset_battery_charge: 0x02
+
+      - starts_with: 0x0624
+        media_mix: 0x02
+        chat_mix: 0x03
+
+    representation:
+      headset:
+        - headset_battery_charge
+        - chat_mix
+        - media_mix
+
+  settings:
+    microphone:
+      mic_side_tone:
+        type: slider
+        min: 0x00
+        max: 0x12
+        step: 1
+        min_label: off
+        max_label: perc_100
+        default: 0x00
+        update_sequence: [0x06, 0x35, 0x01, 0x00, 'value']
+    power_management:
+      pm_shutdown:
+        type: button_group
+        values_mapping:
+          0x00: never
+          0x0a: 10_minutes
+          0x0f: 15_minutes
+          0x1e: 30_minutes
+          0x3c: 60_minutes
+          0x5a: 90_minutes
+        default: 0x1e
+        update_sequence: [0x06, 0x51, 'value']
+
+  status_parse:
+    headset_battery_charge:
+      type: percentage
+      perc_min: 0
+      perc_max: 100
+    media_mix:
+      type: percentage
+      perc_min: 0
+      perc_max: 100
+    chat_mix:
+      type: percentage
+      perc_min: 0
+      perc_max: 100
