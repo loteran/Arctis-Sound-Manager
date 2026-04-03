@@ -1,0 +1,92 @@
+device:
+  name: SteelSeries Arctis 9 Wireless
+  vendor_id: 0x1038
+  product_ids:
+    - 0x12c2 # Arctis 9
+  command_padding:
+    length: 31
+    position: end
+    filler: 0x00
+
+  # Standard HID interface 0 — uses ctrl_transfer SET_REPORT (OUTPUT type)
+  # NOTE: sidetone uses exponential mapping (0xC0-0xFD), not linear.
+  # The values below are device-native and do not map linearly to audible levels.
+  command_transport: ctrl_output
+  command_interface_index: [0, 0]
+  listen_interface_indexes: [0]
+
+  device_init:
+    - ['status.request']
+    - [0x06, 0x00, 'settings.mic_side_tone']
+    - [0x04, 0x00, 0x00, 'settings.pm_shutdown']
+    - [0x90, 0x00]  # save
+
+  # NOTE: starts_with matching for responses starting with 0x00 is unreliable
+  # (the matcher strips leading zeros). Battery/status display needs hardware verification.
+  status:
+    request: 0x0020
+    response_mapping:
+      - starts_with: 0x0020
+        headset_battery_charge: 0x03
+        headset_power_status: 0x04
+        chat_mix: 0x09
+        media_mix: 0x0a
+
+    representation:
+      headset:
+        - headset_power_status
+        - headset_battery_charge
+        - chat_mix
+        - media_mix
+
+  online_status:
+    status_variable: headset_power_status
+    online_value: online
+
+  settings:
+    microphone:
+      # Values are device-native exponential bytes (0xC0=off, 0xFD=max).
+      # Expose as 4 discrete levels mapped to the correct device values.
+      mic_side_tone:
+        type: button_group
+        values_mapping:
+          0xc0: off
+          0xd5: low
+          0xe8: medium
+          0xfd: high
+        default: 0xc0
+        update_sequence: [0x06, 0x00, 'value']
+    power_management:
+      # Value sent to device in seconds (hi byte, lo byte).
+      # These update_sequence entries send 0x04, 0x00, hi=0, lo=minutes-as-seconds.
+      # WARNING: minutes*60 split into 2 bytes not handled here — needs code support.
+      # For now, expose raw minute values (0–90); the device clips at 255 seconds.
+      pm_shutdown:
+        type: button_group
+        values_mapping:
+          0x00: never
+          0x0a: 10_minutes
+          0x0f: 15_minutes
+          0x1e: 30_minutes
+          0x3c: 60_minutes
+          0x5a: 90_minutes
+        default: 0x1e
+        update_sequence: [0x04, 0x00, 0x00, 'value']
+
+  status_parse:
+    headset_power_status:
+      type: on_off
+      off: 0x00
+      on: 0x01
+    headset_battery_charge:
+      type: percentage
+      perc_min: 100
+      perc_max: 154
+    media_mix:
+      type: percentage
+      perc_min: 0
+      perc_max: 19
+    chat_mix:
+      type: percentage
+      perc_min: 0
+      perc_max: 19

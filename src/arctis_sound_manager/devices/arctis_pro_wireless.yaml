@@ -1,0 +1,77 @@
+device:
+  name: SteelSeries Arctis Pro Wireless
+  vendor_id: 0x1038
+  product_ids:
+    - 0x1290 # Arctis Pro Wireless
+  command_padding:
+    length: 31
+    position: end
+    filler: 0x00
+
+  # Standard HID interface 0 — uses ctrl_transfer SET_REPORT (OUTPUT type)
+  # All commands end with 0xAA suffix (base-station protocol).
+  command_transport: ctrl_output
+  command_interface_index: [0, 0]
+  listen_interface_indexes: [0]
+
+  device_init:
+    - ['status.request']
+    - [0x39, 0xaa, 'settings.mic_side_tone']
+    - [0x3c, 0xaa, 'settings.pm_shutdown']
+    - [0x90, 0xaa]  # save
+
+  # NOTE: response format for 0x41/0x40 requests is unusual (short non-echoed packets).
+  # starts_with matching and byte positions require hardware verification.
+  status:
+    request: 0x41aa
+    response_mapping:
+      - starts_with: 0x41aa
+        headset_power_status: 0x00
+
+      - starts_with: 0x40aa
+        headset_battery_charge: 0x00
+
+    representation:
+      headset:
+        - headset_power_status
+        - headset_battery_charge
+
+  online_status:
+    status_variable: headset_power_status
+    online_value: online
+
+  settings:
+    microphone:
+      mic_side_tone:
+        type: slider
+        min: 0x00
+        max: 0x09
+        step: 1
+        min_label: off
+        max_label: perc_100
+        default: 0x00
+        update_sequence: [0x39, 0xaa, 'value']
+    power_management:
+      # Value sent in 10-minute increments (minutes / 10).
+      pm_shutdown:
+        type: button_group
+        values_mapping:
+          0x00: never
+          0x01: 10_minutes
+          0x02: 20_minutes
+          0x03: 30_minutes
+          0x06: 60_minutes
+          0x09: 90_minutes
+        default: 0x03
+        update_sequence: [0x3c, 0xaa, 'value']
+
+  status_parse:
+    headset_power_status:
+      type: int_str_mapping
+      values:
+        0x02: offline
+        0x04: online
+    headset_battery_charge:
+      type: percentage
+      perc_min: 0
+      perc_max: 4

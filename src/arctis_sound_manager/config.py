@@ -21,6 +21,11 @@ class SettingType(Enum):
     SELECT = 'select'
     BUTTON_GROUP = 'button_group'
 
+class CommandTransport(Enum):
+    INTERRUPT = 'interrupt'       # Interrupt OUT endpoint (default)
+    CTRL_OUTPUT = 'ctrl_output'   # HID SET_REPORT, output type (wValue=0x0200)
+    CTRL_FEATURE = 'ctrl_feature' # HID SET_REPORT, feature type (wValue=0x0300)
+
 class StatusParseType(Enum):
     PERCENTAGE = 'percentage'
     ON_OFF = 'on_off'
@@ -117,6 +122,7 @@ class DeviceConfiguration:
     vendor_id: int
     product_ids: list[int]
     command_interface_index: tuple[int, int]
+    command_transport: CommandTransport
     listen_interface_indexes: list[int]
     command_padding: ConfigPadding
     device_init: list[list[int|str]] | None
@@ -134,6 +140,7 @@ class DeviceConfiguration:
         self.vendor_id = raw_config.get('vendor_id', 0)
         self.product_ids = raw_config.get('product_ids', [])
         self.command_interface_index = raw_config.get('command_interface_index', (-1, -1))
+        self.command_transport = CommandTransport(raw_config.get('command_transport', 'interrupt'))
         self.listen_interface_indexes = raw_config.get('listen_interface_indexes', [])
         
         online_status = raw_config.get('online_status', None)

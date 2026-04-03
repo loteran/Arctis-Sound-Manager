@@ -1,0 +1,144 @@
+device:
+  name: SteelSeries Arctis Nova 5 Wireless
+  vendor_id: 0x1038
+  product_ids:
+    - 0x2232 # Arctis Nova 5
+    - 0x2253 # Arctis Nova 5X
+  command_padding:
+    length: 64
+    position: end
+    filler: 0x00
+
+  command_transport: ctrl_output  # HID SET_REPORT (no interrupt OUT endpoint)
+  command_interface_index: [3, 0]
+  listen_interface_indexes: [3]
+
+  device_init:
+    - ['status.request']
+    - [0x10]
+    - [0x36]
+    - [0xae, 'settings.mic_mute_led_brightness']
+    - [0x37, 'settings.mic_volume']
+    - [0xa3, 'settings.pm_shutdown']
+    - [0xa7]
+    - [0x27, 'settings.volume_limiter']
+    - [0x39, 'settings.mic_side_tone']
+    - [0x09]
+    - [0x09]
+    - ['status.request']
+
+  status:
+    request: 0xb0
+    response_mapping:
+      - starts_with: 0xb0
+        headset_power_status: 0x01
+        bluetooth_connection: 0x02
+        headset_battery_charge: 0x03
+        cable_charging: 0x04
+
+      - starts_with: 0x36
+        wireless_mode: 0x01
+
+    representation:
+      headset:
+        - headset_power_status
+        - headset_battery_charge
+        - cable_charging
+      bluetooth:
+        - bluetooth_connection
+      wireless:
+        - wireless_mode
+
+  online_status:
+    status_variable: headset_power_status
+    online_value: online
+
+  settings:
+    headset:
+      volume_limiter:
+        type: toggle
+        values:
+          off: 0x00
+          on: 0x01
+          off_label: off
+          on_label: on
+        default: 0x00
+        update_sequence: [0x27, 'value']
+    microphone:
+      mic_volume:
+        type: slider
+        min: 0x00
+        max: 0x0f
+        step: 1
+        min_label: mic_muted
+        max_label: perc_100
+        default: 0x0f
+        update_sequence: [0x37, 'value']
+      mic_side_tone:
+        type: slider
+        min: 0x00
+        max: 0x0f
+        step: 1
+        min_label: off
+        max_label: perc_100
+        default: 0x00
+        update_sequence: [0x39, 'value']
+      mic_mute_led_brightness:
+        type: button_group
+        values_mapping:
+          0x00: off
+          0x01: low
+          0x04: medium
+          0x0a: high
+        default: 0x0a
+        update_sequence: [0xae, 'value']
+    wireless:
+      wireless_mode:
+        type: button_group
+        values_mapping:
+          0x01: speed
+          0x00: range
+        default: 0x01
+        update_sequence: [0x35, 'value']
+    power_management:
+      pm_shutdown:
+        type: button_group
+        values_mapping:
+          0x00: never
+          0x01: 1_minute
+          0x05: 5_minutes
+          0x0a: 10_minutes
+          0x0f: 15_minutes
+          0x1e: 30_minutes
+          0x2d: 45_minutes
+          0x3c: 60_minutes
+          0x4b: 75_minutes
+          0x5a: 90_minutes
+        default: 0x1e
+        update_sequence: [0xa3, 'value']
+
+  status_parse:
+    headset_power_status:
+      type: on_off
+      off: 0x02
+      on: 0x03
+    headset_battery_charge:
+      type: percentage
+      perc_min: 0
+      perc_max: 100
+    cable_charging:
+      type: int_str_mapping
+      values:
+        0x01: on
+        0x03: off
+    bluetooth_connection:
+      type: int_str_mapping
+      values:
+        0x00: off
+        0x02: disconnected
+        0x03: connected
+    wireless_mode:
+      type: int_str_mapping
+      values:
+        0x00: range
+        0x01: speed

@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from arctis_sound_manager.gui.components import DividerLine
+from arctis_sound_manager.gui.report_dialog import ReportBugDialog
 from arctis_sound_manager.gui.theme import (
     ACCENT,
     BG_BUTTON,
@@ -798,6 +799,18 @@ class HelpPage(QWidget):
             f"color: {TEXT_PRIMARY}; font-size: 28pt; font-weight: bold; background: transparent;"
         )
         title_row.addWidget(self._title_label, stretch=1)
+
+        # Report a bug button
+        _BTN = (
+            "QPushButton {{ background-color: {bg}; color: {fg}; border: none; "
+            "border-radius: 6px; padding: 6px 14px; font-size: 9pt; }}"
+            "QPushButton:hover {{ background-color: {hover}; }}"
+        )
+        report_btn = QPushButton("Report a bug")
+        report_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        report_btn.setStyleSheet(_BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, hover=BG_BUTTON_HOVER))
+        report_btn.clicked.connect(lambda: ReportBugDialog(parent=self).exec())
+        title_row.addWidget(report_btn)
 
         # Language buttons
         lang_row = QHBoxLayout()

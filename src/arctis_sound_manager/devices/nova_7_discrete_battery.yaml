@@ -1,0 +1,184 @@
+device:
+  name: SteelSeries Arctis Nova 7 (Gen 1)
+  vendor_id: 0x1038
+  product_ids:
+    - 0x2202 # Arctis Nova 7
+    - 0x2206 # Arctis Nova 7X
+    - 0x223a # Arctis Nova 7 Diablo IV Edition
+    - 0x227a # Arctis Nova 7 WoW Edition
+    - 0x22a4 # Arctis Nova 7X (variant)
+  command_padding:
+    length: 64
+    position: end
+    filler: 0x00
+
+  command_transport: ctrl_output  # HID SET_REPORT (no interrupt OUT endpoint)
+  command_interface_index: [3, 0]
+  listen_interface_indexes: [3]
+
+  device_init:
+    - [0x10]
+    - ['status.request']
+    - [0xa3, 'settings.pm_shutdown']
+    - [0xb2, 0x00]
+    - [0x3a, 'settings.volume_limiter']
+    - [0xae, 'settings.mic_mute_led_brightness']
+    - [0x37, 'settings.mic_volume']
+    - [0xb3, 'settings.bluetooth_auto_mute']
+    - [0x39, 'settings.mic_side_tone']
+    - [0x09]
+    - ['status.request']
+    - [0x09]
+
+  status:
+    request: 0xb0
+    response_mapping:
+      - starts_with: 0x45
+        media_mix: 0x01
+        chat_mix: 0x02
+
+      - starts_with: 0xb0
+        headset_power_status: 0x01
+        headset_battery_charge: 0x02
+        cable_charging: 0x03
+        media_mix: 0x04
+        chat_mix: 0x05
+        bluetooth_connection: 0x06
+        bluetooth_power_status: 0x07
+        bluetooth_auto_mute: 0x08
+        mic_status: 0x09
+
+    representation:
+      headset:
+        - headset_power_status
+        - headset_battery_charge
+        - chat_mix
+        - media_mix
+        - cable_charging
+      mic:
+        - mic_status
+      bluetooth:
+        - bluetooth_power_status
+        - bluetooth_auto_mute
+        - bluetooth_connection
+
+  online_status:
+    status_variable: headset_power_status
+    online_value: online
+
+  settings:
+    headset:
+      volume_limiter:
+        type: toggle
+        values:
+          off: 0x00
+          on: 0x01
+          off_label: off
+          on_label: on
+        default: 0x00
+        update_sequence: [0x3a, 'value']
+      bluetooth_auto_mute:
+        type: button_group
+        values_mapping:
+          0x00: none
+          0x01: -12_db
+          0x02: mute
+        default: 0x00
+        update_sequence: [0xb3, 'value']
+      bluetooth_power_status:
+        type: toggle
+        values:
+          off: 0x00
+          on: 0x01
+          off_label: off
+          on_label: on
+        default: 0x00
+        update_sequence: [0xb2, 'value']
+    microphone:
+      mic_volume:
+        type: slider
+        min: 0x00
+        max: 0x07
+        step: 1
+        min_label: mic_muted
+        max_label: perc_100
+        default: 0x07
+        update_sequence: [0x37, 'value']
+      mic_side_tone:
+        type: button_group
+        values_mapping:
+          0x00: off
+          0x01: low
+          0x02: medium
+          0x03: high
+        default: 0x00
+        update_sequence: [0x39, 'value']
+      mic_mute_led_brightness:
+        type: button_group
+        values_mapping:
+          0x00: off
+          0x01: low
+          0x02: medium
+          0x03: high
+        default: 0x03
+        update_sequence: [0xae, 'value']
+    power_management:
+      pm_shutdown:
+        type: button_group
+        values_mapping:
+          0x00: never
+          0x01: 1_minute
+          0x05: 5_minutes
+          0x0a: 10_minutes
+          0x0f: 15_minutes
+          0x1e: 30_minutes
+          0x2d: 45_minutes
+          0x3c: 60_minutes
+          0x4b: 75_minutes
+          0x5a: 90_minutes
+        default: 0x1e
+        update_sequence: [0xa3, 'value']
+
+  status_parse:
+    headset_power_status:
+      type: on_off
+      off: 0x02
+      on: 0x03
+    headset_battery_charge:
+      type: percentage
+      perc_min: 0
+      perc_max: 4
+    cable_charging:
+      type: int_str_mapping
+      values:
+        0x01: on
+        0x03: off
+    media_mix:
+      type: percentage
+      perc_min: 0
+      perc_max: 100
+    chat_mix:
+      type: percentage
+      perc_min: 0
+      perc_max: 100
+    bluetooth_connection:
+      type: int_str_mapping
+      values:
+        0x00: off
+        0x02: connected
+        0x03: disconnected
+    bluetooth_power_status:
+      type: on_off
+      off: 0x01
+      on: 0x00
+    bluetooth_auto_mute:
+      type: int_str_mapping
+      values:
+        0x00: off
+        0x01: -12db
+        0x02: on
+    mic_status:
+      type: int_str_mapping
+      values:
+        0x01: muted
+        0x00: unmuted

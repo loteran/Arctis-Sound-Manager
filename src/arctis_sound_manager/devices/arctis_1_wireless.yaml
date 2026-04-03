@@ -1,0 +1,72 @@
+device:
+  name: SteelSeries Arctis 1/7X/7P Wireless
+  vendor_id: 0x1038
+  product_ids:
+    - 0x12b3 # Arctis 1 Wireless
+    - 0x12b6 # Arctis 1 Xbox
+    - 0x12d7 # Arctis 7X
+    - 0x12d5 # Arctis 7P
+  command_padding:
+    length: 31
+    position: end
+    filler: 0x00
+
+  # Vendor HID interface 3 (usagepage 0xff43, usageid 0x202) — interrupt OUT endpoint
+  command_interface_index: [3, 0]
+  listen_interface_indexes: [3]
+
+  device_init:
+    - ['status.request']
+    - [0x06, 0x35, 0x01, 0x00, 'settings.mic_side_tone']
+    - [0x06, 0x53, 'settings.pm_shutdown']
+    - [0x06, 0x09]  # save
+
+  status:
+    request: 0x0612
+    response_mapping:
+      - starts_with: 0x0612
+        headset_power_status: 0x02
+        headset_battery_charge: 0x03
+
+    representation:
+      headset:
+        - headset_power_status
+        - headset_battery_charge
+
+  online_status:
+    status_variable: headset_power_status
+    online_value: online
+
+  settings:
+    microphone:
+      mic_side_tone:
+        type: slider
+        min: 0x00
+        max: 0x12
+        step: 1
+        min_label: off
+        max_label: perc_100
+        default: 0x00
+        update_sequence: [0x06, 0x35, 0x01, 0x00, 'value']
+    power_management:
+      pm_shutdown:
+        type: button_group
+        values_mapping:
+          0x00: never
+          0x0a: 10_minutes
+          0x0f: 15_minutes
+          0x1e: 30_minutes
+          0x3c: 60_minutes
+          0x5a: 90_minutes
+        default: 0x1e
+        update_sequence: [0x06, 0x53, 'value']
+
+  status_parse:
+    headset_power_status:
+      type: on_off
+      off: 0x01
+      on: 0x00
+    headset_battery_charge:
+      type: percentage
+      perc_min: 0
+      perc_max: 100
