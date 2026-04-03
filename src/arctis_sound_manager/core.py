@@ -467,7 +467,10 @@ class CoreEngine:
             except usb.core.USBError as e:
                 self.logger.warning(f"Error re-attaching kernel driver: {e}")
 
-        self.redirect_audio_on_disconnect()
+        try:
+            self.redirect_audio_on_disconnect()
+        except Exception as e:
+            self.logger.warning(f"Error redirecting audio on disconnect: {e}")
 
         with self._device_lock:
             self.usb_device = None
