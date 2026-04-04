@@ -1,3 +1,12 @@
+arctis-sound-manager (1.0.12-1) noble; urgency=medium
+
+  * Fix: LADSPA mic processing (noise gate, RNNoise, compressor) silently broken — missing = in PipeWire control syntax
+  * Fix: check_and_fix_stale_configs output channel routing
+  * Fix: get_physical_source() now retries 15x on PulseAudio error
+  * Fix: D-Bus async methods guard against connection failure, polling loop survives transient errors
+
+ -- loteran <axel.valadon@gmail.com>  Fri, 04 Apr 2026 00:00:00 +0200
+
 arctis-sound-manager (1.0.11-1) noble; urgency=medium
 
   * HeSuVi universal surround: Spatial Audio now works on all supported headsets

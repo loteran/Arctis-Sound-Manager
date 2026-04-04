@@ -48,8 +48,9 @@ class DbusWrapper(QObject):
 
     @staticmethod
     async def request_list_options_async(list_name: str, qt_signal: SignalInstance):
-        dbus_bus = await MessageBus().connect()
+        dbus_bus = None
         try:
+            dbus_bus = await MessageBus().connect()
             reply = await dbus_bus.call(Message(
                 destination=DBUS_BUS_NAME,
                 path=DBUS_SETTINGS_OBJECT_PATH,
@@ -72,7 +73,8 @@ class DbusWrapper(QObject):
         except Exception as e:
             DbusWrapper.logger.error('Error in request_list_options: %s', e)
         finally:
-            dbus_bus.disconnect()
+            if dbus_bus is not None:
+                dbus_bus.disconnect()
 
     @staticmethod
     def send_eq_command(bands: list[int]) -> None:
@@ -84,8 +86,9 @@ class DbusWrapper(QObject):
 
     @staticmethod
     async def send_eq_command_async(bands: list[int]):
-        dbus_bus = await MessageBus().connect()
+        dbus_bus = None
         try:
+            dbus_bus = await MessageBus().connect()
             await dbus_bus.call(Message(
                 destination=DBUS_BUS_NAME,
                 path=DBUS_SETTINGS_OBJECT_PATH,
@@ -98,7 +101,8 @@ class DbusWrapper(QObject):
         except Exception as e:
             DbusWrapper.logger.error('Error in send_eq_command: %s', e)
         finally:
-            dbus_bus.disconnect()
+            if dbus_bus is not None:
+                dbus_bus.disconnect()
 
     @staticmethod
     def get_eq_bands(qt_signal: SignalInstance) -> None:
@@ -110,8 +114,9 @@ class DbusWrapper(QObject):
 
     @staticmethod
     async def get_eq_bands_async(qt_signal: SignalInstance):
-        dbus_bus = await MessageBus().connect()
+        dbus_bus = None
         try:
+            dbus_bus = await MessageBus().connect()
             reply = await dbus_bus.call(Message(
                 destination=DBUS_BUS_NAME,
                 path=DBUS_SETTINGS_OBJECT_PATH,
@@ -124,7 +129,8 @@ class DbusWrapper(QObject):
         except Exception as e:
             DbusWrapper.logger.error('Error in get_eq_bands: %s', e)
         finally:
-            dbus_bus.disconnect()
+            if dbus_bus is not None:
+                dbus_bus.disconnect()
 
     @staticmethod
     def change_setting(name: str, value: int|bool|str) -> None:
@@ -136,8 +142,9 @@ class DbusWrapper(QObject):
 
     @staticmethod
     async def change_setting_async(name: str, value: int|bool|str):
-        dbus_bus = await MessageBus().connect()
+        dbus_bus = None
         try:
+            dbus_bus = await MessageBus().connect()
             await dbus_bus.call(Message(
                 destination=DBUS_BUS_NAME,
                 path=DBUS_SETTINGS_OBJECT_PATH,
@@ -150,7 +157,8 @@ class DbusWrapper(QObject):
         except Exception as e:
             DbusWrapper.logger.error('Error in change_setting: %s', e)
         finally:
-            dbus_bus.disconnect()
+            if dbus_bus is not None:
+                dbus_bus.disconnect()
 
     def request_status_thread(self, frequency_seconds: int):
         asyncio.run(self.dbus_request_async(
@@ -174,8 +182,9 @@ class DbusWrapper(QObject):
 
     async def dbus_request_async(self, sig: SignalInstance, freq: int, destination: str, path: str, interface: str, member: str):
         while not hasattr(self, '_stopping'):
-            dbus_bus = await MessageBus().connect()
+            dbus_bus = None
             try:
+                dbus_bus = await MessageBus().connect()
                 reply = await dbus_bus.call(Message(
                     destination=destination,
                     path=path,
@@ -195,7 +204,8 @@ class DbusWrapper(QObject):
             except Exception as e:
                 self.logger.error('Error in dbus_request: %s', e)
             finally:
-                dbus_bus.disconnect()
+                if dbus_bus is not None:
+                    dbus_bus.disconnect()
 
             if freq == 0:
                 return

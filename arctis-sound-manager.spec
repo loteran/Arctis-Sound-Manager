@@ -1,5 +1,5 @@
 Name:           arctis-sound-manager
-Version:        1.0.11
+Version:        1.0.12
 Release:        1%{?dist}
 Summary:        Linux GUI for SteelSeries Arctis headsets
 
@@ -147,6 +147,11 @@ udevadm control --reload-rules || :
 %{_datadir}/%{name}/
 
 %changelog
+* Fri Apr 04 2026 loteran <https://github.com/loteran> - 1.0.12-1
+- Fix: LADSPA mic processing (noise gate, RNNoise, compressor) silently broken — missing = in PipeWire control syntax
+- Fix: get_physical_source() retries 15x on PulseAudio error
+- Fix: D-Bus polling loop survives transient connection errors
+
 * Tue Apr 01 2026 loteran <https://github.com/loteran> - 1.0.7-1
 - Add one-click auto-update from GUI
 

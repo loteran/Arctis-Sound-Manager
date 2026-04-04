@@ -92,13 +92,18 @@ class PulseAudioManager:
 
         return sink
 
-    def get_physical_source(self, vendor_id: int = STEELSERIES_VENDOR_ID, product_id: int | list[int] | None = None) -> 'TypedPulseSinkInfo | None':
+    def get_physical_source(self, vendor_id: int = STEELSERIES_VENDOR_ID, product_id: int | list[int] | None = None) -> 'pulsectl.PulseSourceInfo | None':
         """Return the first physical ALSA source (microphone) matching the given device IDs."""
-        try:
-            sources = self.pulse.source_list()
-        except pulsectl.PulseError as e:
-            self.logger.error(f'Error getting source list: {e}')
-            return None
+        retry_attempts = 15
+        sources: list = []
+        while retry_attempts > 0:
+            try:
+                sources = self.pulse.source_list()
+                break
+            except pulsectl.PulseError as e:
+                self.logger.error(f'Error getting source list: {e}')
+                retry_attempts -= 1
+                time.sleep(1)
 
         def check_prod_id(product_id_attr: str) -> bool:
             if product_id is None:

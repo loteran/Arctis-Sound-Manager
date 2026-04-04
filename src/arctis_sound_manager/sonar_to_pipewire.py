@@ -532,10 +532,10 @@ def generate_sonar_micro_conf(
         threshold = max(-60.0, min(-10.0, ng.get("value", -40.0)))
         node_lines.append(
             f"                    {{ type = ladspa  name = ngate  plugin = gate_1410  label = gate\n"
-            f"                      control = {{ \"Threshold (dB)\" {threshold:.1f}"
-            f"  \"Attack (ms)\" 5.0  \"Hold (ms)\" 50.0  \"Decay (ms)\" 100.0"
-            f"  \"Range (dB)\" -90.0"
-            f"  \"Output select (-1 = key listen, 0 = gate, 1 = bypass)\" 0"
+            f"                      control = {{ \"Threshold (dB)\" = {threshold:.1f}"
+            f"  \"Attack (ms)\" = 5.0  \"Hold (ms)\" = 50.0  \"Decay (ms)\" = 100.0"
+            f"  \"Range (dB)\" = -90.0"
+            f"  \"Output select (-1 = key listen, 0 = gate, 1 = bypass)\" = 0"
             f" }} }}"
         )
         link_lines.append(_smart_link("ngate", True))
@@ -548,7 +548,7 @@ def generate_sonar_micro_conf(
         node_lines.append(
             f"                    {{ type = ladspa  name = rnnoise\n"
             f"                      plugin = librnnoise_ladspa  label = noise_suppressor_mono\n"
-            f"                      control = {{ \"VAD Threshold (%)\" {vad_threshold:.1f} }} }}"
+            f"                      control = {{ \"VAD Threshold (%)\" = {vad_threshold:.1f} }} }}"
         )
         link_lines.append(_smart_link("rnnoise", True))
         last_node = "rnnoise"
@@ -563,12 +563,12 @@ def generate_sonar_micro_conf(
         comp_makeup = comp_val * 10.0                # 0 → 10 dB
         node_lines.append(
             f"                    {{ type = ladspa  name = comp  plugin = sc4m_1916  label = sc4m\n"
-            f"                      control = {{ \"RMS/peak\" 0.5"
-            f"  \"Attack time (ms)\" 10.0  \"Release time (ms)\" 150.0"
-            f"  \"Threshold level (dB)\" {comp_threshold:.1f}"
-            f"  \"Ratio (1:n)\" {comp_ratio:.1f}"
-            f"  \"Knee radius (dB)\" 6.0"
-            f"  \"Makeup gain (dB)\" {comp_makeup:.1f}"
+            f"                      control = {{ \"RMS/peak\" = 0.5"
+            f"  \"Attack time (ms)\" = 10.0  \"Release time (ms)\" = 150.0"
+            f"  \"Threshold level (dB)\" = {comp_threshold:.1f}"
+            f"  \"Ratio (1:n)\" = {comp_ratio:.1f}"
+            f"  \"Knee radius (dB)\" = 6.0"
+            f"  \"Makeup gain (dB)\" = {comp_makeup:.1f}"
             f" }} }}"
         )
         link_lines.append(_smart_link("comp", True))
@@ -861,7 +861,7 @@ def check_and_fix_stale_configs() -> bool:
             if needs_regen:
                 channel = name.replace("sonar-", "").replace("-eq.conf", "")
                 sink_name = f"effect_input.sonar-{channel}-eq"
-                target = {"game": _SURROUND, "chat": _get_physical_out()}.get(channel, _get_physical_out())
+                target = {"game": _SURROUND, "chat": _get_physical_out(), "output": ""}.get(channel, _get_physical_out())
                 channels = _CHANNEL_CHANNELS.get(channel, 2)
                 position = _CHANNEL_POSITION.get(channel, "FL FR")
                 _write_conf(path, _bypass_conf(sink_name, target, channels, position))
