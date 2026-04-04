@@ -1,3 +1,11 @@
+arctis-sound-manager (1.0.11-1) noble; urgency=medium
+
+  * HeSuVi universal surround: Spatial Audio now works on all supported headsets
+  * Device-aware PipeWire configs: ALSA nodes discovered dynamically, fixing audio routing for Nova 5, Nova 7, Arctis 7/9/Pro Wireless
+  * Fix: audio routing was hardcoded for Nova Pro Wireless, breaking EQ/surround on other devices
+
+ -- loteran <axel.valadon@gmail.com>  Fri, 04 Apr 2026 00:00:00 +0200
+
 arctis-sound-manager (1.0.7-1) noble; urgency=medium
 
   * One-click auto-update button in update notification banner
