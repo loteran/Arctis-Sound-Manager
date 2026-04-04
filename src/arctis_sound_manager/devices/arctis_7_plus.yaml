@@ -54,6 +54,9 @@ device:
     status_variable: headset_power_status
     online_value: online
 
+  audio:
+    spatial_engine: hesuvi
+
   settings:
     microphone:
       mic_volume:

@@ -38,6 +38,10 @@ device:
         - chat_mix
         - media_mix
 
+
+  audio:
+    spatial_engine: hesuvi
+
   settings:
     microphone:
       mic_side_tone:

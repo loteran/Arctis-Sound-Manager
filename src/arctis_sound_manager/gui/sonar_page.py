@@ -932,11 +932,15 @@ class SonarChannelWidget(QWidget):
             scl.setSpacing(0)
 
             if channel == "game":
+                from arctis_sound_manager import device_state as _ds
+                _has_spatial = _ds.get_spatial_engine() != "none"
                 self._spatial = SpatialAudioWidget()
+                self._spatial.setVisible(_has_spatial)
                 scl.addWidget(self._spatial)
                 sep = QFrame()
                 sep.setFrameShape(QFrame.Shape.HLine)
                 sep.setStyleSheet(f"background: {BORDER}; border: none; max-height: 1px;")
+                sep.setVisible(_has_spatial)
                 scl.addWidget(sep)
 
             self._boost = BoostVolumeWidget()

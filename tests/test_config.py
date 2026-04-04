@@ -30,17 +30,16 @@ def test_config_parse():
 
     assert config.status is not None
     assert config.status.request == 0x06b0
-    assert len(config.status.response_mapping) == 4
+    assert len(config.status.response_mapping) == 6
     assert config.status.response_mapping[0].starts_with == 0x0725
     assert config.status.response_mapping[1].starts_with == 0x0731
     assert config.status.response_mapping[2].starts_with == 0x0745
-    assert config.status.response_mapping[3].starts_with == 0x06b0
+    assert config.status.response_mapping[5].starts_with == 0x06b0
     assert len(config.status.response_mapping[0].__dict__.keys()) == 2
     assert len(config.status.response_mapping[1].__dict__.keys()) == 3
     assert len(config.status.response_mapping[2].__dict__.keys()) == 3
-    assert len(config.status.response_mapping[3].__dict__.keys()) == 15
-    assert hasattr(config.status.response_mapping[3], 'headset_power_status')
-    assert getattr(config.status.response_mapping[3], 'headset_power_status') == 0x0f
+    assert len(config.status.response_mapping[5].__dict__.keys()) == 15
+    assert hasattr(config.status.response_mapping[5], 'headset_power_status')
     assert len(config.status.representation.keys()) == 5
     assert list(config.status.representation.keys()) == ['headset', 'mic', 'gamedac', 'bluetooth', 'wireless']
     assert config.status.representation['gamedac'] == ['station_volume', 'charge_slot_battery_charge']

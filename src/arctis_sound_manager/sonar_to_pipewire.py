@@ -24,11 +24,32 @@ _PHYSICAL_OUT = "alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.analog-
 _PHYSICAL_IN  = "alsa_input.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.mono-fallback"
 _SURROUND     = "effect_input.virtual-surround-7.1-hesuvi"
 
-_CHANNEL_TARGET: dict[str, str] = {
-    "game":   _SURROUND,       # 8ch → HeSuVi 7.1 virtualisation → 2ch → ALSA
-    "chat":   _PHYSICAL_OUT,   # 2ch stereo direct
-    "output": "",              # set dynamically from user settings
-}
+
+def _get_physical_out() -> str:
+    """Return the ALSA output node name for the currently connected device."""
+    try:
+        from arctis_sound_manager import device_state as _ds
+        return _ds.get_physical_out()
+    except Exception:
+        return _PHYSICAL_OUT
+
+
+def _get_physical_in() -> str:
+    """Return the ALSA input node name for the currently connected device."""
+    try:
+        from arctis_sound_manager import device_state as _ds
+        return _ds.get_physical_in()
+    except Exception:
+        return _PHYSICAL_IN
+
+
+def _get_device_name() -> str:
+    """Return the short device name for the currently connected device."""
+    try:
+        from arctis_sound_manager import device_state as _ds
+        return _ds.get_device_name()
+    except Exception:
+        return "Arctis Nova Pro Wireless"
 
 _CHANNEL_CHANNELS: dict[str, int] = {
     "game":   8,
@@ -40,6 +61,12 @@ _CHANNEL_POSITION: dict[str, str] = {
     "game":   "FL FR FC LFE RL RR SL SR",
     "chat":   "FL FR",
     "output": "FL FR FC LFE RL RR SL SR",
+}
+
+# Static channel targets (game/output); chat target is device-specific → use _get_physical_out()
+_CHANNEL_TARGET: dict[str, str] = {
+    "game":   _SURROUND,
+    "output": "",
 }
 
 # Macro slider filter parameters (estimations from visual captures)
@@ -145,11 +172,15 @@ def generate_sonar_eq_conf(
 
     # Spatial audio OFF → game routes directly to physical stereo output (2ch)
     if channel == "game" and not spatial_audio:
-        target = _PHYSICAL_OUT
+        target = _get_physical_out()
         channels = 2
         position = "FL FR"
+    elif channel == "chat":
+        target = target_override or _get_physical_out()
+        channels = _CHANNEL_CHANNELS[channel]
+        position = _CHANNEL_POSITION[channel]
     else:
-        target = target_override or _CHANNEL_TARGET[channel]
+        target = target_override or _CHANNEL_TARGET.get(channel, "")
         channels = _CHANNEL_CHANNELS[channel]
         position = _CHANNEL_POSITION[channel]
 
@@ -571,7 +602,7 @@ context.modules = [
       capture.props = {{
         node.name      = "effect_input.sonar-micro-eq"
         node.passive   = true
-        target.object  = "{_PHYSICAL_IN}"
+        target.object  = "{_get_physical_in()}"
         audio.channels = 1
         audio.position = [ MONO ]
       }}
@@ -679,7 +710,7 @@ context.modules = [
       capture.props = {{
         node.name      = "effect_input.sonar-micro-eq"
         node.passive   = true
-        target.object  = "{_PHYSICAL_IN}"
+        target.object  = "{_get_physical_in()}"
         audio.channels = 1
         audio.position = [ MONO ]
       }}
@@ -718,7 +749,7 @@ def generate_virtual_sinks_conf(sonar: bool) -> str:
     modules: list[str] = []
     for sink in _VIRTUAL_SINKS:
         target = (sink["sonar_target"] if sonar and sink["sonar_target"]
-                  else _PHYSICAL_OUT)
+                  else _get_physical_out())
         # When routing to an 8ch Sonar EQ sink, allow PipeWire to remix 2ch→8ch
         dont_remix = "false" if (sonar and sink["sonar_target"]) else "true"
         modules.append(f"""\
@@ -727,7 +758,7 @@ def generate_virtual_sinks_conf(sonar: bool) -> str:
     name  = libpipewire-module-loopback
     flags = [ nofail ]
     args  = {{
-      node.description = "Arctis Nova Pro Wireless {sink['desc']}"
+      node.description = "{_get_device_name()} {sink['desc']}"
       capture.props    = {{
         node.name      = "{sink['capture']}"
         media.class    = Audio/Sink
@@ -830,7 +861,7 @@ def check_and_fix_stale_configs() -> bool:
             if needs_regen:
                 channel = name.replace("sonar-", "").replace("-eq.conf", "")
                 sink_name = f"effect_input.sonar-{channel}-eq"
-                target = _CHANNEL_TARGET.get(channel, _PHYSICAL_OUT)
+                target = {"game": _SURROUND, "chat": _get_physical_out()}.get(channel, _get_physical_out())
                 channels = _CHANNEL_CHANNELS.get(channel, 2)
                 position = _CHANNEL_POSITION.get(channel, "FL FR")
                 _write_conf(path, _bypass_conf(sink_name, target, channels, position))
@@ -856,7 +887,7 @@ def check_and_fix_stale_configs() -> bool:
     state_file = Path.home() / ".config" / "arctis_manager" / ".eq_mode"
     sonar = state_file.exists() and state_file.read_text().strip() == "sonar"
     sinks_path = _SINKS_CONF_DIR / "10-arctis-virtual-sinks.conf"
-    expected_target = ("effect_input.sonar-game-eq" if sonar else _PHYSICAL_OUT)
+    expected_target = ("effect_input.sonar-game-eq" if sonar else _get_physical_out())
     if sinks_path.exists():
         content = sinks_path.read_text()
         if f'node.target        = "{expected_target}"' not in content:
