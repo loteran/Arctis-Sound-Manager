@@ -219,7 +219,11 @@ class QSettingsWidget(QWidget):
                 widget.addItems([o['name'] for o in options])
                 option = next((o for o in options if o['id'] == value), None)
                 widget.setCurrentIndex(options.index(option or options[0]))
-            widget.currentIndexChanged.connect(lambda index: callback(config, self._option_lists[config.options_source][index]['id']))
+            def _on_select_change(index: int, cfg=config) -> None:
+                options = self._option_lists.get(cfg.options_source, [])
+                if 0 <= index < len(options):
+                    callback(cfg, options[index]['id'])
+            widget.currentIndexChanged.connect(_on_select_change)
         else:
             widget = QLabel(f'UNKNOWN TYPE: {config.type}')
 

@@ -1,3 +1,12 @@
+arctis-sound-manager (1.0.13-1) noble; urgency=medium
+
+  * Fix: DeviceConfiguration.device_init and .status always initialized (AttributeError on sparse YAMLs)
+  * Fix: SELECT widget crash — IndexError/KeyError when options not yet loaded
+  * Fix: device_state globals protected by threading.Lock
+  * Fix: PipeWire node.target omitted when empty (was invalid SPA JSON)
+
+ -- loteran <axel.valadon@gmail.com>  Fri, 04 Apr 2026 00:00:00 +0200
+
 arctis-sound-manager (1.0.12-1) noble; urgency=medium
 
   * Fix: LADSPA mic processing (noise gate, RNNoise, compressor) silently broken — missing = in PipeWire control syntax
