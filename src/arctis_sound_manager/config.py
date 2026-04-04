@@ -190,6 +190,9 @@ class DeviceConfiguration:
                 init_kwargs=init_kwargs,
             )
 
+        raw_audio = raw_config.get('audio', {})
+        self.spatial_engine: str = raw_audio.get('spatial_engine', 'hesuvi')
+
         raw_settings: dict[str, dict[str, Any]] = raw_config.get('settings', {})
         self.settings = {}
         for setting_section, settings in raw_settings.items():

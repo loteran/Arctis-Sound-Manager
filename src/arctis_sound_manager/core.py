@@ -8,13 +8,14 @@ from typing import Any, Coroutine, Literal, cast
 import usb
 from usb.core import Device
 
+from arctis_sound_manager import device_state
 from arctis_sound_manager.config import (CommandTransport,
                                          DeviceConfiguration,
                                          load_device_configurations,
                                          parsed_status)
 from arctis_sound_manager.constants import (PULSE_CHAT_NODE_NAME,
                                             PULSE_MEDIA_NODE_NAME)
-from arctis_sound_manager.pactl import PulseAudioManager
+from arctis_sound_manager.pactl import ONLY_PHYSICAL, PulseAudioManager
 from arctis_sound_manager.settings import DeviceSettings, GeneralSettings
 from arctis_sound_manager.usb_devices_monitor import USBDevicesMonitor
 from arctis_sound_manager.utils import ObservableDict
@@ -232,6 +233,27 @@ class CoreEngine:
         if self.usb_device is not None:
             self.logger.info(f"Found device {self.usb_device.idProduct:04x}:{self.usb_device.idVendor:04x} ({self.device_config.name})")
             self.kernel_detach(self.usb_device, self.device_config)
+
+        # Discover ALSA nodes for this device and update shared device state
+        _DEFAULT_OUT = "alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.analog-stereo"
+        _DEFAULT_IN  = "alsa_input.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.mono-fallback"
+        sinks = self.pa_audio_manager.get_arctis_sinks(
+            ONLY_PHYSICAL,
+            vendor_id=device_config.vendor_id,
+            product_id=self.usb_device.idProduct if self.usb_device else None,
+        )
+        physical_out = sinks[0].name if sinks else _DEFAULT_OUT
+        source = self.pa_audio_manager.get_physical_source(
+            vendor_id=device_config.vendor_id,
+            product_id=self.usb_device.idProduct if self.usb_device else None,
+        )
+        physical_in = source.name if source else _DEFAULT_IN
+        device_state.set_current_device(
+            physical_out=physical_out,
+            physical_in=physical_in,
+            spatial_engine=device_config.spatial_engine,
+            device_name=device_config.name,
+        )
 
         # Configure the device
         self.init_device()
@@ -471,6 +493,8 @@ class CoreEngine:
             self.redirect_audio_on_disconnect()
         except Exception as e:
             self.logger.warning(f"Error redirecting audio on disconnect: {e}")
+
+        device_state.clear()
 
         with self._device_lock:
             self.usb_device = None

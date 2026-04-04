@@ -43,6 +43,9 @@ device:
     status_variable: headset_power_status
     online_value: online
 
+  audio:
+    spatial_engine: hesuvi
+
   settings:
     microphone:
       # Values are device-native exponential bytes (0xC0=off, 0xFD=max).

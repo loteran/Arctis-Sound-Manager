@@ -27,6 +27,10 @@ device:
     response_mapping: []
     representation: {}
 
+
+  audio:
+    spatial_engine: hesuvi
+
   settings:
     microphone:
       mic_side_tone:
