@@ -1,8 +1,10 @@
+REPO_ROOT := $(abspath $(dir $(abspath $(lastword $(MAKEFILE_LIST))))/..)
+
 srpm:
 	dnf -y install python3-devel python3-pip python3-setuptools rpmdevtools curl
 	curl -LsSf https://astral.sh/uv/install.sh | sh
 	export PATH="$$HOME/.local/bin:$$PATH" && \
-	cd .. && \
+	cd $(REPO_ROOT) && \
 	uv build --wheel && \
 	VERSION=$$(grep '^Version:' arctis-sound-manager.spec | awk '{print $$2}') && \
 	mkdir -p .rpmbuild/SOURCES && \
