@@ -84,6 +84,14 @@ def main():
             ReportBugDialog(traceback_str=crash.get('traceback'), is_crash=True).exec()
         QTimer.singleShot(1500, _show_crash)
 
+    # ── udev rules check ──────────────────────────────────────────────────────
+    from arctis_sound_manager.udev_checker import is_udev_rules_valid
+    if not is_udev_rules_valid():
+        from arctis_sound_manager.gui.udev_dialog import UdevRulesDialog
+        def _check_udev():
+            UdevRulesDialog().exec()
+        QTimer.singleShot(500, _check_udev)
+
     # Open the window once the event loop is running.
     if not args.systray:
         QTimer.singleShot(0, q_object.open_main_window)

@@ -2,6 +2,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from argparse import ArgumentParser
 from pathlib import Path
 from typing import NamedTuple
@@ -30,14 +31,20 @@ DESKTOP_WINDOW_PATH = APPLICATIONS_PATH / 'ArctisManager.desktop'
 DESKTOP_SYSTRAY_PATH = APPLICATIONS_PATH / 'ArctisManagerSystray.desktop'
 
 def sudo_it(command: list[str]) -> int:
-    pkexec = shutil.which('pkexec')
-    if not pkexec:
-        print('pkexec not found.')
-        return 250
+    for elevator in ['pkexec', 'sudo']:
+        binary = shutil.which(elevator)
+        if not binary:
+            continue
+        try:
+            result = subprocess.run([binary, *command], check=True)
+            return result.returncode
+        except subprocess.CalledProcessError as e:
+            print(f'{elevator} failed with code {e.returncode}.')
+        except FileNotFoundError:
+            pass
 
-    result = subprocess.run(["pkexec", *command], check=True)
-
-    return result.returncode
+    print('No privilege escalation tool found (pkexec or sudo).')
+    return 250
 
 def write_udev_rules(rules_path: Path, create_directories: bool, force_write: bool) -> int:
     run_with_sudo = False
@@ -61,12 +68,7 @@ def write_udev_rules(rules_path: Path, create_directories: bool, force_write: bo
 
     if rules_path.exists() and not os.access(rules_path, os.W_OK) \
         or not rules_path.exists() and not os.access(rules_path.parent, os.W_OK):
-        print('')
-        print(f"User can't write to {rules_path}.")
-        print('Command will be executed with pkexec (root).')
-        print('')
-        input('Press Enter to continue...')
-
+        print(f"User can't write to {rules_path}. Elevating privileges (pkexec or sudo)...")
         run_with_sudo = True
     
     if not force_write and rules_path.exists():
@@ -101,13 +103,17 @@ ACTION=="remove", GOTO="local_end"
 
 LABEL="local_end"'''
     if run_with_sudo:
-        escaped_file_content = file_content.replace('"', '\\"')
-        command = ["sh", "-c", f"echo \"{escaped_file_content}\" > \"{rules_path}\""]
-        return sudo_it(command)
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.rules', delete=False) as tmp:
+            tmp.write(f'{file_content}\n')
+            tmp_path = tmp.name
+        try:
+            return sudo_it(["cp", tmp_path, str(rules_path)])
+        finally:
+            os.unlink(tmp_path)
     else:
         with rules_path.open('w') as f:
             f.write(f'{file_content}\n')
-    
+
     return 0
 
 def reload_udev_rules() -> int:
@@ -121,18 +127,19 @@ def reload_udev_rules() -> int:
         ('Trigger Rules', ["udevadm", "trigger", "--subsystem-match=usb"]),
     ]
     result = 0
-    for command in commands:
-        print(f'Phase: {command[0]}')
-        if run_with_sudo:
-            result = sudo_it(command[1])
-            if result:
-                print('- Process failed!')
-                return result
-        else:
-            result = subprocess.run(command[1], check=True).returncode
-            if result:
-                print('- Process failed!')
-                return result
+    for name, command in commands:
+        print(f'Phase: {name}')
+        try:
+            if run_with_sudo:
+                result = sudo_it(command)
+            else:
+                result = subprocess.run(command, check=True).returncode
+        except subprocess.CalledProcessError as e:
+            print(f'- Process failed with code {e.returncode}!')
+            return e.returncode
+        if result:
+            print('- Process failed!')
+            return result
 
     return result
 
