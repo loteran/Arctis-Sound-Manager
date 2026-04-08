@@ -1,0 +1,122 @@
+device:
+  name: SteelSeries Arctis Nova Pro Wired
+  vendor_id: 0x1038
+  product_ids:
+    - 0x12cb # Arctis Nova Pro Wired
+    - 0x12cd # Arctis Nova Pro Wired (Xbox)
+  command_padding:
+    length: 64
+    position: end
+    filler: 0x00
+
+  # Interface 4 is the primary HID control interface on all Nova Pro variants.
+  # Protocol is shared between wired (0x12cb/0x12cd) and wireless (0x12e0/0x12e5).
+  command_interface_index: [4, 0]
+  listen_interface_indexes: [4]
+
+  device_init:
+    - [0x06, 0x20]
+    - [0x06, 0x20]
+    - [0x06, 0x10]
+    - [0x06, 0x10]
+    - ['status.request']
+    - [0x06, 0x2e, 0x00]                          # Set EQ preset (0 = flat)
+    - [0x06, 0x27, 'settings.gain']               # Audio gain (low/high)
+    - [0x06, 0x37, 'settings.mic_volume']         # Mic volume
+    - [0x06, 0x39, 'settings.mic_side_tone']      # Sidetone
+    - [0x06, 0xbf, 'settings.mic_led_brightness'] # Mic mute LED brightness
+    - [0x06, 0x49, 0x01]                          # Enable ChatMix
+    - [0x06, 0x20]
+
+  status:
+    request: 0x06b0
+    response_mapping:
+      - starts_with: 0x0725
+        station_volume: 0x02
+
+      - starts_with: 0x0731
+        eq_band_index: 0x02
+        eq_band_value: 0x03
+
+      - starts_with: 0x0745
+        media_mix: 0x02
+        chat_mix: 0x03
+
+      - starts_with: 0x06b0
+        mic_status: 0x09
+        mic_led_brightness: 0x0b
+
+    representation:
+      headset:
+        - mic_status
+        - mic_led_brightness
+      mixer:
+        - station_volume
+        - media_mix
+        - chat_mix
+
+  audio:
+    spatial_engine: hesuvi
+
+  settings:
+    headset:
+      gain:
+        type: toggle
+        values:
+          off: 0x01
+          on: 0x02
+          off_label: low
+          on_label: high
+        default: 0x02
+        update_sequence: [0x06, 0x27, 'value']
+    microphone:
+      mic_volume:
+        type: slider
+        min: 0x01
+        max: 0x0a
+        step: 1
+        min_label: mic_muted
+        max_label: perc_100
+        default: 0x0a
+        update_sequence: [0x06, 0x37, 'value']
+      mic_side_tone:
+        type: button_group
+        values_mapping:
+          0x00: 'off'
+          0x01: low
+          0x02: medium
+          0x03: high
+        default: 0x00
+        update_sequence: [0x06, 0x39, 'value']
+      mic_led_brightness:
+        type: slider
+        min: 0x01
+        max: 0x0a
+        step: 1
+        min_label: perc_10
+        max_label: perc_100
+        default: 0x0a
+        update_sequence: [0x06, 0xbf, 'value']
+
+  status_parse:
+    station_volume:
+      type: percentage
+      perc_min: 56
+      perc_max: 0
+    media_mix:
+      type: percentage
+      perc_min: 0
+      perc_max: 100
+    chat_mix:
+      type: percentage
+      perc_min: 0
+      perc_max: 100
+    mic_status:
+      type: int_str_mapping
+      values:
+        0x01: muted
+        0x00: unmuted
+    mic_led_brightness:
+      type: percentage
+      perc_min: 0
+      perc_max: 10
