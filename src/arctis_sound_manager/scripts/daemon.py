@@ -20,6 +20,10 @@ async def main_async():
     logger.info(f'-{"v " + project_version():>27}  -')
     logger.info('-------------------------------')
 
+    from arctis_sound_manager.udev_checker import is_udev_rules_valid
+    if not is_udev_rules_valid():
+        logger.warning('udev rules are missing or invalid — USB access may fail (errno 13). Run: sudo asm-cli udev write-rules --force --reload')
+
     dbus_manager = DbusManager.getInstance()
     core_engine = CoreEngine()
 
