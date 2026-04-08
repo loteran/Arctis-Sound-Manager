@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.15] - 8 April 2026
+
+### Fixed
+
+- **Context-aware privilege elevation** (`sudo_it`): the elevation tool is now chosen based on the execution context rather than tried blindly in a fixed order:
+  - **Terminal (TTY)** → `sudo` first (native prompt), then graphical tools as fallback
+  - **GUI / no TTY** → DE-specific graphical tools (`kdesu` on KDE, `lxqt-sudo` on LXQt) then `pkexec` — `sudo` is never attempted without a TTY
+  - **Headless / no display** → `sudo` only (service context, NOPASSWD sudoers)
+  - Prints an actionable hint when no tool is found in headless context
+
 ## [1.0.14] - 8 April 2026
 
 ### Added

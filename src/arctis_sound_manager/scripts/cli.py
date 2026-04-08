@@ -30,8 +30,54 @@ APPLICATIONS_PATH = Path().home() / '.local' / 'share' / 'applications'
 DESKTOP_WINDOW_PATH = APPLICATIONS_PATH / 'ArctisManager.desktop'
 DESKTOP_SYSTRAY_PATH = APPLICATIONS_PATH / 'ArctisManagerSystray.desktop'
 
+def _has_tty() -> bool:
+    """Returns True if stdin is a real terminal (CLI context)."""
+    try:
+        return os.isatty(sys.stdin.fileno())
+    except Exception:
+        return False
+
+
+def _is_graphical() -> bool:
+    """Returns True if a graphical display server is available."""
+    return bool(os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY'))
+
+
+def _graphical_elevators() -> list[str]:
+    """
+    Returns an ordered list of graphical elevation tools for the current
+    desktop environment. pkexec (polkit) is the universal fallback.
+    """
+    desktop = os.environ.get('XDG_CURRENT_DESKTOP', '').lower()
+    tools: list[str] = []
+    if 'kde' in desktop:
+        tools += ['kdesu', 'kdesudo']
+    elif 'lxqt' in desktop:
+        tools += ['lxqt-sudo']
+    tools.append('pkexec')
+    return tools
+
+
 def sudo_it(command: list[str]) -> int:
-    for elevator in ['pkexec', 'sudo']:
+    """
+    Run *command* with elevated privileges, picking the right tool based on
+    the execution context:
+
+    - Terminal (TTY present)  → sudo first, graphical tools as fallback
+    - GUI (display, no TTY)   → graphical tools only (pkexec / DE-specific)
+    - Headless (no TTY/display) → sudo only (expects NOPASSWD or service context)
+    """
+    has_tty = _has_tty()
+    graphical = _is_graphical()
+
+    if has_tty:
+        elevators = ['sudo'] + _graphical_elevators()
+    elif graphical:
+        elevators = _graphical_elevators()
+    else:
+        elevators = ['sudo']
+
+    for elevator in elevators:
         binary = shutil.which(elevator)
         if not binary:
             continue
@@ -43,7 +89,9 @@ def sudo_it(command: list[str]) -> int:
         except FileNotFoundError:
             pass
 
-    print('No privilege escalation tool found (pkexec or sudo).')
+    print('No working privilege escalation tool found.')
+    if not has_tty and not graphical:
+        print('Hint: configure sudoers NOPASSWD or run manually: sudo asm-cli udev write-rules --force --reload')
     return 250
 
 def write_udev_rules(rules_path: Path, create_directories: bool, force_write: bool) -> int:
