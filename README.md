@@ -58,6 +58,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 | Arctis 9 Wireless | ⚠️ | ⚠️ | 12c2 |
 | Arctis Pro Wireless | ⚠️ | ⚠️ | 1290 |
 | **Arctis Nova Pro Wireless / X** | ✅ | ✅ | 12e0, 12e5 |
+| **Arctis Nova Pro Wired / Xbox Wired** | ⚠️ | ⚠️ | 12cb, 12cd |
 | Arctis Nova 3 | ⚠️ | ⚠️ | 12ec |
 | Arctis Nova 5 / 5X | ⚠️ | ⚠️ | 2232, 2253 |
 | Arctis Nova 7 Gen 1 | ⚠️ | ⚠️ | 2202, 2206, 223a, 227a, 22a4 |
@@ -162,6 +163,12 @@ After installation, launch the GUI from your application menu or run:
 ```bash
 asm-gui
 ```
+
+> **USB permissions**: if the udev rules were not applied correctly during installation (e.g. the administrator prompt was dismissed), the GUI will show a dialog at startup with an **Install rules** button to fix this automatically. You can also run it manually:
+> ```bash
+> sudo asm-cli udev write-rules --force --reload
+> ```
+> Then unplug and replug your headset.
 
 ---
 
@@ -272,13 +279,15 @@ src/arctis_sound_manager/
 │   ├── sonar_page.py      # Sonar EQ UI (Game/Chat/Micro tabs, presets, Spatial Audio, Boost)
 │   ├── eq_curve_widget.py # Interactive parametric EQ curve widget (biquad RBJ)
 │   ├── anc_widget.py      # ANC / Transparent mode indicator
+│   ├── udev_dialog.py     # Startup dialog when udev rules are missing
 │   ├── help_page.py       # Built-in user manual (EN/FR/ES)
 │   ├── components.py      # Reusable widgets
 │   └── theme.py           # Color constants
 ├── sonar_to_pipewire.py   # PipeWire filter-chain config generator (Sonar EQ)
 ├── pw_utils.py            # Native PipeWire stream detection
 ├── pactl.py               # PulseAudio virtual sink management
-└── devices/               # Per-device configuration files
+├── udev_checker.py        # udev rules validation (used at GUI/daemon startup)
+└── devices/               # Per-device configuration files (one YAML per headset)
 
 scripts/
 ├── install.sh                              # Main installer
