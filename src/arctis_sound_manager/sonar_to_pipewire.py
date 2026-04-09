@@ -825,7 +825,9 @@ def check_and_fix_stale_configs() -> bool:
     1. Configs using the broken ``label = gain`` builtin (PipeWire 1.6.x).
     2. Sonar configs left in ``pipewire.conf.d/`` (must be in
        ``filter-chain.conf.d/`` — restarting pipewire is too disruptive).
-    3. Configs with wrong channel count (2ch game should be 8ch).
+    3. 2ch game EQ when spatial audio is ON (must be 8ch for HeSuVi).
+    4. Virtual sink targets out of sync with current EQ mode.
+    5. HeSuVi config with stale ``node.target`` (wrong physical output).
 
     Returns True if any config was regenerated or cleaned.
     """
@@ -852,10 +854,19 @@ def check_and_fix_stale_configs() -> bool:
                 log.warning("Stale config (%s uses 'label = gain'), regenerating", name)
                 needs_regen = True
 
-            # Game EQ must be 8ch for HeSuVi virtual surround
+            # Game EQ must be 8ch for HeSuVi virtual surround — but only if spatial audio is ON.
+            # When spatial audio is disabled, 2ch game EQ is intentional (routes to physical out).
             if name == "sonar-game-eq.conf" and "audio.channels = 2" in content:
-                log.warning("Stale config (%s uses 2ch, should be 8ch), regenerating", name)
-                needs_regen = True
+                try:
+                    import json as _json
+                    _spatial_file = Path.home() / ".config" / "arctis_manager" / "sonar_spatial_audio.json"
+                    _spatial = _json.loads(_spatial_file.read_text()) if _spatial_file.exists() else {}
+                    _spatial_on = _spatial.get("enabled", True)
+                except Exception:
+                    _spatial_on = True
+                if _spatial_on:
+                    log.warning("Stale config (%s uses 2ch, should be 8ch), regenerating", name)
+                    needs_regen = True
 
             if needs_regen:
                 channel = name.replace("sonar-", "").replace("-eq.conf", "")
@@ -897,6 +908,29 @@ def check_and_fix_stale_configs() -> bool:
         log.warning("Virtual sinks config missing, generating")
         generate_virtual_sinks_conf(sonar=sonar)
         fixed = True
+
+    # Ensure HeSuVi config targets the current physical output (catches configs written
+    # with the old hardcoded _PHYSICAL_OUT constant before v1.0.23).
+    if sonar:
+        try:
+            import json as _json
+            _spatial_file = Path.home() / ".config" / "arctis_manager" / "sonar_spatial_audio.json"
+            _spatial = _json.loads(_spatial_file.read_text()) if _spatial_file.exists() else {}
+            _spatial_on = _spatial.get("enabled", True)
+        except Exception:
+            _spatial = {}
+            _spatial_on = True
+        if _spatial_on:
+            hesuvi_path = _CONF_DIR / "sink-virtual-surround-7.1-hesuvi.conf"
+            if hesuvi_path.exists():
+                hesuvi_content = hesuvi_path.read_text()
+                if f'node.target        = "{_get_physical_out()}"' not in hesuvi_content:
+                    log.warning("HeSuVi config has stale node.target, regenerating")
+                    generate_hesuvi_conf(
+                        immersion_pct=_spatial.get("immersion", 50),
+                        distance_pct=_spatial.get("distance", 50),
+                    )
+                    fixed = True
 
     return fixed
 
@@ -1080,7 +1114,7 @@ context.modules = [
       }}
       playback.props = {{
         node.name          = "effect_output.virtual-surround-7.1-hesuvi"
-        node.target        = "{_PHYSICAL_OUT}"
+        node.target        = "{_get_physical_out()}"
         node.dont-fallback = true
         node.linger        = true
         audio.channels     = 2
