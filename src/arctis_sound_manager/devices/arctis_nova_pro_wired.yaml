@@ -5,12 +5,14 @@ device:
     - 0x12cb # Arctis Nova Pro Wired
     - 0x12cd # Arctis Nova Pro Wired (Xbox)
   command_padding:
-    length: 64
+    length: 16
     position: end
     filler: 0x00
 
-  # Interface 4 is the primary HID control interface on all Nova Pro variants.
-  # Protocol is shared between wired (0x12cb/0x12cd) and wireless (0x12e0/0x12e5).
+  # Interface 4 is the primary HID control interface (confirmed via asm-cli tools arctis-devices).
+  # No interrupt OUT endpoint present — commands are sent via HID SET_REPORT (ctrl_output).
+  # MaxPacketSize for IN endpoints is 16 bytes on both interface 3 and 4.
+  command_transport: ctrl_output
   command_interface_index: [4, 0]
   listen_interface_indexes: [4]
 
