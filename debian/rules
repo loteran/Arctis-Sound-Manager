@@ -74,4 +74,6 @@ override_dh_auto_test:
 	@true
 
 override_dh_auto_clean:
-	rm -rf dist build *.egg-info debian/wheels
+	rm -rf dist build *.egg-info
+	# debian/wheels is intentionally preserved — it contains pre-built wheels
+	# shipped inside the source package so Launchpad can build without internet.

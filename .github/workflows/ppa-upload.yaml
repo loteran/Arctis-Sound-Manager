@@ -51,7 +51,12 @@ jobs:
 
       - name: Build source package
         run: |
-          debuild -S -sa -d -k"$GPG_KEY_ID"
+          # --no-pre-clean prevents dpkg-buildpackage from running
+          # debian/rules clean before packaging the source — without it,
+          # debian/wheels/ is deleted before the .debian.tar.xz is created,
+          # so Launchpad receives a source package with no wheels and cannot
+          # download them (sandboxed build environment, no internet).
+          debuild -S -sa -d -k"$GPG_KEY_ID" -- --no-pre-clean
 
       - name: Upload to PPA
         run: |
