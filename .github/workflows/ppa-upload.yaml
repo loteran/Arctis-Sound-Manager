@@ -39,8 +39,9 @@ jobs:
               print(tomllib.load(f)['project']['version'])
           ")
           SERIES="${{ matrix.series }}"
-          # Replace the first changelog entry's version and distribution
-          sed -i "1s/(.*)/(${VERSION}-1~${SERIES}1) ${SERIES}/" debian/changelog
+          # Replace the entire first line to avoid basic-regex pitfall where
+          # (.*) matches literal parens only, leaving the old series in place.
+          sed -i "1s|.*|arctis-sound-manager (${VERSION}-1~${SERIES}1) ${SERIES}; urgency=medium|" debian/changelog
 
       - name: Import GPG key
         run: |
