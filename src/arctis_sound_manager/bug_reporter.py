@@ -50,16 +50,36 @@ def collect_system_info() -> dict:
     except Exception:
         info['pipewire'] = 'unknown'
 
-    # Recent daemon logs (last 40 lines from journald)
+    # Recent daemon logs (last 100 lines from journald)
     try:
         r = subprocess.run(
             ['journalctl', '--user', '-u', 'arctis-manager.service',
-             '-n', '40', '--no-pager', '--output=short'],
+             '-n', '100', '--no-pager', '--output=short'],
             capture_output=True, text=True, timeout=5
         )
         info['logs'] = r.stdout.strip() if r.returncode == 0 else ''
     except Exception:
         info['logs'] = ''
+
+    # USB HID device info (interfaces, endpoints)
+    try:
+        r = subprocess.run(
+            ['asm-cli', 'tools', 'arctis-devices'],
+            capture_output=True, text=True, timeout=5
+        )
+        info['usb_hid'] = r.stdout.strip() if r.returncode == 0 else r.stderr.strip()
+    except Exception:
+        info['usb_hid'] = ''
+
+    # PipeWire audio cards
+    try:
+        r = subprocess.run(
+            ['pactl', 'list', 'cards', 'short'],
+            capture_output=True, text=True, timeout=5
+        )
+        info['pw_cards'] = r.stdout.strip() if r.returncode == 0 else ''
+    except Exception:
+        info['pw_cards'] = ''
 
     return info
 
@@ -85,12 +105,32 @@ def format_bug_report(traceback_str: Optional[str] = None) -> str:
             '',
         ]
 
+    usb_hid = info.get('usb_hid', '')
+    if usb_hid:
+        lines += [
+            '## USB HID devices',
+            '```',
+            usb_hid,
+            '```',
+            '',
+        ]
+
+    pw_cards = info.get('pw_cards', '')
+    if pw_cards:
+        lines += [
+            '## PipeWire audio cards',
+            '```',
+            pw_cards,
+            '```',
+            '',
+        ]
+
     logs = info.get('logs', '')
     if logs:
         lines += [
             '## Recent daemon logs',
             '```',
-            logs[-2500:],
+            logs[-4000:],
             '```',
             '',
         ]

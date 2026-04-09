@@ -30,6 +30,25 @@ APPLICATIONS_PATH = Path().home() / '.local' / 'share' / 'applications'
 DESKTOP_WINDOW_PATH = APPLICATIONS_PATH / 'ArctisManager.desktop'
 DESKTOP_SYSTRAY_PATH = APPLICATIONS_PATH / 'ArctisManagerSystray.desktop'
 
+SYSTEMD_USER_DIR = Path().home() / '.config' / 'systemd' / 'user'
+SERVICE_PATH = SYSTEMD_USER_DIR / 'arctis-manager.service'
+
+_SERVICE_TEMPLATE = """\
+[Unit]
+Description=Arctis Sound Manager
+StartLimitInterval=1min
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart={asm_daemon}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target
+"""
+
 def _has_tty() -> bool:
     """Returns True if stdin is a real terminal (CLI context)."""
     try:
@@ -56,7 +75,6 @@ def _graphical_elevators() -> list[str]:
         tools += ['lxqt-sudo']
     tools.append('pkexec')
     return tools
-
 
 def sudo_it(command: list[str]) -> int:
     """
@@ -210,6 +228,15 @@ def write_desktop_entries() -> int:
     # Remove legacy systray-only shortcut if present
     if DESKTOP_SYSTRAY_PATH.exists():
         DESKTOP_SYSTRAY_PATH.unlink()
+
+    # 3. write the systemd user service file (pipx install — asm-daemon is in ~/.local/bin)
+    asm_daemon = shutil.which('asm-daemon')
+    if asm_daemon:
+        SYSTEMD_USER_DIR.mkdir(parents=True, exist_ok=True)
+        SERVICE_PATH.write_text(_SERVICE_TEMPLATE.format(asm_daemon=asm_daemon))
+        print(f'    [ok] Service file written: {SERVICE_PATH}')
+    else:
+        print('    [!] asm-daemon not found in PATH — skipping service file.')
 
     return 0
 

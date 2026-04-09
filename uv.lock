@@ -4,7 +4,7 @@ requires-python = ">=3.10"
 
 [[package]]
 name = "arctis-sound-manager"
-version = "2.7.2"
+version = "1.0.12"
 source = { editable = "." }
 dependencies = [
     { name = "dbus-next" },

@@ -18,6 +18,8 @@ SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTRS{idVendor}=="1038", ATTRS{idP
 SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="12c2", MODE="0666", TAG+="uaccess"
 # SteelSeries Arctis Nova Pro Wireless / X
 SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="12e0|12e5", MODE="0666", TAG+="uaccess"
+# SteelSeries Arctis Nova Pro (Wired + GameDAC Gen 2)
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="12cb|12cd", MODE="0666", TAG+="uaccess"
 # SteelSeries Arctis Pro GameDAC
 SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1280", MODE="0666", TAG+="uaccess"
 # SteelSeries Arctis Pro Wireless
