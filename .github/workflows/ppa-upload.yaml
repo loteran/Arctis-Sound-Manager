@@ -51,12 +51,13 @@ jobs:
 
       - name: Build source package
         run: |
-          # --no-pre-clean prevents dpkg-buildpackage from running
-          # debian/rules clean before packaging the source — without it,
-          # debian/wheels/ is deleted before the .debian.tar.xz is created,
-          # so Launchpad receives a source package with no wheels and cannot
-          # download them (sandboxed build environment, no internet).
-          debuild -S -sa -d -k"$GPG_KEY_ID" -- --no-pre-clean
+          # Use dpkg-buildpackage directly instead of debuild:
+          # debuild injects --rules-target before extra args, turning
+          # "-- --no-pre-clean" into "--rules-target --no-pre-clean" which
+          # calls debian/rules with --no-pre-clean as a make target (fails).
+          # dpkg-buildpackage -S --no-pre-clean skips debian/rules clean so
+          # debian/wheels/ is still present when the source is packaged.
+          dpkg-buildpackage -S -sa -d --no-pre-clean -k"$GPG_KEY_ID"
 
       - name: Upload to PPA
         run: |
