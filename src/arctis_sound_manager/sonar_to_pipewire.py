@@ -932,6 +932,19 @@ def check_and_fix_stale_configs() -> bool:
                     )
                     fixed = True
 
+    # Remove duplicate HeSuVi config from pipewire.conf.d when filter-chain.conf.d version
+    # exists. install.sh deploys the static version to pipewire.conf.d; when Sonar is enabled
+    # ASM generates a dynamic version in filter-chain.conf.d — both registering the same
+    # node name causes a conflict and the game channel goes silent.
+    hesuvi_filter = _CONF_DIR / "sink-virtual-surround-7.1-hesuvi.conf"
+    hesuvi_static = bad_dir / "sink-virtual-surround-7.1-hesuvi.conf"
+    if hesuvi_filter.exists() and hesuvi_static.exists():
+        log.warning(
+            "Duplicate HeSuVi config found in pipewire.conf.d — removing to fix silent game channel"
+        )
+        hesuvi_static.unlink()
+        fixed = True
+
     # Ensure sonar EQ nodes exist when in Sonar mode
     if sonar and ensure_sonar_eq_configs():
         fixed = True
@@ -940,35 +953,77 @@ def check_and_fix_stale_configs() -> bool:
 
 
 def ensure_sonar_eq_configs() -> bool:
-    """Generate bypass EQ configs for game and chat channels if they are missing.
+    """Generate or fix bypass EQ configs for game and chat channels.
 
-    ``effect_input.sonar-game-eq`` and ``effect_input.sonar-chat-eq`` must
-    exist as PipeWire nodes before the virtual sinks can connect to them.
-    On a fresh install, these configs are only written when the user first
-    applies an EQ change — but the virtual sinks already point to these nodes
-    as soon as Sonar mode is enabled, causing a silent Game channel.
+    Validates that ``effect_input.sonar-game-eq`` and ``effect_input.sonar-chat-eq``
+    exist as PipeWire nodes with the correct channel count and target sink.
+    Regenerates any config that is missing OR has stale content (wrong channel
+    count, wrong target) — not just absent files.
 
-    Call this before ``generate_virtual_sinks_conf(sonar=True)`` to guarantee
-    the nodes exist when PipeWire starts.
-
-    Returns True if any config was generated.
+    Returns True if any config was generated or regenerated.
     """
     import logging
     log = logging.getLogger(__name__)
     generated = False
+
+    # Determine if spatial audio is enabled — affects game channel count and target.
+    try:
+        import json as _json
+        _spatial_file = Path.home() / ".config" / "arctis_manager" / "sonar_spatial_audio.json"
+        _spatial = _json.loads(_spatial_file.read_text()) if _spatial_file.exists() else {}
+        spatial_on = _spatial.get("enabled", True)
+    except Exception:
+        spatial_on = True
+
+    expected: dict[str, dict] = {
+        "game": {
+            "channels": 8 if spatial_on else 2,
+            "position": _CHANNEL_POSITION["game"] if spatial_on else "FL FR",
+            "target":   _SURROUND if spatial_on else _get_physical_out(),
+        },
+        "chat": {
+            "channels": _CHANNEL_CHANNELS["chat"],
+            "position": _CHANNEL_POSITION["chat"],
+            "target":   _get_physical_out(),
+        },
+    }
+
     for channel in ("game", "chat"):
         conf_path = _CONF_DIR / f"sonar-{channel}-eq.conf"
+        sink_name = f"effect_input.sonar-{channel}-eq"
+        exp = expected[channel]
+        needs_regen = False
+
         if not conf_path.exists():
-            target = _CHANNEL_TARGET.get(channel) or _get_physical_out()
-            channels = _CHANNEL_CHANNELS[channel]
-            position = _CHANNEL_POSITION[channel]
-            sink_name = f"effect_input.sonar-{channel}-eq"
             log.warning(
                 "sonar-%s-eq.conf missing — generating bypass so %s node exists",
                 channel, sink_name,
             )
-            _write_conf(conf_path, _bypass_conf(sink_name, target, channels, position))
+            needs_regen = True
+        else:
+            content = conf_path.read_text()
+            ch_str  = f"audio.channels = {exp['channels']}"
+            tgt_str = f'node.target         = "{exp["target"]}"'
+            if ch_str not in content:
+                log.warning(
+                    "sonar-%s-eq.conf has wrong channel count (expected %d) — regenerating",
+                    channel, exp["channels"],
+                )
+                needs_regen = True
+            elif exp["target"] and tgt_str not in content:
+                log.warning(
+                    "sonar-%s-eq.conf has wrong target (expected %r) — regenerating",
+                    channel, exp["target"],
+                )
+                needs_regen = True
+
+        if needs_regen:
+            _write_conf(
+                conf_path,
+                _bypass_conf(sink_name, exp["target"], exp["channels"], exp["position"]),
+            )
             generated = True
+
     return generated
 
 
@@ -1043,6 +1098,18 @@ def generate_hesuvi_conf(
     """
     if output_path is None:
         output_path = _CONF_DIR / "sink-virtual-surround-7.1-hesuvi.conf"
+        # Remove any static copy from pipewire.conf.d to avoid duplicate node name conflict.
+        # install.sh places the static HeSuVi config there; ASM's dynamic version (here)
+        # supersedes it when Sonar mode is active. Having both causes the game channel to
+        # go silent because PipeWire and filter-chain both try to register the same node name.
+        _pw_static = _SINKS_CONF_DIR / "sink-virtual-surround-7.1-hesuvi.conf"
+        if _pw_static.exists():
+            import logging as _log
+            _log.getLogger(__name__).warning(
+                "Removing duplicate HeSuVi config from pipewire.conf.d "
+                "(superseded by filter-chain.conf.d version)"
+            )
+            _pw_static.unlink()
 
     immersion_pct = max(0, min(100, immersion_pct))
     distance_pct = max(0, min(100, distance_pct))

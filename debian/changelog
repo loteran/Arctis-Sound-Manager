@@ -1,3 +1,12 @@
+arctis-sound-manager (1.0.27-1) noble; urgency=medium
+
+  * Fix: silent Game channel persists after Sonar mode switch — duplicate HeSuVi
+    node (pipewire.conf.d + filter-chain.conf.d both register same node name,
+    game EQ routes to nothing). generate_hesuvi_conf removes static copy on write,
+    check_and_fix_stale_configs detects conflict at startup (issue #14)
+
+ -- loteran <axel.valadon@gmail.com>  Thu, 10 Apr 2026 00:00:00 +0200
+
 arctis-sound-manager (1.0.26-1) noble; urgency=medium
 
   * Fix: silent Game channel on first Sonar mode switch — sonar-game-eq node now
