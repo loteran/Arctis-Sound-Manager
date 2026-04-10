@@ -45,3 +45,53 @@ jobs:
             build/deb/*.deb
           draft: false
           prerelease: false
+
+  aur-update:
+    runs-on: ubuntu-latest
+    needs: release
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute sha256 of source tarball
+        id: vars
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          URL="https://github.com/loteran/Arctis-Sound-Manager/archive/refs/tags/${GITHUB_REF_NAME}.tar.gz"
+          SHA=$(curl -sL "$URL" | sha256sum | awk '{print $1}')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "sha256=$SHA" >> $GITHUB_OUTPUT
+
+      - name: Set up SSH for AUR
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$AUR_SSH_KEY" > ~/.ssh/aur_key
+          chmod 600 ~/.ssh/aur_key
+          ssh-keyscan -H aur.archlinux.org >> ~/.ssh/known_hosts
+          cat >> ~/.ssh/config << 'SSHCONF'
+          Host aur.archlinux.org
+            IdentityFile ~/.ssh/aur_key
+            User aur
+          SSHCONF
+
+      - name: Clone AUR repository
+        run: git clone ssh://aur@aur.archlinux.org/arctis-sound-manager.git /tmp/aur-repo
+
+      - name: Patch PKGBUILD and .SRCINFO with real sha256
+        run: |
+          SHA="${{ steps.vars.outputs.sha256 }}"
+          sed "s/sha256sums=('SKIP')/sha256sums=('${SHA}')/" aur/PKGBUILD > /tmp/aur-repo/PKGBUILD
+          sed "s/sha256sums = SKIP/sha256sums = ${SHA}/" aur/.SRCINFO > /tmp/aur-repo/.SRCINFO
+          cp aur/arctis-sound-manager.install /tmp/aur-repo/arctis-sound-manager.install
+
+      - name: Commit and push to AUR
+        run: |
+          cd /tmp/aur-repo
+          git config user.name "loteran"
+          git config user.email "axel.valadon@gmail.com"
+          git add PKGBUILD .SRCINFO arctis-sound-manager.install
+          git diff --cached --quiet && echo "No changes to push" && exit 0
+          git commit -m "Update to v${{ steps.vars.outputs.version }}"
+          git push
