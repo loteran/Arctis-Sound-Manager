@@ -224,11 +224,17 @@ The fragment just needs to be unique enough to match only the desired sink. Afte
 # From source (recommended)
 cd Arctis-Sound-Manager
 git pull
+export PATH="$HOME/.local/bin:$PATH"
 pipx install --force .
+asm-cli desktop write                       # refresh service file with the new binary path
+asm-cli udev write-rules --force --reload  # refresh udev rules if devices changed
+systemctl --user daemon-reload
 systemctl --user restart arctis-manager.service
 ```
 
 > **Note:** `pipx upgrade arctis-sound-manager` may fail if the package was installed from a temporary wheel (`Unable to parse package spec`). Use `pipx install --force .` from the repo directory instead.
+>
+> **PATH tip:** if `asm-cli` or `asm-daemon` are not found, add `~/.local/bin` to your PATH permanently: `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc`
 
 ---
 
@@ -245,7 +251,7 @@ rm ~/.config/systemd/user/arctis-video-router.service
 
 # Remove desktop entries and udev rules
 asm-cli desktop remove
-sudo rm /usr/lib/udev/rules.d/91-steelseries-arctis.rules
+sudo rm -f /etc/udev/rules.d/91-steelseries-arctis.rules /usr/lib/udev/rules.d/91-steelseries-arctis.rules
 
 # Remove user config
 rm -rf ~/.config/arctis_manager
