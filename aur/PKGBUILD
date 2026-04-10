@@ -26,7 +26,7 @@ optdepends=(
 makedepends=('python-installer' 'uv')
 install=arctis-sound-manager.install
 source=("$pkgname-$pkgver.tar.gz::https://github.com/loteran/Arctis-Sound-Manager/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('7f1d75f4aea675b3214c30425adac252ae7f4e083d98d8fc4f119988c9aed113')
 
 build() {
     cd "Arctis-Sound-Manager-$pkgver"
