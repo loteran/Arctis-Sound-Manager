@@ -268,6 +268,56 @@ rm ~/.config/pipewire/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf
 
 ---
 
+## Reporting a bug
+
+Found something broken? Reports are very welcome — they directly drive fixes. Here's how to get the most useful info across quickly:
+
+### 1. Use the in-app bug reporter (recommended)
+
+Open ASM → **Help page** → **Report a Bug**. It automatically collects:
+- ASM version, Python version, OS and kernel
+- USB HID device info (vendor/product IDs, endpoints)
+- PipeWire cards and active sinks
+- Recent daemon logs (last 100 lines)
+
+Copy the generated report and paste it into a [new GitHub issue](https://github.com/loteran/Arctis-Sound-Manager/issues/new).
+
+### 2. Manual report (if the app won't start)
+
+Run the following and include the output in your issue:
+
+```bash
+# ASM and system info
+asm-daemon --version 2>/dev/null || pipx runpip arctis-sound-manager show arctis-sound-manager
+python3 --version
+uname -r
+pactl info | grep "Server Version"
+
+# Device detection
+asm-cli tools arctis-devices
+
+# Audio sinks
+pactl list sinks short
+
+# Service status
+systemctl --user status arctis-manager
+journalctl --user -u arctis-manager -n 100 --no-pager
+
+# PipeWire configs
+ls ~/.config/pipewire/pipewire.conf.d/
+ls ~/.config/pipewire/filter-chain.conf.d/
+```
+
+### Tips for a good report
+
+- **Describe what you expected vs. what happened** — "Game channel is silent after switching to Sonar EQ" is more useful than "audio broken"
+- **Include steps to reproduce** — even something as simple as "open app → switch to Sonar → game audio disappears"
+- **One issue per report** — if you have two problems, open two issues; it's much easier to track and close them separately
+
+→ [Open a new issue](https://github.com/loteran/Arctis-Sound-Manager/issues/new)
+
+---
+
 ## Development
 
 ```bash
