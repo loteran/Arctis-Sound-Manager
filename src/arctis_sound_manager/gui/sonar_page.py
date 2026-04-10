@@ -1871,12 +1871,26 @@ class SonarPage(QWidget):
     def __init__(self, embedded: bool = False, parent: QWidget | None = None):
         super().__init__(parent)
 
-        # Fix stale configs that use the broken 'label = gain' builtin
-        if check_and_fix_stale_configs():
+        # Fix stale configs (broken builtins, wrong locations, duplicate HeSuVi node, …)
+        fixed, needs_pw_restart = check_and_fix_stale_configs()
+        if fixed:
             import logging
-            logging.getLogger(__name__).info("Stale Sonar configs fixed, restarting filter-chain")
-            subprocess.run(["systemctl", "--user", "restart", "filter-chain"],
-                           check=False, timeout=15)
+            if needs_pw_restart:
+                # One-time migration: static HeSuVi was in pipewire.conf.d and created a
+                # duplicate node that silenced the Game channel.  A full PipeWire restart
+                # is required to unload the old node; subsequent runs won't need this.
+                logging.getLogger(__name__).info(
+                    "Stale static HeSuVi config removed — restarting PipeWire to clear duplicate node"
+                )
+                subprocess.run(
+                    ["systemctl", "--user", "restart",
+                     "pipewire", "wireplumber", "pipewire-pulse", "filter-chain"],
+                    check=False, timeout=20,
+                )
+            else:
+                logging.getLogger(__name__).info("Stale Sonar configs fixed, restarting filter-chain")
+                subprocess.run(["systemctl", "--user", "restart", "filter-chain"],
+                               check=False, timeout=15)
 
         self.setStyleSheet(f"background-color: {BG_MAIN};")
 

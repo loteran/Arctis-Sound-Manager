@@ -29,13 +29,13 @@ class _Pill(QPushButton):
         self._active = active
         if active:
             self.setStyleSheet(
-                f"border: 1px solid {ACCENT}; border-radius: 6px; padding: 4px 14px;"
-                f"font-size: 10pt; background-color: {ACCENT}; color: #ffffff; font-weight: bold;"
+                f"QPushButton {{ border: 1px solid {ACCENT}; border-radius: 6px; padding: 4px 14px;"
+                f"font-size: 10pt; background-color: {ACCENT}; color: #ffffff; font-weight: bold; }}"
             )
         else:
             self.setStyleSheet(
-                f"border: 1px solid {BORDER}; border-radius: 6px; padding: 4px 14px;"
-                f"font-size: 10pt; background-color: {BG_CARD}; color: {TEXT_SECONDARY};"
+                f"QPushButton {{ border: 1px solid {BORDER}; border-radius: 6px; padding: 4px 14px;"
+                f"font-size: 10pt; background-color: {BG_CARD}; color: {TEXT_SECONDARY}; }}"
                 f"QPushButton:hover {{ border-color: {ACCENT}; color: {TEXT_PRIMARY}; }}"
             )
 

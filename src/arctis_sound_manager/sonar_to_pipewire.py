@@ -818,23 +818,49 @@ def apply_sonar_channel(
     subprocess.run(["systemctl", "--user", "restart", "pipewire"], check=False, timeout=15)
 
 
-def check_and_fix_stale_configs() -> bool:
+def check_and_fix_stale_configs() -> tuple[bool, bool]:
     """Detect and fix stale Sonar configs.
 
     Checks for:
-    1. Configs using the broken ``label = gain`` builtin (PipeWire 1.6.x).
-    2. Sonar configs left in ``pipewire.conf.d/`` (must be in
+    1. Static HeSuVi conf in ``pipewire.conf.d/`` conflicting with the filter-chain
+       dynamic version (old installs placed it there — creates a duplicate node that
+       silences the Game channel).
+    2. Configs using the broken ``label = gain`` builtin (PipeWire 1.6.x).
+    3. Sonar configs left in ``pipewire.conf.d/`` (must be in
        ``filter-chain.conf.d/`` — restarting pipewire is too disruptive).
-    3. 2ch game EQ when spatial audio is ON (must be 8ch for HeSuVi).
-    4. Virtual sink targets out of sync with current EQ mode.
-    5. HeSuVi config with stale ``node.target`` (wrong physical output).
+    4. 2ch game EQ when spatial audio is ON (must be 8ch for HeSuVi).
+    5. Virtual sink targets out of sync with current EQ mode.
+    6. HeSuVi config with stale ``node.target`` (wrong physical output).
 
-    Returns True if any config was regenerated or cleaned.
+    Returns ``(fixed, needs_pipewire_restart)``.  *fixed* is True if any config
+    was regenerated or cleaned.  *needs_pipewire_restart* is True when the static
+    HeSuVi file was removed from ``pipewire.conf.d/``; the caller must restart
+    the main PipeWire process so the duplicate node is unloaded.
     """
     import logging
     log = logging.getLogger(__name__)
     fixed = False
+    needs_pw_restart = False
     bad_dir = _CONF_DIR.parent / "pipewire.conf.d"
+
+    # ── Migration: remove static HeSuVi from pipewire.conf.d ─────────────────
+    # Old install.sh put sink-virtual-surround-7.1-hesuvi.conf in pipewire.conf.d
+    # so main PipeWire loads it.  The daemon also generates a dynamic version in
+    # filter-chain.conf.d, creating TWO nodes with the same name.  WirePlumber
+    # can then route sonar-game-eq to the wrong one → silent Game channel.
+    # Fix: remove the static copy so only the filter-chain version exists.
+    static_hesuvi = bad_dir / "sink-virtual-surround-7.1-hesuvi.conf"
+    if static_hesuvi.exists():
+        log.warning("Removing stale static HeSuVi config from pipewire.conf.d "
+                    "(duplicate node conflict — will restart PipeWire to clear it)")
+        static_hesuvi.unlink()
+        # Ensure the dynamic version exists in filter-chain.conf.d so it survives
+        # the upcoming pipewire restart without a gap.
+        dynamic_hesuvi = _CONF_DIR / "sink-virtual-surround-7.1-hesuvi.conf"
+        if not dynamic_hesuvi.exists():
+            generate_hesuvi_conf()
+        fixed = True
+        needs_pw_restart = True
 
     for name in ("sonar-game-eq.conf", "sonar-chat-eq.conf"):
         # Remove stale copies from pipewire.conf.d (wrong location)
@@ -932,24 +958,11 @@ def check_and_fix_stale_configs() -> bool:
                     )
                     fixed = True
 
-    # Remove duplicate HeSuVi config from pipewire.conf.d when filter-chain.conf.d version
-    # exists. install.sh deploys the static version to pipewire.conf.d; when Sonar is enabled
-    # ASM generates a dynamic version in filter-chain.conf.d — both registering the same
-    # node name causes a conflict and the game channel goes silent.
-    hesuvi_filter = _CONF_DIR / "sink-virtual-surround-7.1-hesuvi.conf"
-    hesuvi_static = bad_dir / "sink-virtual-surround-7.1-hesuvi.conf"
-    if hesuvi_filter.exists() and hesuvi_static.exists():
-        log.warning(
-            "Duplicate HeSuVi config found in pipewire.conf.d — removing to fix silent game channel"
-        )
-        hesuvi_static.unlink()
-        fixed = True
-
     # Ensure sonar EQ nodes exist when in Sonar mode
     if sonar and ensure_sonar_eq_configs():
         fixed = True
 
-    return fixed
+    return fixed, needs_pw_restart
 
 
 def ensure_sonar_eq_configs() -> bool:
