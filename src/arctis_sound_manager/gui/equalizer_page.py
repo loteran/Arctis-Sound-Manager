@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 from arctis_sound_manager.gui.components import AccentButton
 from arctis_sound_manager.gui.sonar_page import SonarPage
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
-from arctis_sound_manager.sonar_to_pipewire import generate_virtual_sinks_conf
+from arctis_sound_manager.sonar_to_pipewire import generate_virtual_sinks_conf, ensure_sonar_eq_configs
 from arctis_sound_manager.gui.theme import (
     ACCENT,
     BG_CARD,
@@ -264,6 +264,12 @@ class _ToggleWorker(QThread):
         if not _apply_yaml(self._new_mode):
             self.done.emit(False, self._old_mode)
             return
+
+        # Ensure sonar EQ filter-chain configs exist before updating virtual sinks:
+        # effect_input.sonar-game-eq and sonar-chat-eq must exist as PipeWire nodes
+        # or Arctis_Game will connect to a non-existent target → silent game channel.
+        if self._new_mode == 'sonar':
+            ensure_sonar_eq_configs()
 
         # Update virtual sink targets before restarting PipeWire
         generate_virtual_sinks_conf(sonar=(self._new_mode == 'sonar'))

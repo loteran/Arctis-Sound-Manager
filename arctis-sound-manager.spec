@@ -1,5 +1,5 @@
 Name:           arctis-sound-manager
-Version:        1.0.25
+Version:        1.0.26
 Release:        1%{?dist}
 Summary:        Linux GUI for SteelSeries Arctis headsets
 
@@ -148,6 +148,9 @@ udevadm control --reload-rules || :
 %{_datadir}/%{name}/
 
 %changelog
+* Thu Apr 10 2026 loteran <https://github.com/loteran> - 1.0.26-1
+- Fix: silent Game channel on first Sonar mode switch (issue #14)
+
 * Thu Apr 10 2026 loteran <https://github.com/loteran> - 1.0.25-1
 - Fix: install.sh PATH regression — export PATH=~/.local/bin always set so asm-cli/asm-daemon found on reinstall (issue #3)
 - CI: automate AUR and COPR builds on release

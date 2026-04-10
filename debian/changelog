@@ -1,3 +1,10 @@
+arctis-sound-manager (1.0.26-1) noble; urgency=medium
+
+  * Fix: silent Game channel on first Sonar mode switch — sonar-game-eq node now
+    always created before virtual sinks are rerouted (issue #14)
+
+ -- loteran <axel.valadon@gmail.com>  Thu, 10 Apr 2026 00:00:00 +0200
+
 arctis-sound-manager (1.0.25-1) noble; urgency=medium
 
   * Fix: install.sh PATH regression — export PATH=~/.local/bin:$PATH now unconditional so asm-cli/asm-daemon are always found on reinstall (issue #3)

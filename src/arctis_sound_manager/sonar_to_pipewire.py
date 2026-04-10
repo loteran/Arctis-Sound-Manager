@@ -932,7 +932,44 @@ def check_and_fix_stale_configs() -> bool:
                     )
                     fixed = True
 
+    # Ensure sonar EQ nodes exist when in Sonar mode
+    if sonar and ensure_sonar_eq_configs():
+        fixed = True
+
     return fixed
+
+
+def ensure_sonar_eq_configs() -> bool:
+    """Generate bypass EQ configs for game and chat channels if they are missing.
+
+    ``effect_input.sonar-game-eq`` and ``effect_input.sonar-chat-eq`` must
+    exist as PipeWire nodes before the virtual sinks can connect to them.
+    On a fresh install, these configs are only written when the user first
+    applies an EQ change — but the virtual sinks already point to these nodes
+    as soon as Sonar mode is enabled, causing a silent Game channel.
+
+    Call this before ``generate_virtual_sinks_conf(sonar=True)`` to guarantee
+    the nodes exist when PipeWire starts.
+
+    Returns True if any config was generated.
+    """
+    import logging
+    log = logging.getLogger(__name__)
+    generated = False
+    for channel in ("game", "chat"):
+        conf_path = _CONF_DIR / f"sonar-{channel}-eq.conf"
+        if not conf_path.exists():
+            target = _CHANNEL_TARGET.get(channel) or _get_physical_out()
+            channels = _CHANNEL_CHANNELS[channel]
+            position = _CHANNEL_POSITION[channel]
+            sink_name = f"effect_input.sonar-{channel}-eq"
+            log.warning(
+                "sonar-%s-eq.conf missing — generating bypass so %s node exists",
+                channel, sink_name,
+            )
+            _write_conf(conf_path, _bypass_conf(sink_name, target, channels, position))
+            generated = True
+    return generated
 
 
 # ── Config generator — HeSuVi 7.1 virtual surround ──────────────────────────
