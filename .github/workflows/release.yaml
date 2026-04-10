@@ -108,16 +108,10 @@ jobs:
 
       - name: Configure copr-cli
         env:
-          COPR_API_TOKEN: ${{ secrets.COPR_API_TOKEN }}
+          COPR_API_CONFIG: ${{ secrets.COPR_API_CONFIG }}
         run: |
           mkdir -p ~/.config
-          cat > ~/.config/copr << EOF
-          [copr-cli]
-          login = loteran
-          username = loteran
-          token = $COPR_API_TOKEN
-          copr_url = https://copr.fedorainfracloud.org
-          EOF
+          echo "$COPR_API_CONFIG" > ~/.config/copr
 
       - name: Trigger COPR build
         run: |
