@@ -2,6 +2,9 @@
 # Arctis Sound Manager — installer
 set -e
 
+# Ensure pipx/pipx-installed binaries (asm-cli, asm-daemon) are always in PATH,
+# regardless of whether uv was just installed or already present.
+export PATH="$HOME/.local/bin:$PATH"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 
@@ -11,7 +14,6 @@ echo "==> Installing Arctis Sound Manager..."
 if ! command -v uv &>/dev/null; then
     echo "  [!] 'uv' not found. Installing..."
     curl -LsSf https://astral.sh/uv/install.sh | sh
-    export PATH="$HOME/.local/bin:$PATH"
 fi
 
 if ! command -v pipx &>/dev/null; then
