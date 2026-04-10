@@ -58,7 +58,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 | Arctis 9 Wireless | ⚠️ | ⚠️ | 12c2 |
 | Arctis Pro Wireless | ⚠️ | ⚠️ | 1290 |
 | **Arctis Nova Pro Wireless / X** | ✅ | ✅ | 12e0, 12e5 |
-| **Arctis Nova Pro Wired / Xbox Wired** | ⚠️ | ⚠️ | 12cb, 12cd |
+| **Arctis Nova Pro Wired / Xbox Wired** | ✅ | ✅ | 12cb, 12cd |
 | Arctis Nova 3 | ⚠️ | ⚠️ | 12ec |
 | Arctis Nova 5 / 5X | ⚠️ | ⚠️ | 2232, 2253 |
 | Arctis Nova 7 Gen 1 | ⚠️ | ⚠️ | 2202, 2206, 223a, 227a, 22a4 |
@@ -152,7 +152,7 @@ bash scripts/install.sh
 The installer will:
 - Build and install the package via `pipx`
 - Install udev rules for USB device access (requires sudo)
-- Create desktop entries
+- Create desktop entries and the `arctis-manager.service` systemd user service file
 - Enable the `arctis-manager` systemd user service (device daemon)
 - Enable the `arctis-video-router` systemd user service (media auto-routing)
 - Copy device configs to `~/.config/arctis_manager/devices/` (required for Sonar EQ mode switch)
@@ -217,6 +217,18 @@ SINK_HDMI = "USB_Audio"
 ```
 
 The fragment just needs to be unique enough to match only the desired sink. After editing, restart the GUI.
+
+### Upgrading
+
+```bash
+# From source (recommended)
+cd Arctis-Sound-Manager
+git pull
+pipx install --force .
+systemctl --user restart arctis-manager.service
+```
+
+> **Note:** `pipx upgrade arctis-sound-manager` may fail if the package was installed from a temporary wheel (`Unable to parse package spec`). Use `pipx install --force .` from the repo directory instead.
 
 ---
 
