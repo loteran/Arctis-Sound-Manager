@@ -148,6 +148,10 @@ udevadm control --reload-rules || :
 %{_datadir}/%{name}/
 
 %changelog
+* Thu Apr 10 2026 loteran <https://github.com/loteran> - 1.0.25-1
+- Fix: install.sh PATH regression — export PATH=~/.local/bin always set so asm-cli/asm-daemon found on reinstall (issue #3)
+- CI: automate AUR and COPR builds on release
+
 * Fri Apr 04 2026 loteran <https://github.com/loteran> - 1.0.13-1
 - Fix: DeviceConfiguration.device_init and .status always initialized (no more AttributeError)
 - Fix: SELECT widget IndexError/KeyError when options not loaded
