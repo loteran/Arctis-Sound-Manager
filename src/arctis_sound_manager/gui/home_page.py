@@ -790,9 +790,11 @@ class HomePage(QWidget):
             self._update_label.setText(I18n.translate("ui", "update_installed"))
             self._update_install_btn.hide()
             self._update_link_btn.hide()
-            # Restart daemon + GUI
+            # Reinstall desktop entries, restart daemon + router + GUI
             import subprocess, sys, os
+            subprocess.run(["asm-cli", "desktop", "write"], capture_output=True)
             subprocess.Popen(["systemctl", "--user", "restart", "arctis-manager"])
+            subprocess.Popen(["systemctl", "--user", "restart", "arctis-video-router"])
             os.execv(sys.executable, [sys.executable, "-m", "arctis_sound_manager.scripts.gui"])
         else:
             self._update_install_btn.setText(I18n.translate("ui", "install_update"))

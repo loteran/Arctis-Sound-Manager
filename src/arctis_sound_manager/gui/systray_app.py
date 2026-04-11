@@ -122,6 +122,11 @@ class QSystrayApp(QBaseDesktopApp):
         self.logger.info('Starting Systray app.')
         self.tray_icon.show()
 
+        subprocess.run(
+            ["systemctl", "--user", "start", "filter-chain"],
+            capture_output=True,
+        )
+
         self.dbus_bus = await MessageBus().connect()
 
         self.app.exec()
