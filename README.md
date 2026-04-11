@@ -20,7 +20,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
   - 312 Game presets, 8 Chat, 14 Mic bundled — searchable, with 9 favorite slots
   - Macro sliders: Basses / Voix / Aigus (±12 dB)
   - **Spatial Audio** — routes Game channel through HeSuVi virtual 7.1 surround, with **Immersion** (0–12 dB gain) and **Distance** (plate reverb) sliders
-  - **Boost de Volume** — up to +12 dB gain node at the end of the filter chain
+  - **Volume Boost** — up to +12 dB gain node at the end of the filter chain
   - **Smart Volume** — dynamic compressor (Quiet / Balanced / Loud) to even out volume differences
   - All changes applied live via PipeWire filter-chain (biquad nodes)
 - **10-band equalizer** — Custom mode: per-band gain (31 Hz to 16 kHz), save/load presets
@@ -75,17 +75,22 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 - Linux with **PipeWire** (+ `pipewire-pulse`)
 - **Python 3.10+**
 - System libraries: `libusb`, `libpulse`, `libudev`
-- `pipx` — install everything with your package manager:
-  ```bash
-  # Arch / CachyOS / Manjaro
-  sudo pacman -S python-pipx libusb libpulse noise-suppression-for-voice
 
-  # Debian / Ubuntu
-  sudo apt install pipx libusb-1.0-0 libpulse0 libudev1 libnoise-suppression-for-voice
+**Arch / CachyOS / Manjaro** — also install `noise-suppression-for-voice` (used by mic processing):
+```bash
+sudo pacman -S libusb libpulse noise-suppression-for-voice
+```
 
-  # Fedora
-  sudo dnf install pipx libusb1 pulseaudio-libs systemd-libs noise-suppression-for-voice
-  ```
+**Fedora / Debian / Ubuntu** — native packages handle all dependencies automatically (see [Installation](#installation)).
+
+**Other distros (source install)** — install `pipx` + system libraries:
+```bash
+# Debian / Ubuntu
+sudo apt install pipx libusb-1.0-0 libpulse0 libudev1
+
+# Fedora
+sudo dnf install pipx libusb1 pulseaudio-libs systemd-libs
+```
 
 ---
 
@@ -226,39 +231,32 @@ To **manually move** an app stream, click the **G / C / M / H** buttons on its t
 
 > **HDMI note**: The HDMI card routes audio **directly** to the physical HDMI sink, bypassing the virtual stereo sinks. This preserves true 5.1 / 7.1 channel output for games and movies. Use it when your display or AV receiver supports surround sound.
 
-### Configuring a different output for the HDMI card
+### Configuring a different output for the external card
 
-By default the HDMI card targets any sink whose name contains `hdmi-surround`. If your output has a different name (e.g. HDMI stereo, DisplayPort, USB DAC…), find it with:
-
-```bash
-pactl list sinks short
-```
-
-Example output:
-```
-91    alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.analog-stereo   ...
-1605  alsa_output.pci-0000_09_00.1.hdmi-surround                              ...
-```
-
-Then open `src/arctis_sound_manager/gui/home_page.py` and change the `SINK_HDMI` constant to match a unique fragment of your sink name:
-
-```python
-# Before (default)
-SINK_HDMI = "hdmi-surround"
-
-# Example: DisplayPort output
-SINK_HDMI = "hdmi-stereo"
-
-# Example: USB DAC
-SINK_HDMI = "USB_Audio"
-```
-
-The fragment just needs to be unique enough to match only the desired sink. After editing, restart the GUI.
+The external output card (O button) targets the device selected in **Settings → Audio → External Output Device**. To change it, open the app → Settings → choose your output from the dropdown. No config file editing needed.
 
 ### Upgrading
 
+**Arch / CachyOS / Manjaro (AUR):**
 ```bash
-# From source (recommended)
+paru -Syu arctis-sound-manager
+asm-setup
+```
+
+**Fedora (COPR):**
+```bash
+sudo dnf upgrade arctis-sound-manager
+asm-setup
+```
+
+**Debian / Ubuntu (PPA):**
+```bash
+sudo apt update && sudo apt upgrade arctis-sound-manager
+asm-setup
+```
+
+**From source:**
+```bash
 cd Arctis-Sound-Manager
 git pull
 export PATH="$HOME/.local/bin:$PATH"
@@ -278,30 +276,38 @@ systemctl --user restart arctis-manager.service
 ## Uninstall
 
 ```bash
-# Stop and disable services
+# Stop and disable all services
 systemctl --user disable --now arctis-manager.service
 systemctl --user disable --now arctis-video-router.service
-
-# Remove service files
-rm ~/.config/systemd/user/arctis-manager.service
-rm ~/.config/systemd/user/arctis-video-router.service
-
-# Remove desktop entries and udev rules
-asm-cli desktop remove
-sudo rm -f /etc/udev/rules.d/91-steelseries-arctis.rules /usr/lib/udev/rules.d/91-steelseries-arctis.rules
-
-# Remove user config
-rm -rf ~/.config/arctis_manager
-
-# Uninstall the package
-pipx uninstall arctis-sound-manager
-
-# Disable filter-chain service (Sonar EQ)
 systemctl --user disable --now filter-chain.service
 
-# Optional: remove virtual surround config
-rm ~/.config/pipewire/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf
+# Remove desktop entries (while the package is still installed)
+asm-cli desktop remove
+
+# Remove service files
+rm -f ~/.config/systemd/user/arctis-manager.service
+rm -f ~/.config/systemd/user/arctis-video-router.service
+
+# Remove udev rules
+sudo rm -f /etc/udev/rules.d/91-steelseries-arctis.rules /usr/lib/udev/rules.d/91-steelseries-arctis.rules
+
+# Uninstall the package (pipx) — or use your package manager for AUR/COPR/PPA installs
+pipx uninstall arctis-sound-manager
+
+# Remove user config and device files
+rm -rf ~/.config/arctis_manager
+
+# Remove PipeWire virtual sinks config
+rm -f ~/.config/pipewire/pipewire.conf.d/10-arctis-virtual-sinks.conf
+
+# Remove virtual surround config and HRIR file
+rm -f ~/.config/pipewire/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf
+rm -rf ~/.local/share/pipewire/hrir_hesuvi/
 ```
+
+> **AUR/COPR/PPA users**: use your package manager to remove (`paru -R arctis-sound-manager`, `dnf remove`, `apt remove`), then run the `rm` commands above for the user-level files.
+
+> **Note**: if some Sonar EQ filter-chain configs remain in `~/.config/pipewire/filter-chain.conf.d/`, you can safely delete the entire directory if you have no other custom configs there.
 
 ---
 
@@ -376,18 +382,23 @@ src/arctis_sound_manager/
 │   ├── daemon.py          # asm-daemon: device manager service
 │   ├── gui.py             # asm-gui: graphical interface
 │   ├── video_router.py    # asm-router: media auto-routing service
-│   └── cli.py             # asm-cli: setup utilities
+│   ├── cli.py             # asm-cli: setup utilities (udev, desktop, tools)
+│   └── setup.py           # asm-setup: post-install automation
 ├── gui/
-│   ├── home_page.py       # Audio mixer (Game/Chat/Media/HDMI cards)
-│   ├── headset_page.py    # Device info and live status
-│   ├── equalizer_page.py  # EQ mode toggle (Custom / Sonar) + 10-band sliders
-│   ├── sonar_page.py      # Sonar EQ UI (Game/Chat/Micro tabs, presets, Spatial Audio, Boost)
-│   ├── eq_curve_widget.py # Interactive parametric EQ curve widget (biquad RBJ)
-│   ├── anc_widget.py      # ANC / Transparent mode indicator
-│   ├── udev_dialog.py     # Startup dialog when udev rules are missing
-│   ├── help_page.py       # Built-in user manual (EN/FR/ES)
-│   ├── components.py      # Reusable widgets
-│   └── theme.py           # Color constants
+│   ├── home_page.py            # Audio mixer (Game/Chat/Media/Output cards)
+│   ├── headset_page.py         # Device info and live status
+│   ├── device_page.py          # General settings (startup toggle, etc.)
+│   ├── equalizer_page.py       # EQ mode toggle (Custom / Sonar) + 10-band sliders
+│   ├── sonar_page.py           # Sonar EQ (Game/Chat/Micro tabs, presets, Spatial Audio, Boost)
+│   ├── sonar_toggle_widget.py  # Sonar on/off toggle + YAML patch
+│   ├── eq_curve_widget.py      # Interactive parametric EQ curve (biquad RBJ)
+│   ├── anc_widget.py           # ANC / Transparent mode indicator
+│   ├── settings_widget.py      # Per-device settings panel (D-Bus backed)
+│   ├── udev_dialog.py          # Startup dialog when udev rules are missing
+│   ├── help_page.py            # Built-in user manual (EN/FR/ES)
+│   ├── presets/                # 334 bundled Sonar presets (312 Game, 8 Chat, 14 Mic)
+│   ├── components.py           # Reusable widgets
+│   └── theme.py                # Color constants
 ├── sonar_to_pipewire.py   # PipeWire filter-chain config generator (Sonar EQ)
 ├── pw_utils.py            # Native PipeWire stream detection
 ├── pactl.py               # PulseAudio virtual sink management
@@ -395,10 +406,10 @@ src/arctis_sound_manager/
 └── devices/               # Per-device configuration files (one YAML per headset)
 
 scripts/
-├── install.sh                              # Main installer
-├── setup-surround.sh                       # Optional virtual surround setup
+├── install.sh                              # Main installer (source installs)
+├── setup-surround.sh                       # Standalone virtual surround setup
 ├── pipewire/
-│   ├── 10-arctis-virtual-sinks.conf           # Native PipeWire loopback sinks (Game/Chat/Media)
+│   ├── 10-arctis-virtual-sinks.conf           # PipeWire loopback sinks (Game/Chat/Media)
 │   └── sink-virtual-surround-7.1-hesuvi.conf  # HeSuVi 7.1 virtual surround filter-chain
 └── arctis-video-router.service             # Systemd service for asm-router
 ```
