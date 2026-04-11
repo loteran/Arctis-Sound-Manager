@@ -11,7 +11,7 @@ from arctis_sound_manager.sonar_to_pipewire import generate_virtual_sinks_conf
 
 
 STATE_FILE      = Path.home() / '.config' / 'arctis_manager' / '.eq_mode'
-YAML_PATH       = Path.home() / '.config' / 'arctis_manager' / 'devices' / 'nova_pro_wireless.yaml'
+_DEVICES_DIR    = Path.home() / '.config' / 'arctis_manager' / 'devices'
 _OVERRIDES_FILE = Path.home() / '.config' / 'arctis_manager' / 'routing_overrides.json'
 
 # With the loopback-based routing, apps always target Arctis_Game/Chat.
@@ -58,10 +58,14 @@ def _update_routing_overrides(new_mode: str) -> None:
 
 def _apply_yaml(mode: str) -> bool:
     try:
-        content = YAML_PATH.read_text()
-        for old, new in (_SONAR_ON if mode == 'sonar' else _SONAR_OFF).items():
-            content = content.replace(old, new)
-        YAML_PATH.write_text(content)
+        swaps = _SONAR_ON if mode == 'sonar' else _SONAR_OFF
+        for yaml_file in sorted(_DEVICES_DIR.glob('*.yaml')):
+            content = yaml_file.read_text()
+            new_content = content
+            for old, new in swaps.items():
+                new_content = new_content.replace(old, new)
+            if new_content != content:
+                yaml_file.write_text(new_content)
         return True
     except Exception:
         return False

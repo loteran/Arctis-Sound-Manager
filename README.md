@@ -17,7 +17,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 - **Volume sliders** per channel with live percentage display
 - **Sonar EQ** — full SteelSeries Sonar-style parametric EQ system (v2.0):
   - Interactive EQ curve with up to 10 bands per channel (Game / Chat / Micro)
-  - 297 Game presets, 8 Chat, 14 Mic imported from Sonar — searchable, with 9 favorite slots
+  - 312 Game presets, 8 Chat, 14 Mic bundled — searchable, with 9 favorite slots
   - Macro sliders: Basses / Voix / Aigus (±12 dB)
   - **Spatial Audio** — routes Game channel through HeSuVi virtual 7.1 surround, with **Immersion** (0–12 dB gain) and **Distance** (plate reverb) sliders
   - **Boost de Volume** — up to +12 dB gain node at the end of the filter chain
@@ -26,6 +26,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 - **10-band equalizer** — Custom mode: per-band gain (31 Hz to 16 kHz), save/load presets
 - **ANC / Transparent mode indicator** — reflects the physical button state (Off / Transparent / ANC) in real time
 - **Device status page** — battery, mic mute, sidetone, and more depending on your device
+- **Launch at startup** — toggle in Settings to enable/disable the daemon autostart via systemd
 - **Help page** — built-in user manual in English, French and Spanish
 - **Virtual surround 7.1** — optional HeSuVi filter-chain for stereo headsets
 
@@ -132,11 +133,18 @@ After setup, a new audio sink called **"Virtual Surround Sink"** appears in your
 paru -S arctis-sound-manager
 ```
 
-Then run the post-install setup to deploy user configs and download the HRIR file:
+Then run the post-install setup — this handles everything automatically:
 
 ```bash
 asm-setup
 ```
+
+`asm-setup` will:
+- Write the desktop entry and systemd service file
+- Install udev rules for USB device access (polkit popup for sudo)
+- Download the HRIR file for virtual surround
+- Enable and start all required systemd user services (`arctis-manager`, `arctis-video-router`, `filter-chain`)
+- Restart PipeWire
 
 ### Other distros (from source)
 

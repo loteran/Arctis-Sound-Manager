@@ -18,6 +18,16 @@ _HRIR_DIR = Path.home() / ".local" / "share" / "pipewire" / "hrir_hesuvi"
 _HRIR_URL = "https://github.com/nicehash/HeSuVi/raw/master/hrir/44/KEMAR%20Gardner%201995/kemar.wav"
 
 
+def _run_systemctl(args: list[str]) -> None:
+    cmd = ["systemctl", "--user"] + args
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    label = " ".join(args)
+    if result.returncode == 0:
+        print(f"  [ok] systemctl --user {label}")
+    else:
+        print(f"  [!] systemctl --user {label} failed: {result.stderr.strip()}")
+
+
 def main() -> None:
     # ── PipeWire configs ──
     pw_src = _SHARE_DIR / "pipewire"
@@ -73,13 +83,42 @@ def main() -> None:
         stale.unlink()
         print(f"  [ok] Removed stale {stale}")
 
+    asm_cli = shutil.which("asm-cli")
+
+    # ── Desktop entry + systemd service file ──
+    print("\n==> Writing desktop entry and service file...")
+    if asm_cli:
+        result = subprocess.run([asm_cli, "desktop", "write"], text=True)
+        if result.returncode == 0:
+            print("  [ok] desktop entry and service file written")
+        else:
+            print("  [!] desktop write failed — run manually: asm-cli desktop write")
+    else:
+        print("  [!] asm-cli not found — run manually: asm-cli desktop write")
+
+    # ── Udev rules ──
+    print("\n==> Installing udev rules...")
+    if asm_cli:
+        result = subprocess.run(
+            [asm_cli, "udev", "write-rules", "--force", "--reload"],
+            text=True,
+        )
+        if result.returncode == 0:
+            print("  [ok] udev rules installed")
+        else:
+            print("  [!] udev rules failed — run manually: asm-cli udev write-rules --force --reload")
+    else:
+        print("  [!] asm-cli not found — run manually: asm-cli udev write-rules --force --reload")
+
+    # ── Systemd services ──
+    print("\n==> Enabling services...")
+    _run_systemctl(["daemon-reload"])
+    _run_systemctl(["enable", "--now", "arctis-manager.service"])
+    _run_systemctl(["enable", "--now", "arctis-video-router.service"])
+    _run_systemctl(["enable", "--now", "filter-chain.service"])
+    _run_systemctl(["restart", "pipewire", "pipewire-pulse"])
+
     print("\n==> Setup complete!")
-    print("    Enable services with:")
-    print("      systemctl --user daemon-reload")
-    print("      systemctl --user enable --now arctis-manager.service")
-    print("      systemctl --user enable --now arctis-video-router.service")
-    print("      systemctl --user enable --now filter-chain.service")
-    print("      systemctl --user restart pipewire pipewire-pulse")
 
 
 if __name__ == "__main__":

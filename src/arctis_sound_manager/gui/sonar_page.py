@@ -87,7 +87,7 @@ from arctis_sound_manager.sonar_to_pipewire import (
 
 _CFG          = Path.home() / ".config" / "arctis_manager"
 _PRESETS_DIR  = _CFG / "sonar_presets"
-_RAW_DIR      = Path("/mnt/NVMe/sonar_easyeffects_presets/sonar_raw_presets")
+_RAW_DIR      = Path(__file__).parent / "presets"
 
 _CHANNEL_TAG  = {"game": "[Game]", "chat": "[Chat]", "micro": "[Mic]", "output": "[Game]"}
 _MAX_FAV      = 9
