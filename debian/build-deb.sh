@@ -99,6 +99,10 @@ install -Dm644 scripts/pipewire/10-arctis-virtual-sinks.conf \
 install -Dm644 scripts/pipewire/sink-virtual-surround-7.1-hesuvi.conf \
     "${PKGDIR}/usr/share/${PKG}/pipewire/sink-virtual-surround-7.1-hesuvi.conf"
 
+# ── filter-chain.service ─────────────────────────────────────
+install -Dm644 scripts/filter-chain.service \
+    "${PKGDIR}/usr/share/${PKG}/filter-chain.service"
+
 # ── Device configs ──────────────────────────────────────────
 install -d "${PKGDIR}/usr/share/${PKG}/devices"
 install -Dm644 src/arctis_sound_manager/devices/*.yaml \

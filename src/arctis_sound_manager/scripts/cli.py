@@ -36,6 +36,8 @@ SERVICE_PATH = SYSTEMD_USER_DIR / 'arctis-manager.service'
 _SERVICE_TEMPLATE = """\
 [Unit]
 Description=Arctis Sound Manager
+After=pipewire.service pipewire-pulse.service
+Wants=pipewire.service
 StartLimitInterval=1min
 StartLimitBurst=5
 
@@ -217,6 +219,7 @@ def write_desktop_entries() -> int:
     shutil.copyfile(Path(__file__).parent.parent / 'gui' / 'images' / 'steelseries_logo.svg', ICON_PATH)
 
     # 2. write the desktop entry
+    APPLICATIONS_PATH.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(Path(__file__).parent.parent / 'desktop' / 'ArctisManager.desktop', DESKTOP_WINDOW_PATH)
 
     asm_gui = shutil.which('asm-gui')

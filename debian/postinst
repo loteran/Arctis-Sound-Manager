@@ -7,12 +7,10 @@ if [ "$1" = "configure" ]; then
     echo ""
     echo "  Arctis Sound Manager installed!"
     echo ""
-    echo "  Run 'asm-setup' to deploy PipeWire configs and"
-    echo "  download the HRIR file for virtual surround."
-    echo ""
-    echo "  Then enable the services:"
-    echo "    systemctl --user enable --now arctis-manager"
-    echo "    systemctl --user enable --now arctis-video-router"
+    echo "  Run 'asm-setup' to complete setup:"
+    echo "    - Deploy PipeWire configs (virtual sinks, HeSuVi surround)"
+    echo "    - Download the HRIR file for virtual surround"
+    echo "    - Enable all required services (arctis-manager, arctis-video-router, filter-chain)"
     echo ""
 fi
 

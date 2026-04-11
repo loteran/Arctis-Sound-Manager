@@ -65,6 +65,8 @@ RULES
 install -Dm644 /dev/stdin %{buildroot}%{_userunitdir}/arctis-manager.service <<'SERVICE'
 [Unit]
 Description=Arctis Sound Manager
+After=pipewire.service pipewire-pulse.service
+Wants=pipewire.service
 StartLimitInterval=1min
 StartLimitBurst=5
 
@@ -113,6 +115,10 @@ install -Dm644 scripts/pipewire/10-arctis-virtual-sinks.conf \
     %{buildroot}%{_datadir}/%{name}/pipewire/10-arctis-virtual-sinks.conf
 install -Dm644 scripts/pipewire/sink-virtual-surround-7.1-hesuvi.conf \
     %{buildroot}%{_datadir}/%{name}/pipewire/sink-virtual-surround-7.1-hesuvi.conf
+
+# filter-chain.service (bundled for distros that don't ship one)
+install -Dm644 scripts/filter-chain.service \
+    %{buildroot}%{_datadir}/%{name}/filter-chain.service
 
 # Device configs
 install -d %{buildroot}%{_datadir}/%{name}/devices

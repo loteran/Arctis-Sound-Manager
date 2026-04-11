@@ -1,0 +1,13 @@
+[Unit]
+Description=PipeWire filter-chain
+Documentation=https://gitlab.freedesktop.org/pipewire/pipewire/-/wikis/Filter-Chain
+After=pipewire.service
+Requires=pipewire.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/pipewire -c filter-chain.conf
+Restart=on-failure
+
+[Install]
+WantedBy=pipewire-session-manager.service
