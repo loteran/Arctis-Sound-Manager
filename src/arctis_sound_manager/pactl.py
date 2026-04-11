@@ -29,6 +29,13 @@ class PulseAudioManager:
         self.pulse = pulsectl.Pulse('arctis-sound-manager')
         self.logger = logging.getLogger('PulseAudioManager')
     
+    def _reconnect(self):
+        try:
+            self.pulse.disconnect()
+        except Exception:
+            pass
+        self.pulse = pulsectl.Pulse('arctis-sound-manager')
+
     def sink_list_wrapper(self) -> list[TypedPulseSinkInfo]:
         retry_attempts = 15
 
@@ -37,9 +44,10 @@ class PulseAudioManager:
             try:
                 sinks = self.pulse.sink_list()
                 break
-            except pulsectl.PulseError as e:
+            except Exception as e:
                 self.logger.error(f'Error while getting sink list: {e}')
                 retry_attempts -= 1
+                self._reconnect()
                 time.sleep(1)
 
         sinks: list[TypedPulseSinkInfo] = sinks if type(sinks) is list else [sinks] # pyright: ignore[reportAssignmentType]
@@ -100,9 +108,10 @@ class PulseAudioManager:
             try:
                 sources = self.pulse.source_list()
                 break
-            except pulsectl.PulseError as e:
+            except Exception as e:
                 self.logger.error(f'Error getting source list: {e}')
                 retry_attempts -= 1
+                self._reconnect()
                 time.sleep(1)
 
         def check_prod_id(product_id_attr: str) -> bool:
