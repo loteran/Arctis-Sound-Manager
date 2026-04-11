@@ -92,6 +92,8 @@ sudo apt install pipx libusb-1.0-0 libpulse0 libudev1
 sudo dnf install pipx libusb1 pulseaudio-libs systemd-libs
 ```
 
+> **Optional — Spatial Audio Distance effect**: The "Distance" slider in Spatial Audio uses the `plate_1423` LADSPA plugin (`swh-plugins` on Arch, `swh-plugins` on Fedora/Ubuntu). It is **only loaded when Distance > 0**; leaving it at 0 (default) requires no additional package.
+
 ---
 
 ## Virtual Surround 7.1
@@ -148,6 +150,7 @@ asm-setup
 - Write the desktop entry and systemd service file
 - Install udev rules for USB device access (polkit popup for sudo)
 - Download the HRIR file for virtual surround
+- Install `filter-chain.service` automatically if not already provided by the system
 - Enable and start all required systemd user services (`arctis-manager`, `arctis-video-router`, `filter-chain`)
 - Restart PipeWire
 
@@ -164,6 +167,14 @@ Then run the post-install setup:
 asm-setup
 ```
 
+`asm-setup` will:
+- Write the desktop entry and systemd service file
+- Install udev rules for USB device access (polkit popup for sudo)
+- Download the HRIR file for virtual surround
+- Install `filter-chain.service` automatically (not shipped by default on Fedora)
+- Enable and start all required systemd user services (`arctis-manager`, `arctis-video-router`, `filter-chain`)
+- Restart PipeWire
+
 ### Debian / Ubuntu (PPA)
 
 ```bash
@@ -177,6 +188,14 @@ Then run the post-install setup:
 ```bash
 asm-setup
 ```
+
+`asm-setup` will:
+- Write the desktop entry and systemd service file
+- Install udev rules for USB device access (polkit popup for sudo)
+- Download the HRIR file for virtual surround
+- Install `filter-chain.service` automatically (not shipped by default on Ubuntu)
+- Enable and start all required systemd user services (`arctis-manager`, `arctis-video-router`, `filter-chain`)
+- Restart PipeWire
 
 > **Ubuntu 24.04 (Noble)** is the currently supported series. Other series may work via the `.deb` attached to each [GitHub release](https://github.com/loteran/Arctis-Sound-Manager/releases).
 
@@ -408,6 +427,7 @@ src/arctis_sound_manager/
 scripts/
 ├── install.sh                              # Main installer (source installs)
 ├── setup-surround.sh                       # Standalone virtual surround setup
+├── filter-chain.service                    # Bundled systemd service (auto-installed on distros that don't ship one)
 ├── pipewire/
 │   ├── 10-arctis-virtual-sinks.conf           # PipeWire loopback sinks (Game/Chat/Media)
 │   └── sink-virtual-surround-7.1-hesuvi.conf  # HeSuVi 7.1 virtual surround filter-chain
