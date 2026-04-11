@@ -28,7 +28,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 - **Device status page** — battery, mic mute, sidetone, and more depending on your device
 - **Launch at startup** — toggle in Settings to enable/disable the daemon autostart via systemd
 - **Help page** — built-in user manual in English, French and Spanish
-- **Virtual surround 7.1** — optional HeSuVi filter-chain for stereo headsets
+- **Virtual surround 7.1** — HeSuVi filter-chain included automatically with the install
 
 ## Screenshots
 
@@ -89,7 +89,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 
 ---
 
-## Optional: Virtual Surround 7.1
+## Virtual Surround 7.1
 
 > The virtual surround setup is also available as a **standalone repo**: [arctis-virtual-surround](https://github.com/loteran/arctis-virtual-surround).
 > Use it if you want to install virtual surround independently of Arctis Sound Manager, or on a fresh OS with a single command (`bash install.sh`).
@@ -145,6 +145,35 @@ asm-setup
 - Download the HRIR file for virtual surround
 - Enable and start all required systemd user services (`arctis-manager`, `arctis-video-router`, `filter-chain`)
 - Restart PipeWire
+
+### Fedora (COPR)
+
+```bash
+sudo dnf copr enable loteran/arctis-sound-manager
+sudo dnf install arctis-sound-manager
+```
+
+Then run the post-install setup:
+
+```bash
+asm-setup
+```
+
+### Debian / Ubuntu (PPA)
+
+```bash
+sudo add-apt-repository ppa:loteran/arctis-sound-manager
+sudo apt update
+sudo apt install arctis-sound-manager
+```
+
+Then run the post-install setup:
+
+```bash
+asm-setup
+```
+
+> **Ubuntu 24.04 (Noble)** is the currently supported series. Other series may work via the `.deb` attached to each [GitHub release](https://github.com/loteran/Arctis-Sound-Manager/releases).
 
 ### Other distros (from source)
 

@@ -1,5 +1,5 @@
 Name:           arctis-sound-manager
-Version:        1.0.27
+Version:        1.0.31
 Release:        1%{?dist}
 Summary:        Linux GUI for SteelSeries Arctis headsets
 
@@ -148,6 +148,12 @@ udevadm control --reload-rules || :
 %{_datadir}/%{name}/
 
 %changelog
+* Fri Apr 11 2026 loteran <https://github.com/loteran> - 1.0.31-1
+- Bundle 334 Sonar presets in package (312 Game, 8 Chat, 14 Mic)
+- asm-setup: full automation (desktop, udev, services, PipeWire)
+- Settings: Launch at startup toggle via systemd
+- Fix: hardcoded device YAML and NVMe path
+
 * Thu Apr 10 2026 loteran <https://github.com/loteran> - 1.0.27-1
 - Fix: silent Game channel persists after Sonar mode switch (issue #14) — duplicate HeSuVi node
   (install.sh places static config in pipewire.conf.d, Sonar generates dynamic in filter-chain.conf.d;
