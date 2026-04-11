@@ -44,9 +44,9 @@ export PYTHONDONTWRITEBYTECODE=1
 $PIP install --target="${PYLIB}" --no-deps --python-platform linux --python-version 3.12 \
     build/deb/arctis_sound_manager-*.whl
 
-# Bundle dbus-next (not in Ubuntu repos)
+# Bundle dbus-next and pulsectl (not in Ubuntu/Debian repos)
 $PIP install --target="${PYLIB}" --no-deps --python-platform linux --python-version 3.12 \
-    dbus-next
+    dbus-next pulsectl
 
 # Clean bytecode and uv artifacts
 find "${PYLIB}" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
@@ -108,13 +108,17 @@ install -d "${PKGDIR}/usr/share/${PKG}/devices"
 install -Dm644 src/arctis_sound_manager/devices/*.yaml \
     -t "${PKGDIR}/usr/share/${PKG}/devices/"
 
+# ── First-run autostart ─────────────────────────────────────
+install -Dm644 debian/asm-first-run.desktop \
+    "${PKGDIR}/etc/xdg/autostart/asm-first-run.desktop"
+
 # ── DEBIAN/control ──────────────────────────────────────────
 cat > "${PKGDIR}/DEBIAN/control" << EOF
 Package: ${PKG}
 Version: ${VERSION}-1
 Architecture: ${ARCH}
 Maintainer: loteran <axel.valadon@gmail.com>
-Depends: python3 (>= 3.10), python3-pyside6.qtcore, python3-pyside6.qtgui, python3-pyside6.qtwidgets, python3-pyside6.qtsvg, python3-pyside6.qtnetwork, python3-pulsectl, python3-pyudev, python3-usb, python3-ruamel.yaml, pipewire, pipewire-pulse, libusb-1.0-0
+Depends: python3 (>= 3.10), python3-pyside6.qtcore | python3-pip, python3-pyside6.qtgui | python3-pip, python3-pyside6.qtwidgets | python3-pip, python3-pyside6.qtsvg | python3-pip, python3-pyside6.qtnetwork | python3-pip, python3-pyudev, python3-usb, python3-ruamel.yaml, pipewire, pipewire-pulse, wireplumber, libusb-1.0-0
 Recommends: noise-suppression-for-voice, swh-plugins
 Section: sound
 Priority: optional
@@ -133,7 +137,7 @@ install -m755 debian/postinst "${PKGDIR}/DEBIAN/postinst"
 install -m755 debian/postrm "${PKGDIR}/DEBIAN/postrm"
 
 # ── md5sums ─────────────────────────────────────────────────
-(cd "${PKGDIR}" && find usr -type f -exec md5sum {} +) > "${PKGDIR}/DEBIAN/md5sums"
+(cd "${PKGDIR}" && find usr etc -type f -exec md5sum {} +) > "${PKGDIR}/DEBIAN/md5sums"
 
 # ── Build .deb ──────────────────────────────────────────────
 echo "==> Packaging..."

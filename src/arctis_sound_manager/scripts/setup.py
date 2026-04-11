@@ -186,6 +186,11 @@ def main() -> None:
     _run_systemctl(["enable", "--now", "arctis-video-router.service"])
     _run_systemctl(["enable", "--now", fc_service])
 
+    # Mark setup as done — checked by /etc/xdg/autostart/asm-first-run.desktop
+    flag = Path.home() / ".config" / "arctis_manager" / ".setup_done"
+    flag.parent.mkdir(parents=True, exist_ok=True)
+    flag.touch()
+
     print("\n==> Setup complete!")
 
 
