@@ -1,5 +1,5 @@
 Name:           arctis-sound-manager
-Version:        1.0.27
+Version:        1.0.34
 Release:        1%{?dist}
 Summary:        Linux GUI for SteelSeries Arctis headsets
 
@@ -16,13 +16,13 @@ BuildRequires:  desktop-file-utils
 BuildRequires:  libappstream-glib
 
 Requires:       python3-pyside6
-Requires:       python3-dbus-next
 Requires:       python3-pulsectl
 Requires:       python3-pyudev
 Requires:       python3-pyusb
 Requires:       python3-ruamel-yaml
 Requires:       pipewire
 Requires:       pipewire-pulseaudio
+Requires:       wireplumber
 Requires:       libusb1
 Requires:       pulseaudio-libs
 
@@ -43,6 +43,9 @@ ANC/Transparent mode control, and device management via PipeWire.
 
 %install
 pip3 install --root=%{buildroot} --prefix=/usr --no-deps --no-build-isolation %{SOURCE1}
+
+# Bundle dbus-next (not in Fedora repos)
+pip3 install --root=%{buildroot} --prefix=/usr --no-deps dbus-next
 
 # udev rules
 install -Dm644 /dev/stdin %{buildroot}%{_udevrulesdir}/91-steelseries-arctis.rules <<'RULES'
@@ -65,6 +68,8 @@ RULES
 install -Dm644 /dev/stdin %{buildroot}%{_userunitdir}/arctis-manager.service <<'SERVICE'
 [Unit]
 Description=Arctis Sound Manager
+After=pipewire.service pipewire-pulse.service
+Wants=pipewire.service
 StartLimitInterval=1min
 StartLimitBurst=5
 
@@ -114,14 +119,40 @@ install -Dm644 scripts/pipewire/10-arctis-virtual-sinks.conf \
 install -Dm644 scripts/pipewire/sink-virtual-surround-7.1-hesuvi.conf \
     %{buildroot}%{_datadir}/%{name}/pipewire/sink-virtual-surround-7.1-hesuvi.conf
 
+# filter-chain.service (bundled for distros that don't ship one)
+install -Dm644 scripts/filter-chain.service \
+    %{buildroot}%{_datadir}/%{name}/filter-chain.service
+
 # Device configs
 install -d %{buildroot}%{_datadir}/%{name}/devices
 install -Dm644 src/arctis_sound_manager/devices/*.yaml \
     -t %{buildroot}%{_datadir}/%{name}/devices/
 
+# First-run autostart (triggers asm-setup on first graphical login)
+install -Dm644 debian/asm-first-run.desktop \
+    %{buildroot}/etc/xdg/autostart/asm-first-run.desktop
+
 %post
 %systemd_user_post arctis-manager.service arctis-video-router.service
 udevadm control --reload-rules || :
+udevadm trigger || :
+
+# Run asm-setup immediately if the installing user has an active D-Bus session.
+# Falls back to /etc/xdg/autostart/asm-first-run.desktop on next login otherwise.
+REAL_USER="${SUDO_USER:-}"
+if [ -n "$REAL_USER" ]; then
+    REAL_UID=$(id -u "$REAL_USER")
+    XDG_RUNTIME_DIR="/run/user/$REAL_UID"
+    DBUS_SOCKET="$XDG_RUNTIME_DIR/bus"
+    if [ -S "$DBUS_SOCKET" ]; then
+        echo "  Running asm-setup for ${REAL_USER}..."
+        su -l "$REAL_USER" -c \
+            "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS=unix:path=$DBUS_SOCKET asm-setup" \
+            || echo "  [!] asm-setup failed — run manually: asm-setup"
+    else
+        echo "  No active session found — asm-setup will run on next login."
+    fi
+fi
 
 %preun
 %systemd_user_preun arctis-manager.service arctis-video-router.service
@@ -134,6 +165,8 @@ udevadm control --reload-rules || :
 %doc README.md CHANGELOG.md
 %{python3_sitelib}/arctis_sound_manager/
 %{python3_sitelib}/arctis_sound_manager-*.dist-info/
+%{python3_sitelib}/dbus_next/
+%{python3_sitelib}/dbus_next-*.dist-info/
 %{_bindir}/asm-daemon
 %{_bindir}/asm-gui
 %{_bindir}/asm-cli
@@ -146,8 +179,28 @@ udevadm control --reload-rules || :
 %{_datadir}/icons/hicolor/scalable/apps/arctis-manager.svg
 %{_metainfodir}/com.github.loteran.arctis-sound-manager.metainfo.xml
 %{_datadir}/%{name}/
+/etc/xdg/autostart/asm-first-run.desktop
 
 %changelog
+* Sat Apr 12 2026 loteran <https://github.com/loteran> - 1.0.34-1
+- Bundle dbus-next and pulsectl (not in Fedora/Ubuntu/Debian/Arch repos)
+- Add wireplumber to Requires
+- Auto-run asm-setup in %%post when user session is active (SUDO_USER + D-Bus socket)
+- Install XDG autostart fallback (/etc/xdg/autostart/asm-first-run.desktop)
+- asm-setup: write .setup_done flag to skip autostart on subsequent logins
+
+* Sat Apr 12 2026 loteran <https://github.com/loteran> - 1.0.33-1
+- Bundle dbus-next (not in Fedora repos)
+- Add wireplumber to Requires
+- Auto-run asm-setup in %%post if user session is active
+- Install XDG autostart fallback for asm-setup
+
+* Fri Apr 11 2026 loteran <https://github.com/loteran> - 1.0.31-1
+- Bundle 334 Sonar presets in package (312 Game, 8 Chat, 14 Mic)
+- asm-setup: full automation (desktop, udev, services, PipeWire)
+- Settings: Launch at startup toggle via systemd
+- Fix: hardcoded device YAML and NVMe path
+
 * Thu Apr 10 2026 loteran <https://github.com/loteran> - 1.0.27-1
 - Fix: silent Game channel persists after Sonar mode switch (issue #14) — duplicate HeSuVi node
   (install.sh places static config in pipewire.conf.d, Sonar generates dynamic in filter-chain.conf.d;

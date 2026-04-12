@@ -1,0 +1,131 @@
+{
+  "bassBoostState": {
+    "enabled": true,
+    "value": 0
+  },
+  "trebleBoostState": {
+    "enabled": true,
+    "value": 0
+  },
+  "voiceClarityState": {
+    "enabled": true,
+    "value": 0
+  },
+  "smartVolume": {
+    "enabled": false,
+    "volumeLevel": 0,
+    "loudness": "balanced"
+  },
+  "generalGain": 0,
+  "parametricEQ": {
+    "enabled": true,
+    "filter1": {
+      "enabled": true,
+      "qFactor": 0.707,
+      "frequency": 68.3,
+      "gain": 4.7,
+      "type": "peakingEQ"
+    },
+    "filter2": {
+      "enabled": true,
+      "qFactor": 0.707,
+      "frequency": 156.6,
+      "gain": 4.2,
+      "type": "peakingEQ"
+    },
+    "filter3": {
+      "enabled": true,
+      "qFactor": 0.707,
+      "frequency": 220.6,
+      "gain": -0.8,
+      "type": "peakingEQ"
+    },
+    "filter4": {
+      "enabled": true,
+      "qFactor": 1.5,
+      "frequency": 336.7,
+      "gain": 3.7,
+      "type": "peakingEQ"
+    },
+    "filter5": {
+      "enabled": true,
+      "qFactor": 0.707,
+      "frequency": 943.4,
+      "gain": -2.6,
+      "type": "peakingEQ"
+    },
+    "filter6": {
+      "enabled": true,
+      "qFactor": 1,
+      "frequency": 2020,
+      "gain": 5.2,
+      "type": "peakingEQ"
+    },
+    "filter7": {
+      "enabled": true,
+      "qFactor": 0.707,
+      "frequency": 3680,
+      "gain": 2.3,
+      "type": "peakingEQ"
+    },
+    "filter8": {
+      "enabled": true,
+      "qFactor": 0.707,
+      "frequency": 6470,
+      "gain": -1.6,
+      "type": "peakingEQ"
+    },
+    "filter9": {
+      "enabled": true,
+      "qFactor": 0.707,
+      "frequency": 11200,
+      "gain": 4.1,
+      "type": "peakingEQ"
+    },
+    "filter10": {
+      "enabled": false,
+      "qFactor": 0.707,
+      "frequency": 10000,
+      "gain": 0,
+      "type": "peakingEQ"
+    }
+  },
+  "virtualSurroundState": false,
+  "virtualSurroundChannels": {
+    "frontLeft": {
+      "position": 30,
+      "gain": 0
+    },
+    "frontRight": {
+      "position": -30,
+      "gain": 0
+    },
+    "center": {
+      "position": 0,
+      "gain": 0
+    },
+    "subWoofer": {
+      "position": 0,
+      "gain": 0
+    },
+    "rearLeft": {
+      "position": 150,
+      "gain": 0
+    },
+    "rearRight": {
+      "position": -150,
+      "gain": 0
+    },
+    "sideLeft": {
+      "position": 90,
+      "gain": 0
+    },
+    "sideRight": {
+      "position": -90,
+      "gain": 0
+    }
+  },
+  "reverbGainDB": -6,
+  "formFactor": "headphones",
+  "globalEnableState": true
+}

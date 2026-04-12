@@ -38,7 +38,7 @@ from arctis_sound_manager.gui.theme import (
 )
 
 STATE_FILE     = Path.home() / ".config" / "arctis_manager" / ".eq_mode"
-YAML_PATH      = Path.home() / ".config" / "arctis_manager" / "devices" / "nova_pro_wireless.yaml"
+_DEVICES_DIR   = Path.home() / ".config" / "arctis_manager" / "devices"
 PRESETS_FILE   = Path.home() / ".config" / "arctis_manager" / "eq_presets.json"
 _OVERRIDES_FILE = Path.home() / ".config" / "arctis_manager" / "routing_overrides.json"
 
@@ -78,10 +78,14 @@ def _current_mode() -> str:
 
 def _apply_yaml(mode: str) -> bool:
     try:
-        content = YAML_PATH.read_text()
-        for old, new in (_SONAR_ON if mode == "sonar" else _SONAR_OFF).items():
-            content = content.replace(old, new)
-        YAML_PATH.write_text(content)
+        swaps = _SONAR_ON if mode == "sonar" else _SONAR_OFF
+        for yaml_file in sorted(_DEVICES_DIR.glob("*.yaml")):
+            content = yaml_file.read_text()
+            new_content = content
+            for old, new in swaps.items():
+                new_content = new_content.replace(old, new)
+            if new_content != content:
+                yaml_file.write_text(new_content)
         return True
     except Exception:
         return False

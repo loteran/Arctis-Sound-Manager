@@ -1,6 +1,6 @@
 # Maintainer: loteran <https://github.com/loteran>
 pkgname=arctis-sound-manager
-pkgver=1.0.27
+pkgver=1.0.34
 pkgrel=1
 pkgdesc="Linux GUI for SteelSeries Arctis headsets — all GG/Sonar features: mixer, EQ, ANC, mic processing, surround"
 arch=('any')
@@ -9,13 +9,12 @@ license=('GPL-3.0-or-later')
 depends=(
     'python>=3.10'
     'pyside6'
-    'python-dbus-next'
-    'python-pulsectl'
     'python-pyudev'
     'python-pyusb'
     'python-ruamel-yaml'
     'pipewire'
     'pipewire-pulse'
+    'wireplumber'
     'libusb'
     'libpulse'
 )
@@ -38,6 +37,9 @@ package() {
 
     # Install Python package
     python -m installer --destdir="$pkgdir" dist/*.whl
+
+    # Bundle dbus-next and pulsectl (not in official Arch repos)
+    pip install --root="$pkgdir" --prefix=/usr --no-deps dbus-next pulsectl
 
     # udev rules
     install -Dm644 /dev/stdin "$pkgdir/usr/lib/udev/rules.d/91-steelseries-arctis.rules" <<'RULES'
@@ -83,6 +85,8 @@ RULES
     install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/user/arctis-manager.service" <<'SERVICE'
 [Unit]
 Description=Arctis Sound Manager
+After=pipewire.service pipewire-pulse.service
+Wants=pipewire.service
 StartLimitInterval=1min
 StartLimitBurst=5
 
@@ -111,11 +115,15 @@ RestartSec=3
 WantedBy=default.target
 SERVICE
 
-    # PipeWire configs (shared, copied to user dir on first run)
+    # PipeWire configs (shared, copied to user dir on first run by asm-setup)
     install -Dm644 scripts/pipewire/10-arctis-virtual-sinks.conf \
         "$pkgdir/usr/share/$pkgname/pipewire/10-arctis-virtual-sinks.conf"
     install -Dm644 scripts/pipewire/sink-virtual-surround-7.1-hesuvi.conf \
         "$pkgdir/usr/share/$pkgname/pipewire/sink-virtual-surround-7.1-hesuvi.conf"
+
+    # filter-chain.service (for distros that don't ship one; Arch ships it via pipewire-audio)
+    install -Dm644 scripts/filter-chain.service \
+        "$pkgdir/usr/share/$pkgname/filter-chain.service"
 
     # Device configs
     install -Dm644 src/arctis_sound_manager/devices/*.yaml \
@@ -124,4 +132,8 @@ SERVICE
     # AppStream metainfo
     install -Dm644 src/arctis_sound_manager/desktop/com.github.loteran.arctis-sound-manager.metainfo.xml \
         "$pkgdir/usr/share/metainfo/com.github.loteran.arctis-sound-manager.metainfo.xml"
+
+    # First-run autostart (triggers asm-setup on first graphical login)
+    install -Dm644 debian/asm-first-run.desktop \
+        "$pkgdir/etc/xdg/autostart/asm-first-run.desktop"
 }

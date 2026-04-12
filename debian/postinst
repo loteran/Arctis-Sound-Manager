@@ -2,17 +2,39 @@
 set -e
 
 if [ "$1" = "configure" ]; then
+    # Reload udev rules (system-level, runs as root)
     udevadm control --reload-rules 2>/dev/null || true
     udevadm trigger 2>/dev/null || true
+
+    REAL_USER="${SUDO_USER:-}"
+
+    # If PySide6 is not available as a system package (e.g. Ubuntu 22.04),
+    # install it via pip for the real user who ran sudo.
+    if [ -n "$REAL_USER" ] && ! python3 -c "from PySide6 import QtWidgets" 2>/dev/null; then
+        echo "  PySide6 not found in system packages — installing via pip for ${REAL_USER}..."
+        su -l "$REAL_USER" -c \
+            "pip3 install --user --break-system-packages pyside6 2>/dev/null || pip3 install --user pyside6" \
+            || echo "  [!] pip install failed — run manually: pip3 install --user pyside6"
+    fi
+
+    # Run asm-setup immediately if the user has an active D-Bus session.
+    # Falls back to /etc/xdg/autostart/asm-first-run.desktop on next login otherwise.
+    if [ -n "$REAL_USER" ]; then
+        REAL_UID=$(id -u "$REAL_USER")
+        XDG_RUNTIME_DIR="/run/user/$REAL_UID"
+        DBUS_SOCKET="$XDG_RUNTIME_DIR/bus"
+        if [ -S "$DBUS_SOCKET" ]; then
+            echo "  Running asm-setup for ${REAL_USER}..."
+            su -l "$REAL_USER" -c \
+                "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS=unix:path=$DBUS_SOCKET asm-setup" \
+                || echo "  [!] asm-setup failed — run manually: asm-setup"
+        else
+            echo "  No active session found — asm-setup will run automatically on next login."
+        fi
+    fi
+
     echo ""
     echo "  Arctis Sound Manager installed!"
-    echo ""
-    echo "  Run 'asm-setup' to deploy PipeWire configs and"
-    echo "  download the HRIR file for virtual surround."
-    echo ""
-    echo "  Then enable the services:"
-    echo "    systemctl --user enable --now arctis-manager"
-    echo "    systemctl --user enable --now arctis-video-router"
     echo ""
 fi
 

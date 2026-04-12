@@ -36,6 +36,8 @@ SERVICE_PATH = SYSTEMD_USER_DIR / 'arctis-manager.service'
 _SERVICE_TEMPLATE = """\
 [Unit]
 Description=Arctis Sound Manager
+After=pipewire.service pipewire-pulse.service
+Wants=pipewire.service
 StartLimitInterval=1min
 StartLimitBurst=5
 
@@ -144,22 +146,23 @@ def write_udev_rules(rules_path: Path, create_directories: bool, force_write: bo
         return 3
     
     yaml = YAML(typ='safe')
-    products: dict[int, ConfigRuleset] = {}
+    products: dict[tuple[int, str], ConfigRuleset] = {}
     for config_path in DEVICES_CONFIG_FOLDER:
         for config_file in config_path.glob('*.yaml'):
             config_yaml = yaml.load(config_file)
 
             config = DeviceConfiguration(config_yaml)
-            products[config.vendor_id] = ConfigRuleset(config.vendor_id, config.product_ids, config.name)
+            key = (config.vendor_id, config.name)
+            products[key] = ConfigRuleset(config.vendor_id, config.product_ids, config.name)
     
     rule_template = 'SUBSYSTEM=="usb", ENV{{DEVTYPE}}=="usb_device", ATTRS{{idVendor}}=="{idVendor}", ATTRS{{idProduct}}=="{idProduct}", MODE="0666", TAG+="uaccess"'
     rules = []
-    for vendor_id, ruleset in products.items():
+    for ruleset in products.values():
         rules.append('')
         rules.append(f'# {ruleset.device_name}')
         for pid in ruleset.product_ids:
             rules.append(rule_template.format(
-                idVendor=f'{vendor_id:04x}',
+                idVendor=f'{ruleset.vendor_id:04x}',
                 idProduct=f'{pid:04x}',
             ))
     
@@ -219,6 +222,7 @@ def write_desktop_entries() -> int:
     shutil.copyfile(Path(__file__).parent.parent / 'gui' / 'images' / 'steelseries_logo.svg', ICON_PATH)
 
     # 2. write the desktop entry
+    APPLICATIONS_PATH.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(Path(__file__).parent.parent / 'desktop' / 'ArctisManager.desktop', DESKTOP_WINDOW_PATH)
 
     asm_gui = shutil.which('asm-gui')

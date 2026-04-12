@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Arctis Sound Manager — installer
-set -e
+set -euo pipefail
 
 # Ensure pipx/pipx-installed binaries (asm-cli, asm-daemon) are always in PATH,
 # regardless of whether uv was just installed or already present.
@@ -30,7 +30,9 @@ rm -rf dist
 uv build
 
 echo "==> Installing package with pipx..."
-find ./dist -name "*.whl" | head -n1 | xargs pipx install --force
+WHL=$(find ./dist -name "*.whl" | head -n1)
+[ -n "$WHL" ] || { echo "  [!] No wheel found in dist/ — build failed."; exit 1; }
+pipx install --force "$WHL"
 
 # 3. Setup udev rules (requires sudo)
 echo "==> Installing udev rules (requires sudo)..."
@@ -111,12 +113,35 @@ else
         echo "      Source: https://github.com/nicehash/HeSuVi/tree/master/hrir/44"
         echo "      Save it as: $HRIR_DIR/hrir.wav"
     fi
-    [ -f "$HRIR_DIR/hrir.wav" ] && echo "    [ok] HRIR file downloaded."
+    if [ -s "$HRIR_DIR/hrir.wav" ]; then
+        echo "    [ok] HRIR file downloaded."
+    else
+        rm -f "$HRIR_DIR/hrir.wav"
+        echo "  [!] HRIR download failed or file is empty — virtual surround will not work."
+        echo "      Download manually: https://github.com/nicehash/HeSuVi/tree/master/hrir/44"
+        echo "      Save as: $HRIR_DIR/hrir.wav, then run: systemctl --user restart filter-chain.service"
+    fi
 fi
 
 # 10. Enable filter-chain service (required for Sonar EQ and virtual surround)
 echo "==> Enabling filter-chain systemd service..."
-systemctl --user enable --now filter-chain.service
+# Detect the service name (differs by distro); install a bundled one if absent
+FC_SERVICE=""
+for name in filter-chain.service pipewire-filter-chain.service; do
+    if systemctl --user list-unit-files "$name" 2>/dev/null | grep -q "${name%%.*}"; then
+        FC_SERVICE="$name"
+        break
+    fi
+done
+if [ -z "$FC_SERVICE" ]; then
+    echo "  [info] filter-chain.service not found — installing bundled copy..."
+    SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
+    mkdir -p "$SYSTEMD_USER_DIR"
+    cp "$REPO_DIR/scripts/filter-chain.service" "$SYSTEMD_USER_DIR/filter-chain.service"
+    systemctl --user daemon-reload
+    FC_SERVICE="filter-chain.service"
+fi
+systemctl --user enable --now "$FC_SERVICE"
 
 echo ""
 echo "==> Installation complete!"

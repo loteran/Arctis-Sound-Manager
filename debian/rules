@@ -65,6 +65,10 @@ override_dh_auto_install:
 	install -Dm644 scripts/pipewire/sink-virtual-surround-7.1-hesuvi.conf \
 	    $(DEST)/usr/share/$(PKG)/pipewire/sink-virtual-surround-7.1-hesuvi.conf
 
+	# ── filter-chain.service (bundled for distros that don't ship one) ──
+	install -Dm644 scripts/filter-chain.service \
+	    $(DEST)/usr/share/$(PKG)/filter-chain.service
+
 	# ── Device configs ──────────────────────────────────────
 	install -d $(DEST)/usr/share/$(PKG)/devices
 	install -Dm644 src/arctis_sound_manager/devices/*.yaml \

@@ -1,0 +1,101 @@
+{
+  "noiseReductionState": {
+    "enabled": false,
+    "value": 0.0
+  },
+  "volumeStabilizerState": {
+    "enabled": true,
+    "value": 0.3
+  },
+  "noiseGateState": {
+    "enabled": false,
+    "value": -60.0
+  },
+  "automaticNoiseGateState": {
+    "enabled": false,
+    "value": 0.0
+  },
+  "parametricEQ": {
+    "enabled": true,
+    "filter1": {
+      "enabled": true,
+      "qFactor": 0.7071,
+      "frequency": 35.0,
+      "gain": 0.0,
+      "type": "highPass"
+    },
+    "filter2": {
+      "enabled": true,
+      "qFactor": 0.7071,
+      "frequency": 500.0,
+      "gain": -2.0,
+      "type": "peakingEQ"
+    },
+    "filter3": {
+      "enabled": true,
+      "qFactor": 0.7071,
+      "frequency": 1500.0,
+      "gain": -2.0,
+      "type": "peakingEQ"
+    },
+    "filter4": {
+      "enabled": true,
+      "qFactor": 0.7071,
+      "frequency": 8000.0,
+      "gain": 2.0,
+      "type": "peakingEQ"
+    },
+    "filter5": {
+      "enabled": true,
+      "qFactor": 0.7071,
+      "frequency": 11000.0,
+      "gain": -4.0,
+      "type": "peakingEQ"
+    },
+    "filter6": {
+      "enabled": false,
+      "qFactor": 1.0,
+      "frequency": 2000.0,
+      "gain": -0.5,
+      "type": "peakingEQ"
+    },
+    "filter7": {
+      "enabled": false,
+      "qFactor": 0.7071,
+      "frequency": 4000.0,
+      "gain": 1.0,
+      "type": "peakingEQ"
+    },
+    "filter8": {
+      "enabled": false,
+      "qFactor": 0.7071,
+      "frequency": 6000.0,
+      "gain": 0.5,
+      "type": "peakingEQ"
+    },
+    "filter9": {
+      "enabled": false,
+      "qFactor": 0.7071,
+      "frequency": 8000.0,
+      "gain": 0.0,
+      "type": "peakingEQ"
+    },
+    "filter10": {
+      "enabled": false,
+      "qFactor": 0.7071,
+      "frequency": 16000.0,
+      "gain": 0.0,
+      "type": "peakingEQ"
+    }
+  },
+  "impactNoiseReductionState": {
+    "enabled": false,
+    "value": 0.0
+  },
+  "noiseCancelingState": {
+    "enabled": true,
+    "value": 0.926
+  },
+  "acousticEchoCancelingState": false,
+  "globalEnableState": true
+}

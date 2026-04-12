@@ -3,6 +3,7 @@ Device / Settings page — ArctisSonar GUI visual style.
 Matches the ref_settingsPage.png design.
 """
 import os
+import subprocess
 
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtWidgets import (
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from arctis_sound_manager.gui.anc_widget import QAncWidget
+from arctis_sound_manager.gui.qt_widgets.q_dual_state import QDualState
 from arctis_sound_manager.i18n import I18n
 from arctis_sound_manager.gui.components import (
     DividerLine,
@@ -34,6 +36,25 @@ from arctis_sound_manager.gui.theme import (
     TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
+
+_SERVICE = "arctis-manager.service"
+
+
+def _autostart_enabled() -> bool:
+    result = subprocess.run(
+        ["systemctl", "--user", "is-enabled", _SERVICE],
+        capture_output=True, text=True,
+    )
+    return result.stdout.strip() == "enabled"
+
+
+def _set_autostart(enabled: bool) -> None:
+    action = "enable" if enabled else "disable"
+    subprocess.run(
+        ["systemctl", "--user", action, _SERVICE],
+        capture_output=True,
+    )
+
 
 def _styled_button(text: str) -> QPushButton:
     btn = QPushButton(text)
@@ -185,6 +206,27 @@ class DevicePage(QWidget):
             """
         )
         content_layout.addWidget(self._general_widget)
+
+        # ── Startup toggle ─────────────────────────────────────────────────────
+        startup_row = QHBoxLayout()
+        startup_label = QLabel(I18n.translate("ui", "launch_at_startup"))
+        startup_label.setFixedWidth(260)
+        startup_label.setWordWrap(True)
+        startup_label.setStyleSheet(
+            f"color: {TEXT_PRIMARY}; font-size: 11pt; background: transparent;"
+        )
+        startup_row.addWidget(startup_label)
+
+        self._startup_toggle = QDualState(
+            off_text=I18n.translate("settings_values", "off"),
+            on_text=I18n.translate("settings_values", "on"),
+            init_state="right" if _autostart_enabled() else "left",
+        )
+        self._startup_toggle.checkStateChanged.connect(self._on_autostart_toggled)
+        startup_row.addWidget(self._startup_toggle)
+        startup_row.addStretch(1)
+        content_layout.addLayout(startup_row)
+
         content_layout.addStretch(1)
 
         scroll.setWidget(content)
@@ -234,6 +276,9 @@ class DevicePage(QWidget):
                         color: {TEXT_PRIMARY};
                     }}
                 """)
+
+    def _on_autostart_toggled(self, state: Qt.CheckState) -> None:
+        _set_autostart(state == Qt.CheckState.Checked)
 
     def _on_lang(self, code: str):
         if code == I18n.current_lang():

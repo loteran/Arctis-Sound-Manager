@@ -14,17 +14,17 @@ Package: arctis-sound-manager
 Architecture: all
 Depends: ${misc:Depends},
          python3 (>= 3.10),
-         python3-pyside6.qtcore,
-         python3-pyside6.qtgui,
-         python3-pyside6.qtwidgets,
-         python3-pyside6.qtsvg,
-         python3-pyside6.qtnetwork,
-         python3-pulsectl,
+         python3-pyside6.qtcore | python3-pip,
+         python3-pyside6.qtgui | python3-pip,
+         python3-pyside6.qtwidgets | python3-pip,
+         python3-pyside6.qtsvg | python3-pip,
+         python3-pyside6.qtnetwork | python3-pip,
          python3-pyudev,
          python3-usb,
          python3-ruamel.yaml,
          pipewire,
          pipewire-pulse,
+         wireplumber,
          libusb-1.0-0
 Recommends: noise-suppression-for-voice,
             swh-plugins
