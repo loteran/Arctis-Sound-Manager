@@ -82,8 +82,13 @@ jobs:
       - name: Patch PKGBUILD and .SRCINFO with real sha256
         run: |
           SHA="${{ steps.vars.outputs.sha256 }}"
-          sed "s/sha256sums=('SKIP')/sha256sums=('${SHA}')/" aur/PKGBUILD > /tmp/aur-repo/PKGBUILD
-          sed "s/sha256sums = SKIP/sha256sums = ${SHA}/" aur/.SRCINFO > /tmp/aur-repo/.SRCINFO
+          VERSION="${{ steps.vars.outputs.version }}"
+          sed "s/pkgver=.*/pkgver=${VERSION}/; s/sha256sums=('SKIP')/sha256sums=('${SHA}')/" aur/PKGBUILD > /tmp/aur-repo/PKGBUILD
+          sed -e "s/pkgver = .*/pkgver = ${VERSION}/" \
+              -e "s/arctis-sound-manager-[0-9][0-9.]*\.tar\.gz/arctis-sound-manager-${VERSION}.tar.gz/g" \
+              -e "s|/tags/v[0-9][0-9.]*\.tar\.gz|/tags/v${VERSION}.tar.gz|g" \
+              -e "s/sha256sums = SKIP/sha256sums = ${SHA}/" \
+              aur/.SRCINFO > /tmp/aur-repo/.SRCINFO
           cp aur/arctis-sound-manager.install /tmp/aur-repo/arctis-sound-manager.install
 
       - name: Commit and push to AUR
