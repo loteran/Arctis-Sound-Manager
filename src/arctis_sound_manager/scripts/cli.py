@@ -32,6 +32,7 @@ DESKTOP_SYSTRAY_PATH = APPLICATIONS_PATH / 'ArctisManagerSystray.desktop'
 
 SYSTEMD_USER_DIR = Path().home() / '.config' / 'systemd' / 'user'
 SERVICE_PATH = SYSTEMD_USER_DIR / 'arctis-manager.service'
+GUI_SERVICE_PATH = SYSTEMD_USER_DIR / 'arctis-gui.service'
 
 _SERVICE_TEMPLATE = """\
 [Unit]
@@ -44,6 +45,22 @@ StartLimitBurst=5
 [Service]
 Type=simple
 ExecStart={asm_daemon}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target
+"""
+
+_GUI_SERVICE_TEMPLATE = """\
+[Unit]
+Description=Arctis Sound Manager — System Tray
+After=graphical-session.target arctis-manager.service
+Wants=arctis-manager.service
+
+[Service]
+Type=simple
+ExecStart={asm_gui} --systray
 Restart=on-failure
 RestartSec=5
 
@@ -235,14 +252,21 @@ def write_desktop_entries() -> int:
     if DESKTOP_SYSTRAY_PATH.exists():
         DESKTOP_SYSTRAY_PATH.unlink()
 
-    # 3. write the systemd user service file (pipx install — asm-daemon is in ~/.local/bin)
+    # 3. write the systemd user service files (pipx install — binaries are in ~/.local/bin)
+    SYSTEMD_USER_DIR.mkdir(parents=True, exist_ok=True)
     asm_daemon = shutil.which('asm-daemon')
     if asm_daemon:
-        SYSTEMD_USER_DIR.mkdir(parents=True, exist_ok=True)
         SERVICE_PATH.write_text(_SERVICE_TEMPLATE.format(asm_daemon=asm_daemon))
         print(f'    [ok] Service file written: {SERVICE_PATH}')
     else:
-        print('    [!] asm-daemon not found in PATH — skipping service file.')
+        print('    [!] asm-daemon not found in PATH — skipping daemon service file.')
+
+    asm_gui = shutil.which('asm-gui')
+    if asm_gui:
+        GUI_SERVICE_PATH.write_text(_GUI_SERVICE_TEMPLATE.format(asm_gui=asm_gui))
+        print(f'    [ok] Service file written: {GUI_SERVICE_PATH}')
+    else:
+        print('    [!] asm-gui not found in PATH — skipping GUI service file.')
 
     return 0
 
@@ -250,12 +274,15 @@ def remove_desktop_entries() -> int:
     print('Removing desktop entries...')
     if ICON_PATH.exists():
         ICON_PATH.unlink()
-    
+
     if DESKTOP_WINDOW_PATH.exists():
         DESKTOP_WINDOW_PATH.unlink()
-    
+
     if DESKTOP_SYSTRAY_PATH.exists():
         DESKTOP_SYSTRAY_PATH.unlink()
+
+    if GUI_SERVICE_PATH.exists():
+        GUI_SERVICE_PATH.unlink()
 
     return 0
 

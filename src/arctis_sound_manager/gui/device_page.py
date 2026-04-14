@@ -4,6 +4,7 @@ Matches the ref_settingsPage.png design.
 """
 import os
 import subprocess
+from pathlib import Path
 
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtWidgets import (
@@ -38,6 +39,7 @@ from arctis_sound_manager.gui.theme import (
 )
 
 _SERVICE = "arctis-manager.service"
+_GUI_SERVICE = "arctis-gui.service"
 
 
 def _autostart_enabled() -> bool:
@@ -54,6 +56,15 @@ def _set_autostart(enabled: bool) -> None:
         ["systemctl", "--user", action, _SERVICE],
         capture_output=True,
     )
+    # Also enable/disable the systray GUI service if its unit file exists
+    gui_service_path = (
+        Path.home() / ".config" / "systemd" / "user" / _GUI_SERVICE
+    )
+    if gui_service_path.exists():
+        subprocess.run(
+            ["systemctl", "--user", action, _GUI_SERVICE],
+            capture_output=True,
+        )
 
 
 def _styled_button(text: str) -> QPushButton:
