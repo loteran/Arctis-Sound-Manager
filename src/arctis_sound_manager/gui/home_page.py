@@ -776,8 +776,74 @@ class HomePage(QWidget):
         self._update_banner.show()
 
     def _do_install_update(self):
-        from arctis_sound_manager.update_checker import UpdateInstallWorker
+        from arctis_sound_manager.update_checker import (
+            InstallMethod, PACKAGE_MANAGER_COMMANDS,
+            UpdateInstallWorker, detect_install_method,
+        )
+        from PySide6.QtGui import QClipboard
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
 
+        method = detect_install_method()
+        cmd = PACKAGE_MANAGER_COMMANDS.get(method)
+
+        if cmd:
+            # Package manager install — show command, copy to clipboard
+            from arctis_sound_manager.gui.theme import (
+                ACCENT, BG_BUTTON, BG_BUTTON_HOVER, BG_CARD, BG_MAIN, BORDER, TEXT_PRIMARY, TEXT_SECONDARY,
+            )
+            dlg = QDialog(self)
+            dlg.setWindowTitle("Update available")
+            dlg.setMinimumWidth(480)
+            dlg.setStyleSheet(f"background-color: {BG_MAIN}; color: {TEXT_PRIMARY};")
+            layout = QVBoxLayout(dlg)
+            layout.setContentsMargins(24, 20, 24, 20)
+            layout.setSpacing(12)
+
+            lbl = QLabel("ASM was installed via your package manager.\nRun this command in a terminal to update:")
+            lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;")
+            lbl.setWordWrap(True)
+            layout.addWidget(lbl)
+
+            cmd_lbl = QLabel(cmd)
+            cmd_lbl.setStyleSheet(
+                f"background-color: {BG_CARD}; color: {TEXT_PRIMARY}; font-family: monospace; "
+                f"font-size: 10pt; padding: 10px; border-radius: 6px; border: 1px solid {BORDER};"
+            )
+            cmd_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            layout.addWidget(cmd_lbl)
+
+            btn_row = QHBoxLayout()
+            btn_row.addStretch()
+            copy_btn = QPushButton("Copy command")
+            copy_btn.setStyleSheet(
+                f"QPushButton {{ background-color: {ACCENT}; color: #fff; border: none; "
+                f"border-radius: 6px; padding: 8px 18px; font-size: 10pt; }}"
+                f"QPushButton:hover {{ background-color: {BG_BUTTON_HOVER}; }}"
+            )
+            def _copy_cmd():
+                from PySide6.QtWidgets import QApplication
+                from PySide6.QtGui import QClipboard
+                QApplication.clipboard().setText(cmd, QClipboard.Mode.Clipboard)
+                copy_btn.setText("Copied!")
+                copy_btn.setEnabled(False)
+                QTimer.singleShot(2000, lambda: (copy_btn.setText("Copy command"), copy_btn.setEnabled(True)))
+            copy_btn.clicked.connect(_copy_cmd)
+            btn_row.addWidget(copy_btn)
+
+            close_btn = QPushButton("Close")
+            close_btn.setStyleSheet(
+                f"QPushButton {{ background-color: {BG_BUTTON}; color: {TEXT_PRIMARY}; border: none; "
+                f"border-radius: 6px; padding: 8px 18px; font-size: 10pt; }}"
+                f"QPushButton:hover {{ background-color: {BG_BUTTON_HOVER}; }}"
+            )
+            close_btn.clicked.connect(dlg.accept)
+            btn_row.addWidget(close_btn)
+            layout.addLayout(btn_row)
+            dlg.exec()
+            return
+
+        # pipx / pip — in-app install
         self._update_install_btn.setEnabled(False)
         self._update_install_btn.setText(I18n.translate("ui", "updating"))
         self._install_worker = UpdateInstallWorker(self._wheel_url)

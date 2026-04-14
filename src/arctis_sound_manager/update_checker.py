@@ -4,11 +4,76 @@ from __future__ import annotations
 import json
 import logging
 import re
+import shutil
+import subprocess
 import urllib.request
 from datetime import datetime, timezone
+from enum import Enum, auto
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
+
+
+class InstallMethod(Enum):
+    RPM = auto()    # dnf / COPR / rpm
+    PACMAN = auto() # pacman / AUR
+    APT = auto()    # apt / PPA / deb
+    PIPX = auto()   # pipx (source install)
+    PIP = auto()    # pip --user fallback
+    UNKNOWN = auto()
+
+
+def detect_install_method() -> InstallMethod:
+    """Detect how ASM was installed by checking package managers."""
+    try:
+        r = subprocess.run(
+            ["rpm", "-q", "arctis-sound-manager"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0:
+            return InstallMethod.RPM
+    except FileNotFoundError:
+        pass
+
+    try:
+        r = subprocess.run(
+            ["pacman", "-Q", "arctis-sound-manager"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0:
+            return InstallMethod.PACMAN
+    except FileNotFoundError:
+        pass
+
+    try:
+        r = subprocess.run(
+            ["dpkg", "-s", "arctis-sound-manager"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0:
+            return InstallMethod.APT
+    except FileNotFoundError:
+        pass
+
+    if shutil.which("pipx"):
+        try:
+            r = subprocess.run(
+                ["pipx", "list", "--short"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if "arctis-sound-manager" in r.stdout:
+                return InstallMethod.PIPX
+        except FileNotFoundError:
+            pass
+
+    return InstallMethod.PIP
+
+
+PACKAGE_MANAGER_COMMANDS: dict[InstallMethod, str] = {
+    InstallMethod.RPM:    "sudo dnf upgrade arctis-sound-manager",
+    InstallMethod.PACMAN: "paru -Syu arctis-sound-manager",
+    InstallMethod.APT:    "sudo apt update && sudo apt upgrade arctis-sound-manager",
+}
 
 log = logging.getLogger(__name__)
 
@@ -154,8 +219,6 @@ class UpdateInstallWorker(QThread):
         self._wheel_url = wheel_url
 
     def run(self):
-        import shutil
-        import subprocess
         import tempfile
 
         try:
