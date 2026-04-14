@@ -155,7 +155,7 @@ def write_udev_rules(rules_path: Path, create_directories: bool, force_write: bo
             key = (config.vendor_id, config.name)
             products[key] = ConfigRuleset(config.vendor_id, config.product_ids, config.name)
     
-    rule_template = 'SUBSYSTEM=="usb", ATTRS{{idVendor}}=="{idVendor}", ATTRS{{idProduct}}=="{idProduct}", MODE="0666", GROUP="plugdev", TAG+="uaccess"'
+    rule_template = 'SUBSYSTEM=="usb", ATTRS{{idVendor}}=="{idVendor}", ATTRS{{idProduct}}=="{idProduct}", MODE="0666", TAG+="uaccess"'
     rules = []
     for ruleset in products.values():
         rules.append('')
