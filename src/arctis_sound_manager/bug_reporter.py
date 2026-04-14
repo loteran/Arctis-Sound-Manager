@@ -147,11 +147,8 @@ def format_bug_report(traceback_str: Optional[str] = None) -> str:
     return '\n'.join(lines)
 
 
-def github_issue_url(title: str, body: str) -> str:
-    # GitHub URL limit: keep body under ~6000 chars to be safe
-    if len(body) > 6000:
-        body = body[:6000] + '\n\n<!-- (truncated) -->'
-    return f'{GITHUB_ISSUES_URL}?labels=bug&title={quote(title)}&body={quote(body)}'
+def github_issue_url(title: str) -> str:
+    return f'{GITHUB_ISSUES_URL}?labels=bug&title={quote(title)}'
 
 
 def write_crash_report(exc_type, exc_value, exc_tb, source: str = 'gui') -> None:

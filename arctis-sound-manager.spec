@@ -1,16 +1,22 @@
 Name:           arctis-sound-manager
-Version:        1.0.34
+Version:        1.0.39
 Release:        1%{?dist}
 Summary:        Linux GUI for SteelSeries Arctis headsets
+
+# Fedora ships slightly older versions of ruamel-yaml and pyudev — suppress the
+# auto-generated versioned requirements from the wheel metadata and rely on the
+# explicit Requires: lines below instead.
+%global __requires_exclude python3[0-9.]*dist\\((ruamel-yaml|pyudev)\\)
 
 License:        GPL-3.0-or-later
 URL:            https://github.com/loteran/Arctis-Sound-Manager
 Source0:        %{url}/archive/refs/tags/v%{version}.tar.gz
 Source1:        arctis_sound_manager-%{version}-py3-none-any.whl
+Source2:        dbus_next-0.2.3-py3-none-any.whl
 
 BuildArch:      noarch
 BuildRequires:  python3-devel
-BuildRequires:  python3-pip
+BuildRequires:  python3-installer
 BuildRequires:  systemd-rpm-macros
 BuildRequires:  desktop-file-utils
 BuildRequires:  libappstream-glib
@@ -42,10 +48,10 @@ ANC/Transparent mode control, and device management via PipeWire.
 # Wheel is pre-built in SRPM via .copr/Makefile
 
 %install
-pip3 install --root=%{buildroot} --prefix=/usr --no-deps --no-build-isolation %{SOURCE1}
+python3 -m installer --destdir=%{buildroot} %{SOURCE1}
 
-# Bundle dbus-next (not in Fedora repos)
-pip3 install --root=%{buildroot} --prefix=/usr --no-deps dbus-next
+# Bundle dbus-next (not in Fedora repos — pre-downloaded in Source2)
+python3 -m installer --destdir=%{buildroot} %{SOURCE2}
 
 # udev rules
 install -Dm644 /dev/stdin %{buildroot}%{_udevrulesdir}/91-steelseries-arctis.rules <<'RULES'
@@ -182,6 +188,20 @@ fi
 /etc/xdg/autostart/asm-first-run.desktop
 
 %changelog
+* Wed Apr 15 2026 loteran <https://github.com/loteran> - 1.0.39-1
+- Fix udev: remove GROUP="plugdev" from generated rules (breaks on Fedora)
+- Fix report dialog: clipboard copy and GitHub issue link (URL too long)
+
+* Mon Apr 14 2026 loteran <https://github.com/loteran> - 1.0.38-1
+- Rename preset files: remove tm/r symbols that broke bsdtar packaging
+- Fix AUR: use uv pip install --prefix instead of uv pip download
+
+* Sun Apr 12 2026 loteran <https://github.com/loteran> - 1.0.36-1
+- Fix cross-distro USB permissions: udev rules use plugdev group and drop DEVTYPE check
+
+* Sun Apr 12 2026 loteran <https://github.com/loteran> - 1.0.35-1
+- Fix udev rules: one rule per PID instead of multi-value ATTRS{idProduct} (not supported by all udev versions)
+
 * Sat Apr 12 2026 loteran <https://github.com/loteran> - 1.0.34-1
 - Bundle dbus-next and pulsectl (not in Fedora/Ubuntu/Debian/Arch repos)
 - Add wireplumber to Requires
