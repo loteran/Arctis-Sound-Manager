@@ -1,5 +1,5 @@
 Name:           arctis-sound-manager
-Version:        1.0.38
+Version:        1.0.39
 Release:        1%{?dist}
 Summary:        Linux GUI for SteelSeries Arctis headsets
 
@@ -188,6 +188,10 @@ fi
 /etc/xdg/autostart/asm-first-run.desktop
 
 %changelog
+* Wed Apr 15 2026 loteran <https://github.com/loteran> - 1.0.39-1
+- Fix udev: remove GROUP="plugdev" from generated rules (breaks on Fedora)
+- Fix report dialog: clipboard copy and GitHub issue link (URL too long)
+
 * Mon Apr 14 2026 loteran <https://github.com/loteran> - 1.0.38-1
 - Rename preset files: remove tm/r symbols that broke bsdtar packaging
 - Fix AUR: use uv pip install --prefix instead of uv pip download
