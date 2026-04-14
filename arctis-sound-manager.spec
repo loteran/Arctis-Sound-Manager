@@ -1,7 +1,12 @@
 Name:           arctis-sound-manager
-Version:        1.0.37
+Version:        1.0.38
 Release:        1%{?dist}
 Summary:        Linux GUI for SteelSeries Arctis headsets
+
+# Fedora ships slightly older versions of ruamel-yaml and pyudev — suppress the
+# auto-generated versioned requirements from the wheel metadata and rely on the
+# explicit Requires: lines below instead.
+%global __requires_exclude python3[0-9.]*dist\\((ruamel-yaml|pyudev)\\)
 
 License:        GPL-3.0-or-later
 URL:            https://github.com/loteran/Arctis-Sound-Manager
@@ -183,6 +188,10 @@ fi
 /etc/xdg/autostart/asm-first-run.desktop
 
 %changelog
+* Mon Apr 14 2026 loteran <https://github.com/loteran> - 1.0.38-1
+- Rename preset files: remove tm/r symbols that broke bsdtar packaging
+- Fix AUR: use uv pip install --prefix instead of uv pip download
+
 * Sun Apr 12 2026 loteran <https://github.com/loteran> - 1.0.36-1
 - Fix cross-distro USB permissions: udev rules use plugdev group and drop DEVTYPE check
 
