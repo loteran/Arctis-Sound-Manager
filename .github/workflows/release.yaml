@@ -101,6 +101,17 @@ jobs:
           git commit -m "Update to v${{ steps.vars.outputs.version }}"
           git push
 
+      - name: Sync aur/ files back to main repo
+        run: |
+          cp /tmp/aur-repo/PKGBUILD aur/PKGBUILD
+          cp /tmp/aur-repo/.SRCINFO aur/.SRCINFO
+          git config user.name "loteran"
+          git config user.email "axel.valadon@gmail.com"
+          git add aur/PKGBUILD aur/.SRCINFO
+          git diff --cached --quiet && echo "No changes to sync" && exit 0
+          git commit -m "chore(aur): sync PKGBUILD and .SRCINFO to v${{ steps.vars.outputs.version }}"
+          git push origin HEAD:develop
+
   copr-build:
     runs-on: ubuntu-latest
     needs: release
