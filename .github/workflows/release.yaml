@@ -118,6 +118,16 @@ jobs:
           mkdir -p ~/.config
           echo "$COPR_API_CONFIG" > ~/.config/copr
 
+      - name: Update spec version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i "s/^Version:.*/Version:        ${VERSION}/" arctis-sound-manager.spec
+          git config user.name "loteran"
+          git config user.email "axel.valadon@gmail.com"
+          git add arctis-sound-manager.spec
+          git diff --cached --quiet || git commit -m "chore: bump spec to ${VERSION}"
+          git push origin HEAD:develop || true
+
       - name: Trigger COPR build
         run: |
           copr-cli buildscm \
