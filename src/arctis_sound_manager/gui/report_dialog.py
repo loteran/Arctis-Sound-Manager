@@ -4,7 +4,8 @@ ReportBugDialog — modal dialog to review and submit a bug report to GitHub.
 import webbrowser
 from typing import Optional
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QTimer, Qt
+from PySide6.QtGui import QClipboard
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -107,11 +108,11 @@ class ReportBugDialog(QDialog):
         btn_row = QHBoxLayout()
         btn_row.setSpacing(10)
 
-        copy_btn = QPushButton("Copy to clipboard")
-        copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        copy_btn.setStyleSheet(_BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, hover=BG_BUTTON_HOVER))
-        copy_btn.clicked.connect(self._copy)
-        btn_row.addWidget(copy_btn)
+        self._copy_btn = QPushButton("Copy to clipboard")
+        self._copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._copy_btn.setStyleSheet(_BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, hover=BG_BUTTON_HOVER))
+        self._copy_btn.clicked.connect(self._copy)
+        btn_row.addWidget(self._copy_btn)
 
         btn_row.addStretch()
 
@@ -121,11 +122,11 @@ class ReportBugDialog(QDialog):
         close_btn.clicked.connect(self.accept)
         btn_row.addWidget(close_btn)
 
-        github_btn = QPushButton("Open GitHub issue ↗")
-        github_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        github_btn.setStyleSheet(_BTN.format(bg=ACCENT, fg="#ffffff", hover=BG_BUTTON_HOVER))
-        github_btn.clicked.connect(self._open_github)
-        btn_row.addWidget(github_btn)
+        self._github_btn = QPushButton("Copy & Open GitHub issue ↗")
+        self._github_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._github_btn.setStyleSheet(_BTN.format(bg=ACCENT, fg="#ffffff", hover=BG_BUTTON_HOVER))
+        self._github_btn.clicked.connect(self._open_github)
+        btn_row.addWidget(self._github_btn)
 
         layout.addLayout(btn_row)
 
@@ -134,9 +135,17 @@ class ReportBugDialog(QDialog):
             clear_crash_report()
 
     def _copy(self) -> None:
-        QApplication.clipboard().setText(self._editor.toPlainText())
+        self.activateWindow()
+        QApplication.clipboard().setText(self._editor.toPlainText(), QClipboard.Mode.Clipboard)
+        self._copy_btn.setText("Copied!")
+        self._copy_btn.setEnabled(False)
+        QTimer.singleShot(2000, lambda: (self._copy_btn.setText("Copy to clipboard"), self._copy_btn.setEnabled(True)))
 
     def _open_github(self) -> None:
-        body = self._editor.toPlainText()
+        self.activateWindow()
+        QApplication.clipboard().setText(self._editor.toPlainText(), QClipboard.Mode.Clipboard)
         title = "Crash report" if self._is_crash else "Bug report"
-        webbrowser.open(github_issue_url(title, body))
+        webbrowser.open(github_issue_url(title))
+        self._github_btn.setText("Copied! Paste in the issue body ↗")
+        self._github_btn.setEnabled(False)
+        QTimer.singleShot(4000, lambda: (self._github_btn.setText("Copy & Open GitHub issue ↗"), self._github_btn.setEnabled(True)))
