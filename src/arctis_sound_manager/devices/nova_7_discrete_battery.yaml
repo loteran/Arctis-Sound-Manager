@@ -15,6 +15,8 @@ device:
   command_transport: ctrl_output  # HID SET_REPORT (no interrupt OUT endpoint)
   command_interface_index: [3, 0]
   listen_interface_indexes: [3]
+  dial_interface_index: 3         # expected dial interface
+  dial_interface_candidates: [5]  # WoW Edition (0x227a) may use interface 5 (bInterfaceNumber)
 
   device_init:
     - [0x10]
