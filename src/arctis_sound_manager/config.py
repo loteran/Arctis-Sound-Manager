@@ -124,6 +124,8 @@ class DeviceConfiguration:
     command_interface_index: list[int]
     command_transport: CommandTransport
     listen_interface_indexes: list[int]
+    dial_interface_index: int
+    dial_interface_candidates: list[int]
     command_padding: ConfigPadding
     device_init: list[list[int|str]] | None
     status: ConfigStatus | None
@@ -142,7 +144,10 @@ class DeviceConfiguration:
         self.command_interface_index = raw_config.get('command_interface_index', (-1, -1))
         self.command_transport = CommandTransport(raw_config.get('command_transport', 'interrupt'))
         self.listen_interface_indexes = raw_config.get('listen_interface_indexes', [])
-        
+        self.dial_interface_candidates = raw_config.get('dial_interface_candidates', [])
+        # Default dial interface = first listen interface if not specified
+        self.dial_interface_index = raw_config.get('dial_interface_index', self.listen_interface_indexes[0] if self.listen_interface_indexes else 0)
+
         online_status = raw_config.get('online_status', None)
         self.online_status = OnlineStatusConfig(**online_status) if online_status else None
 
