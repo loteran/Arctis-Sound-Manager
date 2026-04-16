@@ -188,7 +188,15 @@ HELP_CONTENT: dict[str, dict] = {
                     "• LED brightness\n"
                     "• Wireless transmitter power\n"
                     "• Redirect audio on disconnect (choose fallback output device)\n\n"
-                    "Each setting is applied to the device as soon as you change it."
+                    "Each setting is applied to the device as soon as you change it.\n\n"
+                    "── General settings ──\n"
+                    "• Launch at startup — enables/disables the system tray autostart via systemd. "
+                    "When enabled, the tray icon appears automatically after login.\n"
+                    "• Language — switch the interface language (EN / FR / ES).\n\n"
+                    "── Check for updates ──\n"
+                    "The \"Check for updates\" button at the bottom of the page forces an immediate "
+                    "check against the latest GitHub release, bypassing the normal 24-hour cache. "
+                    "If a newer version is available, a link to the release page is shown."
                 ),
             },
             {
@@ -196,9 +204,8 @@ HELP_CONTENT: dict[str, dict] = {
                 "body": (
                     "The tray icon provides quick access without opening the full window.\n\n"
                     "• Left-click or right-click the icon to open the context menu.\n"
-                    "• The menu shows the current device status (battery, connection, etc.).\n"
+                    "• The menu shows the current headset status (battery, connection state).\n"
                     "• Open App — brings the main window to the foreground.\n"
-                    "• EQ toggle — switches the equalizer preset between Custom and Sonar.\n"
                     "• Exit — fully quits the application (tray and daemon).\n\n"
                     "If you close the main window, the tray stays active. The app only stops "
                     "when you choose Exit from the tray menu."
@@ -213,11 +220,9 @@ HELP_CONTENT: dict[str, dict] = {
                     "A virtual 7.1 sink is created in PipeWire. Audio routed to it is processed "
                     "by HRTF convolution (HeSuVi) and folded down to stereo for your headset.\n\n"
                     "── Setup ──\n"
-                    "Run the included setup script BEFORE installing:\n"
-                    "   bash scripts/setup-surround.sh\n"
-                    "   bash scripts/install.sh\n\n"
-                    "The script installs the PipeWire filter-chain config and downloads a default "
-                    "HRIR file. A 'Virtual Surround Sink' will appear in your audio settings.\n\n"
+                    "Surround is configured automatically during the initial setup (asm-setup). "
+                    "A 'Virtual Surround Sink' will appear in your audio settings once setup "
+                    "is complete.\n\n"
                     "── Spatial Audio (Sonar) ──\n"
                     "When using Sonar EQ mode, the Game channel can route through HeSuVi "
                     "automatically via the Spatial Audio toggle. This provides integrated "
@@ -231,14 +236,12 @@ HELP_CONTENT: dict[str, dict] = {
             {
                 "heading": "Autostart at login",
                 "body": (
-                    "To start Arctis Sound Manager automatically when you log in:\n\n"
-                    "1. Copy the Arctis Sound Manager Systray desktop entry to your autostart folder:\n"
-                    "   cp ~/.local/share/applications/ArctisManager.desktop "
-                    "~/.config/autostart/\n"
-                    "2. Edit the copied file and add --systray to the Exec line so the window "
-                    "does not open at login:\n"
-                    "   Exec=asm-gui --systray\n\n"
-                    "The tray icon will appear after login without the main window opening."
+                    "To start Arctis Sound Manager automatically when you log in, use the "
+                    "\"Launch at startup\" toggle in the Settings page.\n\n"
+                    "When enabled, the system tray icon (asm-gui --systray) will start "
+                    "automatically at login via systemd (arctis-gui.service). The daemon "
+                    "(arctis-manager.service) is always started regardless of this toggle.\n\n"
+                    "To disable autostart, switch the toggle off."
                 ),
             },
             {
@@ -247,12 +250,17 @@ HELP_CONTENT: dict[str, dict] = {
                     "Device not detected:\n"
                     "• Make sure udev rules are installed: run asm-cli udev write-rules --reload\n"
                     "• Reconnect the USB cable.\n"
-                    "• Check that asm-daemon is running: systemctl --user status asm-daemon\n\n"
+                    "• Check that the daemon is running: "
+                    "systemctl --user status arctis-manager.service\n\n"
                     "Settings not applied:\n"
-                    "• Restart the daemon: systemctl --user restart asm-daemon\n\n"
+                    "• Restart the daemon: "
+                    "systemctl --user restart arctis-manager.service\n\n"
                     "GUI does not open:\n"
                     "• Run asm-gui -vvvv in a terminal to see detailed logs.\n"
-                    "• Check that asm-daemon is running (see above)."
+                    "• Check that the daemon is running (see above).\n\n"
+                    "System tray not appearing at login:\n"
+                    "• Enable \"Launch at startup\" in Settings, or check the service:\n"
+                    "  systemctl --user status arctis-gui.service"
                 ),
             },
         ],
@@ -418,7 +426,15 @@ HELP_CONTENT: dict[str, dict] = {
                     "• Luminosité des LED\n"
                     "• Puissance du transmetteur sans fil\n"
                     "• Redirection audio en cas de déconnexion (choix du périphérique de secours)\n\n"
-                    "Chaque paramètre est appliqué à l'appareil dès sa modification."
+                    "Chaque paramètre est appliqué à l'appareil dès sa modification.\n\n"
+                    "── Paramètres généraux ──\n"
+                    "• Lancer au démarrage — active/désactive le démarrage automatique du tray "
+                    "via systemd. Quand activé, l'icône apparaît automatiquement après connexion.\n"
+                    "• Langue — change la langue de l'interface (EN / FR / ES).\n\n"
+                    "── Rechercher une mise à jour ──\n"
+                    "Le bouton en bas de page force une vérification immédiate auprès de GitHub, "
+                    "en ignorant le cache habituel de 24h. Si une nouvelle version est disponible, "
+                    "un lien vers la page de release s'affiche."
                 ),
             },
             {
@@ -426,9 +442,8 @@ HELP_CONTENT: dict[str, dict] = {
                 "body": (
                     "L'icône de la barre système permet un accès rapide sans ouvrir la fenêtre.\n\n"
                     "• Clic gauche ou droit sur l'icône pour ouvrir le menu contextuel.\n"
-                    "• Le menu affiche le statut actuel (batterie, connexion, etc.).\n"
+                    "• Le menu affiche le statut actuel du casque (batterie, connexion).\n"
                     "• Ouvrir — amène la fenêtre principale au premier plan.\n"
-                    "• Bascule EQ — change le préréglage égaliseur entre Personnalisé et Sonar.\n"
                     "• Quitter — ferme complètement l'application.\n\n"
                     "Fermer la fenêtre principale laisse le tray actif. L'application ne s'arrête "
                     "que si vous choisissez Quitter depuis le menu du tray."
@@ -443,12 +458,9 @@ HELP_CONTENT: dict[str, dict] = {
                     "Un sink 7.1 virtuel est créé dans PipeWire. Le son est traité par convolution "
                     "HRTF (HeSuVi) puis réduit en stéréo pour le casque.\n\n"
                     "── Mise en place ──\n"
-                    "Lancez le script inclus AVANT l'installation :\n"
-                    "   bash scripts/setup-surround.sh\n"
-                    "   bash scripts/install.sh\n\n"
-                    "Le script installe la config PipeWire filter-chain et télécharge un fichier "
-                    "HRIR par défaut. Un sink 'Virtual Surround Sink' apparaît dans vos paramètres "
-                    "audio.\n\n"
+                    "Le surround est configuré automatiquement lors de l'installation initiale "
+                    "(asm-setup). Un sink 'Virtual Surround Sink' apparaît dans vos paramètres "
+                    "audio une fois le setup terminé.\n\n"
                     "── Spatial Audio (Sonar) ──\n"
                     "En mode Sonar EQ, le canal Game peut router automatiquement via HeSuVi "
                     "grâce au toggle Spatial Audio. Cela fournit un surround intégré avec les "
@@ -462,14 +474,12 @@ HELP_CONTENT: dict[str, dict] = {
             {
                 "heading": "Démarrage automatique",
                 "body": (
-                    "Pour démarrer Arctis Sound Manager automatiquement à la connexion :\n\n"
-                    "1. Copiez l'entrée bureau dans le dossier autostart :\n"
-                    "   cp ~/.local/share/applications/ArctisManager.desktop "
-                    "~/.config/autostart/\n"
-                    "2. Éditez le fichier copié et ajoutez --systray sur la ligne Exec afin que "
-                    "la fenêtre ne s'ouvre pas au démarrage :\n"
-                    "   Exec=asm-gui --systray\n\n"
-                    "L'icône de tray apparaîtra après connexion sans que la fenêtre s'ouvre."
+                    "Pour démarrer Arctis Sound Manager automatiquement à la connexion, "
+                    "activez le toggle \"Lancer au démarrage\" dans la page Paramètres.\n\n"
+                    "Une fois activé, l'icône du tray (asm-gui --systray) démarre "
+                    "automatiquement via systemd (arctis-gui.service). Le daemon "
+                    "(arctis-manager.service) démarre toujours indépendamment de ce réglage.\n\n"
+                    "Pour désactiver le démarrage automatique, désactivez le toggle."
                 ),
             },
             {
@@ -479,13 +489,17 @@ HELP_CONTENT: dict[str, dict] = {
                     "• Vérifiez que les règles udev sont installées : "
                     "asm-cli udev write-rules --reload\n"
                     "• Rebranchez le câble USB.\n"
-                    "• Vérifiez que asm-daemon fonctionne : "
-                    "systemctl --user status asm-daemon\n\n"
+                    "• Vérifiez que le daemon fonctionne : "
+                    "systemctl --user status arctis-manager.service\n\n"
                     "Paramètres non appliqués :\n"
-                    "• Redémarrez le daemon : systemctl --user restart asm-daemon\n\n"
+                    "• Redémarrez le daemon : "
+                    "systemctl --user restart arctis-manager.service\n\n"
                     "Interface qui ne s'ouvre pas :\n"
                     "• Lancez asm-gui -vvvv dans un terminal pour voir les logs détaillés.\n"
-                    "• Vérifiez que asm-daemon fonctionne (voir ci-dessus)."
+                    "• Vérifiez que le daemon fonctionne (voir ci-dessus).\n\n"
+                    "Tray absent au démarrage :\n"
+                    "• Activez \"Lancer au démarrage\" dans Paramètres, ou vérifiez :\n"
+                    "  systemctl --user status arctis-gui.service"
                 ),
             },
         ],
@@ -654,7 +668,15 @@ HELP_CONTENT: dict[str, dict] = {
                     "• Brillo de LEDs\n"
                     "• Potencia del transmisor inalámbrico\n"
                     "• Redirección de audio al desconectar (dispositivo de respaldo)\n\n"
-                    "Cada ajuste se aplica al dispositivo en cuanto lo modificas."
+                    "Cada ajuste se aplica al dispositivo en cuanto lo modificas.\n\n"
+                    "── Ajustes generales ──\n"
+                    "• Iniciar al arranque — activa/desactiva el inicio automático del tray "
+                    "mediante systemd. Cuando está activado, el icono aparece tras iniciar sesión.\n"
+                    "• Idioma — cambia el idioma de la interfaz (EN / FR / ES).\n\n"
+                    "── Buscar actualización ──\n"
+                    "El botón al final de la página fuerza una comprobación inmediata en GitHub, "
+                    "ignorando la caché habitual de 24h. Si hay una versión más reciente, "
+                    "se muestra un enlace a la página de la release."
                 ),
             },
             {
@@ -663,9 +685,8 @@ HELP_CONTENT: dict[str, dict] = {
                     "El icono de bandeja proporciona acceso rápido sin abrir la ventana "
                     "completa.\n\n"
                     "• Clic izquierdo o derecho en el icono para abrir el menú contextual.\n"
-                    "• El menú muestra el estado actual del dispositivo (batería, conexión, etc.).\n"
+                    "• El menú muestra el estado actual del auricular (batería, conexión).\n"
                     "• Abrir — lleva la ventana principal al primer plano.\n"
-                    "• Cambiar EQ — alterna el preset del ecualizador entre Personalizado y Sonar.\n"
                     "• Salir — cierra completamente la aplicación.\n\n"
                     "Cerrar la ventana principal deja activa la bandeja. La aplicación solo se "
                     "detiene si eliges Salir desde el menú de la bandeja."
@@ -680,12 +701,9 @@ HELP_CONTENT: dict[str, dict] = {
                     "Se crea un sink 7.1 virtual en PipeWire. El audio es procesado por "
                     "convolución HRTF (HeSuVi) y reducido a estéreo para los auriculares.\n\n"
                     "── Configuración ──\n"
-                    "Ejecuta el script incluido ANTES de instalar:\n"
-                    "   bash scripts/setup-surround.sh\n"
-                    "   bash scripts/install.sh\n\n"
-                    "El script instala la config PipeWire filter-chain y descarga un archivo "
-                    "HRIR predeterminado. Un sink 'Virtual Surround Sink' aparecerá en tus "
-                    "ajustes de audio.\n\n"
+                    "El sonido envolvente se configura automáticamente durante la instalación "
+                    "inicial (asm-setup). Un sink 'Virtual Surround Sink' aparecerá en tus "
+                    "ajustes de audio una vez completado el setup.\n\n"
                     "── Spatial Audio (Sonar) ──\n"
                     "En modo Sonar EQ, el canal Game puede enrutar automáticamente a través de "
                     "HeSuVi mediante el toggle Spatial Audio. Esto proporciona surround integrado "
@@ -699,15 +717,12 @@ HELP_CONTENT: dict[str, dict] = {
             {
                 "heading": "Inicio automático",
                 "body": (
-                    "Para iniciar Arctis Sound Manager automáticamente al iniciar sesión:\n\n"
-                    "1. Copia la entrada de escritorio a la carpeta de autoarranque:\n"
-                    "   cp ~/.local/share/applications/ArctisManager.desktop "
-                    "~/.config/autostart/\n"
-                    "2. Edita el archivo copiado y añade --systray en la línea Exec para que la "
-                    "ventana no se abra al iniciar sesión:\n"
-                    "   Exec=asm-gui --systray\n\n"
-                    "El icono de bandeja aparecerá después del inicio de sesión sin abrir la "
-                    "ventana principal."
+                    "Para iniciar Arctis Sound Manager automáticamente al iniciar sesión, "
+                    "activa el interruptor \"Iniciar al arranque\" en la página de Ajustes.\n\n"
+                    "Una vez activado, el icono de bandeja (asm-gui --systray) se inicia "
+                    "automáticamente mediante systemd (arctis-gui.service). El daemon "
+                    "(arctis-manager.service) siempre se inicia independientemente de este ajuste.\n\n"
+                    "Para desactivar el inicio automático, desactiva el interruptor."
                 ),
             },
             {
@@ -717,13 +732,17 @@ HELP_CONTENT: dict[str, dict] = {
                     "• Verifica que las reglas udev estén instaladas: "
                     "asm-cli udev write-rules --reload\n"
                     "• Reconecta el cable USB.\n"
-                    "• Comprueba que asm-daemon esté activo: "
-                    "systemctl --user status asm-daemon\n\n"
+                    "• Comprueba que el daemon esté activo: "
+                    "systemctl --user status arctis-manager.service\n\n"
                     "Ajustes no aplicados:\n"
-                    "• Reinicia el daemon: systemctl --user restart asm-daemon\n\n"
+                    "• Reinicia el daemon: "
+                    "systemctl --user restart arctis-manager.service\n\n"
                     "La interfaz no se abre:\n"
                     "• Ejecuta asm-gui -vvvv en una terminal para ver los registros detallados.\n"
-                    "• Comprueba que asm-daemon esté activo (ver arriba)."
+                    "• Comprueba que el daemon esté activo (ver arriba).\n\n"
+                    "El icono de bandeja no aparece al inicio:\n"
+                    "• Activa \"Iniciar al arranque\" en Ajustes, o comprueba:\n"
+                    "  systemctl --user status arctis-gui.service"
                 ),
             },
         ],

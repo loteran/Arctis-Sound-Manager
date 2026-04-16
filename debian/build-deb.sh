@@ -80,6 +80,8 @@ install -Dm644 debian/arctis-manager.service \
     "${PKGDIR}/usr/lib/systemd/user/arctis-manager.service"
 install -Dm644 debian/arctis-video-router.service \
     "${PKGDIR}/usr/lib/systemd/user/arctis-video-router.service"
+install -Dm644 debian/arctis-gui.service \
+    "${PKGDIR}/usr/lib/systemd/user/arctis-gui.service"
 
 # ── Desktop entry ───────────────────────────────────────────
 install -Dm644 src/arctis_sound_manager/desktop/ArctisManager.desktop \

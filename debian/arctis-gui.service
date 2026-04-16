@@ -1,0 +1,13 @@
+[Unit]
+Description=Arctis Sound Manager — System Tray
+After=graphical-session.target arctis-manager.service
+Wants=arctis-manager.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/asm-gui --systray
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target
