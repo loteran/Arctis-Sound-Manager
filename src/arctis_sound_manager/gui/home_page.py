@@ -585,6 +585,12 @@ class HomePage(QWidget):
         root.addWidget(self._update_banner)
         root.addSpacing(4)
 
+        # ── Profiles bar ──────────────────────────────────────────────────────
+        from arctis_sound_manager.gui.profile_bar import ProfileBar
+        self.profile_bar = ProfileBar()
+        root.addWidget(self.profile_bar)
+        root.addSpacing(8)
+
         # ── Headset status pills ───────────────────────────────────────────────
         self._status_bar = _DeviceStatusBar()
         root.addWidget(self._status_bar)

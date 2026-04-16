@@ -89,6 +89,10 @@ class QMainApp(QBaseDesktopApp):
         self._update_worker.result.connect(self._home_page.on_update_available)
         self._update_worker.start()
 
+        # Wire profile bar
+        self._home_page.profile_bar.sig_apply.connect(self._on_apply_profile)
+        self._home_page.profile_bar.sig_changed.connect(self._on_profiles_changed)
+
         self.destroyed.connect(self.sig_stop)
         self.main_window.visibilityChanged.connect(self._on_visibility_changed)
 
@@ -253,6 +257,17 @@ class QMainApp(QBaseDesktopApp):
         if status == self.status:
             return
         self.status = status
+
+    @Slot(object)
+    def _on_apply_profile(self, profile) -> None:
+        from arctis_sound_manager.profile_manager import apply_profile
+        apply_profile(profile)
+        # Trigger EQ re-apply (single pipewire restart for all 3 channels)
+        self._equalizer_page._sonar_page.apply_all_from_files()
+
+    @Slot()
+    def _on_profiles_changed(self) -> None:
+        pass  # reserved for systray refresh
 
     @Slot()
     def sig_stop(self):

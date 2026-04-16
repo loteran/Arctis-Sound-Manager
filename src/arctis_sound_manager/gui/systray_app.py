@@ -154,6 +154,20 @@ class QSystrayApp(QBaseDesktopApp):
                 )
                 self.menu.addAction(self._menu_actions['headset_status'])
 
+        # Profiles submenu
+        from arctis_sound_manager.profile_manager import Profile, active_profile_name, apply_profile
+        profiles = Profile.list_all()
+        if profiles:
+            self.menu.addSeparator()
+            active = active_profile_name()
+            for profile in profiles:
+                marker = "● " if profile.name == active else "  "
+                action = QAction(f"{marker}{profile.name}")
+                action.triggered.connect(
+                    lambda _=False, p=profile: self._on_tray_profile(p)
+                )
+                self.menu.addAction(action)
+
         self.menu.addSeparator()
 
         # Exit
@@ -166,6 +180,13 @@ class QSystrayApp(QBaseDesktopApp):
         self.tray_icon.setContextMenu(self.menu)
         if old_menu is not None:
             old_menu.deleteLater()
+
+    def _on_tray_profile(self, profile) -> None:
+        from arctis_sound_manager.profile_manager import apply_profile
+        apply_profile(profile)
+        # Rebuild menu to update active marker
+        self.menu_setup()
+        # Note: EQ re-apply only happens when GUI is open
 
     def is_stopping(self):
         return hasattr(self, '_stopping') and self._stopping
