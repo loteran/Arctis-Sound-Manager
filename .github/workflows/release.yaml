@@ -110,6 +110,8 @@ jobs:
           git add aur/PKGBUILD aur/.SRCINFO
           git diff --cached --quiet && echo "No changes to sync" && exit 0
           git commit -m "chore(aur): sync PKGBUILD and .SRCINFO to v${{ steps.vars.outputs.version }}"
+          git fetch origin develop
+          git rebase origin/develop
           git push origin HEAD:develop
 
   copr-build:
@@ -137,6 +139,8 @@ jobs:
           git config user.email "axel.valadon@gmail.com"
           git add arctis-sound-manager.spec
           git diff --cached --quiet || git commit -m "chore: bump spec to ${VERSION}"
+          git fetch origin develop
+          git rebase origin/develop
           git push origin HEAD:develop || true
 
       - name: Trigger COPR build
