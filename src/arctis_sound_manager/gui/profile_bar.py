@@ -65,20 +65,35 @@ class ProfileBar(QWidget):
         self.refresh()
 
     def refresh(self) -> None:
-        # Clear existing chips
         while self._layout.count():
             item = self._layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
         self._chips.clear()
 
-        active = active_profile_name()
-        for profile in Profile.list_all():
-            btn = self._make_chip(profile, active == profile.name)
-            self._layout.addWidget(btn)
-            self._chips[profile.name] = btn
+        # Section label
+        lbl = QLabel("Profiles :")
+        lbl.setStyleSheet(
+            f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
+        )
+        self._layout.addWidget(lbl)
 
-        add_btn = QPushButton("＋")
+        profiles = Profile.list_all()
+        active = active_profile_name()
+
+        if not profiles:
+            hint = QLabel("No profiles yet")
+            hint.setStyleSheet(
+                f"color: {TEXT_SECONDARY}; font-size: 10pt; font-style: italic; background: transparent;"
+            )
+            self._layout.addWidget(hint)
+        else:
+            for profile in profiles:
+                btn = self._make_chip(profile, active == profile.name)
+                self._layout.addWidget(btn)
+                self._chips[profile.name] = btn
+
+        add_btn = QPushButton("＋  Save current settings")
         add_btn.setStyleSheet(_BTN_ADD)
         add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         add_btn.setFixedHeight(30)
