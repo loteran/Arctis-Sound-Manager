@@ -54,6 +54,10 @@ class QSystrayApp(QBaseDesktopApp):
         self.last_device_status = {}
 
         self.menu = QMenu()
+        # Connect signals once on the persistent menu object
+        self.menu.aboutToShow.connect(self.start_polling)
+        self.menu.aboutToHide.connect(self.stop_polling)
+        self.tray_icon.setContextMenu(self.menu)
         self.menu_setup()
         self.do_polling = False
 
@@ -132,8 +136,9 @@ class QSystrayApp(QBaseDesktopApp):
         self.app.exec()
 
     def menu_setup(self) -> None:
-        old_menu = self.menu
-        self.menu = QMenu()
+        # Clear in-place to keep the same QMenu/D-Bus object that KDE SNI tracks.
+        # Creating a new QMenu() each time breaks KDE's dbusmenu cache.
+        self.menu.clear()
         self._menu_actions = {}
 
         # Open App
@@ -154,7 +159,7 @@ class QSystrayApp(QBaseDesktopApp):
                 )
                 self.menu.addAction(self._menu_actions['headset_status'])
 
-        # Profiles submenu
+        # Profiles
         try:
             from arctis_sound_manager.profile_manager import Profile, active_profile_name
             self.menu.addSeparator()
@@ -172,8 +177,7 @@ class QSystrayApp(QBaseDesktopApp):
                 no_profile = QAction("— No profiles saved —")
                 self.menu.addAction(no_profile)
         except Exception as e:
-            import logging
-            logging.getLogger('SystrayApp').error('profiles section failed: %s', e, exc_info=True)
+            self.logger.error('profiles section failed: %s', e, exc_info=True)
 
         self.menu.addSeparator()
 
@@ -181,12 +185,6 @@ class QSystrayApp(QBaseDesktopApp):
         self._menu_actions['exit'] = QAction(I18n.translate('ui', 'exit'))
         self._menu_actions['exit'].triggered.connect(self.sig_stop)
         self.menu.addAction(self._menu_actions['exit'])
-
-        self.menu.aboutToShow.connect(self.start_polling)
-        self.menu.aboutToHide.connect(self.stop_polling)
-        self.tray_icon.setContextMenu(self.menu)
-        if old_menu is not None:
-            old_menu.deleteLater()
 
     def _on_tray_profile(self, profile) -> None:
         from arctis_sound_manager.profile_manager import apply_profile
