@@ -90,11 +90,11 @@ jobs:
         run: |
           SHA="${{ needs.release.outputs.sha256 }}"
           VERSION="${{ needs.release.outputs.version }}"
-          sed "s/pkgver=.*/pkgver=${VERSION}/; s/sha256sums=('SKIP')/sha256sums=('${SHA}')/" aur/PKGBUILD > /tmp/aur-repo/PKGBUILD
+          sed "s/pkgver=.*/pkgver=${VERSION}/; s/sha256sums=('[^']*')/sha256sums=('${SHA}')/" aur/PKGBUILD > /tmp/aur-repo/PKGBUILD
           sed -e "s/pkgver = .*/pkgver = ${VERSION}/" \
               -e "s/arctis-sound-manager-[0-9][0-9.]*\.tar\.gz/arctis-sound-manager-${VERSION}.tar.gz/g" \
               -e "s|releases/download/v[0-9][0-9.]*/|releases/download/v${VERSION}/|g" \
-              -e "s/sha256sums = SKIP/sha256sums = ${SHA}/" \
+              -e "s/sha256sums = [^ ]*/sha256sums = ${SHA}/" \
               aur/.SRCINFO > /tmp/aur-repo/.SRCINFO
           cp aur/arctis-sound-manager.install /tmp/aur-repo/arctis-sound-manager.install
 
@@ -108,15 +108,22 @@ jobs:
           git commit -m "Update to v${{ needs.release.outputs.version }}"
           git push
 
-      - name: Sync aur/ files back to main repo
+      - name: Sync aur/ template back to main repo
         run: |
-          cp /tmp/aur-repo/PKGBUILD aur/PKGBUILD
-          cp /tmp/aur-repo/.SRCINFO aur/.SRCINFO
+          VERSION="${{ needs.release.outputs.version }}"
+          # Update pkgver in the template but keep sha256sums=('SKIP') —
+          # the real sha lives only in the AUR repo, never in this template.
+          sed -i "s/pkgver=.*/pkgver=${VERSION}/" aur/PKGBUILD
+          sed -i "s/sha256sums=('[^']*')/sha256sums=('SKIP')/" aur/PKGBUILD
+          sed -i "s/pkgver = .*/pkgver = ${VERSION}/" aur/.SRCINFO
+          sed -i "s/arctis-sound-manager-[0-9][0-9.]*\.tar\.gz/arctis-sound-manager-${VERSION}.tar.gz/g" aur/.SRCINFO
+          sed -i "s|releases/download/v[0-9][0-9.]*/|releases/download/v${VERSION}/|g" aur/.SRCINFO
+          sed -i "s/sha256sums = [^ ]*/sha256sums = SKIP/" aur/.SRCINFO
           git config user.name "loteran"
           git config user.email "axel.valadon@gmail.com"
           git add aur/PKGBUILD aur/.SRCINFO
           git diff --cached --quiet && echo "No changes to sync" && exit 0
-          git commit -m "chore(aur): sync PKGBUILD and .SRCINFO to v${{ needs.release.outputs.version }}"
+          git commit -m "chore(aur): sync PKGBUILD and .SRCINFO template to v${VERSION}"
           git pull --rebase origin develop
           git push origin HEAD:develop
 
