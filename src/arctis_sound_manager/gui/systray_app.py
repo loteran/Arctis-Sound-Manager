@@ -133,6 +133,11 @@ class QSystrayApp(QBaseDesktopApp):
 
         self.dbus_bus = await MessageBus().connect()
 
+        # Pre-fetch status immediately so the tray menu shows headset info
+        # on the very first click (without waiting for the 2s poll cycle).
+        self.do_polling = True
+        await self.dbus_poll()
+
         self.app.exec()
 
     def menu_setup(self) -> None:
