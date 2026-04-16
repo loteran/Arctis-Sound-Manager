@@ -10,6 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      version: ${{ steps.src.outputs.version }}
+      sha256: ${{ steps.src.outputs.sha256 }}
 
     steps:
       - uses: actions/checkout@v4
@@ -33,6 +36,19 @@ jobs:
       - name: Build .deb package
         run: bash debian/build-deb.sh
 
+      - name: Build deterministic source tarball for AUR
+        id: src
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # git archive produces a deterministic tarball (commit timestamps, no GitHub regeneration)
+          git archive --format=tar.gz \
+            --prefix="Arctis-Sound-Manager-${VERSION}/" \
+            HEAD \
+            -o "dist/arctis-sound-manager-${VERSION}.tar.gz"
+          SHA=$(sha256sum "dist/arctis-sound-manager-${VERSION}.tar.gz" | awk '{print $1}')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "sha256=$SHA" >> $GITHUB_OUTPUT
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
@@ -53,15 +69,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Compute sha256 of source tarball
-        id: vars
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          URL="https://github.com/loteran/Arctis-Sound-Manager/archive/refs/tags/${GITHUB_REF_NAME}.tar.gz"
-          SHA=$(curl -sL "$URL" | sha256sum | awk '{print $1}')
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "sha256=$SHA" >> $GITHUB_OUTPUT
-
       - name: Set up SSH for AUR
         env:
           AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
@@ -81,12 +88,12 @@ jobs:
 
       - name: Patch PKGBUILD and .SRCINFO with real sha256
         run: |
-          SHA="${{ steps.vars.outputs.sha256 }}"
-          VERSION="${{ steps.vars.outputs.version }}"
+          SHA="${{ needs.release.outputs.sha256 }}"
+          VERSION="${{ needs.release.outputs.version }}"
           sed "s/pkgver=.*/pkgver=${VERSION}/; s/sha256sums=('SKIP')/sha256sums=('${SHA}')/" aur/PKGBUILD > /tmp/aur-repo/PKGBUILD
           sed -e "s/pkgver = .*/pkgver = ${VERSION}/" \
               -e "s/arctis-sound-manager-[0-9][0-9.]*\.tar\.gz/arctis-sound-manager-${VERSION}.tar.gz/g" \
-              -e "s|/tags/v[0-9][0-9.]*\.tar\.gz|/tags/v${VERSION}.tar.gz|g" \
+              -e "s|releases/download/v[0-9][0-9.]*/|releases/download/v${VERSION}/|g" \
               -e "s/sha256sums = SKIP/sha256sums = ${SHA}/" \
               aur/.SRCINFO > /tmp/aur-repo/.SRCINFO
           cp aur/arctis-sound-manager.install /tmp/aur-repo/arctis-sound-manager.install
@@ -98,21 +105,19 @@ jobs:
           git config user.email "axel.valadon@gmail.com"
           git add PKGBUILD .SRCINFO arctis-sound-manager.install
           git diff --cached --quiet && echo "No changes to push" && exit 0
-          git commit -m "Update to v${{ steps.vars.outputs.version }}"
+          git commit -m "Update to v${{ needs.release.outputs.version }}"
           git push
 
       - name: Sync aur/ files back to main repo
         run: |
-          git config user.name "loteran"
-          git config user.email "axel.valadon@gmail.com"
-          git fetch origin develop
-          git checkout -B sync-aur origin/develop
           cp /tmp/aur-repo/PKGBUILD aur/PKGBUILD
           cp /tmp/aur-repo/.SRCINFO aur/.SRCINFO
+          git config user.name "loteran"
+          git config user.email "axel.valadon@gmail.com"
           git add aur/PKGBUILD aur/.SRCINFO
           git diff --cached --quiet && echo "No changes to sync" && exit 0
-          git commit -m "chore(aur): sync PKGBUILD and .SRCINFO to v${{ steps.vars.outputs.version }}"
-          git push origin sync-aur:develop
+          git commit -m "chore(aur): sync PKGBUILD and .SRCINFO to v${{ needs.release.outputs.version }}"
+          git push origin HEAD:develop
 
   copr-build:
     runs-on: ubuntu-latest
@@ -134,14 +139,12 @@ jobs:
       - name: Update spec version
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
+          sed -i "s/^Version:.*/Version:        ${VERSION}/" arctis-sound-manager.spec
           git config user.name "loteran"
           git config user.email "axel.valadon@gmail.com"
-          git fetch origin develop
-          git checkout -B sync-copr origin/develop
-          sed -i "s/^Version:.*/Version:        ${VERSION}/" arctis-sound-manager.spec
           git add arctis-sound-manager.spec
           git diff --cached --quiet || git commit -m "chore: bump spec to ${VERSION}"
-          git push origin sync-copr:develop || true
+          git push origin HEAD:develop || true
 
       - name: Trigger COPR build
         run: |
