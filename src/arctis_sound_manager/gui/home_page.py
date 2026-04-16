@@ -788,10 +788,13 @@ class HomePage(QWidget):
         cmd = PACKAGE_MANAGER_COMMANDS.get(method)
 
         if cmd:
-            # Package manager install — show command, copy to clipboard
+            # Package manager install — open a terminal with the command, or copy to clipboard
+            from arctis_sound_manager.update_checker import build_terminal_cmd
             from arctis_sound_manager.gui.theme import (
                 ACCENT, BG_BUTTON, BG_BUTTON_HOVER, BG_CARD, BG_MAIN, BORDER, TEXT_PRIMARY, TEXT_SECONDARY,
             )
+            terminal_args = build_terminal_cmd(cmd)
+
             dlg = QDialog(self)
             dlg.setWindowTitle("Update available")
             dlg.setMinimumWidth(480)
@@ -800,7 +803,10 @@ class HomePage(QWidget):
             layout.setContentsMargins(24, 20, 24, 20)
             layout.setSpacing(12)
 
-            lbl = QLabel("ASM was installed via your package manager.\nRun this command in a terminal to update:")
+            if terminal_args:
+                lbl = QLabel("ASM was installed via your package manager.\nClick \"Update now\" to open a terminal and run the update:")
+            else:
+                lbl = QLabel("ASM was installed via your package manager.\nRun this command in a terminal to update:")
             lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;")
             lbl.setWordWrap(True)
             layout.addWidget(lbl)
@@ -815,11 +821,29 @@ class HomePage(QWidget):
 
             btn_row = QHBoxLayout()
             btn_row.addStretch()
+
+            if terminal_args:
+                open_btn = QPushButton("Update now")
+                open_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                open_btn.setStyleSheet(
+                    f"QPushButton {{ background-color: {ACCENT}; color: #fff; border: none; "
+                    f"border-radius: 6px; padding: 8px 18px; font-size: 10pt; }}"
+                    f"QPushButton:hover {{ background-color: {BG_BUTTON_HOVER}; }}"
+                )
+                def _open_terminal():
+                    import subprocess as _sp
+                    _sp.Popen(terminal_args)
+                    dlg.accept()
+                open_btn.clicked.connect(_open_terminal)
+                btn_row.addWidget(open_btn)
+
             copy_btn = QPushButton("Copy command")
+            copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             copy_btn.setStyleSheet(
-                f"QPushButton {{ background-color: {ACCENT}; color: #fff; border: none; "
+                f"QPushButton {{ background-color: {'transparent' if terminal_args else ACCENT}; "
+                f"color: {TEXT_PRIMARY if terminal_args else '#fff'}; border: {'1px solid ' + BORDER if terminal_args else 'none'}; "
                 f"border-radius: 6px; padding: 8px 18px; font-size: 10pt; }}"
-                f"QPushButton:hover {{ background-color: {BG_BUTTON_HOVER}; }}"
+                f"QPushButton:hover {{ background-color: {BG_BUTTON_HOVER}; color: {TEXT_PRIMARY}; }}"
             )
             def _copy_cmd():
                 from PySide6.QtWidgets import QApplication
@@ -832,6 +856,7 @@ class HomePage(QWidget):
             btn_row.addWidget(copy_btn)
 
             close_btn = QPushButton("Close")
+            close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             close_btn.setStyleSheet(
                 f"QPushButton {{ background-color: {BG_BUTTON}; color: {TEXT_PRIMARY}; border: none; "
                 f"border-radius: 6px; padding: 8px 18px; font-size: 10pt; }}"
