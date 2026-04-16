@@ -130,9 +130,10 @@ class UpdateCheckWorker(QThread):
 
     result = Signal(str, str, str)
 
-    def __init__(self, current_version: str):
+    def __init__(self, current_version: str, force: bool = False):
         super().__init__()
         self._current = current_version
+        self._force = force
 
     def run(self):
         try:
@@ -146,8 +147,8 @@ class UpdateCheckWorker(QThread):
             self.result.emit("", "", "")
             return
 
-        # Try cache first
-        latest_str, url, wheel_url = self._read_cache()
+        # Try cache first (skipped when force=True)
+        latest_str, url, wheel_url = (None, "", "") if self._force else self._read_cache()
         if latest_str is None:
             latest_str, url, wheel_url = self._fetch()
             if latest_str:

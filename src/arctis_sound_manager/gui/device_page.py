@@ -8,6 +8,8 @@ import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Slot
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -269,6 +271,27 @@ class DevicePage(QWidget):
         startup_row.addStretch(1)
         content_layout.addLayout(startup_row)
 
+        content_layout.addSpacing(16)
+        content_layout.addWidget(DividerLine())
+        content_layout.addSpacing(10)
+
+        # ── Check for updates ──────────────────────────────────────────────────
+        update_row = QHBoxLayout()
+        self._check_update_btn = _styled_button(I18n.translate("ui", "check_for_updates"))
+        self._check_update_btn.setFixedWidth(220)
+        self._check_update_btn.clicked.connect(self._on_check_update)
+        update_row.addWidget(self._check_update_btn)
+
+        self._update_status_lbl = QLabel("")
+        self._update_status_lbl.setStyleSheet(
+            f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
+        )
+        self._update_status_lbl.setWordWrap(True)
+        update_row.addWidget(self._update_status_lbl, stretch=1)
+        content_layout.addLayout(update_row)
+
+        self._update_url: str = ""
+
         content_layout.addStretch(1)
 
         scroll.setWidget(content)
@@ -337,3 +360,35 @@ class DevicePage(QWidget):
         msg.setText(_RESTART_MSG.get(code, _RESTART_MSG["en"]))
         msg.setIcon(QMessageBox.Icon.Information)
         msg.exec()
+
+    def _on_check_update(self) -> None:
+        from arctis_sound_manager.update_checker import UpdateCheckWorker
+        from arctis_sound_manager.utils import project_version
+
+        self._check_update_btn.setEnabled(False)
+        self._check_update_btn.setText(I18n.translate("ui", "checking_updates"))
+        self._update_status_lbl.setText("")
+        self._update_url = ""
+
+        self._update_worker = UpdateCheckWorker(project_version(), force=True)
+        self._update_worker.result.connect(self._on_check_update_result)
+        self._update_worker.start()
+
+    @Slot(str, str, str)
+    def _on_check_update_result(self, version: str, url: str, wheel_url: str) -> None:
+        self._check_update_btn.setEnabled(True)
+        self._check_update_btn.setText(I18n.translate("ui", "check_for_updates"))
+
+        if version:
+            self._update_url = url
+            self._update_status_lbl.setStyleSheet(
+                f"color: {ACCENT}; font-size: 10pt; background: transparent; text-decoration: underline;"
+            )
+            self._update_status_lbl.setText(f"v{version} available — click to open")
+            self._update_status_lbl.mousePressEvent = lambda _: QDesktopServices.openUrl(QUrl(self._update_url))
+            self._update_status_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
+        else:
+            self._update_status_lbl.setStyleSheet(
+                f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
+            )
+            self._update_status_lbl.setText(I18n.translate("ui", "up_to_date"))
