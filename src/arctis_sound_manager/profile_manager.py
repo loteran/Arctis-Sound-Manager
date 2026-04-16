@@ -12,6 +12,13 @@ _ACTIVE_FILE = _CFG / ".active_profile"
 CHANNELS = ("game", "chat", "micro")
 
 
+_EQ_MODE_FILE = _CFG / ".eq_mode"
+
+
+def _current_eq_mode() -> str:
+    return _EQ_MODE_FILE.read_text().strip() if _EQ_MODE_FILE.exists() else "custom"
+
+
 @dataclass
 class Profile:
     name: str
@@ -19,6 +26,7 @@ class Profile:
     macros: dict[str, dict[str, float]]  # channel → {basses, voix, aigus}
     spatial_audio: dict               # {enabled, mode, immersion, distance}
     volumes: dict[str, int]           # {game, chat, media} → 0-100
+    eq_mode: str = "custom"           # "sonar" or "custom"
 
     def slug(self) -> str:
         return re.sub(r"[^\w-]", "_", self.name.lower().strip())
@@ -35,6 +43,7 @@ class Profile:
     @staticmethod
     def load(path: Path) -> "Profile":
         data = json.loads(path.read_text())
+        data.setdefault("eq_mode", "")  # backward compat with older profiles
         return Profile(**data)
 
     @staticmethod
@@ -66,7 +75,7 @@ def set_active_profile(name: str | None) -> None:
 
 
 def snapshot_current() -> Profile:
-    """Snapshot current EQ presets, macros, spatial audio and volumes."""
+    """Snapshot current EQ presets, macros, spatial audio, volumes and EQ mode."""
     from arctis_sound_manager.gui.sonar_page import (
         _active_preset_name, _load_macro, _load_spatial_audio,
     )
@@ -74,8 +83,9 @@ def snapshot_current() -> Profile:
     macros = {c: _load_macro(c) for c in CHANNELS}
     spatial = _load_spatial_audio()
     volumes = _snapshot_volumes()
+    eq_mode = _current_eq_mode()
     return Profile(name="", presets=presets, macros=macros,
-                   spatial_audio=spatial, volumes=volumes)
+                   spatial_audio=spatial, volumes=volumes, eq_mode=eq_mode)
 
 
 def _snapshot_volumes() -> dict[str, int]:
@@ -112,7 +122,28 @@ def apply_profile(profile: Profile) -> None:
             _save_macro(ch, profile.macros[ch])
     _save_spatial_audio(profile.spatial_audio)
     _apply_volumes(profile.volumes)
+
+    # Switch EQ mode if needed (updates YAMLs + virtual sinks conf)
+    eq_mode = getattr(profile, "eq_mode", None)
+    if eq_mode:
+        _apply_eq_mode(eq_mode)
+
     set_active_profile(profile.name)
+
+
+def _apply_eq_mode(new_mode: str) -> None:
+    """Write EQ mode state and regenerate virtual sinks config if mode changed."""
+    current = _current_eq_mode()
+    if current == new_mode:
+        return
+    try:
+        from arctis_sound_manager.gui.sonar_toggle_widget import _apply_yaml
+        from arctis_sound_manager.sonar_to_pipewire import generate_virtual_sinks_conf
+        _apply_yaml(new_mode)
+        generate_virtual_sinks_conf(sonar=(new_mode == "sonar"))
+        _EQ_MODE_FILE.write_text(new_mode)
+    except Exception:
+        pass
 
 
 def _apply_volumes(volumes: dict[str, int]) -> None:

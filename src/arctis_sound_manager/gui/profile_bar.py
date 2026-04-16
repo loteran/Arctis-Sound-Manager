@@ -168,15 +168,22 @@ class SaveProfileDialog(QDialog):
         )
         layout.addWidget(self._name)
 
+        cb_style = f"color: {TEXT_SECONDARY}; background: transparent;"
+
         self._cb_volumes = QCheckBox("Include volumes")
         self._cb_volumes.setChecked(True)
-        self._cb_volumes.setStyleSheet(f"color: {TEXT_SECONDARY}; background: transparent;")
+        self._cb_volumes.setStyleSheet(cb_style)
         layout.addWidget(self._cb_volumes)
 
         self._cb_spatial = QCheckBox("Include spatial audio")
         self._cb_spatial.setChecked(True)
-        self._cb_spatial.setStyleSheet(f"color: {TEXT_SECONDARY}; background: transparent;")
+        self._cb_spatial.setStyleSheet(cb_style)
         layout.addWidget(self._cb_spatial)
+
+        self._cb_eq_mode = QCheckBox("Include EQ mode (Sonar / Custom)")
+        self._cb_eq_mode.setChecked(True)
+        self._cb_eq_mode.setStyleSheet(cb_style)
+        layout.addWidget(self._cb_eq_mode)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
@@ -206,6 +213,8 @@ class SaveProfileDialog(QDialog):
             profile.volumes = {}
         if not self._cb_spatial.isChecked():
             profile.spatial_audio = {}
+        if not self._cb_eq_mode.isChecked():
+            profile.eq_mode = ""
 
         profile.save()
         self.accept()
