@@ -103,16 +103,16 @@ jobs:
 
       - name: Sync aur/ files back to main repo
         run: |
-          cp /tmp/aur-repo/PKGBUILD aur/PKGBUILD
-          cp /tmp/aur-repo/.SRCINFO aur/.SRCINFO
           git config user.name "loteran"
           git config user.email "axel.valadon@gmail.com"
+          git fetch origin develop
+          git checkout -B sync-aur origin/develop
+          cp /tmp/aur-repo/PKGBUILD aur/PKGBUILD
+          cp /tmp/aur-repo/.SRCINFO aur/.SRCINFO
           git add aur/PKGBUILD aur/.SRCINFO
           git diff --cached --quiet && echo "No changes to sync" && exit 0
           git commit -m "chore(aur): sync PKGBUILD and .SRCINFO to v${{ steps.vars.outputs.version }}"
-          git fetch origin develop
-          git rebase origin/develop
-          git push origin HEAD:develop
+          git push origin sync-aur:develop
 
   copr-build:
     runs-on: ubuntu-latest
@@ -134,14 +134,14 @@ jobs:
       - name: Update spec version
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          sed -i "s/^Version:.*/Version:        ${VERSION}/" arctis-sound-manager.spec
           git config user.name "loteran"
           git config user.email "axel.valadon@gmail.com"
+          git fetch origin develop
+          git checkout -B sync-copr origin/develop
+          sed -i "s/^Version:.*/Version:        ${VERSION}/" arctis-sound-manager.spec
           git add arctis-sound-manager.spec
           git diff --cached --quiet || git commit -m "chore: bump spec to ${VERSION}"
-          git fetch origin develop
-          git rebase origin/develop
-          git push origin HEAD:develop || true
+          git push origin sync-copr:develop || true
 
       - name: Trigger COPR build
         run: |

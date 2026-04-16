@@ -14,6 +14,7 @@ device:
   command_transport: ctrl_output  # HID SET_REPORT, interface 3 (usagepage 0xffc0)
   command_interface_index: [3, 0]
   listen_interface_indexes: [3]
+  dial_interface_index: 3         # expected dial interface (same as status on Arctis 7+ variants)
 
   device_init:
     - [0x10]
