@@ -585,18 +585,12 @@ class HomePage(QWidget):
         root.addWidget(self._update_banner)
         root.addSpacing(4)
 
-        # ── Profiles bar ──────────────────────────────────────────────────────
-        from arctis_sound_manager.gui.profile_bar import ProfileBar
-        self.profile_bar = ProfileBar()
-        root.addWidget(self.profile_bar)
-        root.addSpacing(8)
-
         # ── Headset status pills ───────────────────────────────────────────────
         self._status_bar = _DeviceStatusBar()
         root.addWidget(self._status_bar)
         root.addSpacing(24)
 
-        # ── Enable sliders toggle row ──────────────────────────────────────────
+        # ── Enable sliders toggle + Profiles bar (same row) ───────────────────
         toggle_row = QWidget()
         toggle_row.setStyleSheet("background: transparent;")
         toggle_layout = QHBoxLayout(toggle_row)
@@ -613,7 +607,14 @@ class HomePage(QWidget):
         self._toggle.set_checked(True)
         self._toggle.checkbox.toggled.connect(self._on_toggle_changed)
         toggle_layout.addWidget(self._toggle)
-        toggle_layout.addStretch(1)
+
+        # Spacer between toggle and profiles
+        toggle_layout.addSpacing(24)
+
+        # Profiles bar inline
+        from arctis_sound_manager.gui.profile_bar import ProfileBar
+        self.profile_bar = ProfileBar()
+        toggle_layout.addWidget(self.profile_bar, stretch=1)
 
         root.addWidget(toggle_row)
         root.addSpacing(24)
