@@ -111,20 +111,20 @@ jobs:
       - name: Sync aur/ template back to main repo
         run: |
           VERSION="${{ needs.release.outputs.version }}"
-          # Update pkgver in the template but keep sha256sums=('SKIP') —
-          # the real sha lives only in the AUR repo, never in this template.
+          git config user.name "loteran"
+          git config user.email "axel.valadon@gmail.com"
+          # Checkout develop directly to avoid rebase conflicts with the tag commit
+          git fetch origin develop
+          git checkout -B develop-aur-sync origin/develop
           sed -i "s/pkgver=.*/pkgver=${VERSION}/" aur/PKGBUILD
           sed -i "s/sha256sums=('[^']*')/sha256sums=('SKIP')/" aur/PKGBUILD
           sed -i "s/pkgver = .*/pkgver = ${VERSION}/" aur/.SRCINFO
           sed -i "s/arctis-sound-manager-[0-9][0-9.]*\.tar\.gz/arctis-sound-manager-${VERSION}.tar.gz/g" aur/.SRCINFO
           sed -i "s|releases/download/v[0-9][0-9.]*/|releases/download/v${VERSION}/|g" aur/.SRCINFO
           sed -i "s/sha256sums = [^ ]*/sha256sums = SKIP/" aur/.SRCINFO
-          git config user.name "loteran"
-          git config user.email "axel.valadon@gmail.com"
           git add aur/PKGBUILD aur/.SRCINFO
           git diff --cached --quiet && echo "No changes to sync" && exit 0
           git commit -m "chore(aur): sync PKGBUILD and .SRCINFO template to v${VERSION}"
-          git pull --rebase origin develop
           git push origin HEAD:develop
 
   copr-build:
@@ -147,12 +147,13 @@ jobs:
       - name: Update spec version
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          sed -i "s/^Version:.*/Version:        ${VERSION}/" arctis-sound-manager.spec
           git config user.name "loteran"
           git config user.email "axel.valadon@gmail.com"
+          git fetch origin develop
+          git checkout -B develop-spec-sync origin/develop
+          sed -i "s/^Version:.*/Version:        ${VERSION}/" arctis-sound-manager.spec
           git add arctis-sound-manager.spec
           git diff --cached --quiet || git commit -m "chore: bump spec to ${VERSION}"
-          git pull --rebase origin develop || true
           git push origin HEAD:develop || true
 
       - name: Trigger COPR build
