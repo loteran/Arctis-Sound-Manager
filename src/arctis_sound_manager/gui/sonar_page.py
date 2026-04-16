@@ -478,6 +478,91 @@ class _ApplyWorker(QThread):
             self.done.emit(False)
 
 
+class _ApplyAllWorker(QThread):
+    """Apply all 3 EQ channels (game/chat/micro) in a single filter-chain restart."""
+    done = Signal(bool)
+
+    def __init__(self):
+        super().__init__()
+
+    def run(self):
+        import logging
+        log = logging.getLogger(__name__)
+        try:
+            boost_state = _load_boost()
+            boost_db = boost_state["db"] if boost_state["enabled"] else 0.0
+            smart_state = _load_smart_volume()
+            spatial = _load_spatial_audio()
+
+            # Generate conf for each channel
+            for channel in ("game", "chat"):
+                spatial_on = spatial["enabled"] if channel == "game" else True
+                try:
+                    bands = _parse_preset(
+                        _list_presets(channel).get(_active_preset_name(channel),
+                        next(iter(_list_presets(channel).values())))
+                    )
+                except Exception:
+                    bands = []
+                macro = _load_macro(channel)
+                generate_sonar_eq_conf(
+                    channel, bands,
+                    macro.get("basses", 0.0),
+                    macro.get("voix", 0.0),
+                    macro.get("aigus", 0.0),
+                    spatial_audio=spatial_on,
+                    boost_db=boost_db,
+                    smart_volume=smart_state,
+                )
+
+            # Micro channel
+            try:
+                micro_bands = _parse_preset(
+                    _list_presets("micro").get(_active_preset_name("micro"),
+                    next(iter(_list_presets("micro").values())))
+                )
+            except Exception:
+                micro_bands = []
+            micro_macro = _load_macro("micro")
+            micro_proc = _load_micro_proc()
+            generate_sonar_micro_conf(
+                micro_bands,
+                micro_macro.get("basses", 0.0),
+                micro_macro.get("voix", 0.0),
+                micro_macro.get("aigus", 0.0),
+                boost_db=boost_db,
+                noise_canceling=micro_proc.get("noiseCanceling"),
+                noise_reduction=micro_proc,
+            )
+
+            # Regenerate HeSuVi if spatial on
+            if spatial["enabled"]:
+                from arctis_sound_manager.sonar_to_pipewire import generate_hesuvi_conf
+                generate_hesuvi_conf(
+                    immersion_pct=spatial.get("immersion", 50),
+                    distance_pct=spatial.get("distance", 50),
+                )
+
+            # Single restart
+            result = subprocess.run(
+                ["systemctl", "--user", "restart",
+                 "pipewire", "wireplumber", "pipewire-pulse", "filter-chain"],
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode != 0:
+                log.error("audio restart failed: %s", result.stderr.strip())
+                self.done.emit(False)
+                return
+
+            if not _ApplyWorker._wait_for_node("effect_input.sonar-game-eq", timeout_ms=8000):
+                log.warning("sonar-game-eq did not appear")
+
+            self.done.emit(True)
+        except Exception as exc:
+            logging.getLogger(__name__).error("_ApplyAllWorker failed: %s", exc)
+            self.done.emit(False)
+
+
 # ── Preset search dialog ──────────────────────────────────────────────────────
 
 class _PresetSearchDialog(QDialog):
@@ -2007,3 +2092,10 @@ class SonarPage(QWidget):
         """Smart Volume changed — re-apply game and chat channels."""
         self._game_widget._schedule_apply()
         self._chat_widget._schedule_apply()
+
+    def apply_all_from_files(self) -> None:
+        """Re-apply all 3 EQ channels from current config files (used by profile system)."""
+        worker = _ApplyAllWorker()
+        worker.done.connect(lambda ok: None)  # fire-and-forget
+        worker.start()
+        self._apply_all_worker = worker  # prevent GC

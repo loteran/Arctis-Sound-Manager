@@ -381,14 +381,136 @@ class DevicePage(QWidget):
 
         if version:
             self._update_url = url
+            self._update_wheel_url = wheel_url
+            self._update_version = version
             self._update_status_lbl.setStyleSheet(
                 f"color: {ACCENT}; font-size: 10pt; background: transparent; text-decoration: underline;"
             )
-            self._update_status_lbl.setText(f"v{version} available — click to open")
-            self._update_status_lbl.mousePressEvent = lambda _: QDesktopServices.openUrl(QUrl(self._update_url))
+            self._update_status_lbl.setText(f"v{version} available — click to install")
+            self._update_status_lbl.mousePressEvent = lambda _: self._do_install_update()
             self._update_status_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
         else:
             self._update_status_lbl.setStyleSheet(
                 f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
             )
             self._update_status_lbl.setText(I18n.translate("ui", "up_to_date"))
+
+    def _do_install_update(self) -> None:
+        from arctis_sound_manager.update_checker import (
+            PACKAGE_MANAGER_COMMANDS, UpdateInstallWorker,
+            build_terminal_cmd, detect_install_method,
+        )
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import (
+            QApplication, QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout,
+        )
+        from arctis_sound_manager.gui.theme import BG_BUTTON_HOVER, BG_CARD, BG_MAIN, BORDER
+
+        method = detect_install_method()
+        cmd = PACKAGE_MANAGER_COMMANDS.get(method)
+
+        if cmd:
+            terminal_args = build_terminal_cmd(cmd)
+            dlg = QDialog(self)
+            dlg.setWindowTitle("Update available")
+            dlg.setMinimumWidth(480)
+            dlg.setStyleSheet(f"background-color: {BG_MAIN}; color: {TEXT_PRIMARY};")
+            layout = QVBoxLayout(dlg)
+            layout.setContentsMargins(24, 20, 24, 20)
+            layout.setSpacing(12)
+
+            msg = ("ASM was installed via your package manager.\n"
+                   "Click \"Update now\" to open a terminal and run the update:"
+                   if terminal_args else
+                   "ASM was installed via your package manager.\n"
+                   "Run this command in a terminal to update:")
+            lbl = QLabel(msg)
+            lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;")
+            lbl.setWordWrap(True)
+            layout.addWidget(lbl)
+
+            cmd_lbl = QLabel(cmd)
+            cmd_lbl.setStyleSheet(
+                f"background-color: {BG_CARD}; color: {TEXT_PRIMARY}; font-family: monospace; "
+                f"font-size: 10pt; padding: 10px; border-radius: 6px; border: 1px solid {BORDER};"
+            )
+            cmd_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            layout.addWidget(cmd_lbl)
+
+            btn_row = QHBoxLayout()
+            btn_row.addStretch()
+            if terminal_args:
+                open_btn = QPushButton("Update now")
+                open_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                open_btn.setStyleSheet(
+                    f"QPushButton {{ background-color: {ACCENT}; color: #fff; border: none; "
+                    f"border-radius: 6px; padding: 8px 18px; font-size: 10pt; }}"
+                    f"QPushButton:hover {{ background-color: {BG_BUTTON_HOVER}; }}"
+                )
+                def _open_terminal():
+                    import subprocess as _sp
+                    _sp.Popen(terminal_args)
+                    dlg.accept()
+                open_btn.clicked.connect(_open_terminal)
+                btn_row.addWidget(open_btn)
+
+            copy_btn = QPushButton("Copy command")
+            copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            copy_btn.setStyleSheet(
+                f"QPushButton {{ background-color: {'transparent' if terminal_args else ACCENT}; "
+                f"color: {TEXT_PRIMARY if terminal_args else '#fff'}; "
+                f"border: {'1px solid ' + BORDER if terminal_args else 'none'}; "
+                f"border-radius: 6px; padding: 8px 18px; font-size: 10pt; }}"
+                f"QPushButton:hover {{ background-color: {BG_BUTTON_HOVER}; color: {TEXT_PRIMARY}; }}"
+            )
+            def _copy():
+                from PySide6.QtGui import QClipboard
+                QApplication.clipboard().setText(cmd, QClipboard.Mode.Clipboard)
+                copy_btn.setText("Copied!")
+                copy_btn.setEnabled(False)
+                QTimer.singleShot(2000, lambda: (copy_btn.setText("Copy command"), copy_btn.setEnabled(True)))
+            copy_btn.clicked.connect(_copy)
+            btn_row.addWidget(copy_btn)
+
+            close_btn = QPushButton("Close")
+            close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            close_btn.setStyleSheet(
+                f"QPushButton {{ background-color: {BG_BUTTON}; color: {TEXT_PRIMARY}; border: none; "
+                f"border-radius: 6px; padding: 8px 18px; font-size: 10pt; }}"
+                f"QPushButton:hover {{ background-color: {BG_BUTTON_HOVER}; }}"
+            )
+            close_btn.clicked.connect(dlg.accept)
+            btn_row.addWidget(close_btn)
+            layout.addLayout(btn_row)
+            dlg.exec()
+            return
+
+        # pipx / pip — in-app wheel install
+        if not self._update_wheel_url:
+            QDesktopServices.openUrl(QUrl(self._update_url))
+            return
+
+        self._update_status_lbl.setText("Installing…")
+        self._update_status_lbl.setStyleSheet(
+            f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
+        )
+        self._update_status_lbl.setCursor(Qt.CursorShape.ArrowCursor)
+        self._update_status_lbl.mousePressEvent = None
+
+        self._install_worker = UpdateInstallWorker(self._update_wheel_url)
+        self._install_worker.finished.connect(self._on_install_finished)
+        self._install_worker.start()
+
+    @Slot(bool, str)
+    def _on_install_finished(self, success: bool, error_msg: str) -> None:
+        import os, subprocess, sys
+        if success:
+            self._update_status_lbl.setText("Update installed — restarting…")
+            subprocess.run(["asm-cli", "desktop", "write"], capture_output=True)
+            subprocess.Popen(["systemctl", "--user", "restart", "arctis-manager"])
+            os.execv(sys.executable, [sys.executable, "-m", "arctis_sound_manager.scripts.gui"])
+        else:
+            self._update_status_lbl.setStyleSheet(
+                f"color: #FF5555; font-size: 10pt; background: transparent;"
+            )
+            self._update_status_lbl.setText(f"Update failed: {error_msg}")

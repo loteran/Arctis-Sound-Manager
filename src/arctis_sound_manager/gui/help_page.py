@@ -60,6 +60,11 @@ HELP_CONTENT: dict[str, dict] = {
                 "body": (
                     "The Home page shows the headset status (Online / Offline / Charging, battery "
                     "level for the headset and the DAC charge slot) and the audio mixer.\n\n"
+                    "── Profiles bar ──\n"
+                    "A profile bar sits next to the \"Enable volume sliders\" toggle. "
+                    "Click a profile chip to instantly restore all saved settings. "
+                    "Use \"＋ Save current settings\" to create a new profile. "
+                    "(See the Profiles section below for details.)\n\n"
                     "── Audio mixer ──\n"
                     "Four vertical channel cards let you control the volume of each virtual audio "
                     "sink independently:\n"
@@ -82,6 +87,34 @@ HELP_CONTENT: dict[str, dict] = {
                     "Each card shows which applications are currently playing through it. "
                     "The G / C / M / H buttons on a pill let you instantly re-route that "
                     "application to another channel without leaving the app."
+                ),
+            },
+            {
+                "heading": "Profiles",
+                "body": (
+                    "Profiles let you save and restore your complete audio configuration in one click.\n\n"
+                    "── What a profile contains ──\n"
+                    "• EQ mode (Sonar or Custom)\n"
+                    "• Active EQ preset for each channel (Game / Chat / Micro)\n"
+                    "• Macro slider values (Basses / Voix / Aigus) per channel\n"
+                    "• Spatial Audio state (enabled, immersion, distance)\n"
+                    "• Channel volumes (Game / Chat / Media)\n\n"
+                    "── Creating a profile ──\n"
+                    "1. Configure your audio settings as desired.\n"
+                    "2. Click \"＋ Save current settings\" in the Home page profile bar.\n"
+                    "3. Give the profile a name and choose what to include.\n"
+                    "4. Click Save — the profile chip appears immediately.\n\n"
+                    "── Applying a profile ──\n"
+                    "Click any profile chip in the Home page bar, or select it from the "
+                    "system tray menu. Settings are applied instantly: volumes are set "
+                    "immediately, EQ and PipeWire configs are regenerated and filter-chain "
+                    "is restarted in the background.\n\n"
+                    "── Deleting a profile ──\n"
+                    "Right-click a profile chip → Delete.\n\n"
+                    "── Typical use ──\n"
+                    "Create a \"Gaming\" profile (Sonar EQ, Spatial Audio on, high Game volume) "
+                    "and a \"Work\" profile (Custom EQ, Spatial off, balanced volumes). "
+                    "Switch between them in one click from the tray or the Home page."
                 ),
             },
             {
@@ -196,7 +229,10 @@ HELP_CONTENT: dict[str, dict] = {
                     "── Check for updates ──\n"
                     "The \"Check for updates\" button at the bottom of the page forces an immediate "
                     "check against the latest GitHub release, bypassing the normal 24-hour cache. "
-                    "If a newer version is available, a link to the release page is shown."
+                    "If a newer version is available, click the result label to open the update "
+                    "dialog: for package manager installs (pacman, dnf, apt) it shows the command "
+                    "and can open a terminal automatically; for pipx/pip installs it downloads and "
+                    "installs the wheel in-app."
                 ),
             },
             {
@@ -299,6 +335,11 @@ HELP_CONTENT: dict[str, dict] = {
                     "La page Accueil affiche le statut du casque (En ligne / Hors ligne / En "
                     "charge, niveau de batterie du casque et du slot de charge du DAC) ainsi que "
                     "le mixeur audio.\n\n"
+                    "── Barre de profils ──\n"
+                    "Une barre de profils se trouve à côté du toggle \"Activer les sliders de volume\". "
+                    "Cliquez sur un chip de profil pour restaurer instantanément tous vos réglages. "
+                    "Utilisez \"＋ Save current settings\" pour créer un nouveau profil. "
+                    "(Voir la section Profils ci-dessous pour les détails.)\n\n"
                     "── Mixeur audio ──\n"
                     "Quatre cartes de canaux permettent de contrôler indépendamment le volume de "
                     "chaque sortie virtuelle :\n"
@@ -320,6 +361,35 @@ HELP_CONTENT: dict[str, dict] = {
                     "── Tags d'application ──\n"
                     "Chaque carte affiche les applications qui jouent du son à travers elle. "
                     "Les boutons G / C / M / H permettent de reroutage instantané."
+                ),
+            },
+            {
+                "heading": "Profils",
+                "body": (
+                    "Les profils permettent de sauvegarder et restaurer toute votre configuration "
+                    "audio en un seul clic.\n\n"
+                    "── Contenu d'un profil ──\n"
+                    "• Mode EQ (Sonar ou Personnalisé)\n"
+                    "• Preset EQ actif par canal (Game / Chat / Micro)\n"
+                    "• Valeurs des macro sliders (Basses / Voix / Aigus) par canal\n"
+                    "• État du Spatial Audio (activé, immersion, distance)\n"
+                    "• Volumes des canaux (Game / Chat / Media)\n\n"
+                    "── Créer un profil ──\n"
+                    "1. Configurez vos réglages audio comme souhaité.\n"
+                    "2. Cliquez sur \"＋ Save current settings\" dans la barre de profils (page Accueil).\n"
+                    "3. Donnez un nom au profil et choisissez ce à inclure.\n"
+                    "4. Cliquez Enregistrer — le chip de profil apparaît immédiatement.\n\n"
+                    "── Appliquer un profil ──\n"
+                    "Cliquez sur un chip dans la barre de profils ou sélectionnez-le depuis le "
+                    "menu du tray. Les réglages sont appliqués instantanément : les volumes sont "
+                    "mis à jour immédiatement, l'EQ et les configs PipeWire sont régénérés et "
+                    "le filter-chain est redémarré en arrière-plan.\n\n"
+                    "── Supprimer un profil ──\n"
+                    "Clic droit sur un chip → Supprimer.\n\n"
+                    "── Exemple d'utilisation ──\n"
+                    "Créez un profil \"Gaming\" (Sonar EQ, Spatial Audio activé, volume Game élevé) "
+                    "et un profil \"Travail\" (EQ Personnalisé, Spatial off, volumes équilibrés). "
+                    "Passez de l'un à l'autre en un clic depuis le tray ou la page Accueil."
                 ),
             },
             {
@@ -434,7 +504,10 @@ HELP_CONTENT: dict[str, dict] = {
                     "── Rechercher une mise à jour ──\n"
                     "Le bouton en bas de page force une vérification immédiate auprès de GitHub, "
                     "en ignorant le cache habituel de 24h. Si une nouvelle version est disponible, "
-                    "un lien vers la page de release s'affiche."
+                    "cliquez sur le label pour ouvrir le dialog de mise à jour : pour les installs "
+                    "via gestionnaire de paquets (pacman, dnf, apt) il affiche la commande et peut "
+                    "ouvrir un terminal automatiquement ; pour pipx/pip il télécharge et installe "
+                    "le wheel directement dans l'application."
                 ),
             },
             {
@@ -539,6 +612,11 @@ HELP_CONTENT: dict[str, dict] = {
                     "La página de Inicio muestra el estado del auricular (En línea / Sin conexión "
                     "/ Cargando, nivel de batería del auricular y del slot de carga del DAC) y el "
                     "mezclador de audio.\n\n"
+                    "── Barra de perfiles ──\n"
+                    "Una barra de perfiles se encuentra junto al interruptor \"Activar sliders de volumen\". "
+                    "Haz clic en un chip de perfil para restaurar al instante toda tu configuración. "
+                    "Usa \"＋ Save current settings\" para crear un nuevo perfil. "
+                    "(Ver la sección Perfiles para más detalles.)\n\n"
                     "── Mezclador de audio ──\n"
                     "Cuatro tarjetas de canal permiten controlar el volumen de cada salida virtual "
                     "de forma independiente:\n"
@@ -561,6 +639,35 @@ HELP_CONTENT: dict[str, dict] = {
                     "── Pastillas de aplicación ──\n"
                     "Cada tarjeta muestra las aplicaciones que reproducen audio a través de ella. "
                     "Los botones G / C / M / H permiten reenrutar al instante."
+                ),
+            },
+            {
+                "heading": "Perfiles",
+                "body": (
+                    "Los perfiles permiten guardar y restaurar toda tu configuración de audio "
+                    "con un solo clic.\n\n"
+                    "── Contenido de un perfil ──\n"
+                    "• Modo EQ (Sonar o Personalizado)\n"
+                    "• Preset EQ activo por canal (Game / Chat / Micro)\n"
+                    "• Valores de macro sliders (Graves / Voces / Agudos) por canal\n"
+                    "• Estado del Spatial Audio (activado, inmersión, distancia)\n"
+                    "• Volúmenes de canales (Game / Chat / Media)\n\n"
+                    "── Crear un perfil ──\n"
+                    "1. Configura tus ajustes de audio como desees.\n"
+                    "2. Haz clic en \"＋ Save current settings\" en la barra de perfiles (página Inicio).\n"
+                    "3. Asigna un nombre al perfil y elige qué incluir.\n"
+                    "4. Haz clic en Guardar — el chip de perfil aparece de inmediato.\n\n"
+                    "── Aplicar un perfil ──\n"
+                    "Haz clic en un chip en la barra de perfiles o selecciónalo desde el menú "
+                    "de la bandeja. Los ajustes se aplican al instante: los volúmenes se actualizan "
+                    "inmediatamente, el EQ y las configuraciones de PipeWire se regeneran y el "
+                    "filter-chain se reinicia en segundo plano.\n\n"
+                    "── Eliminar un perfil ──\n"
+                    "Clic derecho en un chip → Eliminar.\n\n"
+                    "── Ejemplo de uso ──\n"
+                    "Crea un perfil \"Gaming\" (Sonar EQ, Spatial Audio activado, volumen Game alto) "
+                    "y un perfil \"Trabajo\" (EQ Personalizado, Spatial off, volúmenes equilibrados). "
+                    "Cambia entre ellos con un clic desde la bandeja o la página de Inicio."
                 ),
             },
             {
@@ -676,7 +783,9 @@ HELP_CONTENT: dict[str, dict] = {
                     "── Buscar actualización ──\n"
                     "El botón al final de la página fuerza una comprobación inmediata en GitHub, "
                     "ignorando la caché habitual de 24h. Si hay una versión más reciente, "
-                    "se muestra un enlace a la página de la release."
+                    "haz clic en el resultado para abrir el diálogo de actualización: para installs "
+                    "con gestor de paquetes (pacman, dnf, apt) muestra el comando y puede abrir un "
+                    "terminal automáticamente; para pipx/pip descarga e instala el wheel directamente."
                 ),
             },
             {

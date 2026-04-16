@@ -54,6 +54,10 @@ class QSystrayApp(QBaseDesktopApp):
         self.last_device_status = {}
 
         self.menu = QMenu()
+        # Connect signals once on the persistent menu object
+        self.menu.aboutToShow.connect(self.start_polling)
+        self.menu.aboutToHide.connect(self.stop_polling)
+        self.tray_icon.setContextMenu(self.menu)
         self.menu_setup()
         self.do_polling = False
 
@@ -129,17 +133,49 @@ class QSystrayApp(QBaseDesktopApp):
 
         self.dbus_bus = await MessageBus().connect()
 
+        # Pre-fetch status immediately so the tray menu shows headset info
+        # on the very first click (without waiting for the 2s poll cycle).
+        self.do_polling = True
+        await self.dbus_poll()
+
         self.app.exec()
 
     def menu_setup(self) -> None:
-        old_menu = self.menu
-        self.menu = QMenu()
+        self.menu.clear()
         self._menu_actions = {}
+        # Keep explicit Python refs to ALL QActions so PySide6 GC doesn't
+        # destroy them before KDE dbusmenu reads them.
+        self._menu_action_refs: list = []
+
+        def _add(action):
+            self._menu_action_refs.append(action)
+            self.menu.addAction(action)
+            return action
+
+        def _sep():
+            a = self.menu.addSeparator()
+            self._menu_action_refs.append(a)
+            return a
 
         # Open App
-        self._menu_actions['open_app'] = QAction(I18n.translate('ui', 'open_app'))
+        self._menu_actions['open_app'] = _add(QAction(I18n.translate('ui', 'open_app')))
         self._menu_actions['open_app'].triggered.connect(self.open_main_window)
-        self.menu.addAction(self._menu_actions['open_app'])
+
+        # Profiles
+        try:
+            from arctis_sound_manager.profile_manager import Profile, active_profile_name
+            _sep()
+            profiles = Profile.list_all()
+            if profiles:
+                active = active_profile_name()
+                for profile in profiles:
+                    marker = "● " if profile.name == active else "    "
+                    a = _add(QAction(f"{marker}{profile.name}"))
+                    a.triggered.connect(lambda _=False, p=profile: self._on_tray_profile(p))
+            else:
+                _add(QAction("— No profiles saved —"))
+        except Exception as e:
+            self.logger.error('profiles section failed: %s', e, exc_info=True)
 
         # Headset status (power only)
         for _, status_obj in self.last_device_status.items():
@@ -147,25 +183,24 @@ class QSystrayApp(QBaseDesktopApp):
                 continue
             power = status_obj.get('headset_power_status')
             if power:
-                self.menu.addSeparator()
-                self._menu_actions['headset_status'] = QAction(
+                _sep()
+                self._menu_actions['headset_status'] = _add(QAction(
                     f"{I18n.translate('ui', 'headset_status')}: "
                     f"{I18n.translate('status_values', power['value'])}"
-                )
-                self.menu.addAction(self._menu_actions['headset_status'])
+                ))
 
-        self.menu.addSeparator()
+        _sep()
 
         # Exit
-        self._menu_actions['exit'] = QAction(I18n.translate('ui', 'exit'))
+        self._menu_actions['exit'] = _add(QAction(I18n.translate('ui', 'exit')))
         self._menu_actions['exit'].triggered.connect(self.sig_stop)
-        self.menu.addAction(self._menu_actions['exit'])
 
-        self.menu.aboutToShow.connect(self.start_polling)
-        self.menu.aboutToHide.connect(self.stop_polling)
-        self.tray_icon.setContextMenu(self.menu)
-        if old_menu is not None:
-            old_menu.deleteLater()
+    def _on_tray_profile(self, profile) -> None:
+        from arctis_sound_manager.profile_manager import apply_profile
+        apply_profile(profile)
+        # Rebuild menu to update active marker
+        self.menu_setup()
+        # Note: EQ re-apply only happens when GUI is open
 
     def is_stopping(self):
         return hasattr(self, '_stopping') and self._stopping
