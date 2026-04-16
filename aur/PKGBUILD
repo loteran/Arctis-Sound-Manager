@@ -1,6 +1,6 @@
 # Maintainer: loteran <https://github.com/loteran>
 pkgname=arctis-sound-manager
-pkgver=1.0.36
+pkgver=1.0.43
 pkgrel=1
 pkgdesc="Linux GUI for SteelSeries Arctis headsets — all GG/Sonar features: mixer, EQ, ANC, mic processing, surround"
 arch=('any')
@@ -25,7 +25,7 @@ optdepends=(
 makedepends=('python-installer' 'uv')
 install=arctis-sound-manager.install
 source=("$pkgname-$pkgver.tar.gz::https://github.com/loteran/Arctis-Sound-Manager/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('c1b1ffe2b4c51188cfa8f2d3e8d3c2a0cbf79bd0fb2036567608446f5147de3d')
 
 build() {
     cd "Arctis-Sound-Manager-$pkgver"
@@ -113,6 +113,22 @@ RestartSec=3
 
 [Install]
 WantedBy=default.target
+SERVICE
+
+    install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/user/arctis-gui.service" <<'SERVICE'
+[Unit]
+Description=Arctis Sound Manager — System Tray
+After=graphical-session.target arctis-manager.service
+Wants=arctis-manager.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/asm-gui --systray
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target
 SERVICE
 
     # PipeWire configs (shared, copied to user dir on first run by asm-setup)

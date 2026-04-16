@@ -1,5 +1,5 @@
 Name:           arctis-sound-manager
-Version:        1.0.42
+Version:        1.0.43
 Release:        1%{?dist}
 Summary:        Linux GUI for SteelSeries Arctis headsets
 
@@ -104,6 +104,22 @@ RestartSec=3
 WantedBy=default.target
 SERVICE
 
+install -Dm644 /dev/stdin %{buildroot}%{_userunitdir}/arctis-gui.service <<'SERVICE'
+[Unit]
+Description=Arctis Sound Manager — System Tray
+After=graphical-session.target arctis-manager.service
+Wants=arctis-manager.service
+
+[Service]
+Type=simple
+ExecStart=%{_bindir}/asm-gui --systray
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target
+SERVICE
+
 # Desktop entry
 install -Dm644 src/arctis_sound_manager/desktop/ArctisManager.desktop \
     %{buildroot}%{_datadir}/applications/ArctisManager.desktop
@@ -139,7 +155,7 @@ install -Dm644 debian/asm-first-run.desktop \
     %{buildroot}/etc/xdg/autostart/asm-first-run.desktop
 
 %post
-%systemd_user_post arctis-manager.service arctis-video-router.service
+%systemd_user_post arctis-manager.service arctis-video-router.service arctis-gui.service
 udevadm control --reload-rules || :
 udevadm trigger || :
 
@@ -161,10 +177,10 @@ if [ -n "$REAL_USER" ]; then
 fi
 
 %preun
-%systemd_user_preun arctis-manager.service arctis-video-router.service
+%systemd_user_preun arctis-manager.service arctis-video-router.service arctis-gui.service
 
 %postun
-%systemd_user_postun arctis-manager.service arctis-video-router.service
+%systemd_user_postun arctis-manager.service arctis-video-router.service arctis-gui.service
 
 %files
 %license LICENSE
@@ -181,6 +197,7 @@ fi
 %{_udevrulesdir}/91-steelseries-arctis.rules
 %{_userunitdir}/arctis-manager.service
 %{_userunitdir}/arctis-video-router.service
+%{_userunitdir}/arctis-gui.service
 %{_datadir}/applications/ArctisManager.desktop
 %{_datadir}/icons/hicolor/scalable/apps/arctis-manager.svg
 %{_metainfodir}/com.github.loteran.arctis-sound-manager.metainfo.xml
@@ -188,6 +205,10 @@ fi
 /etc/xdg/autostart/asm-first-run.desktop
 
 %changelog
+* Thu Apr 16 2026 loteran <https://github.com/loteran> - 1.0.43-1
+- Fix: udev rules file installed with 0600 perms (pkexec cp) — dialog reappeared at every login
+- Fix: arctis-gui.service missing from package — systray never started at login despite "launch on startup"
+
 * Wed Apr 15 2026 loteran <https://github.com/loteran> - 1.0.40-1
 - Fix udev: remove GROUP="plugdev" from generated rules (breaks on Fedora)
 - Fix report dialog: clipboard copy and GitHub issue link (URL too long)
