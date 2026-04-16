@@ -195,7 +195,7 @@ LABEL="local_end"'''
             tmp.write(f'{file_content}\n')
             tmp_path = tmp.name
         try:
-            return sudo_it(["cp", tmp_path, str(rules_path)])
+            return sudo_it(["install", "-m", "644", tmp_path, str(rules_path)])
         finally:
             os.unlink(tmp_path)
     else:
