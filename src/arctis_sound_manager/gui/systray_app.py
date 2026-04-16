@@ -136,15 +136,41 @@ class QSystrayApp(QBaseDesktopApp):
         self.app.exec()
 
     def menu_setup(self) -> None:
-        # Clear in-place to keep the same QMenu/D-Bus object that KDE SNI tracks.
-        # Creating a new QMenu() each time breaks KDE's dbusmenu cache.
         self.menu.clear()
         self._menu_actions = {}
+        # Keep explicit Python refs to ALL QActions so PySide6 GC doesn't
+        # destroy them before KDE dbusmenu reads them.
+        self._menu_action_refs: list = []
+
+        def _add(action):
+            self._menu_action_refs.append(action)
+            self.menu.addAction(action)
+            return action
+
+        def _sep():
+            a = self.menu.addSeparator()
+            self._menu_action_refs.append(a)
+            return a
 
         # Open App
-        self._menu_actions['open_app'] = QAction(I18n.translate('ui', 'open_app'))
+        self._menu_actions['open_app'] = _add(QAction(I18n.translate('ui', 'open_app')))
         self._menu_actions['open_app'].triggered.connect(self.open_main_window)
-        self.menu.addAction(self._menu_actions['open_app'])
+
+        # Profiles
+        try:
+            from arctis_sound_manager.profile_manager import Profile, active_profile_name
+            _sep()
+            profiles = Profile.list_all()
+            if profiles:
+                active = active_profile_name()
+                for profile in profiles:
+                    marker = "● " if profile.name == active else "    "
+                    a = _add(QAction(f"{marker}{profile.name}"))
+                    a.triggered.connect(lambda _=False, p=profile: self._on_tray_profile(p))
+            else:
+                _add(QAction("— No profiles saved —"))
+        except Exception as e:
+            self.logger.error('profiles section failed: %s', e, exc_info=True)
 
         # Headset status (power only)
         for _, status_obj in self.last_device_status.items():
@@ -152,39 +178,17 @@ class QSystrayApp(QBaseDesktopApp):
                 continue
             power = status_obj.get('headset_power_status')
             if power:
-                self.menu.addSeparator()
-                self._menu_actions['headset_status'] = QAction(
+                _sep()
+                self._menu_actions['headset_status'] = _add(QAction(
                     f"{I18n.translate('ui', 'headset_status')}: "
                     f"{I18n.translate('status_values', power['value'])}"
-                )
-                self.menu.addAction(self._menu_actions['headset_status'])
+                ))
 
-        # Profiles
-        try:
-            from arctis_sound_manager.profile_manager import Profile, active_profile_name
-            self.menu.addSeparator()
-            profiles = Profile.list_all()
-            if profiles:
-                active = active_profile_name()
-                for profile in profiles:
-                    marker = "● " if profile.name == active else "    "
-                    action = QAction(f"{marker}{profile.name}")
-                    action.triggered.connect(
-                        lambda _=False, p=profile: self._on_tray_profile(p)
-                    )
-                    self.menu.addAction(action)
-            else:
-                no_profile = QAction("— No profiles saved —")
-                self.menu.addAction(no_profile)
-        except Exception as e:
-            self.logger.error('profiles section failed: %s', e, exc_info=True)
-
-        self.menu.addSeparator()
+        _sep()
 
         # Exit
-        self._menu_actions['exit'] = QAction(I18n.translate('ui', 'exit'))
+        self._menu_actions['exit'] = _add(QAction(I18n.translate('ui', 'exit')))
         self._menu_actions['exit'].triggered.connect(self.sig_stop)
-        self.menu.addAction(self._menu_actions['exit'])
 
     def _on_tray_profile(self, profile) -> None:
         from arctis_sound_manager.profile_manager import apply_profile
