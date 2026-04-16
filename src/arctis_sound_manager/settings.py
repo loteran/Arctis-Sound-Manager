@@ -18,6 +18,8 @@ class DeviceSettings(JsonSerializable):
         self.vendor_id = vendor_id
         self.product_id = product_id
         self.settings = ObservableDict()
+        # -1 = not yet detected; loaded/overwritten by read_from_file if a cache exists
+        self.settings['dial_interface'] = -1
 
     def _settings_file(self) -> Path:
         settings_file = SETTINGS_FOLDER / f'{self.vendor_id:04x}_{self.product_id:04x}.yaml'
@@ -51,6 +53,16 @@ class DeviceSettings(JsonSerializable):
     
     def get(self, name: str, default: int = 0) -> int:
         return self.settings.get(name, default)
+
+    def get_dial_interface(self) -> int | None:
+        """Returns the cached dial interface, or None if not yet detected."""
+        value = self.settings.get('dial_interface', -1)
+        return None if value == -1 else value
+
+    def set_dial_interface(self, interface_id: int) -> None:
+        """Cache the detected dial interface and persist it to disk."""
+        self.settings['dial_interface'] = interface_id
+        self.write_to_file()
 
     def write_to_file(self):
         settings_file = self._settings_file()

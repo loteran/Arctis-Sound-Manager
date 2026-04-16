@@ -41,10 +41,12 @@ class CoreEngine:
 
     media_mix: int
     chat_mix: int
-    
+    _active_extra_dial_interfaces: list[int]
+
     def __init__(self) -> None:
         self.media_mix = 100
         self.chat_mix = 100
+        self._active_extra_dial_interfaces = []
         self._device_lock = threading.RLock()
 
         self.general_settings = GeneralSettings.read_from_file()
@@ -126,7 +128,15 @@ class CoreEngine:
                         if self.device_status is None:
                             self.device_status = self.new_device_status()
                         self.device_status.update(device_status)
-                
+
+                        # If this packet arrived on an extra dial candidate interface, cache it
+                        if interface_id not in self.device_config.listen_interface_indexes:
+                            cached = self.device_settings.get_dial_interface()
+                            if cached != interface_id:
+                                self.logger.info(f"Dial interface detected on interface {interface_id}, caching")
+                                self.device_settings.set_dial_interface(interface_id)
+                                self._active_extra_dial_interfaces = [interface_id]
+
                 self.manage_mix_change()
 
             await asyncio.sleep(0.1)
@@ -150,7 +160,8 @@ class CoreEngine:
                 continue
 
             if self.device_config is not None:
-                listen_coroutines = [asyncio.create_task(self.listen_endpoint_loop(interface_id)) for interface_id in self.device_config.listen_interface_indexes]
+                all_listen = list(set(self.device_config.listen_interface_indexes + self._active_extra_dial_interfaces))
+                listen_coroutines = [asyncio.create_task(self.listen_endpoint_loop(interface_id)) for interface_id in all_listen]
 
             self.request_device_status()
 
@@ -177,6 +188,36 @@ class CoreEngine:
         if current_usb_device is None:
             self.teardown()
     
+    def _update_active_dial_interfaces(self) -> None:
+        """Compute which extra interfaces (outside listen_interface_indexes) to scan for the dial.
+
+        Uses the cached value from DeviceSettings if available, otherwise falls back to
+        all dial_interface_candidates that are not already in listen_interface_indexes.
+        """
+        if not self.device_config:
+            self._active_extra_dial_interfaces = []
+            return
+
+        # All declared dial interfaces that are not already covered by the status listener
+        all_candidates = list(set(
+            [self.device_config.dial_interface_index] + self.device_config.dial_interface_candidates
+        ))
+        extra_candidates = [i for i in all_candidates if i not in self.device_config.listen_interface_indexes]
+
+        if not extra_candidates:
+            self._active_extra_dial_interfaces = []
+            return
+
+        cached = self.device_settings.get_dial_interface()
+        if cached is not None:
+            # Use only the confirmed interface; skip scanning the others
+            self._active_extra_dial_interfaces = [cached] if cached not in self.device_config.listen_interface_indexes else []
+            self.logger.info(f"Dial interface loaded from cache: {cached}")
+        else:
+            # No cache yet — scan all candidates until the dial is turned
+            self._active_extra_dial_interfaces = extra_candidates
+            self.logger.info(f"Dial interface unknown, scanning candidates: {extra_candidates}")
+
     def reload_device_configurations(self) -> None:
         self.device_configurations = load_device_configurations()
         self.configure_virtual_sinks()
@@ -213,6 +254,8 @@ class CoreEngine:
         # Setup settings observer
         self.device_settings.settings.add_observer(self.on_setting_changed)
 
+        # Compute which extra (non-status) interfaces to listen on for the dial
+        self._update_active_dial_interfaces()
 
         if self.usb_device is not None:
             self.logger.info(f"Found device {self.usb_device.idProduct:04x}:{self.usb_device.idVendor:04x} ({self.device_config.name})")
@@ -432,11 +475,19 @@ class CoreEngine:
                     continue
         return None
 
+    def _all_used_interfaces(self, config: DeviceConfiguration) -> list[int]:
+        """Returns all USB interfaces that may be used: command, status listeners, and all dial candidates."""
+        return list(set([
+            self._get_command_interface(config),
+            *config.listen_interface_indexes,
+            config.dial_interface_index,
+            *config.dial_interface_candidates,
+        ]))
+
     def kernel_detach(self, usb_device: TypedDevice, config: DeviceConfiguration) -> None:
         self.logger.info(f"Detaching kernel driver for device: {usb_device.idVendor:04x}:{usb_device.idProduct:04x} ({config.name})")
 
-        interfaces = list(set([self._get_command_interface(config), *config.listen_interface_indexes]))
-        for interface in interfaces:
+        for interface in self._all_used_interfaces(config):
             if usb_device.is_kernel_driver_active(interface):
                 self.logger.info(f"Kernel driver active on interface {interface}, detaching...")
                 usb_device.detach_kernel_driver(interface)
@@ -444,8 +495,7 @@ class CoreEngine:
     def kernel_attach(self, usb_device: TypedDevice, config: DeviceConfiguration) -> None:
         self.logger.info(f"Re-attaching kernel driver for device: {usb_device.idProduct:04x}:{usb_device.idVendor:04x} ({config.name})")
 
-        interfaces = list(set([self._get_command_interface(config), *config.listen_interface_indexes]))
-        for interface in interfaces:
+        for interface in self._all_used_interfaces(config):
             if not usb_device.is_kernel_driver_active(interface):
                 self.logger.info(f"Kernel driver inactive on interface {interface}, re-attaching...")
                 usb_device.attach_kernel_driver(interface)
@@ -502,3 +552,4 @@ class CoreEngine:
             self.usb_device = None
             self.device_config = None
             self.device_status = None
+            self._active_extra_dial_interfaces = []
