@@ -209,6 +209,38 @@ class UpdateCheckWorker(QThread):
         }))
 
 
+_TERMINAL_CANDIDATES: list[tuple[str, list[str]]] = [
+    # (binary, args_before_cmd) — {} is replaced by the shell command string
+    ("konsole",        ["--hold", "-e", "bash", "-c"]),
+    ("gnome-terminal", ["--", "bash", "-c"]),
+    ("xfce4-terminal", ["--hold", "-x", "bash", "-c"]),
+    ("mate-terminal",  ["--", "bash", "-c"]),
+    ("xterm",          ["-e", "bash", "-c"]),
+    ("kitty",          ["bash", "-c"]),
+    ("alacritty",      ["-e", "bash", "-c"]),
+    ("foot",           ["bash", "-c"]),
+]
+
+
+def build_terminal_cmd(inner_cmd: str) -> list[str] | None:
+    """Return a subprocess arg list that opens a terminal running *inner_cmd*.
+
+    The terminal is left open after the command finishes so the user can read
+    the output.  Returns None if no supported terminal emulator is found.
+    """
+    for binary, args in _TERMINAL_CANDIDATES:
+        if shutil.which(binary):
+            # For terminals that don't natively keep the window open we append
+            # a read prompt so the user can close manually.
+            if binary in ("xterm", "kitty", "alacritty", "foot"):
+                inner_cmd = (
+                    f"{inner_cmd}; "
+                    r'echo; read -rp "Press Enter to close…"'
+                )
+            return [binary] + args + [inner_cmd]
+    return None
+
+
 class UpdateInstallWorker(QThread):
     """Download a wheel and install it. Emits (success, message)."""
 
