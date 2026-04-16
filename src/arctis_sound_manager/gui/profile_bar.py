@@ -22,7 +22,7 @@ QPushButton {{
     border: 1px solid {border};
     border-radius: 14px;
     padding: 4px 14px;
-    font-size: 10pt;
+    font-size: 11pt;
 }}
 QPushButton:hover {{
     background-color: {hover};
@@ -38,11 +38,11 @@ _CHIP_INACTIVE = _CHIP_BASE.format(
 _BTN_ADD = """
 QPushButton {
     background-color: transparent;
-    color: """ + TEXT_SECONDARY + """;
+    color: """ + TEXT_PRIMARY + """;
     border: 1px dashed """ + BORDER + """;
     border-radius: 14px;
     padding: 4px 12px;
-    font-size: 10pt;
+    font-size: 11pt;
 }
 QPushButton:hover {
     border-color: """ + ACCENT + """;
@@ -71,10 +71,10 @@ class ProfileBar(QWidget):
                 item.widget().deleteLater()
         self._chips.clear()
 
-        # Section label
+        # Section label — same style as "Enable Game/Chat Volume Sliders"
         lbl = QLabel("Profiles :")
         lbl.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
+            f"color: {TEXT_PRIMARY}; font-size: 11pt; background: transparent;"
         )
         self._layout.addWidget(lbl)
 
@@ -84,7 +84,7 @@ class ProfileBar(QWidget):
         if not profiles:
             hint = QLabel("No profiles yet")
             hint.setStyleSheet(
-                f"color: {TEXT_SECONDARY}; font-size: 10pt; font-style: italic; background: transparent;"
+                f"color: {TEXT_PRIMARY}; font-size: 11pt; font-style: italic; background: transparent;"
             )
             self._layout.addWidget(hint)
         else:
