@@ -155,22 +155,25 @@ class QSystrayApp(QBaseDesktopApp):
                 self.menu.addAction(self._menu_actions['headset_status'])
 
         # Profiles submenu
-        from arctis_sound_manager.profile_manager import Profile, active_profile_name
-        self.menu.addSeparator()
-        profiles = Profile.list_all()
-        if profiles:
-            active = active_profile_name()
-            for profile in profiles:
-                marker = "● " if profile.name == active else "    "
-                action = QAction(f"{marker}{profile.name}")
-                action.triggered.connect(
-                    lambda _=False, p=profile: self._on_tray_profile(p)
-                )
-                self.menu.addAction(action)
-        else:
-            no_profile = QAction("No profiles saved")
-            no_profile.setEnabled(False)
-            self.menu.addAction(no_profile)
+        try:
+            from arctis_sound_manager.profile_manager import Profile, active_profile_name
+            self.menu.addSeparator()
+            profiles = Profile.list_all()
+            if profiles:
+                active = active_profile_name()
+                for profile in profiles:
+                    marker = "● " if profile.name == active else "    "
+                    action = QAction(f"{marker}{profile.name}")
+                    action.triggered.connect(
+                        lambda _=False, p=profile: self._on_tray_profile(p)
+                    )
+                    self.menu.addAction(action)
+            else:
+                no_profile = QAction("— No profiles saved —")
+                self.menu.addAction(no_profile)
+        except Exception as e:
+            import logging
+            logging.getLogger('SystrayApp').error('profiles section failed: %s', e, exc_info=True)
 
         self.menu.addSeparator()
 
