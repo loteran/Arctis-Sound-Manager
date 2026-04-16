@@ -3,6 +3,7 @@ device:
   vendor_id: 0x1038
   product_ids:
     - 0x1290 # Arctis Pro Wireless
+    - 0x1294 # Arctis Pro Wireless (alternate PID)
   command_padding:
     length: 31
     position: end

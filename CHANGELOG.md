@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.41] - 16 April 2026
+
+### Fixed
+
+- **Arctis Pro Wireless**: added alternate USB PID `0x1294` to device definition and introduced HID-aware device detection — the daemon now automatically selects the USB interface that exposes an HID class (bInterfaceClass == 3), fixing `[Errno 13] Access denied` on systems where the control interface is exposed under a different PID.
+
 ## [1.0.40] - 15 April 2026
 
 ### Fixed

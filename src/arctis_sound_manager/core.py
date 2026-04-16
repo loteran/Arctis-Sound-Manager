@@ -172,19 +172,7 @@ class CoreEngine:
         if self.usb_device is None or self.device_config is None:
             return
 
-        current_usb_device: Device|None = None
-        for product_id in self.device_config.product_ids:
-            current_usb_devices = usb.core.find(idVendor=self.device_config.vendor_id, idProduct=product_id)
-            if current_usb_devices is None:
-                continue
-            elif isinstance(current_usb_devices, Device):
-                current_usb_device = current_usb_devices
-                break
-            else:
-                current_usb_device = next((d for d in current_usb_devices if isinstance(d, Device)), None)
-
-            if current_usb_device is not None:
-                break
+        current_usb_device = self._find_hid_device(self.device_config.vendor_id, self.device_config.product_ids)
 
         if current_usb_device is None:
             self.teardown()
@@ -198,11 +186,7 @@ class CoreEngine:
         device_config: DeviceConfiguration | None = None
 
         for device_config in self.device_configurations:
-            for product_id in device_config.product_ids:
-                usb_device = usb.core.find(idVendor=device_config.vendor_id,
-                                           idProduct=product_id)
-                if usb_device is not None:
-                    break
+            usb_device = self._find_hid_device(device_config.vendor_id, device_config.product_ids)
             if usb_device is not None:
                 break
 
@@ -429,6 +413,24 @@ class CoreEngine:
                 self.usb_device.ctrl_transfer(bmRequestType, 0x09, wValue, wIndex, command_lst)
         except usb.core.USBError as e:
             self.logger.warning(f"Error sending command: {e}")
+
+    def _find_hid_device(self, vendor_id: int, product_ids: list[int]) -> 'TypedDevice | None':
+        """Find the first USB device matching vendor_id/product_ids that exposes an HID interface."""
+        USB_CLASS_HID = 3
+        for product_id in product_ids:
+            device = usb.core.find(idVendor=vendor_id, idProduct=product_id)
+            if device is None:
+                continue
+            devices = [device] if isinstance(device, Device) else list(device)
+            for dev in devices:
+                try:
+                    for cfg in dev:
+                        for intf in cfg:
+                            if intf.bInterfaceClass == USB_CLASS_HID:
+                                return cast(TypedDevice, dev)
+                except Exception:
+                    continue
+        return None
 
     def kernel_detach(self, usb_device: TypedDevice, config: DeviceConfiguration) -> None:
         self.logger.info(f"Detaching kernel driver for device: {usb_device.idVendor:04x}:{usb_device.idProduct:04x} ({config.name})")
