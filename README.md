@@ -26,7 +26,12 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 - **10-band equalizer** — Custom mode: per-band gain (31 Hz to 16 kHz), save/load presets
 - **ANC / Transparent mode indicator** — reflects the physical button state (Off / Transparent / ANC) in real time
 - **Device status page** — battery, mic mute, sidetone, and more depending on your device
-- **Launch at startup** — toggle in Settings to enable/disable the daemon autostart via systemd
+- **Audio Profiles** — save and restore your complete audio configuration in one click:
+  - Stores EQ mode (Sonar / Custom), active preset per channel, macro slider values, Spatial Audio state and channel volumes
+  - Profile bar on the Home page for instant switching; also accessible from the system tray
+  - Right-click a profile chip to delete it
+- **Launch at startup** — toggle in Settings to enable/disable the daemon and system tray autostart via systemd (`arctis-gui.service`)
+- **Check for updates** — button in Settings forces an immediate GitHub check (bypasses the 24 h cache); clicking the result opens the update dialog — opens a terminal for package manager installs (pacman / dnf / apt) or installs the wheel in-app for pipx/pip
 - **Help page** — built-in user manual in English, French and Spanish
 - **Virtual surround 7.1** — HeSuVi filter-chain included automatically with the install
 
@@ -413,11 +418,13 @@ src/arctis_sound_manager/
 │   ├── eq_curve_widget.py      # Interactive parametric EQ curve (biquad RBJ)
 │   ├── anc_widget.py           # ANC / Transparent mode indicator
 │   ├── settings_widget.py      # Per-device settings panel (D-Bus backed)
+│   ├── profile_bar.py          # Profile chip bar + SaveProfileDialog (Home page)
 │   ├── udev_dialog.py          # Startup dialog when udev rules are missing
 │   ├── help_page.py            # Built-in user manual (EN/FR/ES)
 │   ├── presets/                # 334 bundled Sonar presets (312 Game, 8 Chat, 14 Mic)
 │   ├── components.py           # Reusable widgets
 │   └── theme.py                # Color constants
+├── profile_manager.py     # Audio profile: snapshot, save/load/apply, pulsectl volumes
 ├── sonar_to_pipewire.py   # PipeWire filter-chain config generator (Sonar EQ)
 ├── pw_utils.py            # Native PipeWire stream detection
 ├── pactl.py               # PulseAudio virtual sink management
