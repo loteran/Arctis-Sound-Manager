@@ -71,7 +71,7 @@ def detect_install_method() -> InstallMethod:
 
 PACKAGE_MANAGER_COMMANDS: dict[InstallMethod, str] = {
     InstallMethod.RPM:    "sudo dnf upgrade arctis-sound-manager",
-    InstallMethod.PACMAN: "paru -Syu arctis-sound-manager",
+    InstallMethod.PACMAN: "paru -S arctis-sound-manager",
     InstallMethod.APT:    "sudo apt update && sudo apt upgrade arctis-sound-manager",
 }
 
