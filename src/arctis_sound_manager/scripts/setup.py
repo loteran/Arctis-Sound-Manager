@@ -162,7 +162,10 @@ def main() -> None:
 
     # ── Udev rules ──
     print("\n==> Installing udev rules...")
-    if asm_cli:
+    from arctis_sound_manager.udev_checker import is_udev_rules_valid
+    if is_udev_rules_valid():
+        print("  [ok] udev rules already valid — skipping (installed by package)")
+    elif asm_cli:
         result = subprocess.run(
             [asm_cli, "udev", "write-rules", "--force", "--reload"],
             text=True,
