@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.49] - 17 April 2026
+
+### Added
+
+- **2 new Sonar presets**: Podcast [Game], Podcast [Chat] — imported from SteelSeries Sonar v1.91.
+
 ## [1.0.48] - 17 April 2026
 
 ### Added
