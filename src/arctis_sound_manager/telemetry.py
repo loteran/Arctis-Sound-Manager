@@ -26,7 +26,7 @@ log = logging.getLogger(__name__)
 _TELEMETRY_FILE = Path.home() / ".config" / "arctis_manager" / "telemetry.yaml"
 
 # Replace with your actual Cloudflare Worker URL after deployment
-TELEMETRY_ENDPOINT = "https://asm-telemetry.YOUR-SUBDOMAIN.workers.dev/collect"
+TELEMETRY_ENDPOINT = "https://asm-telemetry.arctis-asm.workers.dev/collect"
 
 _yaml = YAML(typ="safe")
 

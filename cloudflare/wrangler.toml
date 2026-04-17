@@ -8,7 +8,7 @@ compatibility_date = "2024-01-01"
 [[d1_databases]]
 binding     = "DB"
 database_name = "asm-telemetry"
-database_id   = "<YOUR_DATABASE_ID>"
+database_id   = "564f85d5-de1a-48c0-886c-dfc9de712880"
 
 # ── Routes (optional custom domain) ───────────────────────────────────────────
 # Uncomment and fill in if you want a custom subdomain:

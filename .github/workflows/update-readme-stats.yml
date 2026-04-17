@@ -20,7 +20,7 @@ jobs:
       - name: Fetch stats and update README
         env:
           # Replace with your actual Cloudflare Worker URL
-          STATS_URL: "https://asm-telemetry.YOUR-SUBDOMAIN.workers.dev/stats"
+          STATS_URL: "https://asm-telemetry.arctis-asm.workers.dev/stats"
         run: |
           python3 - <<'PYEOF'
           import json, os, re, urllib.request, sys
