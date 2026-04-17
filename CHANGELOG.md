@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.50] - 17 April 2026
+
+### Added
+
+- **73 new Sonar presets** imported from SteelSeries Sonar v1.91 — game titles, Music and Movie categories (all names sanitized, no special characters).
+
 ## [1.0.49] - 17 April 2026
 
 ### Added
