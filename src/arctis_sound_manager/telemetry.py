@@ -69,21 +69,28 @@ def set_consent(value: bool) -> None:
 # ── System info ────────────────────────────────────────────────────────────────
 
 def _get_distro() -> str:
-    try:
-        import subprocess
-        r = subprocess.run(
-            ["lsb_release", "-d"], capture_output=True, text=True, timeout=2
-        )
-        if r.returncode == 0:
-            return r.stdout.split(":", 1)[1].strip()
-    except Exception:
-        pass
+    """Return a human-readable distro name + version, e.g. 'Ubuntu 24.04.2 LTS'."""
+    # Parse /etc/os-release — most reliable source
+    fields: dict[str, str] = {}
     try:
         for line in Path("/etc/os-release").read_text().splitlines():
-            if line.startswith("PRETTY_NAME="):
-                return line.split("=", 1)[1].strip().strip('"')
+            if "=" in line:
+                k, _, v = line.partition("=")
+                fields[k.strip()] = v.strip().strip('"')
     except Exception:
         pass
+
+    if fields.get("PRETTY_NAME"):
+        return fields["PRETTY_NAME"]          # e.g. "Ubuntu 24.04.2 LTS"
+
+    # Build from NAME + VERSION if PRETTY_NAME is missing
+    name = fields.get("NAME", "")             # e.g. "Ubuntu"
+    version = fields.get("VERSION") or fields.get("VERSION_ID", "")  # e.g. "24.04.2 LTS"
+    if name and version:
+        return f"{name} {version}"
+    if name:
+        return name
+
     return "Unknown"
 
 
