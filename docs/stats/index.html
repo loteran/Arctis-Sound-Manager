@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Arctis Sound Manager — Anonymous Usage Stats</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #16191E;
+      color: #C8C8C8;
+      padding: 2rem 1rem 4rem;
+    }
+
+    .container { max-width: 940px; margin: 0 auto; }
+
+    header { margin-bottom: 2rem; }
+    header h1 {
+      font-size: 1.8rem;
+      color: #FB4A00;
+      margin-bottom: .3rem;
+    }
+    header p { color: #8D96AA; font-size: .9rem; }
+    header a { color: #FB4A00; }
+
+    .kpi-row {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+    }
+    .kpi {
+      background: #1C2026;
+      border: 1px solid #2A3038;
+      border-radius: 8px;
+      padding: 1rem 1.5rem;
+      flex: 1;
+      min-width: 140px;
+    }
+    .kpi .value {
+      font-size: 2rem;
+      font-weight: bold;
+      color: #FB4A00;
+    }
+    .kpi .label {
+      font-size: .8rem;
+      color: #8D96AA;
+      margin-top: .2rem;
+    }
+
+    .charts-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    @media (max-width: 620px) {
+      .charts-grid { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: #1C2026;
+      border: 1px solid #2A3038;
+      border-radius: 8px;
+      padding: 1.2rem;
+    }
+    .card h2 {
+      font-size: .85rem;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: #8D96AA;
+      margin-bottom: 1rem;
+    }
+
+    .versions-card { grid-column: 1 / -1; }
+
+    canvas { max-height: 280px; }
+
+    footer {
+      text-align: center;
+      color: #8D96AA;
+      font-size: .8rem;
+      margin-top: 2rem;
+    }
+    footer a { color: #FB4A00; }
+
+    #error-msg {
+      display: none;
+      background: #2D1A1A;
+      border: 1px solid #8B2020;
+      color: #FF8080;
+      border-radius: 6px;
+      padding: .8rem 1rem;
+      margin-bottom: 1.5rem;
+      font-size: .9rem;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>Arctis Sound Manager — Usage Stats</h1>
+    <p>
+      Anonymous and aggregated usage data shared voluntarily by ASM users.
+      No personal data or IP address is stored. &nbsp;·&nbsp;
+      <a href="https://github.com/loteran/Arctis-Sound-Manager" target="_blank">GitHub</a>
+    </p>
+  </header>
+
+  <div id="error-msg">Could not load statistics. The endpoint may be unreachable.</div>
+
+  <div class="kpi-row">
+    <div class="kpi">
+      <div class="value" id="kpi-total">—</div>
+      <div class="label">Data points</div>
+    </div>
+    <div class="kpi">
+      <div class="value" id="kpi-distros">—</div>
+      <div class="label">Distributions</div>
+    </div>
+    <div class="kpi">
+      <div class="value" id="kpi-headsets">—</div>
+      <div class="label">Headset models</div>
+    </div>
+    <div class="kpi">
+      <div class="value" id="kpi-updated">—</div>
+      <div class="label">Last updated</div>
+    </div>
+  </div>
+
+  <div class="charts-grid">
+    <div class="card">
+      <h2>Linux Distributions</h2>
+      <canvas id="chart-distros"></canvas>
+    </div>
+    <div class="card">
+      <h2>Headsets</h2>
+      <canvas id="chart-headsets"></canvas>
+    </div>
+    <div class="card versions-card">
+      <h2>ASM Versions</h2>
+      <canvas id="chart-versions"></canvas>
+    </div>
+  </div>
+
+  <footer>
+    Stats are cached for 1 hour &nbsp;·&nbsp;
+    <a href="https://github.com/loteran/Arctis-Sound-Manager" target="_blank">Arctis Sound Manager</a>
+  </footer>
+</div>
+
+<script>
+  // ── Replace with your actual Worker URL ──────────────────────────────────────
+  const STATS_URL = "https://asm-telemetry.YOUR-SUBDOMAIN.workers.dev/stats";
+
+  const PALETTE = [
+    "#FB4A00","#04C5A8","#2791CE","#9B59B6","#F39C12",
+    "#27AE60","#E74C3C","#3498DB","#8E44AD","#16A085",
+    "#D35400","#2ECC71","#E67E22","#1ABC9C","#C0392B",
+  ];
+
+  function mkChart(id, labels, values, type = "bar") {
+    const ctx = document.getElementById(id);
+    return new Chart(ctx, {
+      type,
+      data: {
+        labels,
+        datasets: [{
+          data: values,
+          backgroundColor: PALETTE.slice(0, labels.length),
+          borderWidth: 0,
+          borderRadius: 4,
+        }],
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: type !== "bar" },
+          tooltip: { callbacks: { label: c => " " + c.formattedValue } },
+        },
+        scales: type === "bar" ? {
+          x: { ticks: { color: "#8D96AA" }, grid: { color: "#2A3038" } },
+          y: { ticks: { color: "#8D96AA" }, grid: { color: "#2A3038" } },
+        } : {},
+      },
+    });
+  }
+
+  fetch(STATS_URL)
+    .then(r => {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then(data => {
+      // KPIs
+      document.getElementById("kpi-total").textContent   = data.total.toLocaleString();
+      document.getElementById("kpi-distros").textContent = data.distros.length;
+      document.getElementById("kpi-headsets").textContent= data.headsets.length;
+      document.getElementById("kpi-updated").textContent =
+        new Date(data.generated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+      // Charts
+      mkChart("chart-distros",
+        data.distros.map(r => r.label), data.distros.map(r => r.nb));
+      mkChart("chart-headsets",
+        data.headsets.map(r => r.label), data.headsets.map(r => r.nb), "doughnut");
+      mkChart("chart-versions",
+        data.versions.map(r => r.label), data.versions.map(r => r.nb));
+    })
+    .catch(err => {
+      console.error(err);
+      document.getElementById("error-msg").style.display = "block";
+    });
+</script>
+</body>
+</html>

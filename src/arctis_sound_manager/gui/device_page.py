@@ -272,6 +272,33 @@ class DevicePage(QWidget):
         content_layout.addLayout(startup_row)
 
         content_layout.addSpacing(16)
+
+        # ── Telemetry toggle ───────────────────────────────────────────────────
+        from arctis_sound_manager.telemetry import get_consent, set_consent
+
+        telemetry_row = QHBoxLayout()
+        telemetry_label = QLabel("Telemetry — share anonymous usage data")
+        telemetry_label.setFixedWidth(260)
+        telemetry_label.setWordWrap(True)
+        telemetry_label.setStyleSheet(
+            f"color: {TEXT_PRIMARY}; font-size: 11pt; background: transparent;"
+        )
+        telemetry_row.addWidget(telemetry_label)
+
+        consent = get_consent()
+        self._telemetry_toggle = QDualState(
+            off_text=I18n.translate("settings_values", "off"),
+            on_text=I18n.translate("settings_values", "on"),
+            init_state="right" if consent is True else "left",
+        )
+        self._telemetry_toggle.checkStateChanged.connect(
+            lambda state: set_consent(state == Qt.CheckState.Checked)
+        )
+        telemetry_row.addWidget(self._telemetry_toggle)
+        telemetry_row.addStretch(1)
+        content_layout.addLayout(telemetry_row)
+
+        content_layout.addSpacing(16)
         content_layout.addWidget(DividerLine())
         content_layout.addSpacing(10)
 

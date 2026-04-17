@@ -1,0 +1,17 @@
+name    = "asm-telemetry"
+main    = "worker.js"
+compatibility_date = "2024-01-01"
+
+# ── D1 database ────────────────────────────────────────────────────────────────
+# After running `wrangler d1 create asm-telemetry`, replace <YOUR_DATABASE_ID>
+# with the ID shown in the output.
+[[d1_databases]]
+binding     = "DB"
+database_name = "asm-telemetry"
+database_id   = "<YOUR_DATABASE_ID>"
+
+# ── Routes (optional custom domain) ───────────────────────────────────────────
+# Uncomment and fill in if you want a custom subdomain:
+# routes = [
+#   { pattern = "asm-telemetry.yourdomain.com/*", zone_name = "yourdomain.com" }
+# ]

@@ -1,0 +1,175 @@
+name: Update README stats
+
+on:
+  schedule:
+    # Every Sunday at 02:00 UTC
+    - cron: "0 2 * * 0"
+  workflow_dispatch:  # Manual trigger
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch stats and update README
+        env:
+          # Replace with your actual Cloudflare Worker URL
+          STATS_URL: "https://asm-telemetry.YOUR-SUBDOMAIN.workers.dev/stats"
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, re, urllib.request, sys
+          from datetime import datetime, timezone
+
+          url = os.environ["STATS_URL"]
+
+          try:
+              with urllib.request.urlopen(url, timeout=10) as r:
+                  data = json.loads(r.read())
+          except Exception as e:
+              print(f"::error::Could not fetch stats: {e}")
+              sys.exit(1)
+
+          total    = data.get("total", 0)
+          distros  = data.get("distros", [])
+          headsets = data.get("headsets", [])
+
+          updated = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+          # ── Build distros table (Community Stats section) ────────────────────
+          distros_md = (
+              "| Distribution | Installs |\n"
+              "|---|---|\n"
+          )
+          for row in distros[:15]:
+              distros_md += f"| {row['label']} | {row['nb']} |\n"
+
+          # ── Build Tested Distributions table ─────────────────────────────────
+          def detect_install_method(name: str) -> str:
+              n = name.lower()
+              if any(k in n for k in ("arch", "cachyos", "manjaro", "endeavour", "garuda", "artix")):
+                  return "AUR"
+              if "fedora" in n:
+                  return "COPR"
+              if any(k in n for k in ("ubuntu", "debian", "mint", "pop!_os", "elementary", "zorin", "kubuntu", "xubuntu")):
+                  return "PPA"
+              return "Source"
+
+          METHOD_ICON = {"AUR": "🎯 AUR", "COPR": "🎯 COPR", "PPA": "🎯 PPA", "Source": "📦 Source"}
+
+          if distros:
+              tested_distros_md = (
+                  "| Distribution | Install method | Users |\n"
+                  "|---|---|---|\n"
+              )
+              for row in distros:
+                  method = detect_install_method(row["label"])
+                  tested_distros_md += f"| {row['label']} | {METHOD_ICON[method]} | 👥 {row['nb']} |\n"
+          else:
+              tested_distros_md = "_No data yet — stats will appear after the first users opt in._\n"
+
+          # ── Build headsets table (Community Stats section) ───────────────────
+          headsets_md = (
+              "| Headset | Installs |\n"
+              "|---|---|\n"
+          )
+          for row in headsets[:20]:
+              headsets_md += f"| {row['label']} | {row['nb']} |\n"
+
+          # ── Build Supported Devices table ────────────────────────────────────
+          #
+          # Mapping: telemetry name (after "SteelSeries " strip) → device rows
+          # Each entry: (display_name, mixer, advanced, product_ids, telemetry_keys)
+          # telemetry_keys: list of names the telemetry may send for this device
+          #
+          PROMOTE_THRESHOLD = 5  # reports needed to auto-promote ⚠️ → ✅
+
+          DEVICES = [
+              ("Arctis 1 / 7X / 7P Wireless",               "⚠️", "⚠️", "12b3, 12b6, 12d5, 12d7",
+               ["Arctis 1/7X/7P Wireless"]),
+              ("Arctis 7 / 7 2019 / Pro 2019 / Pro GameDAC", "⚠️", "⚠️", "1260, 12ad, 1252, 1280",
+               ["Arctis 7/Pro Gaming"]),
+              ("Arctis 7+ / PS5 / Xbox / Destiny",           "⚠️", "⚠️", "220e, 2212, 2216, 2236",
+               ["Arctis 7+"]),
+              ("Arctis 9 Wireless",                          "⚠️", "⚠️", "12c2",
+               ["Arctis 9 Wireless"]),
+              ("Arctis Pro Wireless",                        "⚠️", "⚠️", "1290",
+               ["Arctis Pro Wireless"]),
+              ("Arctis Nova Pro Wireless / X",               "✅", "✅", "12e0, 12e5",
+               ["Arctis Nova Pro Wireless"]),
+              ("Arctis Nova Pro Wired / Xbox Wired",         "✅", "✅", "12cb, 12cd",
+               ["Arctis Nova Pro Wired"]),
+              ("Arctis Nova 3",                              "⚠️", "⚠️", "12ec",
+               ["Arctis Nova 3"]),
+              ("Arctis Nova 5 / 5X",                        "⚠️", "⚠️", "2232, 2253",
+               ["Arctis Nova 5 Wireless"]),
+              ("Arctis Nova 7 Gen 1",                       "⚠️", "⚠️", "2202, 2206, 223a, 227a, 22a4",
+               ["Arctis Nova 7 (Gen 1)"]),
+              ("Arctis Nova 7 Gen 2",                       "⚠️", "⚠️", "22a1, 227e, 2258, 229e, 22a9, 22a5",
+               ["Arctis Nova 7 (Gen 2)"]),
+              ("Arctis Nova 7P",                            "⚠️", "⚠️", "220a, 22a7",
+               ["Arctis Nova 7P (Gen 1)", "Arctis Nova 7P (Gen 2)"]),
+          ]
+
+          # Build lookup: label → count
+          headset_counts = {row["label"]: row["nb"] for row in headsets}
+
+          devices_md = (
+              "| Device | Mixer | Advanced features | Users | Product ID(s) |\n"
+              "|---|---|---|---|---|\n"
+          )
+          for display, mixer, advanced, pids, keys in DEVICES:
+              count = sum(headset_counts.get(k, 0) for k in keys)
+              users_cell = f"👥 {count}" if count > 0 else ""
+
+              # Auto-promote ⚠️ → ✅ when threshold reached
+              if mixer == "⚠️" and count >= PROMOTE_THRESHOLD:
+                  mixer    = "✅"
+                  advanced = "✅"
+                  display  = f"**{display}**"
+
+              devices_md += f"| {display} | {mixer} | {advanced} | {users_cell} | {pids} |\n"
+
+          # ── Inject into README ───────────────────────────────────────────────
+          readme = open("README.md", encoding="utf-8").read()
+
+          def replace_section(content, marker, replacement):
+              pattern = (
+                  rf"(<!-- STATS:{marker}:START -->)"
+                  rf".*?"
+                  rf"(<!-- STATS:{marker}:END -->)"
+              )
+              return re.sub(
+                  pattern,
+                  rf"\1\n{replacement}\n\2",
+                  content,
+                  flags=re.DOTALL,
+              )
+
+          readme = replace_section(readme, "DEVICES",       devices_md)
+          readme = replace_section(readme, "TESTED_DISTROS", tested_distros_md)
+          readme = replace_section(readme, "DISTROS",        distros_md)
+          readme = replace_section(readme, "HEADSETS",       headsets_md)
+          readme = replace_section(
+              readme, "META",
+              f"_Based on **{total}** anonymous data points — last updated {updated}_\n"
+          )
+
+          open("README.md", "w", encoding="utf-8").write(readme)
+          print(f"README updated: {total} data points, {len(distros)} distros, {len(headsets)} headsets")
+          PYEOF
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git diff --quiet README.md || (
+            git add README.md &&
+            git commit -m "chore: update anonymous usage stats [skip ci]" &&
+            git push origin HEAD
+          )
