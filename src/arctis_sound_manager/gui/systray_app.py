@@ -226,11 +226,19 @@ class QSystrayApp(QBaseDesktopApp):
 
         # Stop all ASM services and schedule a pipewire restart
         # so the system behaves as if ASM was not installed.
-        subprocess.run(
-            ["systemctl", "--user", "stop",
-             "arctis-manager.service", "arctis-video-router.service", "filter-chain"],
-            capture_output=True, timeout=10,
-        )
+        try:
+            subprocess.run(
+                ["systemctl", "--user", "stop",
+                 "arctis-manager.service", "arctis-video-router.service", "filter-chain"],
+                capture_output=True, timeout=10,
+            )
+        except subprocess.TimeoutExpired:
+            self.logger.warning("systemctl stop timed out — killing services")
+            subprocess.run(
+                ["systemctl", "--user", "kill",
+                 "arctis-manager.service", "arctis-video-router.service", "filter-chain"],
+                capture_output=True,
+            )
         # Deferred restart: the app exits first, then pipewire restarts
         # without ASM configs (filter-chain is already stopped).
         subprocess.Popen(
