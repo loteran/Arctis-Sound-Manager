@@ -109,19 +109,19 @@ class OledManager:
             self._send_oled_packet(packet)
 
     def _send_oled_packet(self, packet: list[int]) -> None:
-        usb_device = self._core.usb_device
-        if usb_device is None:
-            return
-
         bmRequestType = usb.util.build_request_type(
             direction=usb.util.CTRL_OUT,
             type=usb.util.CTRL_TYPE_CLASS,
             recipient=usb.util.CTRL_RECIPIENT_INTERFACE,
         )
-        try:
-            usb_device.ctrl_transfer(bmRequestType, 0x09, _OLED_WVALUE, _OLED_INTERFACE, packet)
-        except usb.core.USBError as e:
-            logger.warning("OLED USB error: %s", e)
+        with self._core._device_lock:
+            usb_device = self._core.usb_device
+            if usb_device is None:
+                return
+            try:
+                usb_device.ctrl_transfer(bmRequestType, 0x09, _OLED_WVALUE, _OLED_INTERFACE, packet)
+            except usb.core.USBError as e:
+                logger.warning("OLED USB error: %s", e)
 
     def _refresh_loop(self) -> None:
         while not self._stop_event.wait(timeout=_REFRESH_INTERVAL_S):
