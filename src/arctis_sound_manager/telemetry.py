@@ -109,7 +109,10 @@ def _do_send(headset: str) -> None:
     req = urllib.request.Request(
         TELEMETRY_ENDPOINT,
         data=payload,
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": f"arctis-sound-manager/{project_version()}",
+        },
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=5):
