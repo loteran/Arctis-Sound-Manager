@@ -343,7 +343,10 @@ class DevicePage(QWidget):
         self._dac_title.setVisible(has_dac)
         self._dac_widget.setVisible(has_dac)
         if has_dac:
-            self._dac_widget.update_settings(settings['dac'])
+            self._dac_widget.update_settings({
+                'settings_config': settings.get('dac_settings_config', {}),
+                'dac': settings['dac'],
+            })
 
     # ── Language ───────────────────────────────────────────────────────────────
 
