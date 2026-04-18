@@ -15,7 +15,7 @@ class OledRenderer:
         return mono.tobytes()
 
     def _draw_battery_icon(
-        self, draw: ImageDraw.ImageDraw, x: int, y: int, percent: int, charging: bool
+        self, draw: ImageDraw.ImageDraw, x: int, y: int, percent: int, charging: bool, blink_state: bool = True
     ) -> int:
         body_w, body_h = 18, 9
         tip_w, tip_h = 2, 5
@@ -31,7 +31,7 @@ class OledRenderer:
         if fill_w > 0:
             draw.rectangle([x + 2, y + 2, x + 2 + fill_w - 1, y + body_h - 3], fill=1)
 
-        if charging:
+        if charging and blink_state:
             cx = x + body_w // 2
             cy = y + body_h // 2
             draw.line([(cx + 1, cy - 3), (cx - 1, cy)], fill=1, width=1)
@@ -54,6 +54,8 @@ class OledRenderer:
         time_str: str,
         active_profile: str,
         sidetone_level: int,
+        blink_state: bool = True,
+        eq_preset: str = "",
     ) -> bytes:
         image = Image.new("1", (self.WIDTH, self.HEIGHT), color=0)
         draw = ImageDraw.Draw(image)
@@ -66,14 +68,18 @@ class OledRenderer:
         icon_w = 22
         bat_total_w = icon_w + 2 + bat_label_w
         bat_x = self.WIDTH - bat_total_w - 1
-        self._draw_battery_icon(draw, bat_x, 1, battery_percent if battery_percent >= 0 else 0, charging)
+        self._draw_battery_icon(draw, bat_x, 1, battery_percent if battery_percent >= 0 else 0, charging, blink_state)
         draw.text((bat_x + icon_w + 2, 1), bat_label, font=font, fill=1)
 
         draw.line([(0, 12), (self.WIDTH - 1, 12)], fill=1)
 
         draw.text((1, 15), f"Profile: {active_profile}", font=font, fill=1)
 
-        draw.text((1, 27), f"Sidetone: {sidetone_level}%", font=font, fill=1)
-        self._draw_bar(draw, 1, 38, self.WIDTH - 2, 8, sidetone_level)
+        draw.text((1, 26), f"Sidetone: {sidetone_level}%", font=font, fill=1)
+        self._draw_bar(draw, 1, 36, self.WIDTH - 2, 7, sidetone_level)
+
+        if eq_preset:
+            label = eq_preset if len(eq_preset) <= 18 else eq_preset[:17] + "\u2026"
+            draw.text((1, 47), f"EQ: {label}", font=font, fill=1)
 
         return self._image_to_bytes(image)

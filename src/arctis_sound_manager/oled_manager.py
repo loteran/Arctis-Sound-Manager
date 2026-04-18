@@ -11,8 +11,18 @@ import usb.util
 if TYPE_CHECKING:
     from arctis_sound_manager.core import CoreEngine
 
+from pathlib import Path
+
 from arctis_sound_manager.oled_protocol import OledProtocol
 from arctis_sound_manager.oled_renderer import OledRenderer
+from arctis_sound_manager import profile_manager
+
+_CFG = Path.home() / ".config" / "arctis_manager"
+
+
+def _active_eq_preset(channel: str) -> str:
+    f = _CFG / f".sonar_preset_{channel}"
+    return f.read_text().strip() if f.exists() else "Flat"
 
 _REFRESH_INTERVAL_S = 5.0
 _OLED_INTERFACE = 4
@@ -28,6 +38,7 @@ class OledManager:
         self._renderer = OledRenderer()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
+        self._blink = False
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -39,7 +50,12 @@ class OledManager:
             daemon=True,
         )
         self._thread.start()
+        self.set_brightness(self._core.general_settings.oled_brightness)
         logger.info("OledManager started (interval=%.1fs)", _REFRESH_INTERVAL_S)
+
+    def set_brightness(self, level: int) -> None:
+        packet = self._protocol.build_brightness_packet(level)
+        self._send_oled_packet(packet)
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -58,9 +74,13 @@ class OledManager:
         sidetone = int(status.get("sidetone", 0))
 
         device_config = self._core.device_config
-        active_profile = device_config.name if device_config else "Unknown"
+        active_profile = profile_manager.active_profile_name() or (
+            device_config.name if device_config else "Unknown"
+        )
 
+        self._blink = not self._blink
         time_str = datetime.now().strftime("%H:%M")
+        eq_preset = _active_eq_preset("game")
 
         frame = self._renderer.render_status(
             battery_percent=battery,
@@ -68,6 +88,8 @@ class OledManager:
             time_str=time_str,
             active_profile=active_profile,
             sidetone_level=sidetone,
+            blink_state=self._blink,
+            eq_preset=eq_preset,
         )
         packets = self._protocol.build_frame_packets(
             frame, self._protocol.DISPLAY_WIDTH, self._protocol.DISPLAY_HEIGHT

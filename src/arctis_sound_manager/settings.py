@@ -88,11 +88,15 @@ class GeneralSettings(JsonSerializable):
     # External output device (HDMI, sound card, etc.) shown on home page
     external_output_device: str|None = None
 
+    # OLED display brightness (0–10)
+    oled_brightness: int = 8
+
     settings_config: list[ConfigSetting] = [
         ConfigSetting('redirect_audio_on_connect', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('redirect_audio_on_disconnect', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('redirect_audio_on_disconnect_device', SettingType.SELECT, None, options_source='pulse_audio_devices', options_mapping={ 'value': 'id', 'label': 'description' }),
         ConfigSetting('external_output_device', SettingType.SELECT, None, options_source='external_audio_devices', options_mapping={ 'value': 'id', 'label': 'description' }),
+        ConfigSetting('oled_brightness', SettingType.SLIDER, 8, min=0, max=10, step=1),
     ]
 
     def __init__(self, **kwargs):

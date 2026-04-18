@@ -130,6 +130,9 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
             setattr(self.core_engine.general_settings, setting, value)
             self.core_engine.general_settings.write_to_file()
 
+            if setting == 'oled_brightness' and self.core_engine.oled_manager is not None:
+                self.core_engine.oled_manager.set_brightness(int(value))
+
             return True
         
         if self.core_engine.device_config and self.core_engine.device_settings:
