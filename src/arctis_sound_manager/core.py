@@ -19,6 +19,7 @@ from arctis_sound_manager.pactl import ONLY_PHYSICAL, PulseAudioManager
 from arctis_sound_manager.settings import DeviceSettings, GeneralSettings
 from arctis_sound_manager.usb_devices_monitor import USBDevicesMonitor
 from arctis_sound_manager.utils import ObservableDict
+from arctis_sound_manager.oled_manager import OledManager
 
 
 class TypedDevice(Device):
@@ -38,6 +39,7 @@ class CoreEngine:
     device_settings: DeviceSettings
 
     device_status: ObservableDict[str, int]|None = None
+    oled_manager: 'OledManager | None' = None
 
     media_mix: int
     chat_mix: int
@@ -284,6 +286,11 @@ class CoreEngine:
 
         # Configure the device
         self.init_device()
+
+        if self.oled_manager is not None:
+            self.oled_manager.stop()
+        self.oled_manager = OledManager(self)
+        self.oled_manager.start()
 
         self.redirect_to_media_sink()
     
@@ -547,6 +554,10 @@ class CoreEngine:
             self.logger.warning(f"Error redirecting audio on disconnect: {e}")
 
         device_state.clear()
+
+        if self.oled_manager is not None:
+            self.oled_manager.stop()
+            self.oled_manager = None
 
         with self._device_lock:
             self.usb_device = None
