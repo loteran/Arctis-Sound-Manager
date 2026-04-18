@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.53] - 18 April 2026
+
+### Fixed
+
+- **Telemetry**: added `User-Agent` header to outgoing requests — Cloudflare was silently returning 403 to `Python-urllib`, so no data was ever reaching the stats endpoint.
+
 ## [1.0.52] - 18 April 2026
 
 ### Fixed
