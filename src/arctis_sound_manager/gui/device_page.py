@@ -226,36 +226,6 @@ class DevicePage(QWidget):
         content_layout.addWidget(self._device_widget)
         content_layout.addSpacing(6)
 
-        # ── DAC Settings section ───────────────────────────────────────────────
-        self._dac_divider = DividerLine()
-        content_layout.addWidget(self._dac_divider)
-        content_layout.addSpacing(6)
-
-        self._dac_title = SectionTitle(I18n.translate("ui", "dac_settings"))
-        content_layout.addWidget(self._dac_title)
-        content_layout.addSpacing(4)
-
-        self._dac_widget = QSettingsWidget(content, "dac_settings", "dac")
-        self._dac_widget.setStyleSheet(
-            f"""
-            QWidget {{
-                background-color: {BG_MAIN};
-                color: {TEXT_PRIMARY};
-            }}
-            QLabel {{
-                background-color: transparent;
-                color: {TEXT_PRIMARY};
-                font-size: 11pt;
-            }}
-            """
-        )
-        content_layout.addWidget(self._dac_widget)
-        content_layout.addSpacing(6)
-
-        self._dac_divider.setVisible(False)
-        self._dac_title.setVisible(False)
-        self._dac_widget.setVisible(False)
-
         # ── Horizontal divider ─────────────────────────────────────────────────
         content_layout.addWidget(DividerLine())
         content_layout.addSpacing(6)
@@ -337,16 +307,6 @@ class DevicePage(QWidget):
     def update_settings(self, settings: dict):
         self._general_widget.update_settings(settings)
         self._device_widget.update_settings(settings)
-
-        has_dac = bool('dac' in settings and settings['dac'])
-        self._dac_divider.setVisible(has_dac)
-        self._dac_title.setVisible(has_dac)
-        self._dac_widget.setVisible(has_dac)
-        if has_dac:
-            self._dac_widget.update_settings({
-                'settings_config': settings.get('dac_settings_config', {}),
-                'dac': settings['dac'],
-            })
 
     # ── Language ───────────────────────────────────────────────────────────────
 
