@@ -76,7 +76,7 @@ class DeviceSettings(JsonSerializable):
 
 
 class GeneralSettings(JsonSerializable):
-    _js_exclude_fields = ['settings_config']
+    _js_exclude_fields = ['settings_config', 'dac_settings_config']
 
     # Automatically redirect on Media channel
     redirect_audio_on_connect: bool = False
@@ -91,12 +91,19 @@ class GeneralSettings(JsonSerializable):
     # OLED display brightness (0–10)
     oled_brightness: int = 8
 
+    # OLED screen timeout in seconds (0 = never)
+    oled_screen_timeout: int = 30
+
     settings_config: list[ConfigSetting] = [
         ConfigSetting('redirect_audio_on_connect', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('redirect_audio_on_disconnect', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('redirect_audio_on_disconnect_device', SettingType.SELECT, None, options_source='pulse_audio_devices', options_mapping={ 'value': 'id', 'label': 'description' }),
         ConfigSetting('external_output_device', SettingType.SELECT, None, options_source='external_audio_devices', options_mapping={ 'value': 'id', 'label': 'description' }),
+    ]
+
+    dac_settings_config: list[ConfigSetting] = [
         ConfigSetting('oled_brightness', SettingType.SLIDER, 8, min=0, max=10, step=1),
+        ConfigSetting('oled_screen_timeout', SettingType.SLIDER, 30, min=0, max=300, step=10),
     ]
 
     def __init__(self, **kwargs):

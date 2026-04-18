@@ -65,12 +65,18 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
 
     @method('GetSettings')
     def get_settings(self) -> 's': # type: ignore
+        gs = self.core_engine.general_settings
         settings = {
-            'general': self.core_engine.general_settings.to_dict(),
+            'general': gs.to_dict(),
             'device': {},
+            'dac': {k: getattr(gs, k) for k in ('oled_brightness', 'oled_screen_timeout')},
             'settings_config': {
                 config.name: config.to_dict()
-                for config in self.core_engine.general_settings.settings_config
+                for config in gs.settings_config
+            },
+            'dac_settings_config': {
+                config.name: config.to_dict()
+                for config in gs.dac_settings_config
             },
         }
 
@@ -118,7 +124,11 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
 
         general_settings_keys = self.core_engine.general_settings.to_dict().keys()
         if setting in general_settings_keys:
-            config = next((config for config in self.core_engine.general_settings.settings_config if config.name == setting), None)
+            gs = self.core_engine.general_settings
+            config = next(
+                (c for c in [*gs.settings_config, *gs.dac_settings_config] if c.name == setting),
+                None,
+            )
             if not config:
                 self.logger.error(f'Unknown general setting configuration: {setting}')
                 return False

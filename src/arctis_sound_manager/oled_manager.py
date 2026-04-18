@@ -39,11 +39,15 @@ class OledManager:
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._blink = False
+        self._last_update_time: float = 0.0
+        self._screen_off: bool = False
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop_event.clear()
+        self._last_update_time = datetime.now().timestamp()
+        self._screen_off = False
         self._thread = threading.Thread(
             target=self._refresh_loop,
             name="OledRefresh",
@@ -64,10 +68,16 @@ class OledManager:
             self._thread = None
         logger.info("OledManager stopped")
 
-    def update_display(self) -> None:
+    def update_display(self, activity: bool = True) -> None:
         status = self._core.device_status
         if status is None:
             return
+
+        if activity:
+            if self._screen_off:
+                self._screen_off = False
+                self.set_brightness(self._core.general_settings.oled_brightness)
+            self._last_update_time = datetime.now().timestamp()
 
         battery = int(status.get("headset_battery_charge", -1))
         charging = bool(status.get("headset_power_status", False))
@@ -116,6 +126,15 @@ class OledManager:
     def _refresh_loop(self) -> None:
         while not self._stop_event.wait(timeout=_REFRESH_INTERVAL_S):
             try:
-                self.update_display()
+                timeout = self._core.general_settings.oled_screen_timeout
+                if timeout > 0 and not self._screen_off:
+                    elapsed = datetime.now().timestamp() - self._last_update_time
+                    if elapsed >= timeout:
+                        self._screen_off = True
+                        self._send_oled_packet(self._protocol.build_brightness_packet(0))
+                        continue
+
+                if not self._screen_off:
+                    self.update_display(activity=False)
             except Exception as e:
                 logger.warning("OLED refresh error: %s", e)
