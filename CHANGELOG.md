@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.52] - 18 April 2026
+
+### Fixed
+
+- **udev rules**: clicking "Install rules" in the GUI now triggers a **single** password prompt instead of three — the file write, `udevadm control --reload-rules` and `udevadm trigger` are now bundled into one elevated shell script.
+
 ## [1.0.42] - 16 April 2026
 
 ### Added
