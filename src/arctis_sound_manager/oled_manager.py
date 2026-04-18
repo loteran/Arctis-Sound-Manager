@@ -114,7 +114,7 @@ class OledManager:
             type=usb.util.CTRL_TYPE_CLASS,
             recipient=usb.util.CTRL_RECIPIENT_INTERFACE,
         )
-        with self._core._device_lock:
+        with self._core._usb_write_lock:
             usb_device = self._core.usb_device
             if usb_device is None:
                 return

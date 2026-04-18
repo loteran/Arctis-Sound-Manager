@@ -338,7 +338,7 @@ class DevicePage(QWidget):
         self._general_widget.update_settings(settings)
         self._device_widget.update_settings(settings)
 
-        has_dac = 'dac' in settings and settings['dac']
+        has_dac = bool('dac' in settings and settings['dac'])
         self._dac_divider.setVisible(has_dac)
         self._dac_title.setVisible(has_dac)
         self._dac_widget.setVisible(has_dac)
