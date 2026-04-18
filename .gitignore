@@ -14,3 +14,15 @@ aur/pkg/
 aur/*.tar.gz
 aur/*.tar.zst
 aur/*.pkg.tar.*
+
+# Cloudflare / telemetry secrets (never commit these)
+cloudflare/.dev.vars
+cloudflare/.mf/
+cloudflare/node_modules/
+.wrangler/
+
+# Local dev notes (personal, not versioned)
+NOTES.md
+
+# Claude Code context (not versioned)
+CLAUDE.md

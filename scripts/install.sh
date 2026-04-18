@@ -99,26 +99,28 @@ echo "    [ok] PipeWire configs deployed."
 # 9. Install HRIR file for virtual surround (if not already present)
 HRIR_DIR="$HOME/.local/share/pipewire/hrir_hesuvi"
 mkdir -p "$HRIR_DIR"
-if [ -f "$HRIR_DIR/hrir.wav" ]; then
+_hrir_valid() { [ -f "$1" ] && head -c 4 "$1" | grep -q "^RIFF"; }
+HRIR_URL="https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/hrir/EAC_Default.wav"
+if _hrir_valid "$HRIR_DIR/hrir.wav"; then
     echo "    [ok] HRIR file already present — skipping download."
 else
-    echo "==> Downloading default HRIR file (KEMAR Gardner 1995)..."
-    HRIR_URL="https://github.com/nicehash/HeSuVi/raw/master/hrir/44/KEMAR%20Gardner%201995/kemar.wav"
+    rm -f "$HRIR_DIR/hrir.wav"
+    echo "==> Downloading default HRIR file (EAC_Default)..."
     if command -v curl &>/dev/null; then
-        curl -L -o "$HRIR_DIR/hrir.wav" "$HRIR_URL"
+        curl -fsSL -o "$HRIR_DIR/hrir.wav" "$HRIR_URL"
     elif command -v wget &>/dev/null; then
-        wget -O "$HRIR_DIR/hrir.wav" "$HRIR_URL"
+        wget -q -O "$HRIR_DIR/hrir.wav" "$HRIR_URL"
     else
         echo "  [!] Neither curl nor wget found. Download the HRIR file manually:"
-        echo "      Source: https://github.com/nicehash/HeSuVi/tree/master/hrir/44"
+        echo "      Source: $HRIR_URL"
         echo "      Save it as: $HRIR_DIR/hrir.wav"
     fi
-    if [ -s "$HRIR_DIR/hrir.wav" ]; then
+    if _hrir_valid "$HRIR_DIR/hrir.wav"; then
         echo "    [ok] HRIR file downloaded."
     else
         rm -f "$HRIR_DIR/hrir.wav"
-        echo "  [!] HRIR download failed or file is empty — virtual surround will not work."
-        echo "      Download manually: https://github.com/nicehash/HeSuVi/tree/master/hrir/44"
+        echo "  [!] HRIR download failed — virtual surround will not work."
+        echo "      Download manually: $HRIR_URL"
         echo "      Save as: $HRIR_DIR/hrir.wav, then run: systemctl --user restart filter-chain.service"
     fi
 fi

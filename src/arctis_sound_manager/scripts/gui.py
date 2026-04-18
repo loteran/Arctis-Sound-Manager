@@ -6,7 +6,7 @@ from argparse import ArgumentParser
 
 from PySide6.QtCore import QTimer
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QDialog
 
 from arctis_sound_manager.bug_reporter import read_crash_report, write_crash_report
 from arctis_sound_manager.gui.systray_app import QSystrayApp
@@ -91,6 +91,15 @@ def main():
         def _check_udev():
             UdevRulesDialog().exec()
         QTimer.singleShot(500, _check_udev)
+
+    # ── Telemetry consent (first launch only) ─────────────────────────────────
+    from arctis_sound_manager.telemetry import get_consent, set_consent
+    if get_consent() is None:
+        from arctis_sound_manager.gui.telemetry_dialog import TelemetryConsentDialog
+        def _ask_telemetry():
+            dlg = TelemetryConsentDialog()
+            set_consent(dlg.exec() == QDialog.Accepted)
+        QTimer.singleShot(2000, _ask_telemetry)
 
     # Open the window once the event loop is running.
     if not args.systray:

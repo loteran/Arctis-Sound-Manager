@@ -23,23 +23,24 @@ echo "    [ok] HeSuVi config installed to filter-chain.conf.d."
 # 2. Install HRIR file
 mkdir -p "$HRIR_DIR"
 
-if [ -s "$HRIR_DIR/hrir.wav" ]; then
+_hrir_valid() { [ -f "$1" ] && head -c 4 "$1" | grep -q "^RIFF"; }
+HRIR_URL="https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/hrir/EAC_Default.wav"
+if _hrir_valid "$HRIR_DIR/hrir.wav"; then
     echo "    [ok] HRIR file already present — skipping download."
 else
     rm -f "$HRIR_DIR/hrir.wav"
-    echo "    Downloading default HRIR file (KEMAR Gardner 1995)..."
-    HRIR_URL="https://github.com/nicehash/HeSuVi/raw/master/hrir/44/KEMAR%20Gardner%201995/kemar.wav"
+    echo "    Downloading default HRIR file (EAC_Default)..."
     downloaded=false
     if command -v curl &>/dev/null; then
-        curl -L -o "$HRIR_DIR/hrir.wav" "$HRIR_URL" && [ -s "$HRIR_DIR/hrir.wav" ] && downloaded=true
+        curl -fsSL -o "$HRIR_DIR/hrir.wav" "$HRIR_URL" && _hrir_valid "$HRIR_DIR/hrir.wav" && downloaded=true
     fi
     if ! $downloaded && command -v wget &>/dev/null; then
-        wget -O "$HRIR_DIR/hrir.wav" "$HRIR_URL" && [ -s "$HRIR_DIR/hrir.wav" ] && downloaded=true
+        wget -q -O "$HRIR_DIR/hrir.wav" "$HRIR_URL" && _hrir_valid "$HRIR_DIR/hrir.wav" && downloaded=true
     fi
     if ! $downloaded; then
         rm -f "$HRIR_DIR/hrir.wav"
         echo "  [!] Could not download HRIR file. Please download it manually:"
-        echo "      Source: https://github.com/nicehash/HeSuVi/tree/master/hrir/44"
+        echo "      Source: $HRIR_URL"
         echo "      Save it as: $HRIR_DIR/hrir.wav"
         echo "      Then run: systemctl --user restart filter-chain.service"
         exit 1

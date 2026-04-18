@@ -17,6 +17,7 @@ from arctis_sound_manager.constants import (DBUS_BUS_NAME,
                                             DBUS_STATUS_OBJECT_PATH)
 from arctis_sound_manager.core import CoreEngine
 from arctis_sound_manager.pactl import TypedPulseSinkInfo
+from arctis_sound_manager import device_state
 
 
 class ArctisManagerDbusConfigService(ServiceInterface):
@@ -88,6 +89,13 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
                     self.core_engine.device_config.settings.values()
                 ))
             })
+            # Expose device identification for the GUI (headset page, telemetry)
+            settings['device_name'] = device_state.get_device_name()
+            settings['vendor_id']   = f"0x{self.core_engine.device_config.vendor_id:04x}"
+            settings['product_id']  = (
+                f"0x{self.core_engine.usb_device.idProduct:04x}"
+                if self.core_engine.usb_device else ""
+            )
 
         return json.dumps(settings)
     
