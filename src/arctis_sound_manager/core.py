@@ -290,8 +290,14 @@ class CoreEngine:
 
         if self.oled_manager is not None:
             self.oled_manager.stop()
-        self.oled_manager = OledManager(self)
-        self.oled_manager.start()
+            self.oled_manager = None
+        has_oled = (
+            device_config.status is not None
+            and 'gamedac' in device_config.status.representation
+        )
+        if has_oled:
+            self.oled_manager = OledManager(self)
+            self.oled_manager.start()
 
         self.redirect_to_media_sink()
     

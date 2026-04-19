@@ -70,7 +70,12 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
         settings = {
             'general': gs.to_dict(),
             'device': {},
-            'dac': {k: getattr(gs, k) for k in ('oled_brightness', 'oled_screen_timeout')},
+            'dac': {k: getattr(gs, k) for k in (
+                'oled_brightness', 'oled_screen_timeout', 'oled_scroll_speed', 'oled_custom_display',
+                'oled_show_time', 'oled_show_battery', 'oled_show_profile',
+                'oled_show_eq', 'oled_display_order',
+                'weather_enabled', 'weather_location', 'weather_units', 'weather_city_display',
+            )},
             'settings_config': {
                 config.name: config.to_dict()
                 for config in gs.settings_config
@@ -95,6 +100,10 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
             settings['product_id']  = (
                 f"0x{self.core_engine.usb_device.idProduct:04x}"
                 if self.core_engine.usb_device else ""
+            )
+            settings['has_dac'] = (
+                self.core_engine.device_config.status is not None
+                and 'gamedac' in self.core_engine.device_config.status.representation
             )
 
         return json.dumps(settings)
@@ -130,6 +139,15 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
 
             return False
 
+        # Special case: list settings not covered by ConfigSetting
+        if setting == 'oled_display_order':
+            gs = self.core_engine.general_settings
+            if not isinstance(value, list):
+                return False
+            gs.oled_display_order = value
+            gs.write_to_file()
+            return True
+
         general_settings_keys = self.core_engine.general_settings.to_dict().keys()
         if setting in general_settings_keys:
             gs = self.core_engine.general_settings
@@ -150,6 +168,8 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
 
             if setting == 'oled_brightness' and self.core_engine.oled_manager is not None:
                 self.core_engine.oled_manager.set_brightness(int(value))
+            if setting == 'oled_custom_display' and self.core_engine.oled_manager is not None:
+                self.core_engine.oled_manager.set_custom_display(bool(value))
 
             return True
         
@@ -171,12 +191,49 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
                 return True
 
         return False
-    
+
+    @method('SetWeatherSettings')
+    def set_weather_settings(self, enabled: 'b', location: 's', units: 's') -> 's': # type: ignore
+        """Geocode *location* (if changed), persist all weather settings, return JSON result.
+
+        Returns JSON: {"ok": true, "city": "Paris", "lat": 48.85, "lon": 2.35}
+                  or  {"ok": false, "error": "City not found"}
+        """
+        from arctis_sound_manager.weather_service import WeatherService
+        gs = self.core_engine.general_settings
+
+        result: dict = {"ok": True, "city": gs.weather_city_display}
+
+        # Geocode only when location string actually changed
+        if location and location != gs.weather_location:
+            svc = WeatherService()
+            geo = svc.geocode(location)
+            if geo is None:
+                return json.dumps({"ok": False, "error": "City not found"})
+            gs.weather_lat = geo.lat
+            gs.weather_lon = geo.lon
+            gs.weather_city_display = geo.display_name
+            result["city"] = geo.display_name
+            result["lat"] = geo.lat
+            result["lon"] = geo.lon
+            if self.core_engine.oled_manager:
+                self.core_engine.oled_manager.invalidate_weather_cache()
+
+        gs.weather_enabled = enabled
+        gs.weather_location = location
+        gs.weather_units = units
+        gs.write_to_file()
+
+        if self.core_engine.oled_manager:
+            self.core_engine.oled_manager.invalidate_weather_cache()
+
+        return json.dumps(result)
+
     @method('GetListOptions')
     def get_list_options(self, list_name: 's') -> 's': # type: ignore
         result = []
         if list_name in ('pulse_audio_devices', 'external_audio_devices'):
-            sinks: list[TypedPulseSinkInfo] = self.core_engine.pa_audio_manager.pulse.sink_list()
+            sinks: list[TypedPulseSinkInfo] = self.core_engine.pa_audio_manager.sink_list_wrapper()
             for sink in sinks:
                 node_name = sink.proplist.get('node.name', '')
                 # For external_audio_devices, only show physical non-SteelSeries sinks

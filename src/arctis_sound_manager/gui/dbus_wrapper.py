@@ -162,6 +162,41 @@ class DbusWrapper(QObject):
             if dbus_bus is not None:
                 dbus_bus.disconnect()
 
+    @staticmethod
+    def set_weather_settings(enabled: bool, location: str, units: str, callback) -> None:
+        """Call SetWeatherSettings D-Bus method and invoke callback(result_dict)."""
+        DbusWrapper._executor.submit(
+            DbusWrapper._set_weather_thread, enabled=enabled, location=location,
+            units=units, callback=callback,
+        )
+
+    @staticmethod
+    def _set_weather_thread(enabled: bool, location: str, units: str, callback) -> None:
+        asyncio.run(DbusWrapper._set_weather_async(enabled, location, units, callback))
+
+    @staticmethod
+    async def _set_weather_async(enabled: bool, location: str, units: str, callback) -> None:
+        dbus_bus = None
+        try:
+            dbus_bus = await MessageBus().connect()
+            reply = await dbus_bus.call(Message(
+                destination=DBUS_BUS_NAME,
+                path=DBUS_SETTINGS_OBJECT_PATH,
+                interface=DBUS_SETTINGS_INTERFACE_NAME,
+                member='SetWeatherSettings',
+                message_type=MessageType.METHOD_CALL,
+                signature='bss',
+                body=[enabled, location, units],
+            ))
+            result = json.loads(reply.body[0]) if reply.body else {"ok": False}
+            callback(result)
+        except Exception as e:
+            DbusWrapper.logger.error('Error in set_weather_settings: %s', e)
+            callback({"ok": False, "error": str(e)})
+        finally:
+            if dbus_bus is not None:
+                dbus_bus.disconnect()
+
     def request_status_thread(self, frequency_seconds: int):
         asyncio.run(self.dbus_request_async(
             self.sig_status,

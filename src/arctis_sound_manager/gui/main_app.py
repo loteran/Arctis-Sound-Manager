@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 from arctis_sound_manager.gui.base_app import QBaseDesktopApp
 from arctis_sound_manager.gui.components import (
     EQUALIZER_ICON,
+    GAMEDAC_ICON,
     HDMI_ICON,
     HEADPHONE_ICON,
     HELP_ICON,
@@ -82,6 +83,9 @@ class QMainApp(QBaseDesktopApp):
         self.dbus_wrapper.sig_settings.connect(self._dac_page.update_settings)
         self.dbus_wrapper.sig_settings.connect(self._device_page.update_settings)
 
+        # DAC tab hidden by default until device confirms it has a DAC
+        self._sidebar_buttons[3].setVisible(False)
+
         # Start on home page
         self._switch_page(0)
 
@@ -143,10 +147,10 @@ class QMainApp(QBaseDesktopApp):
 
         # Top navigation buttons: Home, Equalizer, Headset, DAC, Settings
         top_pages_def = [
-            (HOME_ICON,      "Home",      ACCENT),
+            (HOME_ICON,      "Channels",  ACCENT),
             (EQUALIZER_ICON, "Equalizer", ACCENT),
             (HEADPHONE_ICON, "Headset",   ACCENT),
-            (HDMI_ICON,      "DAC",       ACCENT),
+            (GAMEDAC_ICON,   "DAC",       ACCENT),
             (SETTINGS_ICON,  "Settings",  ACCENT),
         ]
 
@@ -258,6 +262,10 @@ class QMainApp(QBaseDesktopApp):
         if settings == self.settings:
             return
         self.settings = settings
+        has_dac = settings.get('has_dac', False)
+        self._sidebar_buttons[3].setVisible(has_dac)
+        if not has_dac and self._stack.currentIndex() == 3:
+            self._switch_page(0)
 
     def on_status_received(self, status: dict):
         if status == self.status:
