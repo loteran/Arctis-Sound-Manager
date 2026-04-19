@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="4 4 52 52" fill="none">
+
+  <!-- Knob: cylinder side face -->
+  <path fill="#8D96AA" opacity="0.55"
+    d="M 30 22 L 56 22 L 56 32 Q 56 36 52 36 Q 48 36 46 36
+       A 13 5 0 0 1 30 32 Z"/>
+
+  <!-- Knob: top ellipse -->
+  <ellipse cx="43" cy="22" rx="13" ry="8" fill="#8D96AA"/>
+
+  <!-- Knob: inner raised cap -->
+  <ellipse cx="43" cy="22" rx="7" ry="4.5" fill="#8D96AA" opacity="0.45"/>
+
+  <!-- Body: top face (skewed pill) -->
+  <path fill="#8D96AA" opacity="0.85"
+    d="M 13 38
+       L 47 30
+       A 9 9 0 0 0 42 16
+       L 8 24
+       A 9 9 0 0 0 13 38 Z"/>
+
+  <!-- Body: front face (thickness strip) -->
+  <path fill="#8D96AA" opacity="0.5"
+    d="M 13 38 L 47 30 L 48 35 L 14 43 Z"/>
+
+  <!-- Screen: inset parallelogram -->
+  <path fill="#8D96AA" opacity="0.22"
+    d="M 11 25 L 29 21 L 31 30 L 13 34 Z"/>
+
+  <!-- Screen content lines -->
+  <path fill="#8D96AA" d="M 13 25.5 L 26 22.5 L 26 24 L 13 27 Z"/>
+  <path fill="#8D96AA" d="M 13 28.5 L 28 25 L 28 26.5 L 13 30 Z"/>
+  <path fill="#8D96AA" d="M 13 31 L 24 28 L 24 29.5 L 13 32.5 Z"/>
+
+  <!-- Center button: hollow ellipse -->
+  <path fill-rule="evenodd" fill="#8D96AA" opacity="0.75"
+    d="M 32 28 Q 36 26 40 28 Q 42 30 40 32 Q 36 34 32 32 Q 30 30 32 28 Z
+       M 33.5 29 Q 36 27.5 38.5 29 Q 40 30.5 38.5 31 Q 36 32.5 33.5 31 Q 32 30.5 33.5 29 Z"/>
+
+</svg>

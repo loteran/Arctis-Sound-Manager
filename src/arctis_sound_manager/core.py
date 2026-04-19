@@ -19,6 +19,7 @@ from arctis_sound_manager.pactl import ONLY_PHYSICAL, PulseAudioManager
 from arctis_sound_manager.settings import DeviceSettings, GeneralSettings
 from arctis_sound_manager.usb_devices_monitor import USBDevicesMonitor
 from arctis_sound_manager.utils import ObservableDict
+from arctis_sound_manager.oled_manager import OledManager
 
 
 class TypedDevice(Device):
@@ -38,6 +39,7 @@ class CoreEngine:
     device_settings: DeviceSettings
 
     device_status: ObservableDict[str, int]|None = None
+    oled_manager: 'OledManager | None' = None
 
     media_mix: int
     chat_mix: int
@@ -48,6 +50,7 @@ class CoreEngine:
         self.chat_mix = 100
         self._active_extra_dial_interfaces = []
         self._device_lock = threading.RLock()
+        self._usb_write_lock = threading.Lock()
 
         self.general_settings = GeneralSettings.read_from_file()
 
@@ -285,6 +288,17 @@ class CoreEngine:
         # Configure the device
         self.init_device()
 
+        if self.oled_manager is not None:
+            self.oled_manager.stop()
+            self.oled_manager = None
+        has_oled = (
+            device_config.status is not None
+            and 'gamedac' in device_config.status.representation
+        )
+        if has_oled:
+            self.oled_manager = OledManager(self)
+            self.oled_manager.start()
+
         self.redirect_to_media_sink()
     
     def init_device(self):
@@ -442,18 +456,18 @@ class CoreEngine:
         command_lst = [int.from_bytes([int(command_str[i:i+2], 16)], 'big') for i in range(0, len(command_str), 2)]
 
         try:
-            if endpoint != 0:
-                self.usb_device.write(endpoint, command_lst)
-            else:
-                # HID SET_REPORT via ctrl_transfer (device has no interrupt OUT endpoint)
-                bmRequestType = usb.util.build_request_type(
-                    direction=usb.util.CTRL_OUT,
-                    type=usb.util.CTRL_TYPE_CLASS,
-                    recipient=usb.util.CTRL_RECIPIENT_INTERFACE
-                )
-                wValue = 0x0300 if self.device_config.command_transport == CommandTransport.CTRL_FEATURE else 0x0200
-                wIndex = self.device_config.command_interface_index[0]
-                self.usb_device.ctrl_transfer(bmRequestType, 0x09, wValue, wIndex, command_lst)
+            with self._usb_write_lock:
+                if endpoint != 0:
+                    self.usb_device.write(endpoint, command_lst)
+                else:
+                    bmRequestType = usb.util.build_request_type(
+                        direction=usb.util.CTRL_OUT,
+                        type=usb.util.CTRL_TYPE_CLASS,
+                        recipient=usb.util.CTRL_RECIPIENT_INTERFACE
+                    )
+                    wValue = 0x0300 if self.device_config.command_transport == CommandTransport.CTRL_FEATURE else 0x0200
+                    wIndex = self.device_config.command_interface_index[0]
+                    self.usb_device.ctrl_transfer(bmRequestType, 0x09, wValue, wIndex, command_lst)
         except usb.core.USBError as e:
             self.logger.warning(f"Error sending command: {e}")
 
@@ -547,6 +561,10 @@ class CoreEngine:
             self.logger.warning(f"Error redirecting audio on disconnect: {e}")
 
         device_state.clear()
+
+        if self.oled_manager is not None:
+            self.oled_manager.stop()
+            self.oled_manager = None
 
         with self._device_lock:
             self.usb_device = None

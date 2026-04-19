@@ -76,7 +76,7 @@ class DeviceSettings(JsonSerializable):
 
 
 class GeneralSettings(JsonSerializable):
-    _js_exclude_fields = ['settings_config']
+    _js_exclude_fields = ['settings_config', 'dac_settings_config']
 
     # Automatically redirect on Media channel
     redirect_audio_on_connect: bool = False
@@ -88,6 +88,33 @@ class GeneralSettings(JsonSerializable):
     # External output device (HDMI, sound card, etc.) shown on home page
     external_output_device: str|None = None
 
+    # OLED display brightness (0–10)
+    oled_brightness: int = 8
+
+    # OLED screen timeout in seconds (0 = never)
+    oled_screen_timeout: int = 30
+    oled_scroll_speed: int = 2
+
+    # Whether to push custom frames to the OLED (False = leave original DAC UI)
+    oled_custom_display: bool = True
+
+    # Which elements to show on the custom OLED display
+    oled_show_time: bool = True
+    oled_show_battery: bool = True
+    oled_show_profile: bool = True
+    oled_show_eq: bool = True
+
+    # Display order for orderable elements below the time/battery row
+    oled_display_order: list = None  # type: ignore — set per-instance in __init__
+
+    # Weather module
+    weather_enabled: bool = False
+    weather_location: str = ""
+    weather_lat: float = 0.0
+    weather_lon: float = 0.0
+    weather_units: str = "celsius"   # "celsius" | "fahrenheit"
+    weather_city_display: str = ""   # short name returned by geocoding
+
     settings_config: list[ConfigSetting] = [
         ConfigSetting('redirect_audio_on_connect', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('redirect_audio_on_disconnect', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
@@ -95,7 +122,21 @@ class GeneralSettings(JsonSerializable):
         ConfigSetting('external_output_device', SettingType.SELECT, None, options_source='external_audio_devices', options_mapping={ 'value': 'id', 'label': 'description' }),
     ]
 
+    dac_settings_config: list[ConfigSetting] = [
+        ConfigSetting('oled_custom_display', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
+        ConfigSetting('oled_brightness', SettingType.SLIDER, 8, min=0, max=10, step=1),
+        ConfigSetting('oled_screen_timeout', SettingType.SLIDER, 30, min=0, max=300, step=10),
+        ConfigSetting('oled_scroll_speed', SettingType.SLIDER, 2, min=0, max=5, step=1),
+        ConfigSetting('oled_show_time', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
+        ConfigSetting('oled_show_battery', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
+        ConfigSetting('oled_show_profile', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
+        ConfigSetting('oled_show_eq', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
+    ]
+
+    _DEFAULT_DISPLAY_ORDER = ['profile', 'eq', 'weather']
+
     def __init__(self, **kwargs):
+        self.oled_display_order = list(self._DEFAULT_DISPLAY_ORDER)
         for key, value in kwargs.items():
             if key in self.__class__.__annotations__:
                 setattr(self, key, value)
