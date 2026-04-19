@@ -37,16 +37,18 @@ class PulseAudioManager:
         self.pulse = pulsectl.Pulse('arctis-sound-manager')
 
     def sink_list_wrapper(self) -> list[TypedPulseSinkInfo]:
-        retry_attempts = 15
+        max_attempts = 15
 
         sinks: list[TypedPulseSinkInfo] = []
-        while retry_attempts > 0:
+        for attempt in range(max_attempts):
             try:
                 sinks = self.pulse.sink_list()
                 break
             except Exception as e:
-                self.logger.error(f'Error while getting sink list: {e}')
-                retry_attempts -= 1
+                if attempt >= 2:
+                    self.logger.error(f'Error while getting sink list (attempt {attempt + 1}): {e}')
+                else:
+                    self.logger.debug(f'Sink list not ready yet (attempt {attempt + 1}), retrying...')
                 self._reconnect()
                 time.sleep(1)
 

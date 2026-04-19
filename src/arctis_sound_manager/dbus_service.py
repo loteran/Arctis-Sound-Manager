@@ -74,6 +74,8 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
                 'oled_brightness', 'oled_screen_timeout', 'oled_scroll_speed', 'oled_custom_display',
                 'oled_show_time', 'oled_show_battery', 'oled_show_profile',
                 'oled_show_eq', 'oled_display_order',
+                'oled_font_time', 'oled_font_battery', 'oled_font_profile',
+                'oled_font_eq', 'oled_font_weather_temp',
                 'weather_enabled', 'weather_location', 'weather_units', 'weather_city_display',
             )},
             'settings_config': {
@@ -139,6 +141,18 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
 
             return False
 
+        # Special case: font size settings (int, no ConfigSetting entry)
+        _FONT_SIZE_KEYS = {
+            'oled_font_time', 'oled_font_battery', 'oled_font_profile',
+            'oled_font_eq', 'oled_font_weather_temp',
+        }
+        if setting in _FONT_SIZE_KEYS:
+            if not isinstance(value, int) or not (7 <= value <= 30):
+                return False
+            setattr(self.core_engine.general_settings, setting, value)
+            self.core_engine.general_settings.write_to_file()
+            return True
+
         # Special case: list settings not covered by ConfigSetting
         if setting == 'oled_display_order':
             gs = self.core_engine.general_settings
@@ -190,6 +204,13 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
 
                 return True
 
+        return False
+
+    @method('ShowSplash')
+    def show_splash(self) -> 'b': # type: ignore
+        if self.core_engine.oled_manager is not None:
+            self.core_engine.oled_manager._show_splash()
+            return True
         return False
 
     @method('SetWeatherSettings')

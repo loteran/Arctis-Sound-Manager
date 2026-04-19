@@ -19,6 +19,7 @@ from arctis_sound_manager.constants import (DBUS_BUS_NAME,
                                             DBUS_STATUS_INTERFACE_NAME,
                                             DBUS_STATUS_OBJECT_PATH)
 from arctis_sound_manager.gui.base_app import QBaseDesktopApp
+from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
 from arctis_sound_manager.gui.main_app import QMainApp
 from arctis_sound_manager.gui.ui_utils import get_icon_pixmap
 from arctis_sound_manager.i18n import I18n
@@ -52,6 +53,7 @@ class QSystrayApp(QBaseDesktopApp):
         lang_code = lang_code.split('_')[0] if lang_code else 'en'
 
         self.last_device_status = {}
+        DbusWrapper.show_splash()
 
         self.menu = QMenu()
         # Connect signals once on the persistent menu object

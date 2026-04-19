@@ -70,6 +70,7 @@ class QMainApp(QBaseDesktopApp):
         self.dbus_wrapper = DbusWrapper()
         self.dbus_wrapper.sig_settings.connect(self.on_settings_received)
         self.dbus_wrapper.sig_status.connect(self.on_status_received)
+        DbusWrapper.show_splash()
 
         # Build window
         self.main_window = self._build_window()
