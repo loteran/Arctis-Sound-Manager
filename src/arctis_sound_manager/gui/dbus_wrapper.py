@@ -135,6 +135,32 @@ class DbusWrapper(QObject):
                 dbus_bus.disconnect()
 
     @staticmethod
+    def show_splash() -> None:
+        DbusWrapper._executor.submit(DbusWrapper.show_splash_thread)
+
+    @staticmethod
+    def show_splash_thread():
+        asyncio.run(DbusWrapper.show_splash_async())
+
+    @staticmethod
+    async def show_splash_async():
+        dbus_bus = None
+        try:
+            dbus_bus = await MessageBus().connect()
+            await dbus_bus.call(Message(
+                destination=DBUS_BUS_NAME,
+                path=DBUS_SETTINGS_OBJECT_PATH,
+                interface=DBUS_SETTINGS_INTERFACE_NAME,
+                member='ShowSplash',
+                message_type=MessageType.METHOD_CALL,
+            ))
+        except Exception as e:
+            DbusWrapper.logger.debug('ShowSplash: %s', e)
+        finally:
+            if dbus_bus is not None:
+                dbus_bus.disconnect()
+
+    @staticmethod
     def change_setting(name: str, value: int|bool|str) -> None:
         DbusWrapper._executor.submit(DbusWrapper.change_setting_thread, name=name, value=value)
 

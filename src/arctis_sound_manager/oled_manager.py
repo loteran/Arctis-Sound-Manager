@@ -28,6 +28,7 @@ def _active_eq_preset(channel: str) -> str:
     return f.read_text().strip() if f.exists() else "Flat"
 
 _REFRESH_INTERVAL_S = 5.0
+_SPLASH_DURATION_S = 3.0
 _OLED_INTERFACE = 4
 _OLED_WVALUE = 0x0300
 _SCROLL_PAUSE_TOP_S = 5.0     # seconds to pause at top before scrolling
@@ -71,6 +72,7 @@ class OledManager:
         self._burn_in_x: int = 0
         self._burn_in_y: int = 0
         self._burn_in_last: float = 0.0
+        self._splash_until: float = 0.0
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -93,7 +95,17 @@ class OledManager:
         self._thread.start()
         self._scroll_thread.start()
         self.set_brightness(self._core.general_settings.oled_brightness)
+        self._show_splash()
         logger.info("OledManager started (interval=%.1fs)", _REFRESH_INTERVAL_S)
+
+    def _show_splash(self) -> None:
+        self._splash_until = datetime.now().timestamp() + _SPLASH_DURATION_S
+        frame = self._renderer.render_splash_image()
+        packets = self._protocol.build_frame_packets(
+            frame, self._protocol.DISPLAY_WIDTH, self._protocol.DISPLAY_HEIGHT
+        )
+        for packet in packets:
+            self._send_oled_packet(packet)
 
     def set_brightness(self, level: int) -> None:
         packet = self._protocol.build_brightness_packet(level)
@@ -124,6 +136,8 @@ class OledManager:
         self._reset_scroll_event.set()  # interrupt any ongoing pause/scroll
 
     def update_display(self, activity: bool = True) -> None:
+        if datetime.now().timestamp() < self._splash_until:
+            return
         status = self._core.device_status
         if status is None:
             return
@@ -171,6 +185,13 @@ class OledManager:
             show_profile=gs.oled_show_profile,
             show_eq=gs.oled_show_eq,
             display_order=gs.oled_display_order,
+            font_sizes={
+                'time':        gs.oled_font_time,
+                'battery':     gs.oled_font_battery,
+                'profile':     gs.oled_font_profile,
+                'eq':          gs.oled_font_eq,
+                'weather_temp': gs.oled_font_weather_temp,
+            },
         )
 
         with self._image_lock:
@@ -220,6 +241,8 @@ class OledManager:
     def _refresh_loop(self) -> None:
         while not self._stop_event.wait(timeout=_REFRESH_INTERVAL_S):
             try:
+                if datetime.now().timestamp() < self._splash_until:
+                    continue
                 self._advance_burn_in()
                 gs = self._core.general_settings
                 timeout = gs.oled_screen_timeout

@@ -113,16 +113,33 @@ class OledRenderer:
         show_profile: bool = True,
         show_eq: bool = True,
         display_order: "list[str] | None" = None,
+        font_sizes: "dict[str, int] | None" = None,
     ) -> Image.Image:
         """Render all content at natural height, no clipping."""
         order = display_order if display_order is not None else self._DEFAULT_DISPLAY_ORDER
+        fs = font_sizes or {}
 
-        natural_h = self._natural_height(show_time, show_battery, show_profile, show_eq, weather)
+        sz_time        = max(7, min(30, fs.get('time', _FONT_BIG_SIZE)))
+        sz_battery     = max(7, min(30, fs.get('battery', _FONT_MED_SIZE)))
+        sz_profile     = max(7, min(30, fs.get('profile', 8)))
+        sz_eq          = max(7, min(30, fs.get('eq', 8)))
+        sz_weather_tmp = max(7, min(30, fs.get('weather_temp', _FONT_BIG_SIZE)))
+
+        font_time    = ImageFont.load_default(size=sz_time)
+        font_battery = ImageFont.load_default(size=sz_battery)
+        font_profile = ImageFont.load_default(size=sz_profile)
+        font_eq      = ImageFont.load_default(size=sz_eq)
+        font_wtmp    = ImageFont.load_default(size=sz_weather_tmp)
+        font_small   = self._font  # city / labels always small
+
+        natural_h = self._natural_height(
+            show_time, show_battery, show_profile, show_eq, weather,
+            sz_time, sz_battery, sz_profile, sz_eq, sz_weather_tmp,
+        )
         buf_h = max(self.HEIGHT, natural_h)
 
         image = Image.new("1", (self.WIDTH, buf_h), color=0)
         draw = ImageDraw.Draw(image)
-        font = self._font
         y = 1
 
         # Fixed top row — time (left) + battery/status (right)
@@ -130,46 +147,47 @@ class OledRenderer:
             if show_battery:
                 if not connected:
                     offline_label = "Offline"
-                    offline_w = int(self._font_med.getlength(offline_label))
-                    draw.text((self.WIDTH - offline_w - 2, y), offline_label, font=self._font_med, fill=1)
+                    offline_w = int(font_battery.getlength(offline_label))
+                    draw.text((self.WIDTH - offline_w - 2, y), offline_label, font=font_battery, fill=1)
                 else:
                     bat_label = f"{max(0, battery_percent)}%" if battery_percent >= 0 else "?%"
-                    bat_label_w = int(self._font_med.getlength(bat_label))
+                    bat_label_w = int(font_battery.getlength(bat_label))
                     icon_w = 26
                     bat_x = self.WIDTH - icon_w - bat_label_w - 7
-                    icon_y = y + (_FONT_BIG_SIZE - 12) // 2
+                    icon_y = y + (sz_time - 12) // 2
                     self._draw_battery_icon(draw, bat_x, icon_y, battery_percent if battery_percent >= 0 else 0, charging, blink_state)
-                    draw.text((bat_x + icon_w + 4, y), bat_label, font=self._font_med, fill=1)
+                    draw.text((bat_x + icon_w + 4, y), bat_label, font=font_battery, fill=1)
             if show_time:
-                draw.text((1, y - 1), time_str, font=self._font_big, fill=1)
-                y += _FONT_BIG_SIZE + 2
+                draw.text((1, y - 1), time_str, font=font_time, fill=1)
+                y += sz_time + 2
             else:
-                y += _LINE_H
+                y += sz_battery + 2
             draw.line([(0, y), (self.WIDTH - 1, y)], fill=1)
             y += 3
 
         # Orderable elements
         for element in order:
             if element == 'profile' and show_profile:
-                draw.text((1, y), f"Profile: {active_profile}", font=font, fill=1)
-                y += _LINE_H
+                draw.text((1, y), f"Profile: {active_profile}", font=font_profile, fill=1)
+                y += sz_profile + 3
             elif element == 'eq' and show_eq and eq_preset:
                 label = eq_preset if len(eq_preset) <= 18 else eq_preset[:17] + "\u2026"
-                draw.text((1, y), f"EQ: {label}", font=font, fill=1)
-                y += _LINE_H
+                draw.text((1, y), f"EQ: {label}", font=font_eq, fill=1)
+                y += sz_eq + 3
             elif element == 'weather' and weather is not None:
                 y += 2
-                self._draw_weather_icon_id(draw, 1, y, weather.icon_id)
+                icon_h = max(_ICON_SIZE, sz_weather_tmp)
+                self._draw_weather_icon_id(draw, 1, y + (icon_h - _ICON_SIZE) // 2, weather.icon_id)
                 temp_str = f"{weather.temp:g}{weather.unit_label}"
-                draw.text((_ICON_SIZE + 4, y), temp_str, font=self._font_big, fill=1)
+                draw.text((_ICON_SIZE + 4, y), temp_str, font=font_wtmp, fill=1)
                 city = weather.city[:10] if len(weather.city) > 10 else weather.city
-                temp_w = int(self._font_big.getlength(temp_str))
+                temp_w = int(font_wtmp.getlength(temp_str))
                 city_x = _ICON_SIZE + 4 + temp_w + 4
-                if city_x + int(font.getlength(city)) <= self.WIDTH:
-                    draw.text((city_x, y + 6), city, font=font, fill=1)
+                if city_x + int(font_small.getlength(city)) <= self.WIDTH:
+                    draw.text((city_x, y + sz_weather_tmp - 8), city, font=font_small, fill=1)
                 else:
-                    draw.text((_ICON_SIZE + 4, y + _FONT_BIG_SIZE - 6), city, font=font, fill=1)
-                y += _WEATHER_H + 2
+                    draw.text((_ICON_SIZE + 4, y + sz_weather_tmp + 2), city, font=font_small, fill=1)
+                y += icon_h + 4
 
         return image
 
@@ -177,17 +195,45 @@ class OledRenderer:
         self,
         show_time: bool, show_battery: bool, show_profile: bool,
         show_eq: bool, weather: "WeatherData | None",
+        sz_time: int = _FONT_BIG_SIZE, sz_battery: int = _FONT_MED_SIZE,
+        sz_profile: int = 8, sz_eq: int = 8, sz_weather_tmp: int = _FONT_BIG_SIZE,
     ) -> int:
         y = 1
         if show_time or show_battery:
-            y += (_FONT_BIG_SIZE + 2 if show_time else _LINE_H) + 1 + 3
+            top_row = sz_time + 2 if show_time else sz_battery + 2
+            y += top_row + 1 + 3
         if show_profile:
-            y += _LINE_H
+            y += sz_profile + 3
         if show_eq:
-            y += _LINE_H
+            y += sz_eq + 3
         if weather is not None:
-            y += 2 + _WEATHER_H
+            y += 2 + max(_ICON_SIZE, sz_weather_tmp) + 4
         return y
+
+    def render_splash_image(self) -> bytes:
+        """Startup splash: 'ASM' fills the top, 'By Loteran' bottom-right at 16pt."""
+        image = Image.new("1", (self.WIDTH, self.HEIGHT), color=0)
+        draw = ImageDraw.Draw(image)
+
+        font_by = ImageFont.load_default(size=16)
+        by_text = "By Loteran"
+        by_h = 18  # 16pt + 2px baseline
+        by_y = self.HEIGHT - by_h
+        by_w = int(font_by.getlength(by_text))
+        draw.text((self.WIDTH - by_w - 2, by_y), by_text, font=font_by, fill=1)
+
+        # ASM fills available space above "By Loteran"
+        available_h = by_y - 4
+        asm_size = max(8, available_h - 2)
+        font_asm = ImageFont.load_default(size=asm_size)
+        asm_w = int(font_asm.getlength("ASM"))
+        asm_x = (self.WIDTH - asm_w) // 2
+        asm_y = max(0, (available_h - asm_size) // 2 + 2)
+        # Simulate bold by drawing twice with 1px horizontal offset
+        draw.text((asm_x,     asm_y), "ASM", font=font_asm, fill=1)
+        draw.text((asm_x + 1, asm_y), "ASM", font=font_asm, fill=1)
+
+        return self._image_to_bytes(image.convert("1"))
 
     def crop_frame(self, image: Image.Image, offset: int, x_offset: int = 0) -> bytes:
         """Crop HEIGHT rows starting at offset, return as OLED bytes."""

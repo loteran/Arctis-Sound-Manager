@@ -107,6 +107,13 @@ class GeneralSettings(JsonSerializable):
     # Display order for orderable elements below the time/battery row
     oled_display_order: list = None  # type: ignore — set per-instance in __init__
 
+    # Font sizes per element (pixels, 7–30)
+    oled_font_time: int = 20
+    oled_font_battery: int = 16
+    oled_font_profile: int = 8
+    oled_font_eq: int = 8
+    oled_font_weather_temp: int = 20
+
     # Weather module
     weather_enabled: bool = False
     weather_location: str = ""

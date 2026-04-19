@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QScrollArea,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -36,17 +37,17 @@ _TOGGLE_CARD_STYLE = (
 _LBL_STYLE = "color: {color}; font-size: 11pt; background: transparent; border: none;"
 _HINT_STYLE = "color: {color}; font-size: 9pt; background: transparent; border: none;"
 
-# Fixed top elements (always shown, not orderable)
+# Fixed top elements (always shown, not orderable): (setting_key, label_key, font_size_key, default_size)
 _FIXED_DISPLAY_KEYS = [
-    ('oled_show_time',    'oled_show_time'),
-    ('oled_show_battery', 'oled_show_battery'),
+    ('oled_show_time',    'oled_show_time',    'oled_font_time',    20),
+    ('oled_show_battery', 'oled_show_battery', 'oled_font_battery', 16),
 ]
 
-# Orderable elements below the time/battery row
+# Orderable elements: (order_key, setting_key, label_key, font_size_key, default_size)
 _ORDERABLE_ITEMS = [
-    ('profile', 'oled_show_profile', 'oled_show_profile'),
-    ('eq',      'oled_show_eq',      'oled_show_eq'),
-    ('weather', 'weather_enabled',   'weather_enabled'),
+    ('profile', 'oled_show_profile', 'oled_show_profile', 'oled_font_profile',    8),
+    ('eq',      'oled_show_eq',      'oled_show_eq',      'oled_font_eq',         8),
+    ('weather', 'weather_enabled',   'weather_enabled',   'oled_font_weather_temp', 20),
 ]
 
 _DAC_WIDGET_EXCLUDE = {
@@ -149,22 +150,27 @@ class DacPage(QWidget):
         col.setSpacing(2)
 
         self._display_checkboxes: dict[str, QCheckBox] = {}
+        self._font_spinboxes: dict[str, QSpinBox] = {}
         cb_style = self._checkbox_style()
+        sp_style = self._spinbox_style()
 
-        # Fixed elements (2 columns)
-        fixed_row = QWidget()
-        fixed_row.setStyleSheet("background: transparent;")
-        fixed_hl = QHBoxLayout(fixed_row)
-        fixed_hl.setContentsMargins(0, 0, 0, 4)
-        fixed_hl.setSpacing(0)
-        for key, label_key in _FIXED_DISPLAY_KEYS:
+        # Fixed elements (one row per item with checkbox + font spinbox)
+        for key, label_key, font_key, default_sz in _FIXED_DISPLAY_KEYS:
+            fixed_row = QWidget()
+            fixed_row.setStyleSheet("background: transparent;")
+            fixed_hl = QHBoxLayout(fixed_row)
+            fixed_hl.setContentsMargins(0, 0, 0, 2)
+            fixed_hl.setSpacing(6)
             cb = QCheckBox(I18n.translate("settings", label_key))
             cb.setChecked(True)
             cb.setStyleSheet(cb_style)
             cb.toggled.connect(lambda checked, k=key: DbusWrapper.change_setting(k, checked))
             fixed_hl.addWidget(cb, stretch=1)
             self._display_checkboxes[key] = cb
-        col.addWidget(fixed_row)
+            sp = self._build_font_spinbox(font_key, default_sz, sp_style)
+            fixed_hl.addWidget(sp)
+            self._font_spinboxes[font_key] = sp
+            col.addWidget(fixed_row)
 
         # Separator
         sep = QFrame()
@@ -181,14 +187,17 @@ class DacPage(QWidget):
         self._orderable_container.setContentsMargins(0, 0, 0, 0)
         col.addLayout(self._orderable_container)
 
-        for order_key, setting_key, label_key in _ORDERABLE_ITEMS:
-            row = self._build_orderable_row(order_key, setting_key, label_key, cb_style)
+        for order_key, setting_key, label_key, font_key, default_sz in _ORDERABLE_ITEMS:
+            row = self._build_orderable_row(order_key, setting_key, label_key, font_key, default_sz, cb_style, sp_style)
             self._orderable_rows[order_key] = row
             self._orderable_container.addWidget(row)
 
         return card
 
-    def _build_orderable_row(self, order_key: str, setting_key: str, label_key: str, cb_style: str) -> QWidget:
+    def _build_orderable_row(
+        self, order_key: str, setting_key: str, label_key: str,
+        font_key: str, default_sz: int, cb_style: str, sp_style: str,
+    ) -> QWidget:
         row = QWidget()
         row.setStyleSheet("background: transparent;")
         hl = QHBoxLayout(row)
@@ -218,13 +227,27 @@ class DacPage(QWidget):
         cb.setStyleSheet(cb_style)
         cb.toggled.connect(lambda checked, k=setting_key: DbusWrapper.change_setting(k, checked))
 
+        sp = self._build_font_spinbox(font_key, default_sz, sp_style)
+        self._font_spinboxes[font_key] = sp
+
         hl.addWidget(btn_up)
         hl.addWidget(btn_dn)
         hl.addWidget(cb, stretch=1)
+        hl.addWidget(sp)
 
         self._display_checkboxes[setting_key] = cb
         row._order_key = order_key  # type: ignore[attr-defined]
         return row
+
+    def _build_font_spinbox(self, font_key: str, default_sz: int, sp_style: str) -> QSpinBox:
+        sp = QSpinBox()
+        sp.setRange(7, 30)
+        sp.setValue(default_sz)
+        sp.setSuffix(" pt")
+        sp.setFixedWidth(62)
+        sp.setStyleSheet(sp_style)
+        sp.valueChanged.connect(lambda v, k=font_key: DbusWrapper.change_setting(k, v))
+        return sp
 
     def _move_element(self, order_key: str, direction: int) -> None:
         order = self._orderable_order
@@ -244,6 +267,15 @@ class DacPage(QWidget):
                 item.widget().setParent(None)  # type: ignore[arg-type]
         for key in self._orderable_order:
             self._orderable_container.addWidget(self._orderable_rows[key])
+
+    def _spinbox_style(self) -> str:
+        return (
+            f"QSpinBox {{ background: {BG_BUTTON}; color: {TEXT_PRIMARY}; "
+            f"border: 1px solid {BORDER}; border-radius: 4px; "
+            f"padding: 2px 4px; font-size: 9pt; }}"
+            f"QSpinBox:focus {{ border-color: {ACCENT}; }}"
+            f"QSpinBox::up-button, QSpinBox::down-button {{ width: 16px; }}"
+        )
 
     def _checkbox_style(self) -> str:
         return (
@@ -419,6 +451,14 @@ class DacPage(QWidget):
             cb.blockSignals(True)
             cb.setChecked(bool(dac.get(key, True)))
             cb.blockSignals(False)
+
+        # Restore font sizes
+        for font_key, sp in self._font_spinboxes.items():
+            val = dac.get(font_key)
+            if isinstance(val, int) and 7 <= val <= 30:
+                sp.blockSignals(True)
+                sp.setValue(val)
+                sp.blockSignals(False)
 
         # Restore display order
         saved_order = dac.get('oled_display_order')
