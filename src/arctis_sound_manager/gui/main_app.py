@@ -109,7 +109,7 @@ class QMainApp(QBaseDesktopApp):
     def _on_visibility_changed(self, visible: bool):
         if visible:
             self.logger.debug("App is visible — starting D-Bus polling")
-            self.dbus_wrapper.request_settings(one_time=True)
+            self.dbus_wrapper.request_settings()
             self.dbus_wrapper.request_status()
         else:
             self.logger.debug("App is hidden — stopping D-Bus polling")

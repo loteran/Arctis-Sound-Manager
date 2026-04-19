@@ -211,6 +211,35 @@ HELP_CONTENT: dict[str, dict] = {
                 ),
             },
             {
+                "heading": "DAC — OLED Display",
+                "body": (
+                    "The DAC page is available on devices with an OLED screen "
+                    "(Arctis Nova Pro Wireless / X). It only appears in the sidebar when "
+                    "the device is detected.\n\n"
+                    "── Custom Display ──\n"
+                    "The toggle at the top switches between the original DAC display and the "
+                    "custom mode. When custom mode is active, all elements below become "
+                    "configurable.\n\n"
+                    "── DAC Settings ──\n"
+                    "• Brightness — controls the OLED screen brightness\n"
+                    "• Screen timeout — turns off the screen after inactivity\n"
+                    "• Scroll speed — controls how fast text scrolls on the display\n\n"
+                    "── Display Elements ──\n"
+                    "Choose which information is shown on the OLED screen and in what order:\n"
+                    "• Time — always shown; adjust font size (7–30 pt)\n"
+                    "• Battery — always shown; adjust font size\n"
+                    "• Profile — shows the active audio profile name\n"
+                    "• EQ Preset — shows the active EQ preset name\n"
+                    "• Weather — shows the current temperature\n\n"
+                    "Profile, EQ Preset and Weather can be reordered using the ▲/▼ buttons. "
+                    "Each element has a checkbox to enable/disable it and a font size control.\n\n"
+                    "── Weather ──\n"
+                    "Enter a city name and click Search to link your location. "
+                    "Choose °C or °F. The temperature is fetched automatically and displayed "
+                    "on the OLED screen."
+                ),
+            },
+            {
                 "heading": "Settings",
                 "body": (
                     "The Settings page contains all configurable parameters for your device.\n\n"
@@ -483,6 +512,36 @@ HELP_CONTENT: dict[str, dict] = {
                     "• Niveau de batterie et état de charge\n"
                     "• Contrôles ANC / Mode Transparent\n\n"
                     "Ces informations sont utiles pour le dépannage ou pour signaler un problème."
+                ),
+            },
+            {
+                "heading": "DAC — Écran OLED",
+                "body": (
+                    "La page DAC est disponible sur les appareils équipés d'un écran OLED "
+                    "(Arctis Nova Pro Wireless / X). Elle n'apparaît dans la barre latérale "
+                    "que lorsque l'appareil est détecté.\n\n"
+                    "── Affichage personnalisé ──\n"
+                    "Le bouton en haut bascule entre l'affichage d'origine du DAC et le mode "
+                    "personnalisé. En mode personnalisé, tous les éléments ci-dessous deviennent "
+                    "configurables.\n\n"
+                    "── Réglages DAC ──\n"
+                    "• Luminosité — contrôle la luminosité de l'écran OLED\n"
+                    "• Délai d'extinction — éteint l'écran après une période d'inactivité\n"
+                    "• Vitesse de défilement — contrôle la vitesse du texte défilant\n\n"
+                    "── Éléments affichés ──\n"
+                    "Choisissez quelles informations apparaissent sur l'écran OLED et dans quel ordre :\n"
+                    "• Heure — toujours affichée ; ajustez la taille de police (7–30 pt)\n"
+                    "• Batterie — toujours affichée ; ajustez la taille de police\n"
+                    "• Profil — affiche le nom du profil audio actif\n"
+                    "• Preset EQ — affiche le nom du preset EQ actif\n"
+                    "• Météo — affiche la température actuelle\n\n"
+                    "Profil, Preset EQ et Météo peuvent être réordonnés avec les boutons ▲/▼. "
+                    "Chaque élément dispose d'une case à cocher pour l'activer/désactiver "
+                    "et d'un contrôle de taille de police.\n\n"
+                    "── Météo ──\n"
+                    "Saisissez un nom de ville et cliquez sur Rechercher pour lier votre "
+                    "localisation. Choisissez °C ou °F. La température est récupérée "
+                    "automatiquement et affichée sur l'écran OLED."
                 ),
             },
             {
@@ -761,6 +820,36 @@ HELP_CONTENT: dict[str, dict] = {
                     "• Nivel de batería y estado de carga\n"
                     "• Controles ANC / Modo Transparente\n\n"
                     "Esta información es útil para solucionar problemas o reportar incidencias."
+                ),
+            },
+            {
+                "heading": "DAC — Pantalla OLED",
+                "body": (
+                    "La página DAC está disponible en dispositivos con pantalla OLED "
+                    "(Arctis Nova Pro Wireless / X). Solo aparece en la barra lateral cuando "
+                    "el dispositivo está detectado.\n\n"
+                    "── Pantalla personalizada ──\n"
+                    "El botón superior alterna entre la pantalla original del DAC y el modo "
+                    "personalizado. En modo personalizado, todos los elementos siguientes "
+                    "se vuelven configurables.\n\n"
+                    "── Ajustes DAC ──\n"
+                    "• Brillo — controla el brillo de la pantalla OLED\n"
+                    "• Tiempo de espera — apaga la pantalla tras un período de inactividad\n"
+                    "• Velocidad de desplazamiento — controla la velocidad del texto desplazado\n\n"
+                    "── Elementos mostrados ──\n"
+                    "Elige qué información aparece en la pantalla OLED y en qué orden:\n"
+                    "• Hora — siempre visible; ajusta el tamaño de fuente (7–30 pt)\n"
+                    "• Batería — siempre visible; ajusta el tamaño de fuente\n"
+                    "• Perfil — muestra el nombre del perfil de audio activo\n"
+                    "• Preset EQ — muestra el nombre del preset EQ activo\n"
+                    "• Tiempo meteorológico — muestra la temperatura actual\n\n"
+                    "Perfil, Preset EQ y Tiempo pueden reordenarse con los botones ▲/▼. "
+                    "Cada elemento tiene una casilla para activarlo/desactivarlo y un "
+                    "control de tamaño de fuente.\n\n"
+                    "── Tiempo meteorológico ──\n"
+                    "Introduce el nombre de una ciudad y haz clic en Buscar para vincular "
+                    "tu ubicación. Elige °C o °F. La temperatura se obtiene automáticamente "
+                    "y se muestra en la pantalla OLED."
                 ),
             },
             {
