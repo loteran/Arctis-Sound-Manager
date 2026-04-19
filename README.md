@@ -32,6 +32,12 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
   - Right-click a profile chip to delete it
 - **Launch at startup** — toggle in Settings to enable/disable the daemon and system tray autostart via systemd (`arctis-gui.service`)
 - **Check for updates** — button in Settings forces an immediate GitHub check (bypasses the 24 h cache); clicking the result opens the update dialog — opens a terminal for package manager installs (pacman / dnf / apt) or installs the wheel in-app for pipx/pip
+- **DAC OLED display** _(Arctis Nova Pro Wireless / X)_ — dedicated DAC page with full OLED screen control:
+  - Toggle between original and custom display mode
+  - Brightness, screen timeout and scroll speed sliders
+  - Choose and reorder display elements: Time, Battery, active Profile, EQ Preset, Weather temperature
+  - Per-element font size control (7–30 pt)
+  - Built-in weather integration: city lookup, °C / °F selector, auto-refresh
 - **Help page** — built-in user manual in English, French and Spanish
 - **Virtual surround 7.1** — HeSuVi filter-chain included automatically with the install
 
