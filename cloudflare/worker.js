@@ -42,19 +42,30 @@ export default {
       const distro  = String(body.distro  || "Unknown").slice(0, 120);
       const headset = String(body.headset || "Unknown").slice(0, 120);
       const version = String(body.version || "Unknown").slice(0, 30);
+      const now     = Date.now();
 
-      await env.DB.prepare(
-        "INSERT INTO stats (distro, headset, version, ts) VALUES (?, ?, ?, ?)"
-      )
-        .bind(distro, headset, version, Date.now())
-        .run();
+      await Promise.all([
+        // Historical log — always append
+        env.DB.prepare(
+          "INSERT INTO stats (distro, headset, version, ts) VALUES (?, ?, ?, ?)"
+        ).bind(distro, headset, version, now).run(),
+
+        // Unique users — upsert: create on first contact, update version + last_seen on return
+        env.DB.prepare(`
+          INSERT INTO users (distro, headset, version, first_seen, last_seen)
+          VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT(distro, headset) DO UPDATE SET
+            version   = excluded.version,
+            last_seen = excluded.last_seen
+        `).bind(distro, headset, version, now, now).run(),
+      ]);
 
       return new Response("ok", { headers: CORS });
     }
 
     // ── GET /stats (JSON API) ──────────────────────────────────────────────────
     if (request.method === "GET" && url.pathname === "/stats") {
-      const [distros, headsets, versions, totalRow] = await Promise.all([
+      const [distros, headsets, versions, totalRow, uniqueRow, uniqueVersions] = await Promise.all([
         env.DB.prepare(
           "SELECT distro AS label, COUNT(*) AS nb FROM stats GROUP BY distro ORDER BY nb DESC LIMIT 30"
         ).all(),
@@ -65,15 +76,21 @@ export default {
           "SELECT version AS label, COUNT(*) AS nb FROM stats GROUP BY version ORDER BY nb DESC LIMIT 20"
         ).all(),
         env.DB.prepare("SELECT COUNT(*) AS nb FROM stats").first(),
+        env.DB.prepare("SELECT COUNT(*) AS nb FROM users").first(),
+        env.DB.prepare(
+          "SELECT version AS label, COUNT(*) AS nb FROM users GROUP BY version ORDER BY nb DESC LIMIT 20"
+        ).all(),
       ]);
 
       return Response.json(
         {
-          total:    totalRow?.nb ?? 0,
-          distros:  distros.results,
-          headsets: headsets.results,
-          versions: versions.results,
-          generated_at: new Date().toISOString(),
+          total:           totalRow?.nb ?? 0,
+          unique_users:    uniqueRow?.nb ?? 0,
+          distros:         distros.results,
+          headsets:        headsets.results,
+          versions:        versions.results,
+          unique_versions: uniqueVersions.results,
+          generated_at:    new Date().toISOString(),
         },
         { headers: { ...CORS, "Cache-Control": "public, max-age=3600" } }
       );
@@ -109,11 +126,18 @@ const HTML_DASHBOARD = `<!DOCTYPE html>
   .nb  { text-align: right; color: #04C5A8; font-weight: bold; }
   .bar { display: inline-block; background: #FB4A00; height: 10px; border-radius: 3px; }
   small{ color: #8D96AA; }
+  .counters { display: flex; gap: 2rem; margin-bottom: 1.5rem; }
+  .counter  { background: #1E2228; border-radius: 8px; padding: 1rem 1.5rem; }
+  .counter .val { font-size: 2rem; font-weight: bold; color: #FB4A00; }
+  .counter .lbl { font-size: .8rem; color: #8D96AA; text-transform: uppercase; }
 </style>
 </head>
 <body>
 <h1>Arctis Sound Manager — Anonymous Usage Stats</h1>
-<p id="total"><small>Loading…</small></p>
+<div class="counters">
+  <div class="counter"><div class="val" id="cnt-total">…</div><div class="lbl">Data points</div></div>
+  <div class="counter"><div class="val" id="cnt-unique">…</div><div class="lbl">Unique users</div></div>
+</div>
 <div class="grid">
   <div>
     <h2>Linux Distributions</h2>
@@ -125,9 +149,15 @@ const HTML_DASHBOARD = `<!DOCTYPE html>
   </div>
 </div>
 <br>
-<div>
-  <h2>ASM Versions</h2>
-  <table id="versions"><tr><td>Loading…</td></tr></table>
+<div class="grid">
+  <div>
+    <h2>ASM Versions (all submissions)</h2>
+    <table id="versions"><tr><td>Loading…</td></tr></table>
+  </div>
+  <div>
+    <h2>ASM Versions (unique users)</h2>
+    <table id="unique-versions"><tr><td>Loading…</td></tr></table>
+  </div>
 </div>
 <br>
 <small>Data is anonymous — no personal data or IP address is stored.
@@ -138,9 +168,8 @@ const HTML_DASHBOARD = `<!DOCTYPE html>
 fetch('/stats')
   .then(r => r.json())
   .then(data => {
-    document.getElementById('total').innerHTML =
-      '<small>Based on <b>' + data.total + '</b> anonymous data points — ' +
-      'generated ' + new Date(data.generated_at).toLocaleString() + '</small>';
+    document.getElementById('cnt-total').textContent  = data.total;
+    document.getElementById('cnt-unique').textContent = data.unique_users;
 
     const fill = (id, rows) => {
       const max = rows[0]?.nb || 1;
@@ -151,13 +180,14 @@ fetch('/stats')
           '<td><span class=bar style="width:' + Math.round(r.nb/max*120) + 'px"></span></td></tr>'
         ).join('');
     };
-    fill('distros',  data.distros);
-    fill('headsets', data.headsets);
-    fill('versions', data.versions);
+    fill('distros',          data.distros);
+    fill('headsets',         data.headsets);
+    fill('versions',         data.versions);
+    fill('unique-versions',  data.unique_versions);
   })
   .catch(() => {
-    document.getElementById('total').textContent = 'Could not load stats.';
+    document.getElementById('cnt-total').textContent = 'Could not load stats.';
   });
 </script>
 </body>
-</html>`;
+</html>\``;
