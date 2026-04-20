@@ -70,9 +70,9 @@ def detect_install_method() -> InstallMethod:
 
 
 PACKAGE_MANAGER_COMMANDS: dict[InstallMethod, str] = {
-    InstallMethod.RPM:    "sudo dnf upgrade arctis-sound-manager",
-    InstallMethod.PACMAN: "paru -S arctis-sound-manager",
-    InstallMethod.APT:    "sudo apt update && sudo apt upgrade arctis-sound-manager",
+    InstallMethod.RPM:    "sudo dnf upgrade arctis-sound-manager && asm-setup",
+    InstallMethod.PACMAN: "paru -S arctis-sound-manager && asm-setup",
+    InstallMethod.APT:    "sudo apt update && sudo apt upgrade arctis-sound-manager && asm-setup",
 }
 
 log = logging.getLogger(__name__)
@@ -212,7 +212,7 @@ class UpdateCheckWorker(QThread):
 
 _TERMINAL_CANDIDATES: list[tuple[str, list[str]]] = [
     # (binary, args_before_cmd) — {} is replaced by the shell command string
-    ("konsole",        ["--hold", "-e", "bash", "-c"]),
+    ("konsole",        ["-e", "bash", "-c"]),
     ("gnome-terminal", ["--", "bash", "-c"]),
     ("xfce4-terminal", ["--hold", "-x", "bash", "-c"]),
     ("mate-terminal",  ["--", "bash", "-c"]),
@@ -221,6 +221,8 @@ _TERMINAL_CANDIDATES: list[tuple[str, list[str]]] = [
     ("alacritty",      ["-e", "bash", "-c"]),
     ("foot",           ["bash", "-c"]),
 ]
+
+_TERMINALS_WITHOUT_HOLD = ("konsole", "xterm", "kitty", "alacritty", "foot")
 
 
 def build_terminal_cmd(inner_cmd: str) -> list[str] | None:
@@ -231,9 +233,7 @@ def build_terminal_cmd(inner_cmd: str) -> list[str] | None:
     """
     for binary, args in _TERMINAL_CANDIDATES:
         if shutil.which(binary):
-            # For terminals that don't natively keep the window open we append
-            # a read prompt so the user can close manually.
-            if binary in ("xterm", "kitty", "alacritty", "foot"):
+            if binary in _TERMINALS_WITHOUT_HOLD:
                 inner_cmd = (
                     f"{inner_cmd}; "
                     r'echo; read -rp "Press Enter to close…"'

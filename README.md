@@ -32,6 +32,12 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
   - Right-click a profile chip to delete it
 - **Launch at startup** — toggle in Settings to enable/disable the daemon and system tray autostart via systemd (`arctis-gui.service`)
 - **Check for updates** — button in Settings forces an immediate GitHub check (bypasses the 24 h cache); clicking the result opens the update dialog — opens a terminal for package manager installs (pacman / dnf / apt) or installs the wheel in-app for pipx/pip
+- **DAC OLED display** _(Arctis Nova Pro Wireless / X)_ — dedicated DAC page with full OLED screen control:
+  - Toggle between original and custom display mode
+  - Brightness, screen timeout and scroll speed sliders
+  - Choose and reorder display elements: Time, Battery, active Profile, EQ Preset, Weather temperature
+  - Per-element font size control (7–30 pt)
+  - Built-in weather integration: city lookup, °C / °F selector, auto-refresh
 - **Help page** — built-in user manual in English, French and Spanish
 - **Virtual surround 7.1** — HeSuVi filter-chain included automatically with the install
 
@@ -56,22 +62,55 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 
 ## Supported Devices
 
-| Device | Mixer | Advanced features | Product ID(s) |
-|---|---|---|---|
-| Arctis 1 / 7X / 7P Wireless | ⚠️ | ⚠️ | 12b3, 12b6, 12d5, 12d7 |
-| Arctis 7 / 7 2019 / Pro 2019 / Pro GameDAC | ⚠️ | ⚠️ | 1260, 12ad, 1252, 1280 |
-| Arctis 7+ / PS5 / Xbox / Destiny | ⚠️ | ⚠️ | 220e, 2212, 2216, 2236 |
-| Arctis 9 Wireless | ⚠️ | ⚠️ | 12c2 |
-| Arctis Pro Wireless | ⚠️ | ⚠️ | 1290 |
-| **Arctis Nova Pro Wireless / X** | ✅ | ✅ | 12e0, 12e5 |
-| **Arctis Nova Pro Wired / Xbox Wired** | ✅ | ✅ | 12cb, 12cd |
-| Arctis Nova 3 | ⚠️ | ⚠️ | 12ec |
-| Arctis Nova 5 / 5X | ⚠️ | ⚠️ | 2232, 2253 |
-| Arctis Nova 7 Gen 1 | ⚠️ | ⚠️ | 2202, 2206, 223a, 227a, 22a4 |
-| Arctis Nova 7 Gen 2 | ⚠️ | ⚠️ | 22a1, 227e, 2258, 229e, 22a9, 22a5 |
-| Arctis Nova 7P | ⚠️ | ⚠️ | 220a, 22a7 |
+<!-- STATS:DEVICES:START -->
+| Device | Mixer | Advanced features | Users | Product ID(s) |
+|---|---|---|---|---|
+| Arctis 1 / 7X / 7P Wireless | ⚠️ | ⚠️ | | 12b3, 12b6, 12d5, 12d7 |
+| Arctis 7 / 7 2019 / Pro 2019 / Pro GameDAC | ⚠️ | ⚠️ | | 1260, 12ad, 1252, 1280 |
+| Arctis 7+ / PS5 / Xbox / Destiny | ⚠️ | ⚠️ | | 220e, 2212, 2216, 2236 |
+| Arctis 9 Wireless | ⚠️ | ⚠️ | | 12c2 |
+| Arctis Pro Wireless | ⚠️ | ⚠️ | | 1290 |
+| **Arctis Nova Pro Wireless / X** | ✅ | ✅ | | 12e0, 12e5 |
+| **Arctis Nova Pro Wired / Xbox Wired** | ✅ | ✅ | | 12cb, 12cd |
+| Arctis Nova 3 | ⚠️ | ⚠️ | | 12ec |
+| Arctis Nova 3P / 3X Wireless | ⚠️ | ⚠️ | | 2269, 226d |
+| Arctis Nova 5 / 5X | ⚠️ | ⚠️ | | 2232, 2253 |
+| Arctis Nova 7 Gen 1 | ⚠️ | ⚠️ | | 2202, 2206, 223a, 227a, 22a4 |
+| Arctis Nova 7 Gen 2 | ⚠️ | ⚠️ | | 22a1, 227e, 2258, 229e, 22a9, 22a5 |
+| Arctis Nova 7P | ⚠️ | ⚠️ | | 220a, 22a7 |
+<!-- STATS:DEVICES:END -->
 
 > ✅ Fully supported · ⚠️ Config available, community testing welcome · ❓ Not yet supported
+> _Users column: anonymous reports from opted-in users. ⚠️ auto-promoted to ✅ at 5+ reports._
+
+## Tested Distributions
+
+<!-- STATS:TESTED_DISTROS:START -->
+_No data yet — stats will appear after the first users opt in._
+<!-- STATS:TESTED_DISTROS:END -->
+
+---
+
+## Community Stats
+
+> Anonymous usage data shared voluntarily by users who opted in.
+> [View interactive dashboard →](https://loteran.github.io/Arctis-Sound-Manager/stats)
+
+<!-- STATS:META:START -->
+_No data yet — stats will appear after the first users opt in._
+<!-- STATS:META:END -->
+
+### Most used headsets
+
+<!-- STATS:HEADSETS:START -->
+_No data yet._
+<!-- STATS:HEADSETS:END -->
+
+### Most used Linux distributions
+
+<!-- STATS:DISTROS:START -->
+_No data yet._
+<!-- STATS:DISTROS:END -->
 
 ---
 
