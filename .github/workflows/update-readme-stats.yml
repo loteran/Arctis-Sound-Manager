@@ -32,8 +32,9 @@ jobs:
               with urllib.request.urlopen(url, timeout=10) as r:
                   data = json.loads(r.read())
           except Exception as e:
-              print(f"::error::Could not fetch stats: {e}")
-              sys.exit(1)
+              print(f"::warning::Could not fetch stats (endpoint unavailable?): {e}")
+              print("Skipping README update — no changes made.")
+              sys.exit(0)
 
           total    = data.get("total", 0)
           distros  = data.get("distros", [])
