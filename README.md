@@ -65,19 +65,20 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 <!-- STATS:DEVICES:START -->
 | Device | Mixer | Advanced features | Users | Product ID(s) |
 |---|---|---|---|---|
-| Arctis 1 / 7X / 7P Wireless | ⚠️ | ⚠️ | | 12b3, 12b6, 12d5, 12d7 |
-| Arctis 7 / 7 2019 / Pro 2019 / Pro GameDAC | ⚠️ | ⚠️ | | 1260, 12ad, 1252, 1280 |
-| Arctis 7+ / PS5 / Xbox / Destiny | ⚠️ | ⚠️ | | 220e, 2212, 2216, 2236 |
-| Arctis 9 Wireless | ⚠️ | ⚠️ | | 12c2 |
-| Arctis Pro Wireless | ⚠️ | ⚠️ | | 1290 |
-| **Arctis Nova Pro Wireless / X** | ✅ | ✅ | | 12e0, 12e5 |
-| **Arctis Nova Pro Wired / Xbox Wired** | ✅ | ✅ | | 12cb, 12cd |
-| Arctis Nova 3 | ⚠️ | ⚠️ | | 12ec |
-| Arctis Nova 3P / 3X Wireless | ⚠️ | ⚠️ | | 2269, 226d |
-| Arctis Nova 5 / 5X | ⚠️ | ⚠️ | | 2232, 2253 |
-| Arctis Nova 7 Gen 1 | ⚠️ | ⚠️ | | 2202, 2206, 223a, 227a, 22a4 |
-| Arctis Nova 7 Gen 2 | ⚠️ | ⚠️ | | 22a1, 227e, 2258, 229e, 22a9, 22a5 |
-| Arctis Nova 7P | ⚠️ | ⚠️ | | 220a, 22a7 |
+| Arctis 1 / 7X / 7P Wireless | ⚠️ | ⚠️ |  | 12b3, 12b6, 12d5, 12d7 |
+| Arctis 7 / 7 2019 / Pro 2019 / Pro GameDAC | ⚠️ | ⚠️ |  | 1260, 12ad, 1252, 1280 |
+| Arctis 7+ / PS5 / Xbox / Destiny | ⚠️ | ⚠️ |  | 220e, 2212, 2216, 2236 |
+| Arctis 9 Wireless | ⚠️ | ⚠️ |  | 12c2 |
+| Arctis Pro Wireless | ⚠️ | ⚠️ |  | 1290, 1294 |
+| Arctis Nova Pro Wireless / X | ✅ | ✅ | 👥 10 | 12e0, 12e5 |
+| Arctis Nova Pro Wired / Xbox Wired | ✅ | ✅ |  | 12cb, 12cd |
+| Arctis Nova 3 | ⚠️ | ⚠️ |  | 12ec |
+| Arctis Nova 3P / 3X Wireless | ⚠️ | ⚠️ |  | 2269, 226d |
+| Arctis Nova 5 / 5X | ⚠️ | ⚠️ |  | 2232, 2253 |
+| Arctis Nova 7 Gen 1 | ⚠️ | ⚠️ |  | 2202, 2206, 223a, 227a, 22a4 |
+| Arctis Nova 7 Gen 2 | ⚠️ | ⚠️ |  | 22a1, 227e, 2258, 229e, 22a9, 22a5 |
+| **Arctis Nova 7P** | ✅ | ✅ | 👥 1 | 220a, 22a7 |
+
 <!-- STATS:DEVICES:END -->
 
 > ✅ Fully supported · ⚠️ Config available, community testing welcome · ❓ Not yet supported
@@ -86,7 +87,12 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 ## Tested Distributions
 
 <!-- STATS:TESTED_DISTROS:START -->
-_No data yet — stats will appear after the first users opt in._
+| Distribution | Install method | Users |
+|---|---|---|
+| CachyOS | 🎯 AUR | 👥 8 |
+| Linux Mint 22.3 | 🎯 PPA | 👥 2 |
+| Arch Linux | 🎯 AUR | 👥 1 |
+
 <!-- STATS:TESTED_DISTROS:END -->
 
 ---
@@ -97,19 +103,29 @@ _No data yet — stats will appear after the first users opt in._
 > [View interactive dashboard →](https://loteran.github.io/Arctis-Sound-Manager/stats)
 
 <!-- STATS:META:START -->
-_No data yet — stats will appear after the first users opt in._
+_Based on **11** anonymous data points — last updated 2026-04-21_
+
 <!-- STATS:META:END -->
 
 ### Most used headsets
 
 <!-- STATS:HEADSETS:START -->
-_No data yet._
+| Headset | Installs |
+|---|---|
+| Arctis Nova Pro Wireless | 10 |
+| Arctis Nova 7P (Gen 1) | 1 |
+
 <!-- STATS:HEADSETS:END -->
 
 ### Most used Linux distributions
 
 <!-- STATS:DISTROS:START -->
-_No data yet._
+| Distribution | Installs |
+|---|---|
+| CachyOS | 8 |
+| Linux Mint 22.3 | 2 |
+| Arch Linux | 1 |
+
 <!-- STATS:DISTROS:END -->
 
 ---
