@@ -1,5 +1,5 @@
 Name:           arctis-sound-manager
-Version:        1.0.57
+Version:        1.0.60
 Release:        1%{?dist}
 Summary:        Linux GUI for SteelSeries Arctis headsets
 
@@ -17,6 +17,7 @@ Source2:        dbus_next-0.2.3-py3-none-any.whl
 BuildArch:      noarch
 BuildRequires:  python3-devel
 BuildRequires:  python3-installer
+BuildRequires:  python3-ruamel-yaml
 BuildRequires:  systemd-rpm-macros
 BuildRequires:  desktop-file-utils
 BuildRequires:  libappstream-glib
@@ -53,22 +54,10 @@ python3 -m installer --destdir=%{buildroot} %{SOURCE1}
 # Bundle dbus-next (not in Fedora repos — pre-downloaded in Source2)
 python3 -m installer --destdir=%{buildroot} %{SOURCE2}
 
-# udev rules
-install -Dm644 /dev/stdin %{buildroot}%{_udevrulesdir}/91-steelseries-arctis.rules <<'RULES'
-ACTION=="remove", GOTO="local_end"
-SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1260|12ad", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="220e|2212|2216|2236", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="12ec", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="2232|2253", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="220a", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="12d7", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="12c2", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="12e0|12e5", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="12cb|12cd", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1280", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1290", MODE="0666", TAG+="uaccess"
-LABEL="local_end"
-RULES
+# udev rules — generated from device YAMLs at build time (single source of truth)
+install -Dm644 /dev/null %{buildroot}%{_udevrulesdir}/91-steelseries-arctis.rules
+python3 scripts/generate_udev_rules.py src/arctis_sound_manager/devices/ \
+    > %{buildroot}%{_udevrulesdir}/91-steelseries-arctis.rules
 
 # Systemd user services
 install -Dm644 /dev/stdin %{buildroot}%{_userunitdir}/arctis-manager.service <<'SERVICE'
@@ -205,6 +194,16 @@ fi
 /etc/xdg/autostart/asm-first-run.desktop
 
 %changelog
+* Mon Apr 21 2026 loteran <https://github.com/loteran> - 1.0.60-1
+- Refactor: udev rules generated at build time from device YAMLs — no more hardcoded rules that drift out of sync
+- Add: asm-cli udev dump-rules subcommand (stdout output for packaging)
+- Add: python3-ruamel-yaml to BuildRequires
+
+* Mon Apr 21 2026 loteran <https://github.com/loteran> - 1.0.59-1
+- Fix: udev rules missing PID 1294 for Arctis Pro Wireless — caused Errno 13 Access denied on Fedora/Nobara
+- Fix: remove ENV{DEVTYPE}=="usb_device" from all udev rules — fails silently on some kernels
+- Fix: sync udev rules with all device yamls (add Nova 7 Gen1/Gen2, Arctis 1/7X/7P, Arctis Pro 2019, Nova 3P/3X, Nova 7P Gen2)
+
 * Thu Apr 16 2026 loteran <https://github.com/loteran> - 1.0.43-1
 - Fix: udev rules file installed with 0600 perms (pkexec cp) — dialog reappeared at every login
 - Fix: arctis-gui.service missing from package — systray never started at login despite "launch on startup"

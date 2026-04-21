@@ -5,7 +5,8 @@ Maintainer: loteran <axel.valadon@gmail.com>
 Build-Depends: debhelper-compat (= 13),
                python3 (>= 3.10),
                python3-pip,
-               python3-venv
+               python3-venv,
+               python3-ruamel.yaml
 Standards-Version: 4.6.2
 Homepage: https://github.com/loteran/Arctis-Sound-Manager
 Rules-Requires-Root: no
