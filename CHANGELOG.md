@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.59] - 21 April 2026
+
+### Fixed
+
+- **udev rules (RPM/DEB)**: add missing PID `0x1294` for Arctis Pro Wireless — the audio PID was never included in the installed rules file, causing `[Errno 13] Access denied` on Fedora/Nobara.
+- **udev rules (RPM/DEB)**: remove `ENV{DEVTYPE}=="usb_device"` condition from all rules — this condition can fail silently on some kernels, preventing rules from matching.
+- **udev rules (RPM/DEB)**: sync all PIDs with device yamls — add missing PIDs for Arctis 1/7X/7P Wireless, Arctis Pro 2019, Nova 3P/3X, Nova 7 Gen 1/Gen 2.
+
 ## [1.0.53] - 18 April 2026
 
 ### Fixed
