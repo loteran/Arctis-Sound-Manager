@@ -135,6 +135,32 @@ class DbusWrapper(QObject):
                 dbus_bus.disconnect()
 
     @staticmethod
+    def show_splash() -> None:
+        DbusWrapper._executor.submit(DbusWrapper.show_splash_thread)
+
+    @staticmethod
+    def show_splash_thread():
+        asyncio.run(DbusWrapper.show_splash_async())
+
+    @staticmethod
+    async def show_splash_async():
+        dbus_bus = None
+        try:
+            dbus_bus = await MessageBus().connect()
+            await dbus_bus.call(Message(
+                destination=DBUS_BUS_NAME,
+                path=DBUS_SETTINGS_OBJECT_PATH,
+                interface=DBUS_SETTINGS_INTERFACE_NAME,
+                member='ShowSplash',
+                message_type=MessageType.METHOD_CALL,
+            ))
+        except Exception as e:
+            DbusWrapper.logger.debug('ShowSplash: %s', e)
+        finally:
+            if dbus_bus is not None:
+                dbus_bus.disconnect()
+
+    @staticmethod
     def change_setting(name: str, value: int|bool|str) -> None:
         DbusWrapper._executor.submit(DbusWrapper.change_setting_thread, name=name, value=value)
 
@@ -158,6 +184,41 @@ class DbusWrapper(QObject):
             ))
         except Exception as e:
             DbusWrapper.logger.error('Error in change_setting: %s', e)
+        finally:
+            if dbus_bus is not None:
+                dbus_bus.disconnect()
+
+    @staticmethod
+    def set_weather_settings(enabled: bool, location: str, units: str, callback) -> None:
+        """Call SetWeatherSettings D-Bus method and invoke callback(result_dict)."""
+        DbusWrapper._executor.submit(
+            DbusWrapper._set_weather_thread, enabled=enabled, location=location,
+            units=units, callback=callback,
+        )
+
+    @staticmethod
+    def _set_weather_thread(enabled: bool, location: str, units: str, callback) -> None:
+        asyncio.run(DbusWrapper._set_weather_async(enabled, location, units, callback))
+
+    @staticmethod
+    async def _set_weather_async(enabled: bool, location: str, units: str, callback) -> None:
+        dbus_bus = None
+        try:
+            dbus_bus = await MessageBus().connect()
+            reply = await dbus_bus.call(Message(
+                destination=DBUS_BUS_NAME,
+                path=DBUS_SETTINGS_OBJECT_PATH,
+                interface=DBUS_SETTINGS_INTERFACE_NAME,
+                member='SetWeatherSettings',
+                message_type=MessageType.METHOD_CALL,
+                signature='bss',
+                body=[enabled, location, units],
+            ))
+            result = json.loads(reply.body[0]) if reply.body else {"ok": False}
+            callback(result)
+        except Exception as e:
+            DbusWrapper.logger.error('Error in set_weather_settings: %s', e)
+            callback({"ok": False, "error": str(e)})
         finally:
             if dbus_bus is not None:
                 dbus_bus.disconnect()

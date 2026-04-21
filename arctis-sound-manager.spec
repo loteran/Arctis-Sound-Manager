@@ -258,10 +258,10 @@ fi
 /etc/xdg/autostart/asm-first-run.desktop
 
 %changelog
-* Tue Apr 21 2026 loteran <https://github.com/loteran> - 1.0.59-1
-- Fix: udev rules missing PID 1294 for Arctis Pro Wireless (alternate audio PID) — caused [Errno 13] Access denied
-- Fix: remove ENV{DEVTYPE}=="usb_device" from all udev rules — condition fails silently on some kernels
-- Fix: sync udev rules with all device yamls (add missing PIDs for Nova 7 Gen1/Gen2, Arctis 1/7X/7P, Arctis Pro 2019)
+* Mon Apr 21 2026 loteran <https://github.com/loteran> - 1.0.59-1
+- Fix: udev rules missing PID 1294 for Arctis Pro Wireless — caused Errno 13 Access denied on Fedora/Nobara
+- Fix: remove ENV{DEVTYPE}=="usb_device" from all udev rules — fails silently on some kernels
+- Fix: sync udev rules with all device yamls (add Nova 7 Gen1/Gen2, Arctis 1/7X/7P, Arctis Pro 2019, Nova 3P/3X, Nova 7P Gen2)
 
 * Thu Apr 16 2026 loteran <https://github.com/loteran> - 1.0.43-1
 - Fix: udev rules file installed with 0600 perms (pkexec cp) — dialog reappeared at every login

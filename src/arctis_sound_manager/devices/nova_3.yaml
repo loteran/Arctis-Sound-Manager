@@ -3,6 +3,8 @@ device:
   vendor_id: 0x1038
   product_ids:
     - 0x12ec # Arctis Nova 3
+    - 0x2269 # Arctis Nova 3P Wireless
+    - 0x226d # Arctis Nova 3X Wireless
   command_padding:
     length: 64
     position: end

@@ -25,6 +25,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **udev rules**: clicking "Install rules" in the GUI now triggers a **single** password prompt instead of three — the file write, `udevadm control --reload-rules` and `udevadm trigger` are now bundled into one elevated shell script.
 
+## [1.0.50] - 17 April 2026
+
+### Added
+
+- **73 new Sonar presets** imported from SteelSeries Sonar v1.91 — game titles, Music and Movie categories (all names sanitized, no special characters).
+
+## [1.0.49] - 17 April 2026
+
+### Added
+
+- **2 new Sonar presets**: Podcast [Game], Podcast [Chat] — imported from SteelSeries Sonar v1.91.
+
+## [1.0.48] - 17 April 2026
+
+### Added
+
+- **Anonymous telemetry** (opt-in): on first launch, ASM asks whether you want to share your Linux distribution, headset model and ASM version once per day. No personal data or IP address is stored. Can be toggled at any time in Settings.
+- **Community stats dashboard**: aggregated usage data is publicly visible at [loteran.github.io/Arctis-Sound-Manager/stats](https://loteran.github.io/Arctis-Sound-Manager/stats).
+- **Auto-updated README**: the Supported Devices and Tested Distributions tables in the README are now updated automatically every week from telemetry data. Devices with 5+ user reports are promoted from ⚠️ to ✅ automatically.
+
 ## [1.0.42] - 16 April 2026
 
 ### Added

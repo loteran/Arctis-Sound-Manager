@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
 from arctis_sound_manager.gui.base_app import QBaseDesktopApp
 from arctis_sound_manager.gui.components import (
     EQUALIZER_ICON,
+    GAMEDAC_ICON,
+    HDMI_ICON,
     HEADPHONE_ICON,
     HELP_ICON,
     HOME_ICON,
@@ -26,6 +28,7 @@ from arctis_sound_manager.gui.components import (
     SidebarButton,
 )
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
+from arctis_sound_manager.gui.dac_page import DacPage
 from arctis_sound_manager.gui.device_page import DevicePage
 from arctis_sound_manager.gui.headset_page import HeadsetPage
 from arctis_sound_manager.gui.help_page import HelpPage
@@ -67,6 +70,7 @@ class QMainApp(QBaseDesktopApp):
         self.dbus_wrapper = DbusWrapper()
         self.dbus_wrapper.sig_settings.connect(self.on_settings_received)
         self.dbus_wrapper.sig_status.connect(self.on_status_received)
+        DbusWrapper.show_splash()
 
         # Build window
         self.main_window = self._build_window()
@@ -77,7 +81,11 @@ class QMainApp(QBaseDesktopApp):
         self.dbus_wrapper.sig_status.connect(self._device_page.update_status)
         self.dbus_wrapper.sig_settings.connect(self._home_page.update_settings)
         self.dbus_wrapper.sig_settings.connect(self._headset_page.update_settings)
+        self.dbus_wrapper.sig_settings.connect(self._dac_page.update_settings)
         self.dbus_wrapper.sig_settings.connect(self._device_page.update_settings)
+
+        # DAC tab hidden by default until device confirms it has a DAC
+        self._sidebar_buttons[3].setVisible(False)
 
         # Start on home page
         self._switch_page(0)
@@ -101,7 +109,7 @@ class QMainApp(QBaseDesktopApp):
     def _on_visibility_changed(self, visible: bool):
         if visible:
             self.logger.debug("App is visible — starting D-Bus polling")
-            self.dbus_wrapper.request_settings(one_time=True)
+            self.dbus_wrapper.request_settings()
             self.dbus_wrapper.request_status()
         else:
             self.logger.debug("App is hidden — stopping D-Bus polling")
@@ -138,11 +146,12 @@ class QMainApp(QBaseDesktopApp):
         sidebar_layout.setContentsMargins(15, 16, 15, 16)
         sidebar_layout.setSpacing(8)
 
-        # Top navigation buttons: Home, Equalizer, Headset, Settings
+        # Top navigation buttons: Home, Equalizer, Headset, DAC, Settings
         top_pages_def = [
-            (HOME_ICON,      "Home",      ACCENT),
+            (HOME_ICON,      "Channels",  ACCENT),
             (EQUALIZER_ICON, "Equalizer", ACCENT),
-            (HEADPHONE_ICON, "Headset/DAC<br><span style='font-size:8pt'>Infos</span>", ACCENT),
+            (HEADPHONE_ICON, "Headset",   ACCENT),
+            (GAMEDAC_ICON,   "DAC",       ACCENT),
             (SETTINGS_ICON,  "Settings",  ACCENT),
         ]
 
@@ -215,14 +224,16 @@ class QMainApp(QBaseDesktopApp):
         self._home_page      = HomePage()
         self._equalizer_page = EqualizerPage()
         self._headset_page   = HeadsetPage()
+        self._dac_page       = DacPage()
         self._device_page    = DevicePage()
         self._help_page      = HelpPage()
 
         self._stack.addWidget(self._home_page)      # index 0 → Home
         self._stack.addWidget(self._equalizer_page) # index 1 → Equalizer
         self._stack.addWidget(self._headset_page)   # index 2 → Headset
-        self._stack.addWidget(self._device_page)    # index 3 → Settings
-        self._stack.addWidget(self._help_page)      # index 4 → Help
+        self._stack.addWidget(self._dac_page)       # index 3 → DAC
+        self._stack.addWidget(self._device_page)    # index 4 → Settings
+        self._stack.addWidget(self._help_page)      # index 5 → Help
 
         content_layout.addWidget(self._stack)
         root_layout.addWidget(content_wrapper, stretch=1)
@@ -252,6 +263,10 @@ class QMainApp(QBaseDesktopApp):
         if settings == self.settings:
             return
         self.settings = settings
+        has_dac = settings.get('has_dac', False)
+        self._sidebar_buttons[3].setVisible(has_dac)
+        if not has_dac and self._stack.currentIndex() == 3:
+            self._switch_page(0)
 
     def on_status_received(self, status: dict):
         if status == self.status:

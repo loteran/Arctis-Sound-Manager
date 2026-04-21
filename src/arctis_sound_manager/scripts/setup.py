@@ -16,7 +16,7 @@ _PW_CONF_DIR = Path.home() / ".config" / "pipewire" / "pipewire.conf.d"
 _FC_CONF_DIR = Path.home() / ".config" / "pipewire" / "filter-chain.conf.d"
 _DEVICE_DIR = Path.home() / ".config" / "arctis_manager" / "devices"
 _HRIR_DIR = Path.home() / ".local" / "share" / "pipewire" / "hrir_hesuvi"
-_HRIR_URL = "https://github.com/nicehash/HeSuVi/raw/master/hrir/44/KEMAR%20Gardner%201995/kemar.wav"
+_HRIR_URL = "https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/hrir/EAC_Default.wav"
 
 # Minimal filter-chain.service for distros that don't ship one (Fedora, Ubuntu…)
 _FILTER_CHAIN_SERVICE = """\
@@ -114,22 +114,27 @@ def main() -> None:
         print("  [info] No device configs found in /usr/share — using install.sh layout")
 
     # ── HRIR file ──
+    def _hrir_valid(path: Path) -> bool:
+        try:
+            return path.exists() and path.read_bytes()[:4] == b"RIFF"
+        except OSError:
+            return False
+
     hrir_file = _HRIR_DIR / "hrir.wav"
-    if hrir_file.exists() and hrir_file.stat().st_size > 0:
+    if _hrir_valid(hrir_file):
         print("  [ok] HRIR file already present — skipping download")
     else:
-        if hrir_file.exists():
-            hrir_file.unlink()  # remove zero-size file from failed previous download
+        hrir_file.unlink(missing_ok=True)
         _HRIR_DIR.mkdir(parents=True, exist_ok=True)
-        print("  Downloading default HRIR file (KEMAR Gardner 1995)...")
+        print("  Downloading default HRIR file (EAC_Default)...")
         downloaded = False
         for tool, cmd in [
-            ("curl", ["curl", "-L", "-o", str(hrir_file), _HRIR_URL]),
-            ("wget", ["wget", "-O", str(hrir_file), _HRIR_URL]),
+            ("curl", ["curl", "-fsSL", "-o", str(hrir_file), _HRIR_URL]),
+            ("wget", ["wget", "-q", "-O", str(hrir_file), _HRIR_URL]),
         ]:
             try:
                 subprocess.run(cmd, check=True, timeout=60)
-                if hrir_file.exists() and hrir_file.stat().st_size > 0:
+                if _hrir_valid(hrir_file):
                     print(f"  [ok] HRIR downloaded → {hrir_file}")
                     downloaded = True
                     break
