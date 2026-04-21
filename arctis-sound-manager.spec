@@ -1,5 +1,5 @@
 Name:           arctis-sound-manager
-Version:        1.0.60
+Version:        1.0.61
 Release:        1%{?dist}
 Summary:        Linux GUI for SteelSeries Arctis headsets
 
@@ -194,6 +194,9 @@ fi
 /etc/xdg/autostart/asm-first-run.desktop
 
 %changelog
+* Mon Apr 21 2026 loteran <https://github.com/loteran> - 1.0.61-1
+- Fix: raise priority.session to 2000 on all ASM virtual sinks so ASM always wins over EasyEffects in WirePlumber routing
+
 * Mon Apr 21 2026 loteran <https://github.com/loteran> - 1.0.60-1
 - Refactor: udev rules generated at build time from device YAMLs — no more hardcoded rules that drift out of sync
 - Add: asm-cli udev dump-rules subcommand (stdout output for packaging)

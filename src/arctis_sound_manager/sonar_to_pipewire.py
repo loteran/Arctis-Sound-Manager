@@ -290,7 +290,7 @@ context.modules = [
       capture.props = {{
         node.name         = "{sink_name}"
         media.class       = {media_class}
-        priority.session  = 1000
+        priority.session  = 2000
         audio.channels = 8
         audio.position = [ {position} ]
       }}
@@ -386,7 +386,7 @@ context.modules = [
       capture.props = {{
         node.name         = "{sink_name}"
         media.class       = Audio/Sink/Internal
-        priority.session  = 1000
+        priority.session  = 2000
         audio.channels = 2
         audio.position = [ {position} ]
       }}
@@ -641,7 +641,7 @@ context.modules = [
       capture.props = {{
         node.name         = "{sink_name}"
         media.class       = Audio/Sink/Internal
-        priority.session  = 1000
+        priority.session  = 2000
         audio.channels = 8
         audio.position = [ {position} ]
       }}
@@ -674,7 +674,7 @@ context.modules = [
       capture.props = {{
         node.name         = "{sink_name}"
         media.class       = Audio/Sink/Internal
-        priority.session  = 1000
+        priority.session  = 2000
         audio.channels = 2
         audio.position = [ {position} ]
       }}
