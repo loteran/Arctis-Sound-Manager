@@ -39,25 +39,27 @@ export default {
         return new Response("Bad JSON", { status: 400 });
       }
 
-      const distro  = String(body.distro  || "Unknown").slice(0, 120);
-      const headset = String(body.headset || "Unknown").slice(0, 120);
-      const version = String(body.version || "Unknown").slice(0, 30);
-      const now     = Date.now();
+      const distro     = String(body.distro     || "Unknown").slice(0, 120);
+      const headset    = String(body.headset    || "Unknown").slice(0, 120);
+      const product_id = String(body.product_id || "Unknown").slice(0, 30);
+      const version    = String(body.version    || "Unknown").slice(0, 30);
+      const now        = Date.now();
 
       await Promise.all([
         // Historical log — always append
         env.DB.prepare(
-          "INSERT INTO stats (distro, headset, version, ts) VALUES (?, ?, ?, ?)"
-        ).bind(distro, headset, version, now).run(),
+          "INSERT INTO stats (distro, headset, product_id, version, ts) VALUES (?, ?, ?, ?, ?)"
+        ).bind(distro, headset, product_id, version, now).run(),
 
         // Unique users — upsert: create on first contact, update version + last_seen on return
         env.DB.prepare(`
-          INSERT INTO users (distro, headset, version, first_seen, last_seen)
-          VALUES (?, ?, ?, ?, ?)
+          INSERT INTO users (distro, headset, product_id, version, first_seen, last_seen)
+          VALUES (?, ?, ?, ?, ?, ?)
           ON CONFLICT(distro, headset) DO UPDATE SET
-            version   = excluded.version,
-            last_seen = excluded.last_seen
-        `).bind(distro, headset, version, now, now).run(),
+            product_id = excluded.product_id,
+            version    = excluded.version,
+            last_seen  = excluded.last_seen
+        `).bind(distro, headset, product_id, version, now, now).run(),
       ]);
 
       return new Response("ok", { headers: CORS });
@@ -70,7 +72,7 @@ export default {
           "SELECT distro AS label, COUNT(*) AS nb FROM stats GROUP BY distro ORDER BY nb DESC LIMIT 30"
         ).all(),
         env.DB.prepare(
-          "SELECT headset AS label, COUNT(*) AS nb FROM stats GROUP BY headset ORDER BY nb DESC LIMIT 30"
+          "SELECT headset AS label, product_id, COUNT(*) AS nb FROM stats GROUP BY headset, product_id ORDER BY nb DESC LIMIT 30"
         ).all(),
         env.DB.prepare(
           "SELECT version AS label, COUNT(*) AS nb FROM stats GROUP BY version ORDER BY nb DESC LIMIT 20"
