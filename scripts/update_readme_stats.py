@@ -36,7 +36,7 @@ def fetch_stats() -> dict:
 
 
 def _headset_users(stats: dict) -> dict[str, int]:
-    """Return {headset_name: unique_user_count} from the /stats response."""
+    """Return {headset_name: total_report_count} from the /stats response."""
     counts: dict[str, int] = {}
     for row in stats.get("headsets", []):
         name = row.get("label", "")
@@ -45,7 +45,26 @@ def _headset_users(stats: dict) -> dict[str, int]:
     return counts
 
 
-def _update_devices_block(block: str, headset_counts: dict[str, int]) -> str:
+def _seen_pids(stats: dict) -> set[str]:
+    """Return set of normalized PIDs (no 0x prefix, lowercase) seen in telemetry."""
+    pids: set[str] = set()
+    for row in stats.get("headsets", []):
+        pid = str(row.get("product_id") or "").lower().lstrip("0x").strip()
+        if pid and pid != "unknown":
+            pids.add(pid)
+    return pids
+
+
+def _format_pids(pids_str: str, seen: set[str]) -> str:
+    """Bold PIDs confirmed by telemetry, plain for untested ones."""
+    parts = []
+    for p in pids_str.split(", "):
+        p = p.strip()
+        parts.append(f"**{p}**" if p.lower() in seen else p)
+    return ", ".join(parts)
+
+
+def _update_devices_block(block: str, headset_counts: dict[str, int], seen: set[str]) -> str:
     lines = block.strip().splitlines()
     if len(lines) < 2:
         return block
@@ -63,17 +82,19 @@ def _update_devices_block(block: str, headset_counts: dict[str, int]) -> str:
 
         device_name, mixer, advanced, _users, pids = cells[:5]
 
+        # Strip existing bold from PIDs before reformatting
+        pids_clean = pids.replace("**", "")
+
         # Sum counts for all telemetry headsets that match this row
         user_count = 0
         for telemetry_name, count in headset_counts.items():
-            # Match: telemetry name is contained in the README row name (case-insensitive)
-            # or the README row name contains the telemetry name
             dn_lower = device_name.strip("* ").lower()
             tn_lower = telemetry_name.lower()
             if tn_lower in dn_lower or dn_lower in tn_lower:
                 user_count += count
 
-        user_cell = str(user_count) if user_count else ""
+        user_cell    = str(user_count) if user_count else ""
+        formatted_pids = _format_pids(pids_clean, seen)
 
         # Auto-promote ⚠️ → ✅ at threshold
         if user_count >= PROMOTE_THRESHOLD:
@@ -81,7 +102,7 @@ def _update_devices_block(block: str, headset_counts: dict[str, int]) -> str:
             advanced = advanced.replace("⚠️", "✅")
 
         new_rows.append(
-            f"| {device_name} | {mixer} | {advanced} | {user_cell} | {pids} |"
+            f"| {device_name} | {mixer} | {advanced} | {user_cell} | {formatted_pids} |"
         )
 
     return "\n".join([header, sep] + new_rows)
@@ -120,6 +141,7 @@ def main():
     print(f"  total={stats.get('total')}, unique_users={stats.get('unique_users')}")
 
     headset_counts = _headset_users(stats)
+    seen           = _seen_pids(stats)
 
     readme = README.read_text()
 
@@ -132,7 +154,7 @@ def main():
         print("ERROR: devices block not found in README", file=sys.stderr)
         sys.exit(1)
 
-    updated_devices = _update_devices_block(m.group(1), headset_counts)
+    updated_devices = _update_devices_block(m.group(1), headset_counts, seen)
     updated_distros = _update_distros_block(stats)
 
     new_readme = _replace_block(readme, DEVICES_START, DEVICES_END, updated_devices)

@@ -116,8 +116,27 @@ jobs:
                ["Arctis Nova 7P (Gen 1)", "Arctis Nova 7P (Gen 2)"]),
           ]
 
-          # Build lookup: label → count
-          headset_counts = {row["label"]: row["nb"] for row in headsets}
+          # Build lookups from telemetry data
+          # headset_counts: {headset_name: total_reports}
+          headset_counts: dict[str, int] = {}
+          for row in headsets:
+              name = row["label"]
+              headset_counts[name] = headset_counts.get(name, 0) + int(row.get("nb", 0))
+
+          # seen_pids: set of normalized PIDs seen in telemetry (strip "0x" prefix, lowercase)
+          seen_pids: set[str] = set()
+          for row in headsets:
+              pid = str(row.get("product_id") or "").lower().lstrip("0x").strip()
+              if pid and pid != "unknown":
+                  seen_pids.add(pid)
+
+          def format_pids(pids_str: str) -> str:
+              """Bold PIDs seen in telemetry, plain for untested ones."""
+              parts = []
+              for p in pids_str.split(", "):
+                  p = p.strip()
+                  parts.append(f"**{p}**" if p.lower() in seen_pids else p)
+              return ", ".join(parts)
 
           devices_md = (
               "| Device | Mixer | Advanced features | Users | Product ID(s) |\n"
@@ -133,7 +152,7 @@ jobs:
                   advanced = "✅"
                   display  = f"**{display}**"
 
-              devices_md += f"| {display} | {mixer} | {advanced} | {users_cell} | {pids} |\n"
+              devices_md += f"| {display} | {mixer} | {advanced} | {users_cell} | {format_pids(pids)} |\n"
 
           # ── Inject into README ───────────────────────────────────────────────
           readme = open("README.md", encoding="utf-8").read()
