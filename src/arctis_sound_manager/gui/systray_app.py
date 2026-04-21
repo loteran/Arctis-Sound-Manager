@@ -133,6 +133,17 @@ class QSystrayApp(QBaseDesktopApp):
             capture_output=True,
         )
 
+        # Save the current default sink, then claim it for ASM so apps that
+        # open after ASM starts route to Arctis_Game instead of EasyEffects
+        # or whatever was default before. Restored in sig_stop().
+        result = subprocess.run(
+            ["pactl", "get-default-sink"], capture_output=True, text=True
+        )
+        self._previous_default_sink = result.stdout.strip()
+        subprocess.run(
+            ["pactl", "set-default-sink", "Arctis_Game"], capture_output=True
+        )
+
         self.dbus_bus = await MessageBus().connect()
 
         # Pre-fetch status immediately so the tray menu shows headset info
@@ -225,6 +236,14 @@ class QSystrayApp(QBaseDesktopApp):
 
         self._stopping = True
         self.logger.debug('Received shutdown signal, shutting down.')
+
+        # Restore whichever default sink was active before ASM started,
+        # so EasyEffects (or hardware) takes over immediately after exit.
+        prev = getattr(self, '_previous_default_sink', '')
+        if prev and not prev.startswith(('Arctis_', 'effect_input.')):
+            subprocess.run(
+                ["pactl", "set-default-sink", prev], capture_output=True, timeout=2
+            )
 
         # Stop all ASM services and schedule a pipewire restart
         # so the system behaves as if ASM was not installed.
