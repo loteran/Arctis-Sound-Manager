@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.60] - 21 April 2026
+
+### Changed
+
+- **udev rules (RPM/DEB)**: rules are now generated at build time from device YAMLs via `scripts/generate_udev_rules.py` — no more hardcoded rules that drift out of sync with the device definitions. `debian/91-steelseries-arctis.rules` removed.
+- **`asm-cli udev dump-rules`**: new subcommand that prints the generated udev rules to stdout (used by packaging scripts).
+- **`generate_udev_rules_content()`**: extracted as a public function in `cli.py` for reuse by both `write-rules` and `dump-rules`.
+
 ## [1.0.59] - 21 April 2026
 
 ### Fixed

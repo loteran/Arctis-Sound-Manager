@@ -37,9 +37,11 @@ override_dh_auto_install:
 	printf '#!/usr/bin/python3\nimport sys\nfrom arctis_sound_manager.scripts.setup import main\nsys.exit(main())\n'          > $(DEST)/usr/bin/asm-setup
 	chmod 755 $(DEST)/usr/bin/asm-*
 
-	# ── udev rules ──────────────────────────────────────────
-	install -Dm644 debian/91-steelseries-arctis.rules \
-	    $(DEST)/usr/lib/udev/rules.d/91-steelseries-arctis.rules
+	# ── udev rules — generated from device YAMLs (single source of truth) ──
+	install -d $(DEST)/usr/lib/udev/rules.d
+	python3 scripts/generate_udev_rules.py src/arctis_sound_manager/devices/ \
+	    > $(DEST)/usr/lib/udev/rules.d/91-steelseries-arctis.rules
+	chmod 644 $(DEST)/usr/lib/udev/rules.d/91-steelseries-arctis.rules
 
 	# ── Systemd user services ──────────────────────────────
 	install -Dm644 debian/arctis-manager.service \

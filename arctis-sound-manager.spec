@@ -1,5 +1,5 @@
 Name:           arctis-sound-manager
-Version:        1.0.59
+Version:        1.0.60
 Release:        1%{?dist}
 Summary:        Linux GUI for SteelSeries Arctis headsets
 
@@ -17,6 +17,7 @@ Source2:        dbus_next-0.2.3-py3-none-any.whl
 BuildArch:      noarch
 BuildRequires:  python3-devel
 BuildRequires:  python3-installer
+BuildRequires:  python3-ruamel-yaml
 BuildRequires:  systemd-rpm-macros
 BuildRequires:  desktop-file-utils
 BuildRequires:  libappstream-glib
@@ -53,75 +54,10 @@ python3 -m installer --destdir=%{buildroot} %{SOURCE1}
 # Bundle dbus-next (not in Fedora repos — pre-downloaded in Source2)
 python3 -m installer --destdir=%{buildroot} %{SOURCE2}
 
-# udev rules
-install -Dm644 /dev/stdin %{buildroot}%{_udevrulesdir}/91-steelseries-arctis.rules <<'RULES'
-ACTION=="remove", GOTO="local_end"
-
-# SteelSeries Arctis 1/7X/7P Wireless
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="12b3", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="12b6", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="12d7", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="12d5", MODE="0666", TAG+="uaccess"
-
-# SteelSeries Arctis 7/Pro Gaming
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1260", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="12ad", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1252", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1280", MODE="0666", TAG+="uaccess"
-
-# SteelSeries Arctis 7+
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="220e", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="2212", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="2216", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="2236", MODE="0666", TAG+="uaccess"
-
-# SteelSeries Arctis 9 Wireless
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="12c2", MODE="0666", TAG+="uaccess"
-
-# SteelSeries Arctis Nova Pro Wired
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="12cb", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="12cd", MODE="0666", TAG+="uaccess"
-
-# SteelSeries Arctis Pro Wireless
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1290", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1294", MODE="0666", TAG+="uaccess"
-
-# SteelSeries Arctis Nova 3
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="12ec", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="2269", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="226d", MODE="0666", TAG+="uaccess"
-
-# SteelSeries Arctis Nova 5 Wireless
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="2232", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="2253", MODE="0666", TAG+="uaccess"
-
-# SteelSeries Arctis Nova 7 (Gen 1)
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="2202", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="2206", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="223a", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="227a", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="22a4", MODE="0666", TAG+="uaccess"
-
-# SteelSeries Arctis Nova 7P (Gen 1)
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="220a", MODE="0666", TAG+="uaccess"
-
-# SteelSeries Arctis Nova 7 (Gen 2)
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="22a1", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="227e", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="2258", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="229e", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="22a9", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="22a5", MODE="0666", TAG+="uaccess"
-
-# SteelSeries Arctis Nova 7P (Gen 2)
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="22a7", MODE="0666", TAG+="uaccess"
-
-# SteelSeries Arctis Nova Pro Wireless
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="12e0", MODE="0666", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="12e5", MODE="0666", TAG+="uaccess"
-
-LABEL="local_end"
-RULES
+# udev rules — generated from device YAMLs at build time (single source of truth)
+install -Dm644 /dev/null %{buildroot}%{_udevrulesdir}/91-steelseries-arctis.rules
+python3 scripts/generate_udev_rules.py src/arctis_sound_manager/devices/ \
+    > %{buildroot}%{_udevrulesdir}/91-steelseries-arctis.rules
 
 # Systemd user services
 install -Dm644 /dev/stdin %{buildroot}%{_userunitdir}/arctis-manager.service <<'SERVICE'
@@ -258,6 +194,11 @@ fi
 /etc/xdg/autostart/asm-first-run.desktop
 
 %changelog
+* Mon Apr 21 2026 loteran <https://github.com/loteran> - 1.0.60-1
+- Refactor: udev rules generated at build time from device YAMLs — no more hardcoded rules that drift out of sync
+- Add: asm-cli udev dump-rules subcommand (stdout output for packaging)
+- Add: python3-ruamel-yaml to BuildRequires
+
 * Mon Apr 21 2026 loteran <https://github.com/loteran> - 1.0.59-1
 - Fix: udev rules missing PID 1294 for Arctis Pro Wireless — caused Errno 13 Access denied on Fedora/Nobara
 - Fix: remove ENV{DEVTYPE}=="usb_device" from all udev rules — fails silently on some kernels
