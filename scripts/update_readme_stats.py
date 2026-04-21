@@ -26,7 +26,7 @@ DEVICES_END   = "<!-- STATS:DEVICES:END -->"
 DISTROS_START = "<!-- STATS:TESTED_DISTROS:START -->"
 DISTROS_END   = "<!-- STATS:TESTED_DISTROS:END -->"
 
-PROMOTE_THRESHOLD = 5  # ⚠️ becomes ✅ above this many unique users
+PROMOTE_THRESHOLD = 1  # 1 report = validated, promote ⚠️ → ✅
 
 
 def fetch_stats() -> dict:

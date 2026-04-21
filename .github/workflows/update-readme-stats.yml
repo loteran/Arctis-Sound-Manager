@@ -2,8 +2,8 @@ name: Update README stats
 
 on:
   schedule:
-    # Every Sunday at 02:00 UTC
-    - cron: "0 2 * * 0"
+    # Every day at 02:00 UTC
+    - cron: "0 2 * * *"
   workflow_dispatch:  # Manual trigger
 
 permissions:
@@ -87,7 +87,7 @@ jobs:
           # Each entry: (display_name, mixer, advanced, product_ids, telemetry_keys)
           # telemetry_keys: list of names the telemetry may send for this device
           #
-          PROMOTE_THRESHOLD = 5  # reports needed to auto-promote ⚠️ → ✅
+          PROMOTE_THRESHOLD = 1  # 1 report = validated, promote ⚠️ → ✅
 
           DEVICES = [
               ("Arctis 1 / 7X / 7P Wireless",               "⚠️", "⚠️", "12b3, 12b6, 12d5, 12d7",
