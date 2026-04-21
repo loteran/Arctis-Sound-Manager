@@ -1,3 +1,5 @@
+If you want to buy me a coffee ;) --> https://ko-fi.com/loteran
+
 # Arctis Sound Manager
 
 A Linux GUI for SteelSeries Arctis headsets — manages device settings and provides a 4-channel audio mixer (Game / Chat / Media / HDMI) with automatic media routing, and a full **Sonar EQ** system powered by PipeWire filter-chain.
@@ -479,4 +481,3 @@ scripts/
 │   └── sink-virtual-surround-7.1-hesuvi.conf  # HeSuVi 7.1 virtual surround filter-chain
 └── arctis-video-router.service             # Systemd service for asm-router
 ```
-If you want to buy me a coffee ;) --> https://ko-fi.com/loteran
