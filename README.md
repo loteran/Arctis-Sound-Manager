@@ -496,3 +496,13 @@ scripts/
 └── arctis-video-router.service             # Systemd service for asm-router
 ```
 If you want to buy me a coffee ;) --> https://ko-fi.com/loteran
+
+---
+
+## 💬 Share your experience
+
+Tried ASM on your headset or distro? Found a bug, have a feature idea, or just want to share how it's working for you?
+
+**Join the discussion → [GitHub Discussions](https://github.com/loteran/Arctis-Sound-Manager/discussions)**
+
+Your feedback helps improve compatibility for everyone — especially for headsets marked ⚠️ that are waiting for community reports.
