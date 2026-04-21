@@ -776,10 +776,9 @@ class HomePage(QWidget):
         self._update_link_btn.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl(url))
         )
-        if wheel_url:
-            self._wheel_url = wheel_url
-            self._update_install_btn.show()
-            self._update_install_btn.clicked.connect(self._do_install_update)
+        self._wheel_url = wheel_url
+        self._update_install_btn.show()
+        self._update_install_btn.clicked.connect(self._do_install_update)
         self._update_banner.show()
 
     def _do_install_update(self):

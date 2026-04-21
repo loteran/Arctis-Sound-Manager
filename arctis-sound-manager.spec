@@ -1,5 +1,5 @@
 Name:           arctis-sound-manager
-Version:        1.0.63
+Version:        1.0.64
 Release:        1%{?dist}
 Summary:        Linux GUI for SteelSeries Arctis headsets
 
@@ -194,6 +194,9 @@ fi
 /etc/xdg/autostart/asm-first-run.desktop
 
 %changelog
+* Tue Apr 22 2026 loteran <https://github.com/loteran> - 1.0.64-1
+- Fix: install update button now always shown in home banner (not only for pipx installs)
+
 * Tue Apr 22 2026 loteran <https://github.com/loteran> - 1.0.63-1
 - Add: product_id to telemetry payload — enables per-variant hardware tracking
 - Add: scripts/update_readme_stats.py — auto-updates README devices/distros tables from telemetry
