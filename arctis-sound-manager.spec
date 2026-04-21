@@ -1,5 +1,5 @@
 Name:           arctis-sound-manager
-Version:        1.0.62
+Version:        1.0.63
 Release:        1%{?dist}
 Summary:        Linux GUI for SteelSeries Arctis headsets
 
@@ -194,6 +194,11 @@ fi
 /etc/xdg/autostart/asm-first-run.desktop
 
 %changelog
+* Tue Apr 22 2026 loteran <https://github.com/loteran> - 1.0.63-1
+- Add: product_id to telemetry payload — enables per-variant hardware tracking
+- Add: scripts/update_readme_stats.py — auto-updates README devices/distros tables from telemetry
+- Add: cloudflare/migrate_v2.sql — D1 migration for product_id column
+
 * Mon Apr 21 2026 loteran <https://github.com/loteran> - 1.0.62-1
 - Fix: ASM claims default sink on start (pactl) and restores previous default on exit — EasyEffects coexists cleanly
 - Revert: priority.session back to neutral (1000/unset) — explicit metadata selection is the correct mechanism

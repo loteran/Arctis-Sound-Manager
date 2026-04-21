@@ -96,14 +96,15 @@ def _get_distro() -> str:
 
 # ── Send logic ─────────────────────────────────────────────────────────────────
 
-def _do_send(headset: str) -> None:
+def _do_send(headset: str, product_id: str) -> None:
     """Blocking send — must be called in a background thread."""
     from arctis_sound_manager.utils import project_version
 
     payload = json.dumps({
-        "distro":  _get_distro(),
-        "headset": headset or "Unknown",
-        "version": project_version(),
+        "distro":      _get_distro(),
+        "headset":     headset or "Unknown",
+        "product_id":  product_id or "Unknown",
+        "version":     project_version(),
     }).encode()
 
     req = urllib.request.Request(
@@ -122,10 +123,10 @@ def _do_send(headset: str) -> None:
     data = _load()
     data["last_sent"] = date.today().isoformat()
     _save(data)
-    log.debug("telemetry: sent (headset=%s)", headset)
+    log.debug("telemetry: sent (headset=%s, product_id=%s)", headset, product_id)
 
 
-def maybe_send(headset: str) -> None:
+def maybe_send(headset: str, product_id: str = "") -> None:
     """
     Fire-and-forget telemetry send.
 
@@ -149,7 +150,7 @@ def maybe_send(headset: str) -> None:
 
     def _worker():
         try:
-            _do_send(headset)
+            _do_send(headset, product_id)
         except Exception as exc:
             log.debug("telemetry: send failed (non-blocking): %s", exc)
 

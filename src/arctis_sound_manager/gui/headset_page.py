@@ -142,7 +142,7 @@ class HeadsetPage(QWidget):
         if device_name:
             self._device_name_label.setText(device_name)
             from arctis_sound_manager.telemetry import maybe_send
-            maybe_send(device_name)
+            maybe_send(device_name, str(product_id))
         if vendor_id:
             self._vendor_label.setText(f"Vendor ID:   {vendor_id}")
         if product_id:
