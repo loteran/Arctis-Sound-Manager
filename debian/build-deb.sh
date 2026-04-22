@@ -72,7 +72,8 @@ done
 
 # ── udev rules ──────────────────────────────────────────────
 echo "==> Installing system files..."
-install -Dm644 debian/91-steelseries-arctis.rules \
+uv run --with ruamel.yaml python3 scripts/generate_udev_rules.py > build/deb/91-steelseries-arctis.rules
+install -Dm644 build/deb/91-steelseries-arctis.rules \
     "${PKGDIR}/usr/lib/udev/rules.d/91-steelseries-arctis.rules"
 
 # ── Systemd user services ──────────────────────────────────
