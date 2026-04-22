@@ -2,6 +2,10 @@ If you want to buy me a coffee ;) --> https://ko-fi.com/loteran
 
 # Arctis Sound Manager
 
+> 💬 **Tried ASM? [Share your experience in GitHub Discussions](https://github.com/loteran/Arctis-Sound-Manager/discussions)** — feedback helps improve compatibility for everyone!
+
+> ☕ [Buy me a coffee](https://ko-fi.com/loteran) if you find it useful!
+
 A Linux GUI for SteelSeries Arctis headsets — manages device settings and provides a 4-channel audio mixer (Game / Chat / Media / HDMI) with automatic media routing, and a full **Sonar EQ** system powered by PipeWire filter-chain.
 
 > Based on [Arctis Sound Manager](https://github.com/elegos/Linux-Arctis-Manager) by elegos.
@@ -497,3 +501,14 @@ scripts/
 │   └── sink-virtual-surround-7.1-hesuvi.conf  # HeSuVi 7.1 virtual surround filter-chain
 └── arctis-video-router.service             # Systemd service for asm-router
 ```
+If you want to buy me a coffee ;) --> https://ko-fi.com/loteran
+
+---
+
+## 💬 Share your experience
+
+Tried ASM on your headset or distro? Found a bug, have a feature idea, or just want to share how it's working for you?
+
+**Join the discussion → [GitHub Discussions](https://github.com/loteran/Arctis-Sound-Manager/discussions)**
+
+Your feedback helps improve compatibility for everyone — especially for headsets marked ⚠️ that are waiting for community reports.
