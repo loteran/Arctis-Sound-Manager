@@ -55,13 +55,19 @@ def _seen_pids(stats: dict) -> set[str]:
     return pids
 
 
-def _format_pids(pids_str: str, seen: set[str]) -> str:
-    """Bold PIDs confirmed by telemetry, plain for untested ones."""
+def _format_pids(pids_str: str, seen: set[str], force_confirm: bool = False) -> str:
+    """Bold+blue PIDs confirmed by telemetry (or when device has users but PIDs are unknown)."""
     parts = []
     for p in pids_str.split(", "):
         p = p.strip()
-        parts.append(f"**{p}**" if p.lower() in seen else p)
+        if p.lower() in seen or force_confirm:
+            parts.append(f"$\\color{{royalblue}}{{\\textbf{{{p}}}}}$")
+        else:
+            parts.append(p)
     return ", ".join(parts)
+
+
+_PID_STRIP_RE = re.compile(r'\$\\color\{[^}]+\}\{\\textbf\{([^}]+)\}\}\$')
 
 
 def _update_devices_block(block: str, headset_counts: dict[str, int], seen: set[str]) -> str:
@@ -82,8 +88,8 @@ def _update_devices_block(block: str, headset_counts: dict[str, int], seen: set[
 
         device_name, mixer, advanced, _users, pids = cells[:5]
 
-        # Strip existing bold from PIDs before reformatting
-        pids_clean = pids.replace("**", "")
+        # Strip existing bold/color formatting from PIDs before reformatting
+        pids_clean = _PID_STRIP_RE.sub(r'\1', pids).replace("**", "")
 
         # Sum counts for all telemetry headsets that match this row
         user_count = 0
@@ -93,8 +99,13 @@ def _update_devices_block(block: str, headset_counts: dict[str, int], seen: set[
             if tn_lower in dn_lower or dn_lower in tn_lower:
                 user_count += count
 
+        # If this device has users but all reported product_ids were "Unknown",
+        # none of its PIDs will be in `seen` — confirm all PIDs anyway.
+        device_pids = {p.strip().lower() for p in pids_clean.split(",")}
+        force_confirm = user_count > 0 and not device_pids.intersection(seen)
+
         user_cell    = str(user_count) if user_count else ""
-        formatted_pids = _format_pids(pids_clean, seen)
+        formatted_pids = _format_pids(pids_clean, seen, force_confirm=force_confirm)
 
         # Auto-promote ⚠️ → ✅ at threshold
         if user_count >= PROMOTE_THRESHOLD:
@@ -125,7 +136,7 @@ def _replace_block(text: str, start_marker: str, end_marker: str, new_content: s
         re.DOTALL,
     )
     replacement = f"{start_marker}\n{new_content}\n{end_marker}"
-    result, n = pattern.subn(replacement, text)
+    result, n = pattern.subn(lambda _: replacement, text)
     if n == 0:
         print(f"WARNING: marker not found: {start_marker}", file=sys.stderr)
     return result
