@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.65] - 22 April 2026
+
+### Fixed
+
+- **DEB build**: fixed CI release workflow failure — `debian/91-steelseries-arctis.rules` was removed from the repo but `build-deb.sh` still referenced it as a static file. The script now generates udev rules at build time via `uv run python3 scripts/generate_udev_rules.py`.
+
 ## [1.0.60] - 21 April 2026
 
 ### Changed
