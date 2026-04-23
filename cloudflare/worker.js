@@ -39,10 +39,10 @@ export default {
         return new Response("Bad JSON", { status: 400 });
       }
 
-      const distro     = String(body.distro     || "Unknown").slice(0, 120);
-      const headset    = String(body.headset    || "Unknown").slice(0, 120);
-      const product_id = String(body.product_id || "Unknown").slice(0, 30);
-      const version    = String(body.version    || "Unknown").slice(0, 30);
+      const distro     = String(body.distro     ?? "Unknown").slice(0, 120) || "Unknown";
+      const headset    = String(body.headset    ?? "Unknown").slice(0, 120) || "Unknown";
+      const product_id = String(body.product_id ?? "Unknown").slice(0, 30)  || "Unknown";
+      const version    = String(body.version    ?? "Unknown").slice(0, 30)  || "Unknown";
       const now        = Date.now();
 
       await Promise.all([
