@@ -207,7 +207,7 @@
       mkChart("chart-distros",
         data.distros.map(r => r.label), data.distros.map(r => r.nb));
       mkChart("chart-headsets",
-        data.headsets.map(r => r.label), data.headsets.map(r => r.nb), "doughnut");
+        data.headsets.map(r => r.label + ' (0x' + r.product_id + ')'), data.headsets.map(r => r.nb), "doughnut");
       mkChart("chart-versions",
         data.versions.map(r => r.label), data.versions.map(r => r.nb));
     })
