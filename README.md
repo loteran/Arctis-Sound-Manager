@@ -74,14 +74,15 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 | Arctis 7+ / PS5 / Xbox / Destiny | ⚠️ | ⚠️ |  | 220e, 2212, 2216, 2236 |
 | Arctis 9 Wireless | ⚠️ | ⚠️ |  | 12c2 |
 | Arctis Pro Wireless | ⚠️ | ⚠️ |  | 1290, 1294 |
-| Arctis Nova Pro Wireless / X | ✅ | ✅ | 11 | $\color{royalblue}{\textbf{12e0}}$, 12e5 |
+| Arctis Nova Pro Wireless / X | ✅ | ✅ | 👥 16 | **12e0**, 12e5 |
 | Arctis Nova Pro Wired / Xbox Wired | ✅ | ✅ |  | 12cb, 12cd |
 | Arctis Nova 3 | ⚠️ | ⚠️ |  | 12ec |
 | Arctis Nova 3P / 3X Wireless | ⚠️ | ⚠️ |  | 2269, 226d |
 | Arctis Nova 5 / 5X | ⚠️ | ⚠️ |  | 2232, 2253 |
 | Arctis Nova 7 Gen 1 | ⚠️ | ⚠️ |  | 2202, 2206, 223a, 227a, 22a4 |
 | Arctis Nova 7 Gen 2 | ⚠️ | ⚠️ |  | 22a1, 227e, 2258, 229e, 22a9, 22a5 |
-| **Arctis Nova 7P** | ✅ | ✅ | 2 | $\color{royalblue}{\textbf{220a}}$, $\color{royalblue}{\textbf{22a7}}$ |
+| **Arctis Nova 7P** | ✅ | ✅ | 👥 2 | 220a, 22a7 |
+
 <!-- STATS:DEVICES:END -->
 
 > ✅ Fully supported · ⚠️ Config available, community testing welcome · ❓ Not yet supported
@@ -90,11 +91,12 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 ## Tested Distributions
 
 <!-- STATS:TESTED_DISTROS:START -->
-| Distribution | Reports |
-|---|---|
-| CachyOS | 10 |
-| Linux Mint 22.3 | 2 |
-| Arch Linux | 1 |
+| Distribution | Install method | Users |
+|---|---|---|
+| CachyOS | 🎯 AUR | 👥 14 |
+| Linux Mint 22.3 | 🎯 PPA | 👥 3 |
+| Arch Linux | 🎯 AUR | 👥 1 |
+
 <!-- STATS:TESTED_DISTROS:END -->
 
 ---
@@ -105,7 +107,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 > [View interactive dashboard →](https://loteran.github.io/Arctis-Sound-Manager/stats)
 
 <!-- STATS:META:START -->
-_Based on **13** anonymous data points — last updated 2026-04-22_
+_Based on **18** anonymous data points — last updated 2026-04-23_
 
 <!-- STATS:META:END -->
 
@@ -114,7 +116,7 @@ _Based on **13** anonymous data points — last updated 2026-04-22_
 <!-- STATS:HEADSETS:START -->
 | Headset | Installs |
 |---|---|
-| Arctis Nova Pro Wireless | 11 |
+| Arctis Nova Pro Wireless | 16 |
 | Arctis Nova 7P (Gen 1) | 2 |
 
 <!-- STATS:HEADSETS:END -->
@@ -124,8 +126,8 @@ _Based on **13** anonymous data points — last updated 2026-04-22_
 <!-- STATS:DISTROS:START -->
 | Distribution | Installs |
 |---|---|
-| CachyOS | 10 |
-| Linux Mint 22.3 | 2 |
+| CachyOS | 14 |
+| Linux Mint 22.3 | 3 |
 | Arch Linux | 1 |
 
 <!-- STATS:DISTROS:END -->
