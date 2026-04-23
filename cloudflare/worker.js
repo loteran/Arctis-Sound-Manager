@@ -67,32 +67,29 @@ export default {
 
     // ── GET /stats (JSON API) ──────────────────────────────────────────────────
     if (request.method === "GET" && url.pathname === "/stats") {
-      const [distros, headsets, versions, totalRow, uniqueRow, uniqueVersions] = await Promise.all([
+      const [distros, headsets, versions, totalRow, uniqueRow] = await Promise.all([
         env.DB.prepare(
           "SELECT distro AS label, COUNT(*) AS nb FROM stats GROUP BY distro ORDER BY nb DESC LIMIT 30"
         ).all(),
         env.DB.prepare(
           "SELECT headset AS label, product_id, COUNT(*) AS nb FROM stats GROUP BY headset, product_id ORDER BY nb DESC LIMIT 30"
         ).all(),
-        env.DB.prepare(
-          "SELECT version AS label, COUNT(*) AS nb FROM stats GROUP BY version ORDER BY nb DESC LIMIT 20"
-        ).all(),
-        env.DB.prepare("SELECT COUNT(*) AS nb FROM stats").first(),
-        env.DB.prepare("SELECT COUNT(*) AS nb FROM users").first(),
+        // Versions counted per unique user (current version only, updates replace old)
         env.DB.prepare(
           "SELECT version AS label, COUNT(*) AS nb FROM users GROUP BY version ORDER BY nb DESC LIMIT 20"
         ).all(),
+        env.DB.prepare("SELECT COUNT(*) AS nb FROM stats").first(),
+        env.DB.prepare("SELECT COUNT(*) AS nb FROM users").first(),
       ]);
 
       return Response.json(
         {
-          total:           totalRow?.nb ?? 0,
-          unique_users:    uniqueRow?.nb ?? 0,
-          distros:         distros.results,
-          headsets:        headsets.results,
-          versions:        versions.results,
-          unique_versions: uniqueVersions.results,
-          generated_at:    new Date().toISOString(),
+          total:        totalRow?.nb ?? 0,
+          unique_users: uniqueRow?.nb ?? 0,
+          distros:      distros.results,
+          headsets:     headsets.results,
+          versions:     versions.results,
+          generated_at: new Date().toISOString(),
         },
         { headers: { ...CORS, "Cache-Control": "public, max-age=3600" } }
       );
@@ -151,19 +148,14 @@ const HTML_DASHBOARD = `<!DOCTYPE html>
   </div>
 </div>
 <br>
-<div class="grid">
-  <div>
-    <h2>ASM Versions (all submissions)</h2>
-    <table id="versions"><tr><td>Loading…</td></tr></table>
-  </div>
-  <div>
-    <h2>ASM Versions (unique users)</h2>
-    <table id="unique-versions"><tr><td>Loading…</td></tr></table>
-  </div>
+<div>
+  <h2>ASM Versions</h2>
+  <table id="versions"><tr><td>Loading…</td></tr></table>
 </div>
 <br>
 <small>Data is anonymous — no personal data or IP address is stored.
-       Updated every hour. · <a href="https://github.com/loteran/Arctis-Sound-Manager"
+       Stats show each user's current version only (updated on each launch).
+       Stats are cached for 1 hour. · <a href="https://github.com/loteran/Arctis-Sound-Manager"
        style="color:#FB4A00">GitHub</a></small>
 
 <script>
@@ -182,14 +174,13 @@ fetch('/stats')
           '<td><span class=bar style="width:' + Math.round(r.nb/max*120) + 'px"></span></td></tr>'
         ).join('');
     };
-    fill('distros',          data.distros);
-    fill('headsets',         data.headsets);
-    fill('versions',         data.versions);
-    fill('unique-versions',  data.unique_versions);
+    fill('distros',  data.distros);
+    fill('headsets', data.headsets);
+    fill('versions', data.versions);
   })
   .catch(() => {
-    document.getElementById('cnt-total').textContent = 'Could not load stats.';
+    document.getElementById('cnt-total').textContent = 'Could not load statistics. The endpoint may be unreachable.';
   });
 </script>
 </body>
-</html>\``;
+</html>`;
