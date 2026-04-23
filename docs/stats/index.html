@@ -154,8 +154,9 @@
 </div>
 
 <script>
-  // ── Replace with your actual Worker URL ──────────────────────────────────────
   const STATS_URL = "https://asm-telemetry.arctis-asm.workers.dev/stats";
+
+  Chart.defaults.color = '#8D96AA';
 
   const PALETTE = [
     "#FB4A00","#04C5A8","#2791CE","#9B59B6","#F39C12",
@@ -179,8 +180,16 @@
       options: {
         responsive: true,
         plugins: {
-          legend: { display: type !== "bar" },
-          tooltip: { callbacks: { label: c => " " + c.formattedValue } },
+          legend: {
+            display: type !== "bar",
+            labels: { color: "#C8C8C8" },
+          },
+          tooltip: {
+            backgroundColor: "#2A3038",
+            titleColor: "#C8C8C8",
+            bodyColor: "#C8C8C8",
+            callbacks: { label: c => " " + c.formattedValue },
+          },
         },
         scales: type === "bar" ? {
           x: { ticks: { color: "#FFFFFF" }, grid: { color: "#2A3038" } },
