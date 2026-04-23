@@ -174,8 +174,17 @@ fetch('/stats')
           '<td><span class=bar style="width:' + Math.round(r.nb/max*120) + 'px"></span></td></tr>'
         ).join('');
     };
+    const fillHeadsets = (id, rows) => {
+      const max = rows[0]?.nb || 1;
+      document.getElementById(id).innerHTML =
+        '<tr><th>Name</th><th>PID</th><th class=nb>Count</th><th></th></tr>' +
+        rows.map(r =>
+          '<tr><td>' + r.label + '</td><td><code>0x' + r.product_id + '</code></td><td class=nb>' + r.nb + '</td>' +
+          '<td><span class=bar style="width:' + Math.round(r.nb/max*120) + 'px"></span></td></tr>'
+        ).join('');
+    };
     fill('distros',  data.distros);
-    fill('headsets', data.headsets);
+    fillHeadsets('headsets', data.headsets);
     fill('versions', data.versions);
   })
   .catch(() => {
