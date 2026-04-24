@@ -2,6 +2,11 @@
 
 Set by CoreEngine.configure_virtual_sinks() when a device is detected.
 Read by sonar_to_pipewire to generate correct, device-aware PipeWire configs.
+
+When no device is connected, `get_physical_out()` / `get_physical_in()` /
+`get_device_name()` return empty strings. Callers must treat that as the
+"no device" state and skip config generation (or write PipeWire targets as
+the empty string, which PipeWire interprets as "default sink/source").
 """
 from __future__ import annotations
 
@@ -10,15 +15,11 @@ import threading
 
 _log = logging.getLogger(__name__)
 
-# Fallback defaults (Nova Pro Wireless — keeps backward compat if no device set yet)
-_DEFAULT_OUT = "alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.analog-stereo"
-_DEFAULT_IN  = "alsa_input.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.mono-fallback"
-
 _lock:           threading.Lock = threading.Lock()
-_physical_out:   str = _DEFAULT_OUT
-_physical_in:    str = _DEFAULT_IN
+_physical_out:   str = ""
+_physical_in:    str = ""
 _spatial_engine: str = "hesuvi"
-_device_name:    str = "Arctis Nova Pro Wireless"
+_device_name:    str = ""
 
 
 def set_current_device(
@@ -42,10 +43,16 @@ def clear() -> None:
     """Called by CoreEngine.teardown() when the device disconnects."""
     global _physical_out, _physical_in, _spatial_engine, _device_name
     with _lock:
-        _physical_out   = _DEFAULT_OUT
-        _physical_in    = _DEFAULT_IN
+        _physical_out   = ""
+        _physical_in    = ""
         _spatial_engine = "hesuvi"
-        _device_name    = "Arctis Nova Pro Wireless"
+        _device_name    = ""
+
+
+def is_device_set() -> bool:
+    """True if a device has been registered via `set_current_device`."""
+    with _lock:
+        return bool(_physical_out)
 
 
 def get_physical_out() -> str:

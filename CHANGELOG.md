@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.69] - 24 April 2026
+
+### Fixed
+
+- **Remove all remaining hardcoded Nova Pro Wireless defaults** (follow-up to #21): `device_state.py` used Nova Pro Wireless ALSA node names and the string "Arctis Nova Pro Wireless" as initial values AND as post-disconnect values. `sonar_to_pipewire.py` had the same strings as fallback constants in dead-code `except` branches. On a system without a Nova Pro Wireless, any code path that generated a filter-chain config before a device was attached (or after a disconnect) would write configs pointing to a sink that does not exist — same class of bug as #21, just at a different moment.
+  - `device_state` now defaults to empty strings and exposes `is_device_set()` so callers can distinguish "no device" from "device ready".
+  - All PipeWire config generators in `sonar_to_pipewire.py` (`generate_sonar_eq_conf` for device-dependent channels, `generate_sonar_micro_conf`, `generate_virtual_sinks_conf`, `generate_hesuvi_conf`) now skip generation with a clear warning when no device is attached, instead of writing configs with a hardcoded wrong target.
+  - Removed the dead-code `_PHYSICAL_OUT` / `_PHYSICAL_IN` constants and the `"Arctis Nova Pro Wireless"` string fallbacks from `sonar_to_pipewire.py`.
+
 ## [1.0.68] - 24 April 2026
 
 ### Fixed

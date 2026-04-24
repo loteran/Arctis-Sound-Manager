@@ -4,52 +4,52 @@ sonar_to_pipewire.py — Generate PipeWire filter-chain configs for Sonar EQ cha
 One config per channel (game / chat / micro).  Each config inserts a chain of
 biquad nodes between the virtual capture sink and its playback target.
 
-Routing:
-  game  → effect_input.virtual-surround-7.1-hesuvi  (8ch 7.1 → HeSuVi virtualisation)
-  chat  → alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.analog-stereo  (2ch stereo)
-  micro → virtual source backed by the physical mic input  (Source/Virtual, 1ch mono)
+Routing (targets resolved at generation time from the currently-attached device):
+  game  → effect_input.virtual-surround-7.1-hesuvi     (8ch 7.1 → HeSuVi)
+  chat  → physical ALSA output of the current Arctis   (2ch stereo)
+  micro → virtual source backed by the physical mic    (1ch mono)
 
 All configs are written to filter-chain.conf.d/ and loaded by the filter-chain service.
 Restarting only filter-chain (not pipewire) preserves active audio streams.
+
+Config generators return an empty string without writing anything when no
+Arctis device is currently attached (`device_state.is_device_set()` == False).
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from arctis_sound_manager.gui.eq_curve_widget import EqBand, PW_LABEL
 
+_log = logging.getLogger(__name__)
+
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-_PHYSICAL_OUT = "alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.analog-stereo"
-_PHYSICAL_IN  = "alsa_input.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.mono-fallback"
-_SURROUND     = "effect_input.virtual-surround-7.1-hesuvi"
+_SURROUND = "effect_input.virtual-surround-7.1-hesuvi"
 
 
 def _get_physical_out() -> str:
-    """Return the ALSA output node name for the currently connected device."""
-    try:
-        from arctis_sound_manager import device_state as _ds
-        return _ds.get_physical_out()
-    except Exception:
-        return _PHYSICAL_OUT
+    """Return the ALSA output node name for the currently connected device, or ''."""
+    from arctis_sound_manager import device_state as _ds
+    return _ds.get_physical_out()
 
 
 def _get_physical_in() -> str:
-    """Return the ALSA input node name for the currently connected device."""
-    try:
-        from arctis_sound_manager import device_state as _ds
-        return _ds.get_physical_in()
-    except Exception:
-        return _PHYSICAL_IN
+    """Return the ALSA input node name for the currently connected device, or ''."""
+    from arctis_sound_manager import device_state as _ds
+    return _ds.get_physical_in()
 
 
 def _get_device_name() -> str:
-    """Return the short device name for the currently connected device."""
-    try:
-        from arctis_sound_manager import device_state as _ds
-        return _ds.get_device_name()
-    except Exception:
-        return "Arctis Nova Pro Wireless"
+    """Return the short device name for the currently connected device, or ''."""
+    from arctis_sound_manager import device_state as _ds
+    return _ds.get_device_name()
+
+
+def _device_attached() -> bool:
+    from arctis_sound_manager import device_state as _ds
+    return _ds.is_device_set()
 
 _CHANNEL_CHANNELS: dict[str, int] = {
     "game":   8,
@@ -169,6 +169,15 @@ def generate_sonar_eq_conf(
     """
     if channel not in ("game", "chat", "output"):
         raise ValueError(f"channel must be 'game', 'chat' or 'output', got {channel!r}")
+
+    # Channels that depend on the physical Arctis output need a connected device.
+    needs_physical = channel == "chat" or (channel == "game" and not spatial_audio)
+    if needs_physical and not _device_attached():
+        _log.warning(
+            "Skipping %s EQ config generation: no Arctis device attached.",
+            channel,
+        )
+        return ""
 
     # Spatial audio OFF → game routes directly to physical stereo output (2ch)
     if channel == "game" and not spatial_audio:
@@ -423,6 +432,10 @@ def generate_sonar_micro_conf(
     Pattern: capture side is passive (faces hardware), playback side has
     media.class = Audio/Source (faces applications).
     """
+    if not _device_attached():
+        _log.warning("Skipping micro EQ config generation: no Arctis device attached.")
+        return ""
+
     if output_path is None:
         output_path = _CONF_DIR / "sonar-micro-eq.conf"
 
@@ -745,6 +758,10 @@ def generate_virtual_sinks_conf(sonar: bool) -> str:
     When *sonar* is True, Game and Chat sinks route through their Sonar EQ
     filter-chain nodes instead of directly to the hardware output.
     """
+    if not _device_attached():
+        _log.warning("Skipping virtual-sinks config generation: no Arctis device attached.")
+        return ""
+
     modules: list[str] = []
     for sink in _VIRTUAL_SINKS:
         target = (sink["sonar_target"] if sonar and sink["sonar_target"]
@@ -1109,6 +1126,10 @@ def generate_hesuvi_conf(
     str
         The generated config text (also written to *output_path*).
     """
+    if not _device_attached():
+        _log.warning("Skipping HeSuVi config generation: no Arctis device attached.")
+        return ""
+
     if output_path is None:
         output_path = _CONF_DIR / "sink-virtual-surround-7.1-hesuvi.conf"
         # Remove any static copy from pipewire.conf.d to avoid duplicate node name conflict.
