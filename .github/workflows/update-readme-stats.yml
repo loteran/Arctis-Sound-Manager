@@ -49,15 +49,13 @@ jobs:
                   sys.exit(1)
               return resp["result"][0]["results"]
 
-          distros   = d1_query("SELECT distro AS label, COUNT(*) AS nb FROM stats GROUP BY distro ORDER BY nb DESC LIMIT 30")
-          headsets  = d1_query("SELECT headset AS label, product_id, COUNT(*) AS nb FROM stats GROUP BY headset, product_id ORDER BY nb DESC LIMIT 30")
-          total_row = d1_query("SELECT COUNT(*) AS nb FROM stats")
-          unique_row= d1_query("SELECT COUNT(*) AS nb FROM users")
+          distros   = d1_query("SELECT distro AS label, COUNT(*) AS nb FROM users GROUP BY distro ORDER BY nb DESC LIMIT 30")
+          headsets  = d1_query("SELECT headset AS label, product_id, COUNT(*) AS nb FROM users GROUP BY headset, product_id ORDER BY nb DESC LIMIT 30")
+          total_row = d1_query("SELECT COUNT(*) AS nb FROM users")
 
-          total        = total_row[0]["nb"]  if total_row  else 0
-          unique_users = unique_row[0]["nb"] if unique_row else 0
-          updated      = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-          print(f"Fetched: {total} data points, {unique_users} unique users")
+          total   = total_row[0]["nb"] if total_row else 0
+          updated = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+          print(f"Fetched: {total} unique users")
 
           distros_md = "| Distribution | Installs |\n|---|---|\n"
           for row in distros[:15]:
