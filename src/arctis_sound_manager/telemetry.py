@@ -4,15 +4,20 @@ Telemetry — anonymous usage stats (distro + headset + version).
 Consent is stored in ~/.config/arctis_manager/telemetry.yaml.
   consent: true | false | null   (null = never asked)
   last_sent: ISO date string
-  installation_id: random UUID generated on first send (no personal data)
+  installation_id: random UUID (fallback only — normally derived from /etc/machine-id)
 
 Data sent (POST JSON):
   { "installation_id": "...", "distro": "...", "headset": "...", "version": "..." }
+
+Installation ID is derived from a salted SHA-256 hash of /etc/machine-id so the
+same machine reports the same anonymous ID across ASM reinstalls and config
+wipes. The hash is irreversible: the actual machine-id cannot be recovered.
 
 No personal data, no IP stored server-side.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import threading
@@ -96,6 +101,36 @@ def _get_distro() -> str:
     return "Unknown"
 
 
+# ── Installation ID ────────────────────────────────────────────────────────────
+
+_INSTALLATION_ID_SALT = "arctis-sound-manager"
+
+
+def _machine_id_hash() -> str | None:
+    """Return a salted SHA-256 hash of /etc/machine-id (32 hex chars), or None."""
+    for path in (Path("/etc/machine-id"), Path("/var/lib/dbus/machine-id")):
+        try:
+            raw = path.read_text().strip()
+        except Exception:
+            continue
+        if raw:
+            return hashlib.sha256(f"{_INSTALLATION_ID_SALT}:{raw}".encode()).hexdigest()[:32]
+    return None
+
+
+def _get_installation_id(data: dict) -> str:
+    """Stable anonymous ID. Prefer hashed machine-id; fall back to persisted UUID."""
+    mid = _machine_id_hash()
+    if mid:
+        return mid
+    iid = data.get("installation_id")
+    if not iid:
+        iid = str(uuid.uuid4())
+        data["installation_id"] = iid
+        _save(data)
+    return iid
+
+
 # ── Send logic ─────────────────────────────────────────────────────────────────
 
 def _do_send(headset: str, product_id: str) -> None:
@@ -103,10 +138,7 @@ def _do_send(headset: str, product_id: str) -> None:
     from arctis_sound_manager.utils import project_version
 
     data = _load()
-    if not data.get("installation_id"):
-        data["installation_id"] = str(uuid.uuid4())
-        _save(data)
-    installation_id = data["installation_id"]
+    installation_id = _get_installation_id(data)
 
     payload = json.dumps({
         "installation_id": installation_id,

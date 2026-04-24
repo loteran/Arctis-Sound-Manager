@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.67] - 24 April 2026
+
+### Changed
+
+- **Anonymous telemetry**: each submission now includes an `installation_id` — a salted SHA-256 hash of `/etc/machine-id` (irreversible, no personal data). The server uses this ID to deduplicate unique users exactly, instead of grouping by `(distro, headset)`. Falls back to a random UUID stored in `~/.config/arctis_manager/telemetry.yaml` on systems where `/etc/machine-id` is unreadable.
+- **Stats dashboard & README**: all usage stats (distributions, headsets, versions, totals) are now computed per unique installation instead of per raw event. The KPI previously labelled "Data points" is now "Unique users".
+
 ## [1.0.65] - 22 April 2026
 
 ### Fixed
