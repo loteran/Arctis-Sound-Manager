@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.68] - 24 April 2026
+
+### Fixed
+
+- **Audio routing on non-Nova-Pro-Wireless devices** (#21): when the ALSA sink lookup failed for the attached device, the daemon fell back to a hardcoded `alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.analog-stereo` sink name. On any other headset (e.g. Arctis Nova 7, Nova 3, Nova 5…), this sink does not exist, so the generated virtual sinks routed audio into the void and the headset disappeared from KDE / GNOME audio trays.
+  - The PID comparison in `pactl.py` now parses both sides as integers, so it matches regardless of hex casing or `0x` prefix differences across PipeWire versions.
+  - `configure_virtual_sinks` now retries the sink lookup for up to ~4 s, giving PipeWire time to enumerate a freshly-attached USB audio card at boot.
+  - If the exact PID is never exposed by PipeWire (some distros/kernels), ASM now falls back to any SteelSeries sink instead of the wrong hardcoded Pro Wireless default.
+  - If no sink is found at all, ASM now logs a clear error with remediation steps and skips virtual sink setup instead of silently breaking audio.
+
 ## [1.0.67] - 24 April 2026
 
 ### Changed

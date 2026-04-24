@@ -11,6 +11,25 @@ ONLY_PHYSICAL = 1
 ONLY_VIRTUAL = 2
 ALL_SINKS = 3
 
+
+def _pid_matches(product_id_attr: str, product_id: 'int | list[int] | None') -> bool:
+    """Compare a proplist PID value (any hex format) against an int or list of ints.
+
+    PipeWire/PulseAudio may expose `device.product.id` as "0x22a1", "22a1",
+    "0X22A1", etc. depending on version and backend. Parsing as int makes the
+    match robust to any of these variations.
+    """
+    if product_id is None:
+        return True
+    if not product_id_attr:
+        return False
+    try:
+        attr_int = int(product_id_attr, 16)
+    except ValueError:
+        return False
+    lst = product_id if isinstance(product_id, list) else [product_id]
+    return attr_int in lst
+
 class TypedPulseSinkInfo(pulsectl.PulseSinkInfo):
     name: str
 
@@ -59,15 +78,13 @@ class PulseAudioManager:
     def get_arctis_sinks(self, mode: int = ALL_SINKS, vendor_id: int = STEELSERIES_VENDOR_ID, product_id: int|list[int]|None = None) -> list[TypedPulseSinkInfo]:
         sinks = self.sink_list_wrapper()
 
-        def check_prod_id(product_id_attr: str) -> bool:
-            if product_id is None:
-                return True
+        def vendor_matches(s) -> bool:
+            try:
+                return int(s.proplist.get('device.vendor.id', ''), 16) == vendor_id
+            except ValueError:
+                return False
 
-            lst = product_id if type(product_id) is list else [product_id]
-
-            return product_id_attr in [f'0x{pid:04x}' for pid in lst]
-
-        physical = [s for s in sinks if s.proplist.get('device.vendor.id', '') == f'0x{vendor_id:04x}' and check_prod_id(s.proplist.get('device.product.id', ''))]
+        physical = [s for s in sinks if vendor_matches(s) and _pid_matches(s.proplist.get('device.product.id', ''), product_id)]
         virtual = [s for s in sinks if s.proplist.get('node.name', '') in (PULSE_MEDIA_NODE_NAME, PULSE_CHAT_NODE_NAME)]
 
         if mode == ONLY_PHYSICAL:
@@ -116,15 +133,15 @@ class PulseAudioManager:
                 self._reconnect()
                 time.sleep(1)
 
-        def check_prod_id(product_id_attr: str) -> bool:
-            if product_id is None:
-                return True
-            lst = product_id if type(product_id) is list else [product_id]
-            return product_id_attr in [f'0x{pid:04x}' for pid in lst]
+        def vendor_matches(s) -> bool:
+            try:
+                return int(s.proplist.get('device.vendor.id', ''), 16) == vendor_id
+            except ValueError:
+                return False
 
         physical = [s for s in sources
-                    if s.proplist.get('device.vendor.id', '') == f'0x{vendor_id:04x}'
-                    and check_prod_id(s.proplist.get('device.product.id', ''))]
+                    if vendor_matches(s)
+                    and _pid_matches(s.proplist.get('device.product.id', ''), product_id)]
         return physical[0] if physical else None
 
     def set_mix(self, media_mix: int, chat_mix: int):
