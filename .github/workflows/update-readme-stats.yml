@@ -108,7 +108,14 @@ jobs:
                   seen_pids.add(pid)
 
           def format_pids(s: str) -> str:
-              return ", ".join(f"**{p.strip()}**" if p.strip().lower() in seen_pids else p.strip() for p in s.split(", "))
+              parts = []
+              for p in s.split(", "):
+                  p = p.strip()
+                  if p.lower() in seen_pids:
+                      parts.append("${\\color[HTML]{87CEEB}\\textbf{" + p + "}}$")
+                  else:
+                      parts.append(p)
+              return ", ".join(parts)
 
           devices_md = "| Device | Mixer | Advanced features | Users | Product ID(s) |\n|---|---|---|---|---|\n"
           for display, mixer, advanced, pids, keys in DEVICES:
