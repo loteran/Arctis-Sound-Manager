@@ -112,7 +112,7 @@ jobs:
               for p in s.split(", "):
                   p = p.strip()
                   if p.lower() in seen_pids:
-                      parts.append("${\\color[HTML]{87CEEB}\\textbf{" + p + "}}$")
+                      parts.append("$\\color{cyan}{\\textbf{" + p + "}}$")
                   else:
                       parts.append(p)
               return ", ".join(parts)
