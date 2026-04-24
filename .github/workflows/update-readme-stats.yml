@@ -136,7 +136,7 @@ jobs:
           readme = replace_section(readme, "DISTROS",        distros_md)
           readme = replace_section(readme, "HEADSETS",       headsets_md)
           readme = replace_section(readme, "META",
-              f"_Based on **{total}** anonymous data points — last updated {updated}_\n")
+              f"_Based on **{total}** unique anonymous users — last updated {updated}_\n")
 
           open("README.md", "w", encoding="utf-8").write(readme)
           print("README.md updated.")
