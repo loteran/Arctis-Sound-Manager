@@ -130,7 +130,8 @@ jobs:
           def replace_section(content, marker, replacement):
               return re.sub(
                   rf"(<!-- STATS:{marker}:START -->).*?(<!-- STATS:{marker}:END -->)",
-                  rf"\1\n{replacement}\n\2", content, flags=re.DOTALL)
+                  lambda m: m.group(1) + "\n" + replacement + "\n" + m.group(2),
+                  content, flags=re.DOTALL)
 
           readme = replace_section(readme, "DEVICES",        devices_md)
           readme = replace_section(readme, "TESTED_DISTROS", tested_distros_md)
