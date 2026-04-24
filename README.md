@@ -86,7 +86,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 <!-- STATS:DEVICES:END -->
 
 > ✅ Fully supported · ⚠️ Config available, community testing welcome · ❓ Not yet supported
-> _Users column: anonymous reports from opted-in users. ⚠️ auto-promoted to ✅ at 5+ reports._
+> _Users column: anonymous reports from opted-in users. ⚠️ auto-promoted to ✅ at 1 report._
 
 ## Tested Distributions
 
