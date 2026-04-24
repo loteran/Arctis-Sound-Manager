@@ -164,6 +164,27 @@
     "#D35400","#2ECC71","#E67E22","#1ABC9C","#C0392B",
   ];
 
+  function mergeUnknownHeadsets(headsets) {
+    const byLabel = new Map();
+    for (const row of headsets) {
+      if (!byLabel.has(row.label)) byLabel.set(row.label, []);
+      byLabel.get(row.label).push(row);
+    }
+    const result = [];
+    for (const [, entries] of byLabel) {
+      const known   = entries.filter(e => e.product_id !== "Unknown");
+      const unknown = entries.filter(e => e.product_id === "Unknown");
+      if (!unknown.length || !known.length) {
+        result.push(...entries);
+      } else {
+        const extra = unknown.reduce((s, e) => s + e.nb, 0);
+        known.sort((a, b) => b.nb - a.nb);
+        result.push({ ...known[0], nb: known[0].nb + extra }, ...known.slice(1));
+      }
+    }
+    return result.sort((a, b) => b.nb - a.nb);
+  }
+
   function mkChart(id, labels, values, type = "bar") {
     const ctx = document.getElementById(id);
     return new Chart(ctx, {
@@ -205,10 +226,12 @@
       return r.json();
     })
     .then(data => {
+      const headsets = mergeUnknownHeadsets(data.headsets);
+
       // KPIs
       document.getElementById("kpi-total").textContent   = data.total.toLocaleString();
       document.getElementById("kpi-distros").textContent = data.distros.length;
-      document.getElementById("kpi-headsets").textContent= data.headsets.length;
+      document.getElementById("kpi-headsets").textContent= headsets.length;
       document.getElementById("kpi-updated").textContent =
         new Date(data.generated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
@@ -216,7 +239,8 @@
       mkChart("chart-distros",
         data.distros.map(r => r.label), data.distros.map(r => r.nb));
       mkChart("chart-headsets",
-        data.headsets.map(r => r.label + ' (0x' + r.product_id + ')'), data.headsets.map(r => r.nb), "doughnut");
+        headsets.map(r => r.product_id === "Unknown" ? r.label : r.label + " (0x" + r.product_id + ")"),
+        headsets.map(r => r.nb), "doughnut");
       mkChart("chart-versions",
         data.versions.map(r => r.label), data.versions.map(r => r.nb));
     })
