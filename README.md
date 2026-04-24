@@ -74,13 +74,13 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 | Arctis 7+ / PS5 / Xbox / Destiny | ⚠️ | ⚠️ |  | 220e, 2212, 2216, 2236 |
 | Arctis 9 Wireless | ⚠️ | ⚠️ |  | 12c2 |
 | Arctis Pro Wireless | ⚠️ | ⚠️ |  | 1290, 1294 |
-| Arctis Nova Pro Wireless / X | ✅ | ✅ | 👥 18 | ${\color[HTML]{87CEEB}\textbf{12e0}}$, 12e5 |
+| Arctis Nova Pro Wireless / X | ✅ | ✅ | 👥 18 | $\color{cyan}{\textbf{12e0}}$, 12e5 |
 | Arctis Nova Pro Wired / Xbox Wired | ✅ | ✅ |  | 12cb, 12cd |
 | Arctis Nova 3 | ⚠️ | ⚠️ |  | 12ec |
 | Arctis Nova 3P / 3X Wireless | ⚠️ | ⚠️ |  | 2269, 226d |
 | Arctis Nova 5 / 5X | ⚠️ | ⚠️ |  | 2232, 2253 |
 | Arctis Nova 7 Gen 1 | ⚠️ | ⚠️ |  | 2202, 2206, 223a, 227a, 22a4 |
-| **Arctis Nova 7 Gen 2** | ✅ | ✅ | 👥 1 | ${\color[HTML]{87CEEB}\textbf{22a1}}$, 227e, 2258, 229e, 22a9, 22a5 |
+| **Arctis Nova 7 Gen 2** | ✅ | ✅ | 👥 1 | $\color{cyan}{\textbf{22a1}}$, 227e, 2258, 229e, 22a9, 22a5 |
 | **Arctis Nova 7P** | ✅ | ✅ | 👥 2 | 220a, 22a7 |
 
 <!-- STATS:DEVICES:END -->
