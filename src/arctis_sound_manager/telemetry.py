@@ -4,9 +4,10 @@ Telemetry — anonymous usage stats (distro + headset + version).
 Consent is stored in ~/.config/arctis_manager/telemetry.yaml.
   consent: true | false | null   (null = never asked)
   last_sent: ISO date string
+  installation_id: random UUID generated on first send (no personal data)
 
 Data sent (POST JSON):
-  { "distro": "...", "headset": "...", "version": "..." }
+  { "installation_id": "...", "distro": "...", "headset": "...", "version": "..." }
 
 No personal data, no IP stored server-side.
 """
@@ -16,6 +17,7 @@ import json
 import logging
 import threading
 import urllib.request
+import uuid
 from datetime import date
 from pathlib import Path
 
@@ -100,11 +102,18 @@ def _do_send(headset: str, product_id: str) -> None:
     """Blocking send — must be called in a background thread."""
     from arctis_sound_manager.utils import project_version
 
+    data = _load()
+    if not data.get("installation_id"):
+        data["installation_id"] = str(uuid.uuid4())
+        _save(data)
+    installation_id = data["installation_id"]
+
     payload = json.dumps({
-        "distro":      _get_distro(),
-        "headset":     headset or "Unknown",
-        "product_id":  product_id or "Unknown",
-        "version":     project_version(),
+        "installation_id": installation_id,
+        "distro":          _get_distro(),
+        "headset":         headset or "Unknown",
+        "product_id":      product_id or "Unknown",
+        "version":         project_version(),
     }).encode()
 
     req = urllib.request.Request(
@@ -119,8 +128,6 @@ def _do_send(headset: str, product_id: str) -> None:
     with urllib.request.urlopen(req, timeout=5):
         pass
 
-    # Record today's date so we don't resend until tomorrow
-    data = _load()
     data["last_sent"] = date.today().isoformat()
     _save(data)
     log.debug("telemetry: sent (headset=%s, product_id=%s)", headset, product_id)

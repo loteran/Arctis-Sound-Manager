@@ -39,27 +39,30 @@ export default {
         return new Response("Bad JSON", { status: 400 });
       }
 
-      const distro     = String(body.distro     ?? "Unknown").slice(0, 120) || "Unknown";
-      const headset    = String(body.headset    ?? "Unknown").slice(0, 120) || "Unknown";
-      const product_id = String(body.product_id ?? "Unknown").slice(0, 30)  || "Unknown";
-      const version    = String(body.version    ?? "Unknown").slice(0, 30)  || "Unknown";
-      const now        = Date.now();
+      const installation_id = String(body.installation_id ?? "Unknown").slice(0, 36) || "Unknown";
+      const distro          = String(body.distro          ?? "Unknown").slice(0, 120) || "Unknown";
+      const headset         = String(body.headset         ?? "Unknown").slice(0, 120) || "Unknown";
+      const product_id      = String(body.product_id      ?? "Unknown").slice(0, 30)  || "Unknown";
+      const version         = String(body.version         ?? "Unknown").slice(0, 30)  || "Unknown";
+      const now             = Date.now();
 
       await Promise.all([
         // Historical log — always append
         env.DB.prepare(
-          "INSERT INTO stats (distro, headset, product_id, version, ts) VALUES (?, ?, ?, ?, ?)"
-        ).bind(distro, headset, product_id, version, now).run(),
+          "INSERT INTO stats (installation_id, distro, headset, product_id, version, ts) VALUES (?, ?, ?, ?, ?, ?)"
+        ).bind(installation_id, distro, headset, product_id, version, now).run(),
 
-        // Unique users — upsert: create on first contact, update version + last_seen on return
+        // Unique users — upsert keyed on installation_id (anonymous random UUID)
         env.DB.prepare(`
-          INSERT INTO users (distro, headset, product_id, version, first_seen, last_seen)
-          VALUES (?, ?, ?, ?, ?, ?)
-          ON CONFLICT(distro, headset) DO UPDATE SET
+          INSERT INTO users (installation_id, distro, headset, product_id, version, first_seen, last_seen)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(installation_id) DO UPDATE SET
+            distro     = excluded.distro,
+            headset    = excluded.headset,
             product_id = excluded.product_id,
             version    = excluded.version,
             last_seen  = excluded.last_seen
-        `).bind(distro, headset, product_id, version, now, now).run(),
+        `).bind(installation_id, distro, headset, product_id, version, now, now).run(),
       ]);
 
       return new Response("ok", { headers: CORS });
@@ -67,25 +70,22 @@ export default {
 
     // ── GET /stats (JSON API) ──────────────────────────────────────────────────
     if (request.method === "GET" && url.pathname === "/stats") {
-      const [distros, headsets, versions, totalRow, uniqueRow] = await Promise.all([
+      const [distros, headsets, versions, totalRow] = await Promise.all([
         env.DB.prepare(
-          "SELECT distro AS label, COUNT(*) AS nb FROM stats GROUP BY distro ORDER BY nb DESC LIMIT 30"
+          "SELECT distro AS label, COUNT(*) AS nb FROM users GROUP BY distro ORDER BY nb DESC LIMIT 30"
         ).all(),
         env.DB.prepare(
-          "SELECT headset AS label, product_id, COUNT(*) AS nb FROM stats GROUP BY headset, product_id ORDER BY nb DESC LIMIT 30"
+          "SELECT headset AS label, product_id, COUNT(*) AS nb FROM users GROUP BY headset, product_id ORDER BY nb DESC LIMIT 30"
         ).all(),
-        // Versions counted per unique user (current version only, updates replace old)
         env.DB.prepare(
           "SELECT version AS label, COUNT(*) AS nb FROM users GROUP BY version ORDER BY nb DESC LIMIT 20"
         ).all(),
-        env.DB.prepare("SELECT COUNT(*) AS nb FROM stats").first(),
         env.DB.prepare("SELECT COUNT(*) AS nb FROM users").first(),
       ]);
 
       return Response.json(
         {
           total:        totalRow?.nb ?? 0,
-          unique_users: uniqueRow?.nb ?? 0,
           distros:      distros.results,
           headsets:     headsets.results,
           versions:     versions.results,
@@ -134,8 +134,7 @@ const HTML_DASHBOARD = `<!DOCTYPE html>
 <body>
 <h1>Arctis Sound Manager — Anonymous Usage Stats</h1>
 <div class="counters">
-  <div class="counter"><div class="val" id="cnt-total">…</div><div class="lbl">Data points</div></div>
-  <div class="counter"><div class="val" id="cnt-unique">…</div><div class="lbl">Unique users</div></div>
+  <div class="counter"><div class="val" id="cnt-total">…</div><div class="lbl">Unique users</div></div>
 </div>
 <div class="grid">
   <div>
@@ -162,8 +161,7 @@ const HTML_DASHBOARD = `<!DOCTYPE html>
 fetch('/stats')
   .then(r => r.json())
   .then(data => {
-    document.getElementById('cnt-total').textContent  = data.total;
-    document.getElementById('cnt-unique').textContent = data.unique_users;
+    document.getElementById('cnt-total').textContent = data.total;
 
     const fill = (id, rows) => {
       const max = rows[0]?.nb || 1;
