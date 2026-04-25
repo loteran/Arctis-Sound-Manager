@@ -127,12 +127,6 @@ class HeadsetPage(QWidget):
     @Slot(object)
     def update_status(self, status: dict):
         self._status_widget.update_status(status)
-        if status:
-            for category in status:
-                self._device_name_label.setText(
-                    I18n.translate("status", category) or "SteelSeries Arctis"
-                )
-                break
 
     @Slot(object)
     def update_settings(self, settings: dict):
