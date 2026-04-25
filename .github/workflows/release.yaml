@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write   # PyPI Trusted Publishers (OIDC, no token in secrets)
     outputs:
       version: ${{ steps.src.outputs.version }}
       sha256: ${{ steps.src.outputs.sha256 }}
@@ -40,14 +41,28 @@ jobs:
         id: src
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          # git archive produces a deterministic tarball (commit timestamps, no GitHub regeneration)
+          # Output to build/aur/ rather than dist/ so the AUR archive is NOT
+          # picked up by `pypi-publish` (twine rejects the hyphenated name).
+          mkdir -p build/aur
           git archive --format=tar.gz \
             --prefix="Arctis-Sound-Manager-${VERSION}/" \
             HEAD \
-            -o "dist/arctis-sound-manager-${VERSION}.tar.gz"
-          SHA=$(sha256sum "dist/arctis-sound-manager-${VERSION}.tar.gz" | awk '{print $1}')
+            -o "build/aur/arctis-sound-manager-${VERSION}.tar.gz"
+          SHA=$(sha256sum "build/aur/arctis-sound-manager-${VERSION}.tar.gz" | awk '{print $1}')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "sha256=$SHA" >> $GITHUB_OUTPUT
+
+      - name: Publish to PyPI
+        # OIDC Trusted Publisher — no token required. The PyPI project must
+        # be configured at https://pypi.org/manage/account/publishing/ with:
+        #   Owner = loteran
+        #   Repo  = Arctis-Sound-Manager
+        #   Workflow = release.yaml
+        # `skip-existing` keeps the workflow idempotent if a tag is re-pushed.
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          skip-existing: true
 
       - name: Create release
         uses: softprops/action-gh-release@v2
@@ -58,6 +73,7 @@ jobs:
           files: |
             dist/*.whl
             dist/*.tar.gz
+            build/aur/*.tar.gz
             build/deb/*.deb
           draft: false
           prerelease: false

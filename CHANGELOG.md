@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.74] - 25 April 2026
+
+### Added
+
+- **Automatic PyPI publish** on every tagged release via PyPA's `gh-action-pypi-publish` action using OIDC Trusted Publishers (no token in repo secrets). Once the project is published once, end-users can install/upgrade with the canonical one-liner `pipx install arctis-sound-manager --force` instead of having to track release URLs.
+
+### Changed
+
+- Release workflow writes the deterministic AUR source tarball to `build/aur/` instead of `dist/`, so the hyphen-named archive doesn't get scooped up by twine when publishing to PyPI. The GitHub release upload list now reflects the new path.
+
 ## [1.0.73] - 25 April 2026
 
 ### Added
