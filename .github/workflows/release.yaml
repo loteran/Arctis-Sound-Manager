@@ -59,7 +59,10 @@ jobs:
         #   Repo  = Arctis-Sound-Manager
         #   Workflow = release.yaml
         # `skip-existing` keeps the workflow idempotent if a tag is re-pushed.
+        # `continue-on-error` so a PyPI hiccup never blocks the GitHub release
+        # / AUR / COPR jobs that come after.
         uses: pypa/gh-action-pypi-publish@release/v1
+        continue-on-error: true
         with:
           packages-dir: dist/
           skip-existing: true
