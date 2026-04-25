@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.73] - 25 April 2026
+
+### Added
+
+- **`scripts/clean-reinstall.sh`** — a self-contained, `curl | bash`-friendly script that audits every existing ASM install (rpm + dpkg + pacman + pipx + orphan binaries in `$PATH`), uninstalls all of them, then installs the latest release via the user's chosen method, runs `asm-setup` and verifies that the daemon is active. Solves the dup-binary mess that built up across mixed install methods (RPM + pipx --force etc.).
+- **Multi-install detection in the in-app updater**: clicking "Install update" now checks whether ASM is currently installed by more than one method (rpm + pipx, etc.) and refuses to upgrade until the conflict is resolved, opening a clear dialog that points to `clean-reinstall.sh` with a copy-to-clipboard command.
+
+### Fixed
+
+- **In-app updater now runs `asm-setup` after a pipx upgrade** (via the new `FirstRunDialog`), so udev rules are reloaded and PipeWire restarted on the new binary. Previously only `asm-cli desktop write` was called, which left udev permissions stale on already-attached devices.
+
+### Changed
+
+- `update_checker.detect_install_method()` now wraps a new `detect_all_install_methods() -> list[InstallMethod]` so callers can detect duplicate installations rather than silently picking the first match.
+
 ## [1.0.72] - 25 April 2026
 
 ### Added

@@ -784,13 +784,22 @@ class HomePage(QWidget):
     def _do_install_update(self):
         from arctis_sound_manager.update_checker import (
             InstallMethod, PACKAGE_MANAGER_COMMANDS,
-            UpdateInstallWorker, detect_install_method,
+            UpdateInstallWorker, detect_all_install_methods,
         )
         from PySide6.QtGui import QClipboard
         from PySide6.QtCore import QTimer
         from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
 
-        method = detect_install_method()
+        # Multi-install detection: refuse to update if ASM is installed by more
+        # than one method (would silently create the dup-binary mess described
+        # in #22). Surface a clear dialog pointing to clean-reinstall.sh.
+        all_methods = detect_all_install_methods()
+        if len(all_methods) > 1:
+            from arctis_sound_manager.gui.install_dialogs import show_multi_install_warning
+            show_multi_install_warning(self, all_methods)
+            return
+
+        method = all_methods[0] if all_methods else InstallMethod.PIP
         cmd = PACKAGE_MANAGER_COMMANDS.get(method)
 
         if cmd:
@@ -887,9 +896,15 @@ class HomePage(QWidget):
             self._update_label.setText(I18n.translate("ui", "update_installed"))
             self._update_install_btn.hide()
             self._update_link_btn.hide()
-            # Reinstall desktop entries, restart daemon + router + GUI
+            # Run the full asm-setup so udev rules are reloaded, pipewire
+            # restarted, services reenabled with the new binary path. Streamed
+            # in FirstRunDialog so the user sees progress + the pkexec prompt.
+            from pathlib import Path
+            (Path.home() / ".config" / "arctis_manager" / ".setup_done").unlink(missing_ok=True)
+            from arctis_sound_manager.gui.first_run_dialog import FirstRunDialog
+            FirstRunDialog(self).exec()
+            # Restart the daemon + router + GUI on the new binary.
             import subprocess, sys, os
-            subprocess.run(["asm-cli", "desktop", "write"], capture_output=True)
             subprocess.Popen(["systemctl", "--user", "restart", "arctis-manager"])
             subprocess.Popen(["systemctl", "--user", "restart", "arctis-video-router"])
             os.execv(sys.executable, [sys.executable, "-m", "arctis_sound_manager.scripts.gui"])

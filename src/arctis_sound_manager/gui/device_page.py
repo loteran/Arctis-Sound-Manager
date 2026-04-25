@@ -424,8 +424,8 @@ class DevicePage(QWidget):
 
     def _do_install_update(self) -> None:
         from arctis_sound_manager.update_checker import (
-            PACKAGE_MANAGER_COMMANDS, UpdateInstallWorker,
-            build_terminal_cmd, detect_install_method,
+            InstallMethod, PACKAGE_MANAGER_COMMANDS, UpdateInstallWorker,
+            build_terminal_cmd, detect_all_install_methods,
         )
         from PySide6.QtCore import QTimer
         from PySide6.QtWidgets import (
@@ -433,7 +433,13 @@ class DevicePage(QWidget):
         )
         from arctis_sound_manager.gui.theme import BG_BUTTON_HOVER, BG_CARD, BG_MAIN, BORDER
 
-        method = detect_install_method()
+        all_methods = detect_all_install_methods()
+        if len(all_methods) > 1:
+            from arctis_sound_manager.gui.install_dialogs import show_multi_install_warning
+            show_multi_install_warning(self, all_methods)
+            return
+
+        method = all_methods[0] if all_methods else InstallMethod.PIP
         cmd = PACKAGE_MANAGER_COMMANDS.get(method)
 
         if cmd:
@@ -532,8 +538,11 @@ class DevicePage(QWidget):
     def _on_install_finished(self, success: bool, error_msg: str) -> None:
         import os, subprocess, sys
         if success:
-            self._update_status_lbl.setText("Update installed — restarting…")
-            subprocess.run(["asm-cli", "desktop", "write"], capture_output=True)
+            self._update_status_lbl.setText("Update installed — running setup…")
+            from pathlib import Path
+            (Path.home() / ".config" / "arctis_manager" / ".setup_done").unlink(missing_ok=True)
+            from arctis_sound_manager.gui.first_run_dialog import FirstRunDialog
+            FirstRunDialog(self).exec()
             subprocess.Popen(["systemctl", "--user", "restart", "arctis-manager"])
             os.execv(sys.executable, [sys.executable, "-m", "arctis_sound_manager.scripts.gui"])
         else:

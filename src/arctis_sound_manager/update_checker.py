@@ -23,37 +23,27 @@ class InstallMethod(Enum):
     UNKNOWN = auto()
 
 
-def detect_install_method() -> InstallMethod:
-    """Detect how ASM was installed by checking package managers."""
-    try:
-        r = subprocess.run(
-            ["rpm", "-q", "arctis-sound-manager"],
-            capture_output=True, text=True, timeout=5,
-        )
-        if r.returncode == 0:
-            return InstallMethod.RPM
-    except FileNotFoundError:
-        pass
+def detect_all_install_methods() -> list[InstallMethod]:
+    """Detect EVERY install method that currently has arctis-sound-manager installed.
 
-    try:
-        r = subprocess.run(
-            ["pacman", "-Q", "arctis-sound-manager"],
-            capture_output=True, text=True, timeout=5,
-        )
-        if r.returncode == 0:
-            return InstallMethod.PACMAN
-    except FileNotFoundError:
-        pass
+    Returns a list (potentially with multiple entries) so callers can detect
+    duplicate installations — the most common cause of stale-binary bugs after
+    upgrades. Methods are returned in priority order (system packages first,
+    then pipx); the empty list means nothing was detected.
+    """
+    found: list[InstallMethod] = []
 
-    try:
-        r = subprocess.run(
-            ["dpkg", "-s", "arctis-sound-manager"],
-            capture_output=True, text=True, timeout=5,
-        )
-        if r.returncode == 0:
-            return InstallMethod.APT
-    except FileNotFoundError:
-        pass
+    for cmd, args, method in (
+        (["rpm", "-q", "arctis-sound-manager"],     [], InstallMethod.RPM),
+        (["pacman", "-Q", "arctis-sound-manager"],  [], InstallMethod.PACMAN),
+        (["dpkg", "-s", "arctis-sound-manager"],    [], InstallMethod.APT),
+    ):
+        try:
+            r = subprocess.run(cmd + args, capture_output=True, text=True, timeout=5)
+            if r.returncode == 0:
+                found.append(method)
+        except FileNotFoundError:
+            pass
 
     if shutil.which("pipx"):
         try:
@@ -62,11 +52,17 @@ def detect_install_method() -> InstallMethod:
                 capture_output=True, text=True, timeout=5,
             )
             if "arctis-sound-manager" in r.stdout:
-                return InstallMethod.PIPX
+                found.append(InstallMethod.PIPX)
         except FileNotFoundError:
             pass
 
-    return InstallMethod.PIP
+    return found
+
+
+def detect_install_method() -> InstallMethod:
+    """Backward-compat: return the first detected install method (or PIP fallback)."""
+    methods = detect_all_install_methods()
+    return methods[0] if methods else InstallMethod.PIP
 
 
 PACKAGE_MANAGER_COMMANDS: dict[InstallMethod, str] = {
