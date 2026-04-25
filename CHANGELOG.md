@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.77] - 25 April 2026
+
+### Fixed
+
+- **Headset page**: device name in the "Devices" card flickered between the i18n status category label ("Headset" / "Casque") and the actual device name ("Arctis Nova Pro Wireless"). `update_status` was overwriting `_device_name_label` on every status poll; the label is now only set by `update_settings`.
+
 ## [1.0.76] - 25 April 2026
 
 ### Fixed
