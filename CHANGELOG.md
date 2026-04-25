@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.76] - 25 April 2026
+
+### Fixed
+
+- **GUI fails to open** (regression in 1.0.69): `generate_hesuvi_conf()` raised `UnboundLocalError: cannot access local variable '_log'` when no Arctis device was attached. The early-return guard called the module-level `_log`, but a later `import logging as _log` inside the same function rebinds `_log`, which Python treats as a function-local for the entire scope. Replaced the local rebinding with a direct `_log.warning(...)` so the module-level logger stays accessible.
+
 ## [1.0.75] - 25 April 2026
 
 ### Changed
