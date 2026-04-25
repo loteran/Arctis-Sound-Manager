@@ -146,7 +146,7 @@ install -Dm644 debian/asm-first-run.desktop \
 %post
 %systemd_user_post arctis-manager.service arctis-video-router.service arctis-gui.service
 udevadm control --reload-rules || :
-udevadm trigger || :
+udevadm trigger --action=add --subsystem-match=usb || :
 
 # Run asm-setup immediately if the installing user has an active D-Bus session.
 # Falls back to /etc/xdg/autostart/asm-first-run.desktop on next login otherwise.
