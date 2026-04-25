@@ -263,7 +263,10 @@ class CoreEngine:
 
         if self.usb_device is not None:
             self.logger.info(f"Found device {self.usb_device.idProduct:04x}:{self.usb_device.idVendor:04x} ({self.device_config.name})")
-            self.kernel_detach(self.usb_device, self.device_config)
+            if not self.kernel_detach(self.usb_device, self.device_config):
+                # USB permission error — message already logged with remediation
+                # steps. Bail out so the daemon stays alive instead of crashing.
+                return
 
         # Discover ALSA nodes for this device and update shared device state
         physical_out, physical_in = self._discover_physical_nodes(
@@ -551,21 +554,64 @@ class CoreEngine:
             *config.dial_interface_candidates,
         ]))
 
-    def kernel_detach(self, usb_device: TypedDevice, config: DeviceConfiguration) -> None:
+    def kernel_detach(self, usb_device: TypedDevice, config: DeviceConfiguration) -> bool:
+        """Detach the kernel driver from every interface ASM uses.
+
+        Returns True on success, False on USB permission/access errors so the
+        caller can bail out cleanly instead of letting the daemon crash.
+        """
         self.logger.info(f"Detaching kernel driver for device: {usb_device.idVendor:04x}:{usb_device.idProduct:04x} ({config.name})")
 
         for interface in self._all_used_interfaces(config):
-            if usb_device.is_kernel_driver_active(interface):
-                self.logger.info(f"Kernel driver active on interface {interface}, detaching...")
-                usb_device.detach_kernel_driver(interface)
+            try:
+                if usb_device.is_kernel_driver_active(interface):
+                    self.logger.info(f"Kernel driver active on interface {interface}, detaching...")
+                    usb_device.detach_kernel_driver(interface)
+            except usb.core.USBError as e:
+                self._log_usb_access_error(e, usb_device, config, interface, action="detaching")
+                return False
+        return True
 
-    def kernel_attach(self, usb_device: TypedDevice, config: DeviceConfiguration) -> None:
+    def kernel_attach(self, usb_device: TypedDevice, config: DeviceConfiguration) -> bool:
+        """Re-attach the kernel driver. Returns False on USB error (best effort)."""
         self.logger.info(f"Re-attaching kernel driver for device: {usb_device.idProduct:04x}:{usb_device.idVendor:04x} ({config.name})")
 
+        ok = True
         for interface in self._all_used_interfaces(config):
-            if not usb_device.is_kernel_driver_active(interface):
-                self.logger.info(f"Kernel driver inactive on interface {interface}, re-attaching...")
-                usb_device.attach_kernel_driver(interface)
+            try:
+                if not usb_device.is_kernel_driver_active(interface):
+                    self.logger.info(f"Kernel driver inactive on interface {interface}, re-attaching...")
+                    usb_device.attach_kernel_driver(interface)
+            except usb.core.USBError as e:
+                self._log_usb_access_error(e, usb_device, config, interface, action="re-attaching")
+                ok = False
+        return ok
+
+    def _log_usb_access_error(
+        self,
+        err: 'usb.core.USBError',
+        usb_device: TypedDevice,
+        config: DeviceConfiguration,
+        interface: int,
+        action: str,
+    ) -> None:
+        if getattr(err, "errno", None) == 13:  # EACCES
+            self.logger.error(
+                "USB access denied while %s the kernel driver for %s "
+                "(0x%04x:0x%04x) on interface %d. udev rules are missing or "
+                "have not been applied to the currently-attached device. "
+                "Try one of: 1) replug the dongle, "
+                "2) `sudo udevadm control --reload-rules && sudo udevadm trigger`, "
+                "3) reinstall ASM via your distro package (deb / rpm / AUR) so "
+                "the udev rules are written to /etc/udev/rules.d/. "
+                "Skipping this device — the daemon will keep running.",
+                action, config.name, usb_device.idVendor, usb_device.idProduct, interface,
+            )
+        else:
+            self.logger.error(
+                "USB error %s the kernel driver for %s on interface %d: %s",
+                action, config.name, interface, err,
+            )
     
     def guess_interface_endpoint(self, direction: Literal['in', 'out'], interface_index: int, interface_alternate_setting: int = 0) -> tuple[int | None, int | None]:
         '''

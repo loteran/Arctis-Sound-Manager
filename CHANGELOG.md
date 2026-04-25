@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.70] - 25 April 2026
+
+### Fixed
+
+- **Daemon crash on USB permission errors** (#22): when `is_kernel_driver_active()` or `detach_kernel_driver()` raised a `USBError` (typically `[Errno 13] Access denied` because udev rules were not yet applied to a device that was already plugged in), the entire daemon crashed at startup. The GUI then failed to appear because the systemd service was in a failed state.
+  - `kernel_detach()` and `kernel_attach()` now catch `USBError` and return a status flag instead of propagating the exception.
+  - On `EACCES`, a clear error message is logged with three concrete remediation steps (replug, `udevadm reload-rules` + `trigger`, or reinstall via the distro package).
+  - `configure_virtual_sinks()` checks the detach result and bails out cleanly so the daemon stays alive even if a device is currently inaccessible.
+
 ## [1.0.69] - 24 April 2026
 
 ### Fixed
