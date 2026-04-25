@@ -1117,8 +1117,8 @@ def generate_hesuvi_conf(
         # go silent because PipeWire and filter-chain both try to register the same node name.
         _pw_static = _SINKS_CONF_DIR / "sink-virtual-surround-7.1-hesuvi.conf"
         if _pw_static.exists():
-            import logging as _log
-            _log.getLogger(__name__).warning(
+            import logging
+            logging.getLogger(__name__).warning(
                 "Removing duplicate HeSuVi config from pipewire.conf.d "
                 "(superseded by filter-chain.conf.d version)"
             )
