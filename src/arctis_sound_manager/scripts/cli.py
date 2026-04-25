@@ -217,7 +217,7 @@ def write_udev_rules(rules_path: Path, create_directories: bool, force_write: bo
                 sh_path = _make_elevated_script(
                     ["install", "-m", "644", tmp_path, str(rules_path)],
                     ["udevadm", "control", "--reload-rules"],
-                    ["udevadm", "trigger", "--subsystem-match=usb"],
+                    ["udevadm", "trigger", "--action=add", "--subsystem-match=usb"],
                 )
                 try:
                     return sudo_it([sh_path])
@@ -242,7 +242,7 @@ def reload_udev_rules() -> int:
         # Already root — run both commands directly
         for cmd in [
             ["udevadm", "control", "--reload-rules"],
-            ["udevadm", "trigger", "--subsystem-match=usb"],
+            ["udevadm", "trigger", "--action=add", "--subsystem-match=usb"],
         ]:
             try:
                 result = subprocess.run(cmd, check=True).returncode
@@ -257,7 +257,7 @@ def reload_udev_rules() -> int:
     print('Bundling reload + trigger in a single elevated call...')
     sh_path = _make_elevated_script(
         ["udevadm", "control", "--reload-rules"],
-        ["udevadm", "trigger", "--subsystem-match=usb"],
+        ["udevadm", "trigger", "--action=add", "--subsystem-match=usb"],
     )
     try:
         return sudo_it([sh_path])
