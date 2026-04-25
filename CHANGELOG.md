@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.75] - 25 April 2026
+
+### Changed
+
+- **First version published on PyPI** — install / upgrade is now a one-liner that always pulls the latest:
+  ```
+  pipx install arctis-sound-manager --force
+  ```
+
 ## [1.0.74] - 25 April 2026
 
 ### Added
