@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.72] - 25 April 2026
+
+### Added
+
+- **Auto-run `asm-setup` on first GUI launch** for installs that didn't go through a distro-package post-install hook (typically `pipx`). When the GUI starts and `~/.config/arctis_manager/.setup_done` is missing, a new `FirstRunDialog` opens, runs `asm-setup` as a subprocess and streams its output live in the dialog so the user can follow what's happening (HRIR download, services, udev install). Distro packages already shipped `/etc/xdg/autostart/asm-first-run.desktop` for this — pipx users were left out, which was the root cause behind issue #22.
+
 ## [1.0.71] - 25 April 2026
 
 ### Added

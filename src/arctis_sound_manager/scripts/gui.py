@@ -76,6 +76,20 @@ def main():
 
     server.newConnection.connect(_on_new_connection)
 
+    # ── First-run setup (pipx installs that never ran asm-setup) ──────────────
+    # Distro packages (deb/rpm/AUR) install /etc/xdg/autostart/asm-first-run.desktop
+    # which auto-runs asm-setup on first login. Pipx installs don't get that, so
+    # the user has to either run asm-setup manually OR end up with broken audio.
+    # Detect the missing flag and trigger setup from inside the GUI itself.
+    from pathlib import Path as _Path
+    setup_done_flag = _Path.home() / ".config" / "arctis_manager" / ".setup_done"
+    setup_was_missing = not setup_done_flag.exists()
+    if setup_was_missing:
+        from arctis_sound_manager.gui.first_run_dialog import FirstRunDialog
+        def _first_run():
+            FirstRunDialog().exec()
+        QTimer.singleShot(300, _first_run)
+
     # ── Crash report from previous session ────────────────────────────────────
     crash = read_crash_report()
     if crash:
@@ -85,12 +99,16 @@ def main():
         QTimer.singleShot(1500, _show_crash)
 
     # ── udev rules check ──────────────────────────────────────────────────────
+    # Run AFTER the first-run dialog has had time to install rules (delay 2500ms
+    # vs 300ms for first-run). On a normal launch (setup already done), this
+    # fires at 500ms as before.
     from arctis_sound_manager.udev_checker import is_udev_rules_valid
-    if not is_udev_rules_valid():
-        from arctis_sound_manager.gui.udev_dialog import UdevRulesDialog
-        def _check_udev():
+    udev_delay_ms = 2500 if setup_was_missing else 500
+    def _check_udev():
+        if not is_udev_rules_valid():
+            from arctis_sound_manager.gui.udev_dialog import UdevRulesDialog
             UdevRulesDialog().exec()
-        QTimer.singleShot(500, _check_udev)
+    QTimer.singleShot(udev_delay_ms, _check_udev)
 
     # ── Telemetry consent (first launch only) ─────────────────────────────────
     from arctis_sound_manager.telemetry import get_consent, set_consent
