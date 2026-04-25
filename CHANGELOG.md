@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.78] - 25 April 2026
+
+### Fixed
+
+- **Weather city search**: typing in the city field was interrupted every few hundred milliseconds because `update_settings` unconditionally overwrote `_city_input` with the saved value on every daemon poll. The field is now only updated when it does not have focus.
+
 ## [1.0.77] - 25 April 2026
 
 ### Fixed
