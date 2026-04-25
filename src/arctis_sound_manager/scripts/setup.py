@@ -168,19 +168,33 @@ def main() -> None:
     # ── Udev rules ──
     print("\n==> Installing udev rules...")
     from arctis_sound_manager.udev_checker import is_udev_rules_valid
-    if is_udev_rules_valid():
-        print("  [ok] udev rules already valid — skipping (installed by package)")
+    rules_already_valid = is_udev_rules_valid()
+    if rules_already_valid:
+        print("  [ok] udev rules already valid — skipping write (installed by package)")
     elif asm_cli:
         result = subprocess.run(
             [asm_cli, "udev", "write-rules", "--force", "--reload"],
             text=True,
         )
         if result.returncode == 0:
-            print("  [ok] udev rules installed")
+            print("  [ok] udev rules installed (reload+trigger included)")
         else:
             print("  [!] udev rules failed — run manually: asm-cli udev write-rules --force --reload")
     else:
         print("  [!] asm-cli not found — run manually: asm-cli udev write-rules --force --reload")
+
+    # Always reload+trigger when the rules were not freshly written, so that
+    # any device that was already plugged in gets the new permissions applied.
+    # (Skipping this is the most common cause of EACCES on first run after
+    # an upgrade.)
+    if rules_already_valid and asm_cli:
+        print("\n==> Applying udev rules to currently-connected devices...")
+        result = subprocess.run([asm_cli, "udev", "reload-rules"], text=True)
+        if result.returncode == 0:
+            print("  [ok] udev rules reloaded and triggered")
+        else:
+            print("  [!] reload failed — run manually: asm-cli udev reload-rules")
+            print("      (or: sudo udevadm control --reload-rules && sudo udevadm trigger)")
 
     # ── Systemd services ──
     print("\n==> Enabling services...")

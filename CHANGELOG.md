@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.71] - 25 April 2026
+
+### Added
+
+- **`asm-setup` now always reloads + triggers udev rules**, even when the rules file on disk is already valid. Previously it printed `[ok] udev rules already valid — skipping` and exited, leaving the currently-attached dongle without the new permissions — which was the root cause behind issue #22 ("no device detected after upgrade").
+- **GUI dialog "Apply now"** when the daemon detects an EACCES on the USB device. The daemon now exposes a `permission_error` flag over D-Bus; when the GUI sees it, it surfaces a dialog explaining that the rules exist but were not applied to the connected device, with a one-click button that runs `asm-cli udev reload-rules` (with pkexec/sudo) and then asks the daemon to re-scan via the existing `ReloadConfigs` D-Bus method.
+
+### Changed
+
+- `CoreEngine` exposes a new `permission_error: bool` attribute set by `_log_usb_access_error` and cleared on the next successful `kernel_detach`. `ArctisManagerDbusSettingsService.GetSettings` now returns it under the `permission_error` key.
+
 ## [1.0.70] - 25 April 2026
 
 ### Fixed

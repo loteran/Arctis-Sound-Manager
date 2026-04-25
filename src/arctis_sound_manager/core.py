@@ -53,6 +53,11 @@ class CoreEngine:
         self._device_lock = threading.RLock()
         self._usb_write_lock = threading.Lock()
 
+        # Set to True when kernel_detach hits EACCES on a USB interface
+        # (udev rules missing or not yet applied to the connected device).
+        # Read by the GUI to surface a "Fix permissions" action.
+        self.permission_error: bool = False
+
         self.general_settings = GeneralSettings.read_from_file()
 
         self.logger = logging.getLogger('CoreEngine')
@@ -570,6 +575,9 @@ class CoreEngine:
             except usb.core.USBError as e:
                 self._log_usb_access_error(e, usb_device, config, interface, action="detaching")
                 return False
+        # All interfaces succeeded — clear any prior permission_error flag
+        # so the GUI banner disappears once udev rules are working.
+        self.permission_error = False
         return True
 
     def kernel_attach(self, usb_device: TypedDevice, config: DeviceConfiguration) -> bool:
@@ -596,6 +604,7 @@ class CoreEngine:
         action: str,
     ) -> None:
         if getattr(err, "errno", None) == 13:  # EACCES
+            self.permission_error = True
             self.logger.error(
                 "USB access denied while %s the kernel driver for %s "
                 "(0x%04x:0x%04x) on interface %d. udev rules are missing or "

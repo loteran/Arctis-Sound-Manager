@@ -69,6 +69,7 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
         gs = self.core_engine.general_settings
         settings = {
             'general': gs.to_dict(),
+            'permission_error': bool(getattr(self.core_engine, 'permission_error', False)),
             'device': {},
             'dac': {k: getattr(gs, k) for k in (
                 'oled_brightness', 'oled_screen_timeout', 'oled_scroll_speed', 'oled_custom_display',
