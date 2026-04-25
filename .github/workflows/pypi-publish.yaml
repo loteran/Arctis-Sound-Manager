@@ -1,0 +1,49 @@
+name: Publish to PyPI (manual)
+
+# Manual trigger so we can (re)publish any past release to PyPI once the
+# Trusted Publisher is configured (or after a transient PyPI outage).
+# The auto-publish inside release.yaml covers the normal flow on tag push.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish (e.g. v1.0.75)'
+        required: true
+        type: string
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # OIDC for Trusted Publisher
+      contents: read
+    steps:
+      - name: Validate tag exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "${{ inputs.tag }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "::error::Release ${{ inputs.tag }} not found"
+            exit 1
+          fi
+
+      - name: Download wheel + sdist from the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dist
+          # Pull only the canonical Python distribution files. The hyphen-named
+          # AUR tarball is intentionally excluded (twine would reject it).
+          gh release download "${{ inputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --pattern 'arctis_sound_manager-*-py3-none-any.whl' \
+            --pattern 'arctis_sound_manager-*.tar.gz' \
+            --dir dist/
+          ls -l dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          skip-existing: true
