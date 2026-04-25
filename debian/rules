@@ -57,7 +57,8 @@ override_dh_auto_install:
 	install -Dm644 src/arctis_sound_manager/gui/images/steelseries_logo.svg \
 	    $(DEST)/usr/share/icons/hicolor/scalable/apps/arctis-manager.svg
 
-	# ── AppStream metainfo ──────────────────────────────────
+	# ── AppStream metainfo (releases injected from CHANGELOG.md) ──
+	python3 scripts/generate_metainfo_releases.py --in-place
 	install -Dm644 src/arctis_sound_manager/desktop/com.github.loteran.arctis-sound-manager.metainfo.xml \
 	    $(DEST)/usr/share/metainfo/com.github.loteran.arctis-sound-manager.metainfo.xml
 

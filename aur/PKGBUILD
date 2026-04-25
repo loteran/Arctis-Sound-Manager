@@ -117,7 +117,8 @@ SERVICE
     install -Dm644 src/arctis_sound_manager/devices/*.yaml \
         -t "$pkgdir/usr/share/$pkgname/devices/"
 
-    # AppStream metainfo
+    # AppStream metainfo (releases injected from CHANGELOG.md — never hardcode)
+    uv run python3 scripts/generate_metainfo_releases.py --in-place
     install -Dm644 src/arctis_sound_manager/desktop/com.github.loteran.arctis-sound-manager.metainfo.xml \
         "$pkgdir/usr/share/metainfo/com.github.loteran.arctis-sound-manager.metainfo.xml"
 

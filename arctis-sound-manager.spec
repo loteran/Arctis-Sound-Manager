@@ -118,7 +118,8 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/ArctisManager.desktop
 install -Dm644 src/arctis_sound_manager/gui/images/steelseries_logo.svg \
     %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/arctis-manager.svg
 
-# AppStream metainfo
+# AppStream metainfo (releases injected from CHANGELOG.md — never hardcode)
+python3 scripts/generate_metainfo_releases.py --in-place
 install -Dm644 src/arctis_sound_manager/desktop/com.github.loteran.arctis-sound-manager.metainfo.xml \
     %{buildroot}%{_metainfodir}/com.github.loteran.arctis-sound-manager.metainfo.xml
 appstream-util validate-relax --nonet \
