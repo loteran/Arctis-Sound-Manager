@@ -477,7 +477,8 @@ class DacPage(QWidget):
         self._weather_toggle.set_checked(bool(dac.get('weather_enabled', False)))
         self._weather_toggle.checkbox.blockSignals(False)
 
-        self._city_input.setText(dac.get('weather_location', ''))
+        if not self._city_input.hasFocus():
+            self._city_input.setText(dac.get('weather_location', ''))
         city_display = dac.get('weather_city_display', '')
         if city_display:
             self._weather_status.setStyleSheet(_HINT_STYLE.format(color=ACCENT))
