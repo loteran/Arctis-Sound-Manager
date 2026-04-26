@@ -502,17 +502,34 @@ class CoreEngine:
         self.logger.info(f"Detaching kernel driver for device: {usb_device.idVendor:04x}:{usb_device.idProduct:04x} ({config.name})")
 
         for interface in self._all_used_interfaces(config):
-            if usb_device.is_kernel_driver_active(interface):
-                self.logger.info(f"Kernel driver active on interface {interface}, detaching...")
-                usb_device.detach_kernel_driver(interface)
+            try:
+                if usb_device.is_kernel_driver_active(interface):
+                    self.logger.info(f"Kernel driver active on interface {interface}, detaching...")
+                    usb_device.detach_kernel_driver(interface)
+            except usb.core.USBError as e:
+                # Common cases: device disconnected mid-detach, permission denied
+                # (udev rules missing), or interface already claimed by another
+                # process. None of these should crash the app — log and move on.
+                self.logger.warning(
+                    f"Could not detach kernel driver on interface {interface}: {e!r}. "
+                    "Continuing with remaining interfaces."
+                )
 
     def kernel_attach(self, usb_device: TypedDevice, config: DeviceConfiguration) -> None:
         self.logger.info(f"Re-attaching kernel driver for device: {usb_device.idProduct:04x}:{usb_device.idVendor:04x} ({config.name})")
 
         for interface in self._all_used_interfaces(config):
-            if not usb_device.is_kernel_driver_active(interface):
-                self.logger.info(f"Kernel driver inactive on interface {interface}, re-attaching...")
-                usb_device.attach_kernel_driver(interface)
+            try:
+                if not usb_device.is_kernel_driver_active(interface):
+                    self.logger.info(f"Kernel driver inactive on interface {interface}, re-attaching...")
+                    usb_device.attach_kernel_driver(interface)
+            except usb.core.USBError as e:
+                # If the device is already gone (unplug race) or the kernel
+                # refuses to reattach, don't propagate — teardown should be
+                # best-effort, never fatal.
+                self.logger.warning(
+                    f"Could not re-attach kernel driver on interface {interface}: {e!r}."
+                )
     
     def guess_interface_endpoint(self, direction: Literal['in', 'out'], interface_index: int, interface_alternate_setting: int = 0) -> tuple[int | None, int | None]:
         '''
