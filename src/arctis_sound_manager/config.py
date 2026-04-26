@@ -227,7 +227,10 @@ def load_device_configurations() -> list[DeviceConfiguration]:
     for config_path in DEVICES_CONFIG_FOLDER:
         logger.info(f'\t- {config_path}')
 
-    seen_pids: dict[int, str] = {}
+    # Track which (family_name) first claimed a PID so we can warn on real
+    # cross-family conflicts. Same-family duplicates across paths (HOME shadowing
+    # SRC) are by-design and shouldn't warn.
+    seen_pids: dict[int, tuple[str, str]] = {}  # pid -> (family_name, file.name)
     for config_path in DEVICES_CONFIG_FOLDER:
         if not config_path.exists() or not config_path.is_dir():
             continue
@@ -244,14 +247,18 @@ def load_device_configurations() -> list[DeviceConfiguration]:
                 logger.error(f'Skipping invalid device YAML {file}: {e!r}')
                 continue
 
-            duplicates = [pid for pid in config.product_ids if pid in seen_pids]
-            if duplicates:
+            real_duplicates = [
+                pid for pid in config.product_ids
+                if pid in seen_pids and seen_pids[pid][0] != config.name
+            ]
+            if real_duplicates:
+                first_owner = seen_pids[real_duplicates[0]]
                 logger.warning(
-                    f'{file.name}: PIDs {[f"0x{pid:04x}" for pid in duplicates]} '
-                    f'already declared by {seen_pids[duplicates[0]]} — runtime selection is order-dependent.'
+                    f'{file.name}: PIDs {[f"0x{pid:04x}" for pid in real_duplicates]} '
+                    f'already claimed by family {first_owner[0]!r} ({first_owner[1]}) — runtime selection is order-dependent.'
                 )
             for pid in config.product_ids:
-                seen_pids.setdefault(pid, file.name)
+                seen_pids.setdefault(pid, (config.name, file.name))
 
             logger.info(f'Found: {config.name} (0x{config.vendor_id:04x}, {[f"0x{pid:04x}" for pid in config.product_ids]}) from {file}')
 
