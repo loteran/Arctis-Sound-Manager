@@ -38,6 +38,11 @@ class CoreEngine:
     general_settings: GeneralSettings
     device_settings: DeviceSettings
 
+    # Set to True when kernel_detach hits EACCES on a USB interface — read by
+    # the GUI (via D-Bus GetSettings) to surface UdevRulesDialog(mode="reload").
+    # Cleared automatically on the next successful kernel_detach pass.
+    permission_error: bool = False
+
     device_status: ObservableDict[str, int]|None = None
     oled_manager: 'OledManager | None' = None
 
@@ -530,19 +535,37 @@ class CoreEngine:
     def kernel_detach(self, usb_device: TypedDevice, config: DeviceConfiguration) -> None:
         self.logger.info(f"Detaching kernel driver for device: {usb_device.idVendor:04x}:{usb_device.idProduct:04x} ({config.name})")
 
+        had_eacces = False
         for interface in self._all_used_interfaces(config):
             try:
                 if usb_device.is_kernel_driver_active(interface):
                     self.logger.info(f"Kernel driver active on interface {interface}, detaching...")
                     usb_device.detach_kernel_driver(interface)
             except usb.core.USBError as e:
-                # Common cases: device disconnected mid-detach, permission denied
-                # (udev rules missing), or interface already claimed by another
-                # process. None of these should crash the app — log and move on.
-                self.logger.warning(
-                    f"Could not detach kernel driver on interface {interface}: {e!r}. "
-                    "Continuing with remaining interfaces."
-                )
+                # Per-interface failure: device disconnected mid-detach, EACCES
+                # (udev rules not applied to this device), or already claimed.
+                # Log with remediation steps for EACCES, continue the loop so
+                # the rest of the device still claims.
+                if getattr(e, "errno", None) == 13:
+                    had_eacces = True
+                    self.logger.error(
+                        "USB access denied while detaching the kernel driver for %s "
+                        "(0x%04x:0x%04x) on interface %d. udev rules are missing or "
+                        "have not been applied to the currently-attached device. "
+                        "Try one of: 1) replug the dongle, "
+                        "2) `sudo asm-cli udev reload-rules`, "
+                        "3) reinstall ASM via your distro package so the rules go "
+                        "to /etc/udev/rules.d/. The GUI will offer a one-click fix "
+                        "if it's open. The daemon will keep running.",
+                        config.name, usb_device.idVendor, usb_device.idProduct, interface,
+                    )
+                else:
+                    self.logger.warning(
+                        f"Could not detach kernel driver on interface {interface}: {e!r}. "
+                        "Continuing with remaining interfaces."
+                    )
+        # Surface the EACCES state to the GUI; clear it once a clean pass happens.
+        self.permission_error = had_eacces
 
     def kernel_attach(self, usb_device: TypedDevice, config: DeviceConfiguration) -> None:
         self.logger.info(f"Re-attaching kernel driver for device: {usb_device.idProduct:04x}:{usb_device.idVendor:04x} ({config.name})")
