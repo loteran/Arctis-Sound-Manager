@@ -11,7 +11,9 @@ from arctis_sound_manager.utils import project_version
 
 
 async def main_async():
-    logging.basicConfig(level=logging.INFO, format='[%(levelname)7s] %(name)20s: %(message)s')
+    from arctis_sound_manager.log_setup import configure_logging
+    configure_logging(default=logging.INFO,
+                      fmt='[%(levelname)7s] %(name)20s: %(message)s')
 
     logger = logging.getLogger('Daemon')
     logger.info('-------------------------------')

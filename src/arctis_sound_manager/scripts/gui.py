@@ -55,12 +55,16 @@ def main():
     parser.add_argument('--no-enforce-systemd', action='store_true', help='Do not enforce systemd unit')
     args = parser.parse_args()
 
-    log_level = logging.CRITICAL
+    # Default base level depends on -v flags (CRITICAL→…→DEBUG), but ARCTIS_LOG_LEVEL
+    # always wins so users can crank verbosity for bug reports without restarting the GUI.
+    base_level = logging.CRITICAL
     for _ in range(args.verbose):
-        log_level -= 10
-    if log_level < logging.DEBUG:
-        log_level = logging.DEBUG
+        base_level -= 10
+    if base_level < logging.DEBUG:
+        base_level = logging.DEBUG
 
+    from arctis_sound_manager.log_setup import resolve_level
+    log_level = resolve_level(default=base_level)
     logging.basicConfig(level=log_level, format='%(name)20s %(levelname)8s | %(message)s')
 
     _check_display_or_exit()
