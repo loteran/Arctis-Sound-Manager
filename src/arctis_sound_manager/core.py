@@ -315,9 +315,28 @@ class CoreEngine:
         self.logger.info("Initializing device...")
         if self.device_config and self.device_config.device_init:
             endpoint = self.get_command_endpoint_address()
+            total = len(self.device_config.device_init)
 
-            for bytes in self.device_config.device_init:
-                self.send_command(self.translate_init_bytes(bytes), endpoint)
+            for index, bytes in enumerate(self.device_config.device_init, start=1):
+                # One retry on USBError — most failures here are transient
+                # (kernel driver re-attached itself between detach and write,
+                # device still warming up after enumeration). Persistent
+                # failures continue with the remaining commands so partial
+                # state at least powers something rather than nothing.
+                for attempt in (1, 2):
+                    try:
+                        self.send_command(self.translate_init_bytes(bytes), endpoint)
+                        break
+                    except usb.core.USBError as e:
+                        if attempt == 1:
+                            self.logger.warning(
+                                f"init_device cmd {index}/{total} failed ({e!r}); retrying once."
+                            )
+                            continue
+                        self.logger.error(
+                            f"init_device cmd {index}/{total} still failing after retry: {e!r}. "
+                            "Device may be left in a partially-configured state."
+                        )
 
         self._apply_stored_eq()
 
