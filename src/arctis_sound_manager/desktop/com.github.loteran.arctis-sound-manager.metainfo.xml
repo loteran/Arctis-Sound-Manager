@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.0.79" date="2026-04-26">
+      <description>
+        <p>udev (RPM): udevadm trigger now uses --action=add so device permissions are actually re-evaluated after upgrade on Fedora/Nobara/RHEL (was the same fix as cli.py / aur / debian). udev: is_udev_rules_valid() is now content-based (parses real rule lines) instead of substring-matching 'uaccess'/'1038' — no more false positives from comments, no more false negatives from a stale file at one path masking a valid file at another. udev paths: UDEV_RULES_PATHS now includes /run/udev/rules.d/ (NixOS, runtime overlays) and /lib/udev/rules.d/ (pre-usrmerge Debian).</p>
+      </description>
+    </release>
     <release version="1.0.65" date="2026-04-22">
       <description>
         <p>DEB build: fixed CI release workflow failure — debian/91-steelseries-arctis.rules was removed from the repo but build-deb.sh still referenced it as a static file. The script now generates udev rules at build time via uv run python3 scripts/generate_udev_rules.py.</p>
@@ -199,11 +204,6 @@
     <release version="1.0.13" date="2026-04-04">
       <description>
         <p>DeviceConfiguration uninitialized attributes: device_init and status could raise AttributeError on devices missing these optional YAML fields — now always initialized to None. Settings SELECT widget crash: IndexError/KeyError when options list is empty or not yet loaded — callback now guards bounds before calling. device_state thread safety: module-level globals now protected by threading.Lock, preventing torn reads between USB monitor thread and main loop.</p>
-      </description>
-    </release>
-    <release version="1.0.12" date="2026-04-04">
-      <description>
-        <p>LADSPA control parameters: noise gate, RNNoise noise cancellation, and SC4M compressor were silently broken — missing = signs in PipeWire filter-chain control syntax caused all mic processing nodes to have no effect. check_and_fix_stale_configs: output channel stale configs were incorrectly routed to the physical device instead of passthrough. get_physical_source() retry: microphone source detection now retries 15× on PulseAudio error, matching sink detection resilience.</p>
       </description>
     </release>
   </releases>

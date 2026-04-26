@@ -1,5 +1,5 @@
 Name:           arctis-sound-manager
-Version:        1.0.78
+Version:        1.0.79
 Release:        1%{?dist}
 Summary:        Linux GUI for SteelSeries Arctis headsets
 
@@ -23,6 +23,7 @@ BuildRequires:  desktop-file-utils
 BuildRequires:  libappstream-glib
 
 Requires:       python3-pyside6
+Requires:       python3-pillow
 Requires:       python3-pulsectl
 Requires:       python3-pyudev
 Requires:       python3-pyusb

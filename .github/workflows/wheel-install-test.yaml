@@ -71,6 +71,14 @@ jobs:
           uv run python3 scripts/generate_udev_rules.py | grep "uaccess" | wc -l
           uv run python3 -c "from arctis_sound_manager.udev_rules import generate_rules; from pathlib import Path; print(generate_rules([Path('src/arctis_sound_manager/devices')])[:200])"
 
+      - name: Packaging drift check (versions, generated files, deps)
+        run: |
+          # Fails the matrix run if pyproject.toml, PKGBUILD, .SRCINFO, the
+          # spec, debian/changelog, the AppStream metainfo, or any cross-distro
+          # dependency list is out of sync with the source of truth. See
+          # scripts/check-packaging-drift.py for the rules.
+          uv run python3 scripts/check-packaging-drift.py
+
       - name: Install test (pipx, pip)
         run: |
           chmod +x tests/install-wheel-test.sh
