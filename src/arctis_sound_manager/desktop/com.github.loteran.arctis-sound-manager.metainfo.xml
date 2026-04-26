@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.0.83" date="2026-04-26">
+      <description>
+        <p>Bug report — full system diagnostic — the report payload now includes Python library versions (pulsectl / pyudev / pyusb / dbus-next / ruamel-yaml / PySide6 / pillow via importlib.metadata), multi-install detection (rpm + pacman + apt + pipx + every asm-daemon binary in $PATH), the actual content of the active udev rules file with is_udev_rules_valid()'s verdict, the full PipeWire sink list, wpctl status, the USB monitor backend (pyudev event-driven vs polling fallback) and the D-Bus session bus path. Goes from a 6 kB report to a ~13 kB one — every block is actionable for triage. Bug report — short URL body + full file attachment — GitHub's ?body= query param is capped around 8 kB; the expanded report no longer fits. ASM now writes the full diagnostic to ~/.cache/arctis-sound-manager/reports/bug-report-YYYYMMDD-HHMMSS.md, opens the GitHub issue editor with a short summary (~600 chars) and an "Open folder" button so the user can drag-and-drop the diagnostic file into the issue editor. Bug report — one-click auto-submit via gh CLI — when the user has gh auth status configured, a "Submit automatically (gh CLI)" button uploads the diagnostic as a secret gist, creates the issue with a link to the gist, and opens the new issue URL in the browser. Zero clicks past the dialog. Falls back to the manual drag-and-drop flow on any failure.</p>
+      </description>
+    </release>
     <release version="1.0.82" date="2026-04-26">
       <description>
         <p>Multi-device routing (issue #20) — on systems with several audio outputs (Logitech G560, Razer Kiyo, internal speakers, etc.) plus an Arctis headset, apps that were already running when ASM started used to stay glued to their previous sink because _auto_route() only matched a hardcoded list of browser/game/chat app names. Now video_router.py adopts any orphan stream onto Arctis_Media when Arctis is the default sink — Spotify, VLC, Steam and friends finally end up in the headset on first launch. Streams already on an Arctis sink (virtual or filter-chain) are left untouched, and the adoption is saved as a routing override so manual KDE-mixer placements take over from there. Same logic applied to native PipeWire streams (mpv, haruna).</p>
@@ -199,11 +204,6 @@
     <release version="1.0.17" date="2026-04-09">
       <description>
         <p>Arctis Nova Pro Wired config (0x12cb / 0x12cd): corrected two issues found via hardware testing (asm-cli tools arctis-devices):. command_transport: ctrl_output — device has no interrupt OUT endpoint, commands must be sent via HID SET_REPORT. command_padding.length: 16 — IN endpoint MaxPacketSize is 16 bytes (was incorrectly set to 64).</p>
-      </description>
-    </release>
-    <release version="1.0.16" date="2026-04-08">
-      <description>
-        <p>Arctis Nova Pro Wired support (0x12cb) and its Xbox variant (0x12cd): sidetone, mic volume, mic LED brightness, audio gain (low/high), ChatMix, EQ. Protocol confirmed from reverse-engineering of the Nova Pro family (shared HID interface 4, same 0x06-prefixed command set as Nova Pro Wireless).</p>
       </description>
     </release>
   </releases>

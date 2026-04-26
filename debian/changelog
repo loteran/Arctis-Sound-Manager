@@ -1,3 +1,40 @@
+arctis-sound-manager (1.0.83-1) noble; urgency=medium
+
+  * Bug report — full system diagnostic — the report payload now includes
+    Python library versions (pulsectl / pyudev / pyusb / dbus-next /
+    ruamel-yaml / PySide6 / pillow via importlib.metadata), multi-install
+    detection (rpm + pacman + apt + pipx + every asm-daemon binary in
+    $PATH), the actual content of the active udev rules file with
+    is_udev_rules_valid()'s verdict, the full PipeWire sink list, wpctl
+    status, the USB monitor backend (pyudev event-driven vs polling
+    fallback) and the D-Bus session bus path. Goes from a 6 kB report to a
+    ~13 kB one — every block is actionable for triage.
+  * Bug report — short URL body + full file attachment — GitHub's ?body=
+    query param is capped around 8 kB; the expanded report no longer fits.
+    ASM now writes the full diagnostic to
+    ~/.cache/arctis-sound-manager/reports/bug-report-YYYYMMDD-HHMMSS.md,
+    opens the GitHub issue editor with a short summary (~600 chars) and an
+    "Open folder" button so the user can drag-and-drop the diagnostic file
+    into the issue editor.
+  * Bug report — one-click auto-submit via gh CLI — when the user has gh
+    auth status configured, a "Submit automatically (gh CLI)" button uploads
+    the diagnostic as a secret gist, creates the issue with a link to the
+    gist, and opens the new issue URL in the browser. Zero clicks past the
+    dialog. Falls back to the manual drag-and-drop flow on any failure.
+  * Bug report — free-form description — the dialog has a dedicated
+    "Describe what happened" field at the top with a placeholder example.
+    The text is prepended as a ## What happened markdown block to BOTH the
+    URL body and the full diagnostic file so the maintainer sees it first.
+  * Channel button label H → O — the 4th audio channel was renamed from
+    "HDMI" to "Output" because it can target any external sink (HDMI, USB
+    speakers, sound card…), not just HDMI. The drop button on application
+    pills was already O, but the help-page text in the three locales
+    (en/fr/es) still referenced the old G / C / M / H shortcut and "H sends
+    it to HDMI" — updated to G / C / M / O and "O sends it to your external
+    Output (HDMI, USB speakers, sound card…)".
+
+ -- loteran <axel.valadon@gmail.com>  Sun, 26 Apr 2026 00:00:00 +0000
+
 arctis-sound-manager (1.0.82-1) noble; urgency=medium
 
   * Multi-device routing (issue #20) — on systems with several audio outputs
