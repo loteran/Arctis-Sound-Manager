@@ -80,12 +80,13 @@ HELP_CONTENT: dict[str, dict] = {
                     "1. Make sure your HDMI output is active in your system audio settings.\n"
                     "2. Set the HDMI device as a non-default output — Arctis Sound Manager will keep "
                     "Arctis_Game as the default and route specific apps to HDMI manually.\n"
-                    "3. Use the G / C / M / H buttons on an application pill to move that "
-                    "stream: H sends it to HDMI, G/C/M send it back to an Arctis sink.\n"
+                    "3. Use the G / C / M / O buttons on an application pill to move that "
+                    "stream: O sends it to your external Output (HDMI, USB speakers, sound card…), "
+                    "G/C/M send it back to an Arctis sink.\n"
                     "4. Routing choices are saved automatically and restored on the next launch.\n\n"
                     "── Application pills ──\n"
                     "Each card shows which applications are currently playing through it. "
-                    "The G / C / M / H buttons on a pill let you instantly re-route that "
+                    "The G / C / M / O buttons on a pill let you instantly re-route that "
                     "application to another channel without leaving the app."
                 ),
             },
@@ -384,12 +385,13 @@ HELP_CONTENT: dict[str, dict] = {
                     "1. Vérifiez que votre sortie HDMI est active dans les paramètres audio système.\n"
                     "2. Ne définissez pas la sortie HDMI comme sortie par défaut — Arctis Sound Manager "
                     "conserve Arctis_Game par défaut et route manuellement les apps vers HDMI.\n"
-                    "3. Utilisez les boutons G / C / M / H sur un tag d'application pour changer "
-                    "sa destination : H envoie vers HDMI, G/C/M ramènent vers un sink Arctis.\n"
+                    "3. Utilisez les boutons G / C / M / O sur un tag d'application pour changer "
+                    "sa destination : O envoie vers votre sortie externe (HDMI, enceintes USB, carte son…), "
+                    "G/C/M ramènent vers un sink Arctis.\n"
                     "4. Les choix de routage sont sauvegardés et restaurés automatiquement.\n\n"
                     "── Tags d'application ──\n"
                     "Chaque carte affiche les applications qui jouent du son à travers elle. "
-                    "Les boutons G / C / M / H permettent de reroutage instantané."
+                    "Les boutons G / C / M / O permettent de reroutage instantané."
                 ),
             },
             {
@@ -692,12 +694,13 @@ HELP_CONTENT: dict[str, dict] = {
                     "sistema.\n"
                     "2. No establezcas la salida HDMI como predeterminada — Arctis Sound Manager "
                     "mantiene Arctis_Game como predeterminada y enruta manualmente las apps a HDMI.\n"
-                    "3. Usa los botones G / C / M / H en una pastilla de aplicación para cambiar "
-                    "su destino: H envía a HDMI, G/C/M devuelven a un sink Arctis.\n"
+                    "3. Usa los botones G / C / M / O en una pastilla de aplicación para cambiar "
+                    "su destino: O envía a tu salida externa (HDMI, altavoces USB, tarjeta de sonido…), "
+                    "G/C/M devuelven a un sink Arctis.\n"
                     "4. Las elecciones de enrutamiento se guardan y restauran automáticamente.\n\n"
                     "── Pastillas de aplicación ──\n"
                     "Cada tarjeta muestra las aplicaciones que reproducen audio a través de ella. "
-                    "Los botones G / C / M / H permiten reenrutar al instante."
+                    "Los botones G / C / M / O permiten reenrutar al instante."
                 ),
             },
             {
