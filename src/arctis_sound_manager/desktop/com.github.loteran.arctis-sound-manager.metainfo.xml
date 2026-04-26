@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.0.80" date="2026-04-26">
+      <description>
+        <p>scripts/uninstall.sh — dedicated uninstaller. Detects every install method on the system (rpm / pacman / apt / pipx) and lets the user pick which one(s) to remove. When both pipx and a distro package coexist, offers a 1/2/3 menu (pipx only / distro only / both). --purge wipes settings, PipeWire configs, HRIR data, user systemd units and the manually-written udev rules in /etc, but preserves audio profiles (~/.config/arctis_manager/profiles/ and the active-profile pointer) so a future reinstall picks them right back up. A separate explicit confirm offers to delete the profiles too. Profiles capture DAC tab settings — audio profiles now snapshot and restore the full DAC state in addition to EQ/macros/spatial/volumes: OLED brightness, screen timeout, scroll speed, custom-display toggle, show-element toggles, display order, per-element font sizes, weather configuration. Older profile files (pre-v1.0.80) load with an empty DAC block — restoring them is a no-op for the DAC side, exactly as before. scripts/check-packaging-drift.py — CI-enforced drift detector. Runs on every PR/push across the 8-distro matrix and fails the build if pyproject.toml / PKGBUILD / .SRCINFO / RPM spec are out of sync, if any generator (udev rules, AppStream metainfo, debian/changelog) produces output that differs from the committed file, or if a pyproject dep is missing from PKGBUILD depends, the spec's Requires: lines, or debian/control Depends:. Closes the class of bug that left AppStream stuck at v1.0.4 and debian/changelog at v1.0.27 for months.</p>
+      </description>
+    </release>
     <release version="1.0.79" date="2026-04-26">
       <description>
         <p>udev (RPM): udevadm trigger now uses --action=add so device permissions are actually re-evaluated after upgrade on Fedora/Nobara/RHEL (was the same fix as cli.py / aur / debian). udev: is_udev_rules_valid() is now content-based (parses real rule lines) instead of substring-matching 'uaccess'/'1038' — no more false positives from comments, no more false negatives from a stale file at one path masking a valid file at another. udev paths: UDEV_RULES_PATHS now includes /run/udev/rules.d/ (NixOS, runtime overlays) and /lib/udev/rules.d/ (pre-usrmerge Debian).</p>
@@ -199,11 +204,6 @@
     <release version="1.0.14" date="2026-04-08">
       <description>
         <p>udev rules check at startup: GUI shows a dialog at startup when udev rules are missing or invalid, with an "Install rules" button that runs the fix automatically (requires administrator password). The daemon also logs a warning on the same condition. sudo_it() fallback: now tries sudo if pkexec is unavailable or fails, and catches CalledProcessError instead of crashing. write_udev_rules() blocking input(): removed interactive prompt that caused hangs in non-interactive installs (scripts, TTY-less environments).</p>
-      </description>
-    </release>
-    <release version="1.0.13" date="2026-04-04">
-      <description>
-        <p>DeviceConfiguration uninitialized attributes: device_init and status could raise AttributeError on devices missing these optional YAML fields — now always initialized to None. Settings SELECT widget crash: IndexError/KeyError when options list is empty or not yet loaded — callback now guards bounds before calling. device_state thread safety: module-level globals now protected by threading.Lock, preventing torn reads between USB monitor thread and main loop.</p>
       </description>
     </release>
   </releases>

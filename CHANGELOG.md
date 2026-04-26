@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.80] - 26 April 2026
+
+### Added
+
+- **`scripts/uninstall.sh`** — dedicated uninstaller. Detects every install method on the system (rpm / pacman / apt / pipx) and lets the user pick which one(s) to remove. When both pipx and a distro package coexist, offers a 1/2/3 menu (pipx only / distro only / both). `--purge` wipes settings, PipeWire configs, HRIR data, user systemd units and the manually-written udev rules in /etc, **but preserves audio profiles** (`~/.config/arctis_manager/profiles/` and the active-profile pointer) so a future reinstall picks them right back up. A separate explicit confirm offers to delete the profiles too.
+- **Profiles capture DAC tab settings** — audio profiles now snapshot and restore the full DAC state in addition to EQ/macros/spatial/volumes: OLED brightness, screen timeout, scroll speed, custom-display toggle, show-element toggles, display order, per-element font sizes, weather configuration. Older profile files (pre-v1.0.80) load with an empty DAC block — restoring them is a no-op for the DAC side, exactly as before.
+- **`scripts/check-packaging-drift.py`** — CI-enforced drift detector. Runs on every PR/push across the 8-distro matrix and fails the build if pyproject.toml / PKGBUILD / .SRCINFO / RPM spec are out of sync, if any generator (udev rules, AppStream metainfo, debian/changelog) produces output that differs from the committed file, or if a pyproject dep is missing from PKGBUILD `depends`, the spec's `Requires:` lines, or debian/control `Depends:`. Closes the class of bug that left AppStream stuck at v1.0.4 and debian/changelog at v1.0.27 for months.
+
+### Fixed
+
+- **Packaging drifts surfaced by the new check** — added `pillow` to the three packagers (was in pyproject but missing everywhere), added `python3-pulsectl` to debian/control, regenerated debian/changelog (14 versions behind) and AppStream metainfo (no v1.0.79 entry).
+- **`udevadm trigger` scope alignment** — AUR install hook and debian postinst now narrow the trigger to `--subsystem-match=usb` like the RPM spec and asm-cli already do. Cosmetic; functional behaviour unchanged.
+
 ## [1.0.79] - 26 April 2026
 
 Cross-distro robustness sprint (22 commits, four phases applied: bloquants, runtime, cross-distro, qualité de vie). Promoted from the 1.0.79b develop pre-release.
