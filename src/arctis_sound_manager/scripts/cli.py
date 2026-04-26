@@ -336,7 +336,21 @@ def main():
     arctis_devices_parser = usb_devices_subparser.add_parser('arctis-devices', help='List important Arctis device(s) information, like HID interfaces, alternate configs, etc.')
     arctis_devices_parser.add_argument('--vendor-id', default=0x1038, type=int)
 
+    # Diagnose — full local-only dump for bug reports.
+    diagnose_parser = subparsers.add_parser('diagnose', help='Dump diagnostic info for bug reports (local-only, nothing is sent).')
+    diagnose_parser.add_argument('--output', '-o', type=Path, default=None,
+                                 help='Write the dump to this path instead of stdout.')
+
     args = parser.parse_args()
+
+    if args.command == 'diagnose':
+        from arctis_sound_manager.diagnose import diagnose
+        if args.output is not None:
+            with args.output.open('w', encoding='utf-8') as fh:
+                rc = diagnose(stream=fh)
+            print(f'Diagnostic written to {args.output}')
+            sys.exit(rc)
+        sys.exit(diagnose())
 
     if not hasattr(args, 'action'):
         parser.print_help()
