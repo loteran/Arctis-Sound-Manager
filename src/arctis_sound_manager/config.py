@@ -227,13 +227,31 @@ def load_device_configurations() -> list[DeviceConfiguration]:
     for config_path in DEVICES_CONFIG_FOLDER:
         logger.info(f'\t- {config_path}')
 
+    seen_pids: dict[int, str] = {}
     for config_path in DEVICES_CONFIG_FOLDER:
         if not config_path.exists() or not config_path.is_dir():
             continue
 
-        for file in config_path.glob('*.yaml'):
-            config_yaml = yaml.load(file)
-            config = DeviceConfiguration(config_yaml)
+        for file in sorted(config_path.glob('*.yaml')):
+            try:
+                config_yaml = yaml.load(file)
+                config = DeviceConfiguration(config_yaml)
+            except Exception as e:
+                # A single malformed YAML (typo in a user override under
+                # ~/.config/arctis_manager/devices, partial download, etc.)
+                # used to crash the whole daemon. Skip the offending file
+                # and surface it loudly so the rest of the headsets still work.
+                logger.error(f'Skipping invalid device YAML {file}: {e!r}')
+                continue
+
+            duplicates = [pid for pid in config.product_ids if pid in seen_pids]
+            if duplicates:
+                logger.warning(
+                    f'{file.name}: PIDs {[f"0x{pid:04x}" for pid in duplicates]} '
+                    f'already declared by {seen_pids[duplicates[0]]} — runtime selection is order-dependent.'
+                )
+            for pid in config.product_ids:
+                seen_pids.setdefault(pid, file.name)
 
             logger.info(f'Found: {config.name} (0x{config.vendor_id:04x}, {[f"0x{pid:04x}" for pid in config.product_ids]}) from {file}')
 
