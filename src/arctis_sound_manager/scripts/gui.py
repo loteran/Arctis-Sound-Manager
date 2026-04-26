@@ -1,16 +1,48 @@
 import asyncio
 import logging
+import os
 import signal
 import sys
 from argparse import ArgumentParser
 
-from PySide6.QtCore import QTimer
-from PySide6.QtNetwork import QLocalServer, QLocalSocket
-from PySide6.QtWidgets import QApplication, QDialog
 
-from arctis_sound_manager.bug_reporter import read_crash_report, write_crash_report
-from arctis_sound_manager.gui.systray_app import QSystrayApp
-from arctis_sound_manager.systemd import ensure_systemd_unit
+def _check_display_or_exit() -> None:
+    """Refuse to start cleanly on a system with no graphical session.
+
+    Without DISPLAY or WAYLAND_DISPLAY, Qt aborts with an opaque XCB error
+    and a giant traceback. We pre-check and emit a focused message instead,
+    so users running the GUI from SSH or a TTY know exactly what's wrong.
+    """
+    if os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY'):
+        return
+    sys.stderr.write(
+        "asm-gui: no graphical session detected (DISPLAY and WAYLAND_DISPLAY are unset).\n"
+        "  - Run from a desktop session, or set QT_QPA_PLATFORM=offscreen for headless tests.\n"
+        "  - On a remote host, enable X11 forwarding (ssh -X) or use Wayland forwarding.\n"
+    )
+    sys.exit(2)
+
+
+def _import_qt_or_exit():
+    """Import PySide6 with a focused error if QtWayland or Qt platform plugins
+    are missing — the most common breakage on Wayland-only distros (Fedora 41+,
+    RHEL 9+) when the user installed PySide6 via pip without `qt6-wayland`."""
+    try:
+        from PySide6.QtCore import QTimer
+        from PySide6.QtNetwork import QLocalServer, QLocalSocket
+        from PySide6.QtWidgets import QApplication, QDialog
+        return QTimer, QLocalServer, QLocalSocket, QApplication, QDialog
+    except ImportError as e:
+        sys.stderr.write(
+            f"asm-gui: failed to import PySide6 ({e}).\n"
+            "  - On Wayland-only distros, install the platform plugin:\n"
+            "      Fedora/Nobara : sudo dnf install qt6-qtwayland\n"
+            "      Arch/Cachy    : sudo pacman -S qt6-wayland\n"
+            "      Debian/Ubuntu : sudo apt install qt6-wayland\n"
+            "  - On X11, install qt6-base / python3-pyside6.qtwidgets.\n"
+        )
+        sys.exit(3)
+
 
 _SERVER_NAME = "ArctisManagerGui"
 
@@ -31,7 +63,23 @@ def main():
 
     logging.basicConfig(level=log_level, format='%(name)20s %(levelname)8s | %(message)s')
 
-    app = QApplication(sys.argv)
+    _check_display_or_exit()
+    QTimer, QLocalServer, QLocalSocket, QApplication, QDialog = _import_qt_or_exit()
+
+    from arctis_sound_manager.bug_reporter import read_crash_report, write_crash_report
+    from arctis_sound_manager.gui.systray_app import QSystrayApp
+    from arctis_sound_manager.systemd import ensure_systemd_unit
+
+    try:
+        app = QApplication(sys.argv)
+    except Exception as e:
+        sys.stderr.write(
+            f"asm-gui: QApplication() failed to initialize ({e}).\n"
+            "  - Check that the Qt platform plugin matches your session "
+            "(WAYLAND_DISPLAY → wayland, DISPLAY → xcb).\n"
+            "  - Try forcing a backend: QT_QPA_PLATFORM=xcb asm-gui\n"
+        )
+        sys.exit(4)
 
     # ── Crash handler ─────────────────────────────────────────────────────────
     def _gui_crash_handler(exc_type, exc_value, exc_tb):
