@@ -22,6 +22,8 @@ from arctis_sound_manager.bug_reporter import (
     format_bug_report,
     format_bug_report_short,
     github_issue_url,
+    is_gh_cli_ready,
+    submit_via_gh_cli,
     write_full_report_to_file,
 )
 from arctis_sound_manager.gui.theme import (
@@ -149,9 +151,30 @@ class ReportBugDialog(QDialog):
         close_btn.clicked.connect(self.accept)
         btn_row.addWidget(close_btn)
 
-        self._github_btn = QPushButton("Open GitHub issue ↗")
+        # If `gh` CLI is installed and authenticated, offer one-click auto-
+        # submission (creates a secret gist with the full diagnostic + an
+        # issue linking to it, all without leaving ASM). Falls back to the
+        # manual drag-and-drop flow otherwise.
+        self._gh_ready = is_gh_cli_ready()
+
+        if self._gh_ready:
+            self._auto_btn = QPushButton("Submit automatically (gh CLI) ↗")
+            self._auto_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self._auto_btn.setToolTip(
+                "Creates a secret GitHub gist with the full diagnostic, "
+                "then opens a new issue linking to it. Uses your gh CLI auth."
+            )
+            self._auto_btn.setStyleSheet(_BTN.format(bg=ACCENT, fg="#ffffff", hover=BG_BUTTON_HOVER))
+            self._auto_btn.clicked.connect(self._submit_auto)
+            btn_row.addWidget(self._auto_btn)
+
+        self._github_btn = QPushButton(
+            "Open GitHub issue ↗" if not self._gh_ready else "Open manually ↗"
+        )
         self._github_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._github_btn.setStyleSheet(_BTN.format(bg=ACCENT, fg="#ffffff", hover=BG_BUTTON_HOVER))
+        gh_bg = BG_BUTTON if self._gh_ready else ACCENT
+        gh_fg = TEXT_PRIMARY if self._gh_ready else "#ffffff"
+        self._github_btn.setStyleSheet(_BTN.format(bg=gh_bg, fg=gh_fg, hover=BG_BUTTON_HOVER))
         self._github_btn.clicked.connect(self._open_github)
         btn_row.addWidget(self._github_btn)
 
@@ -185,6 +208,39 @@ class ReportBugDialog(QDialog):
             ])
         except Exception:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._report_path.parent)))
+
+    def _submit_auto(self) -> None:
+        """One-click submission via gh CLI: write the full report → upload as
+        secret gist → create the issue with the gist link → open the new issue
+        URL in the browser. Falls back to the manual flow if anything fails."""
+        try:
+            self._report_path = write_full_report_to_file(self._traceback)
+        except Exception as e:
+            self._status_lbl.setText(f"Could not write diagnostic file: {e!r}")
+            return
+
+        title = "Crash report" if self._is_crash else "Bug report"
+        short = format_bug_report_short(self._traceback, attachment_path=None)
+
+        self._auto_btn.setEnabled(False)
+        self._auto_btn.setText("Uploading…")
+        QApplication.processEvents()
+
+        issue_url = submit_via_gh_cli(title, short, self._report_path)
+        if not issue_url:
+            self._status_lbl.setText(
+                "gh CLI submission failed (auth expired or network issue). "
+                "Falling back to the manual flow — opening browser now."
+            )
+            self._auto_btn.setEnabled(True)
+            self._auto_btn.setText("Submit automatically (gh CLI) ↗")
+            self._open_github()
+            return
+
+        self._status_lbl.setText(f"Issue filed: {issue_url}")
+        webbrowser.open(issue_url)
+        self._auto_btn.setText("Issue filed ✓")
+        self._open_folder_btn.setEnabled(True)
 
     def _open_github(self) -> None:
         # 1. Save the full report to a local file the user can attach.

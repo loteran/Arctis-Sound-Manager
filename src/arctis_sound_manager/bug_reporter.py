@@ -411,6 +411,74 @@ def write_full_report_to_file(traceback_str: Optional[str] = None) -> Path:
     return path
 
 
+def is_gh_cli_ready() -> bool:
+    """True iff `gh` CLI is installed AND authenticated. The auth check is
+    a quick `gh auth status` — exits non-zero when no token is configured."""
+    if not _which('gh'):
+        return False
+    try:
+        r = subprocess.run(
+            ['gh', 'auth', 'status'],
+            capture_output=True, text=True, timeout=4,
+        )
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def _which(cmd: str) -> bool:
+    try:
+        r = subprocess.run(['which', cmd], capture_output=True, text=True, timeout=2)
+        return r.returncode == 0 and bool(r.stdout.strip())
+    except Exception:
+        return False
+
+
+def submit_via_gh_cli(title: str, short_body: str, full_report_path: Path,
+                     repo: str = 'loteran/Arctis-Sound-Manager') -> Optional[str]:
+    """File the issue end-to-end via `gh` CLI:
+      1. Upload the full diagnostic as a SECRET gist (not searchable, but
+         accessible to anyone with the URL — same visibility as the issue).
+      2. Append the gist URL to the short body.
+      3. Create the issue.
+      4. Return the new issue URL.
+
+    Returns None on any failure so the caller can fall back to the manual
+    drag-and-drop flow.
+    """
+    try:
+        gist = subprocess.run(
+            ['gh', 'gist', 'create', '--filename', full_report_path.name,
+             '--desc', f'Arctis Sound Manager — {title}',
+             str(full_report_path)],
+            capture_output=True, text=True, timeout=15, check=True,
+        )
+        gist_url = gist.stdout.strip().splitlines()[-1].strip()
+    except Exception as e:
+        return None
+    if not gist_url.startswith('https://'):
+        return None
+
+    body_with_link = (
+        f'{short_body}\n\n'
+        f'## Full diagnostic (gist)\n'
+        f'{gist_url}\n'
+    )
+    try:
+        issue = subprocess.run(
+            ['gh', 'issue', 'create', '--repo', repo,
+             '--label', 'bug', '--title', title, '--body', body_with_link],
+            capture_output=True, text=True, timeout=15, check=True,
+        )
+        for line in issue.stdout.strip().splitlines():
+            line = line.strip()
+            if line.startswith('https://') and '/issues/' in line:
+                return line
+    except Exception:
+        return None
+    return None
+
+
 def github_issue_url(title: str, body: Optional[str] = None) -> str:
     """Build a `new issue` URL. *body* is encoded as a query param when given;
     keep it under ~6 kB or browsers / GitHub will truncate."""
