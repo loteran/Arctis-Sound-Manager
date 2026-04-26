@@ -11,6 +11,11 @@ PYLIB = $(DEST)/usr/lib/python3/dist-packages
 	dh $@
 
 override_dh_auto_build:
+	# Regenerate debian/changelog from CHANGELOG.md so the .deb is always
+	# in sync with the project changelog (it had previously drifted by
+	# 39 versions because the file was hand-maintained).
+	python3 scripts/generate_debian_changelog.py --in-place
+
 	# If pre-built wheels exist (PPA / CI), use them; otherwise build
 	if [ -d debian/wheels ]; then \
 	    echo "Using pre-built wheels from debian/wheels/"; \
