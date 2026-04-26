@@ -216,8 +216,26 @@ fi
 # ── Optional: purge user state ───────────────────────────────────────────────
 if [ "$PURGE" -eq 1 ]; then
     step "Purging user configs and PipeWire/udev artefacts"
-    if confirm "Wipe ~/.config/arctis_manager, ~/.config/pipewire/.../arctis*, hrir, udev rules ?"; then
-        rm -rf "$HOME/.config/arctis_manager"
+    info "Audio profiles in ~/.config/arctis_manager/profiles/ and the active"
+    info "profile pointer are PRESERVED so a future reinstall picks them back up."
+    if confirm "Wipe everything else (settings, PipeWire/HRIR, user systemd units, udev /etc) ?"; then
+        # ── Inside ~/.config/arctis_manager: surgical removal that keeps
+        #     profiles/ and .active_profile so the user's audio profiles
+        #     survive a full uninstall+reinstall cycle.
+        ASM_DIR="$HOME/.config/arctis_manager"
+        if [ -d "$ASM_DIR" ]; then
+            shopt -s dotglob nullglob
+            for entry in "$ASM_DIR"/*; do
+                base=$(basename "$entry")
+                case "$base" in
+                    profiles|.active_profile)
+                        info "preserved: $entry"
+                        continue ;;
+                esac
+                rm -rf "$entry"
+            done
+            shopt -u dotglob nullglob
+        fi
         rm -f  "$HOME/.config/pipewire/pipewire.conf.d/10-arctis-virtual-sinks.conf"
         rm -f  "$HOME/.config/pipewire/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf"
         rm -rf "$HOME/.config/pipewire/filter-chain.conf.d"/sonar-*.conf
@@ -233,9 +251,17 @@ if [ "$PURGE" -eq 1 ]; then
             fi
         fi
         systemctl --user daemon-reload 2>/dev/null || true
-        ok "user state purged"
+        ok "user state purged (profiles preserved)"
     else
         warn "skipped purge"
+    fi
+
+    # If the user explicitly wants a clean slate including profiles, give them
+    # a separate path — never mix with the default --purge.
+    if confirm "Also delete saved audio profiles and the active-profile pointer ?"; then
+        rm -rf "$HOME/.config/arctis_manager/profiles"
+        rm -f  "$HOME/.config/arctis_manager/.active_profile"
+        ok "profiles deleted"
     fi
 fi
 
