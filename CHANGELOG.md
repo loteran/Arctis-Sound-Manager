@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.81] - 26 April 2026
+
+### Added
+
+- **Runtime "Apply now" popup on USB EACCES** — restores the v1.0.71 behaviour lost during the v1.0.79 merge. The existing startup dialog only fires when the udev rules file is missing/incomplete on disk, but if the rules are correct AND the headset was plugged in before they took effect (typical after a `paru -Syu` or `dnf upgrade`), the daemon used to hit EACCES on `kernel_detach` and the GUI was silent. Users had to figure out replug or `sudo asm-cli udev reload-rules` on their own. Now `CoreEngine.kernel_detach` flags `permission_error=True` per-interface on errno 13, the daemon exposes that flag through `GetSettings`, and the GUI opens `UdevRulesDialog(mode="reload")` automatically — one click runs `asm-cli udev reload-rules` with a single pkexec prompt and the device becomes accessible without unplugging.
+- **`UdevRulesDialog` two modes**: `write` (existing — install missing rules) and `reload` (new — re-trigger udev on the currently-attached device). Both share the same one-prompt elevation flow.
+
+### Fixed
+
+- **`debian/build-deb.sh` referenced stale unit paths** (`debian/*.service`) that had moved to `systemd/*.service` in v1.0.79. The .deb job in `release.yaml` failed at build, which cascade-skipped `aur-update` and `copr-build`, leaving AUR / COPR users on v1.0.78 even though the v1.0.79 / v1.0.80 tags were pushed. Updated to use the canonical `systemd/` paths.
+
+### Hardened
+
+- **CI drift detector** now also validates that every relative source path in `debian/build-deb.sh`, `debian/rules`, `aur/PKGBUILD` and the RPM spec actually exists in the repo. Catches the exact regression described above before merge — verified by sim-test.
+
 ## [1.0.80] - 26 April 2026
 
 ### Added
