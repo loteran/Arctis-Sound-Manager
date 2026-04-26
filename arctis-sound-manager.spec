@@ -59,55 +59,10 @@ install -Dm644 /dev/null %{buildroot}%{_udevrulesdir}/91-steelseries-arctis.rule
 python3 scripts/generate_udev_rules.py src/arctis_sound_manager/devices/ \
     > %{buildroot}%{_udevrulesdir}/91-steelseries-arctis.rules
 
-# Systemd user services
-install -Dm644 /dev/stdin %{buildroot}%{_userunitdir}/arctis-manager.service <<'SERVICE'
-[Unit]
-Description=Arctis Sound Manager
-After=pipewire.service pipewire-pulse.service
-Wants=pipewire.service
-StartLimitInterval=1min
-StartLimitBurst=5
-
-[Service]
-Type=simple
-ExecStart=%{_bindir}/asm-daemon
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=graphical-session.target
-SERVICE
-
-install -Dm644 /dev/stdin %{buildroot}%{_userunitdir}/arctis-video-router.service <<'SERVICE'
-[Unit]
-Description=Arctis Sound Manager — Media Router
-After=pipewire.service arctis-manager.service
-Requires=pipewire.service
-
-[Service]
-ExecStart=%{_bindir}/asm-router
-Restart=on-failure
-RestartSec=3
-
-[Install]
-WantedBy=default.target
-SERVICE
-
-install -Dm644 /dev/stdin %{buildroot}%{_userunitdir}/arctis-gui.service <<'SERVICE'
-[Unit]
-Description=Arctis Sound Manager — System Tray
-After=graphical-session.target arctis-manager.service
-Wants=arctis-manager.service
-
-[Service]
-Type=simple
-ExecStart=%{_bindir}/asm-gui --systray
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=graphical-session.target
-SERVICE
+# Systemd user services (single source of truth in systemd/, not heredocs)
+install -Dm644 systemd/arctis-manager.service       %{buildroot}%{_userunitdir}/arctis-manager.service
+install -Dm644 systemd/arctis-video-router.service  %{buildroot}%{_userunitdir}/arctis-video-router.service
+install -Dm644 systemd/arctis-gui.service           %{buildroot}%{_userunitdir}/arctis-gui.service
 
 # Desktop entry
 install -Dm644 src/arctis_sound_manager/desktop/ArctisManager.desktop \
