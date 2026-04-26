@@ -139,6 +139,7 @@ def main():
             overrides = load_overrides()
             sink_inputs = pulse.sink_input_list()
             sink_map = {s.name: s.index for s in sinks}
+            sink_idx_to_name = {s.index: s.name for s in sinks}
 
             # ── PulseAudio streams ────────────────────────────────────────────
             for si in sink_inputs:
@@ -160,6 +161,25 @@ def main():
                 # Auto-route new apps that have no override yet
                 if app not in overrides:
                     auto = _auto_route(app, si.proplist)
+                    if not auto:
+                        # Fallback adoption (issue #20): when Arctis is default
+                        # but a stream still plays through another physical
+                        # output (Logitech, internal speakers, etc.), pull it
+                        # onto Arctis_Media so the user actually hears it in
+                        # the headset. Skipped if the stream is already on any
+                        # Arctis sink (virtual or filter-chain) so manual moves
+                        # are preserved.
+                        current_name = sink_idx_to_name.get(si.sink, "")
+                        on_arctis = any(
+                            k in current_name
+                            for k in ("Arctis_", "SteelSeries_Arctis", "effect_input.sonar")
+                        )
+                        if not on_arctis:
+                            auto = "Arctis_Media"
+                            log.info(
+                                "Adopt: '%s' was on '%s' while Arctis is default — moving to %s",
+                                app, current_name, auto,
+                            )
                     if auto:
                         log.info("Auto-route: '%s' -> %s", app, auto)
                         overrides[app] = auto
@@ -201,6 +221,23 @@ def main():
                 # Auto-route new native apps that have no override yet
                 if app and app not in overrides:
                     auto = _auto_route(app, s.get("props", {}))
+                    if not auto:
+                        # Same adoption fallback as for PA streams (issue #20):
+                        # native PW stream playing on a non-Arctis sink while
+                        # Arctis is default → move to Arctis_Media. Skip when
+                        # the stream is already on an Arctis target (manual
+                        # placement preserved).
+                        current = s.get("sink_name") or ""
+                        on_arctis = any(
+                            k in current
+                            for k in ("Arctis_", "SteelSeries_Arctis", "effect_input.sonar")
+                        )
+                        if current and not on_arctis:
+                            auto = "Arctis_Media"
+                            log.info(
+                                "Adopt (native): '%s' was on '%s' while Arctis is default — moving to %s",
+                                app, current, auto,
+                            )
                     if auto:
                         log.info("Auto-route (native): '%s' -> %s", app, auto)
                         overrides[app] = auto
