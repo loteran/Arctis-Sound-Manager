@@ -44,16 +44,46 @@ class PulseAudioManager:
 
         return PulseAudioManager._instance
 
+    # PipeWire/PulseAudio sometimes isn't ready when the daemon starts
+    # (boot race, user session not yet up). Retry with exponential-ish
+    # backoff before giving up on the constructor.
+    _CONNECT_MAX_ATTEMPTS = 12
+    _CONNECT_INITIAL_DELAY_S = 0.5
+    _CONNECT_MAX_DELAY_S = 4.0
+
     def __init__(self):
-        self.pulse = pulsectl.Pulse('arctis-sound-manager')
         self.logger = logging.getLogger('PulseAudioManager')
-    
+        self.pulse = self._connect_with_retry()
+
+    def _connect_with_retry(self) -> 'pulsectl.Pulse':
+        delay = self._CONNECT_INITIAL_DELAY_S
+        last_err: Exception | None = None
+        for attempt in range(1, self._CONNECT_MAX_ATTEMPTS + 1):
+            try:
+                client = pulsectl.Pulse('arctis-sound-manager')
+                if attempt > 1:
+                    self.logger.info(f'Connected to PulseAudio/PipeWire on attempt {attempt}.')
+                return client
+            except Exception as e:
+                last_err = e
+                self.logger.warning(
+                    f'PulseAudio connect attempt {attempt}/{self._CONNECT_MAX_ATTEMPTS} '
+                    f'failed: {e!r}; retrying in {delay:.1f}s.'
+                )
+                time.sleep(delay)
+                delay = min(delay * 1.5, self._CONNECT_MAX_DELAY_S)
+        raise RuntimeError(
+            f'Could not connect to PulseAudio/PipeWire after '
+            f'{self._CONNECT_MAX_ATTEMPTS} attempts: {last_err!r}. '
+            'Is pipewire-pulse / pulseaudio running for this user?'
+        )
+
     def _reconnect(self):
         try:
             self.pulse.disconnect()
         except Exception:
             pass
-        self.pulse = pulsectl.Pulse('arctis-sound-manager')
+        self.pulse = self._connect_with_retry()
 
     def sink_list_wrapper(self) -> list[TypedPulseSinkInfo]:
         max_attempts = 15

@@ -7,8 +7,10 @@ files can't be written to $HOME during package().
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 _SHARE_DIR = Path("/usr/share/arctis-sound-manager")
@@ -75,7 +77,26 @@ def _ensure_filter_chain_service() -> str:
     return "filter-chain.service"
 
 
+def _refuse_root() -> None:
+    """asm-setup wires up the *user's* systemd, $HOME and pipewire — running it
+    as root would either silently fail (`systemctl --user` outside a user
+    session) or write into /root, neither of which is what the user wants.
+    The package's post-install hook calls us via `su -l $REAL_USER`, so this
+    branch only triggers when somebody manually runs `sudo asm-setup`."""
+    if os.geteuid() == 0:
+        sys.stderr.write(
+            "asm-setup: refusing to run as root — this script configures the\n"
+            "current user's PipeWire / systemd / $HOME, not the system as a\n"
+            "whole. Re-run as the regular user that will use the headset:\n"
+            "  asm-setup\n"
+            "(or, from the package post-install hook, su -l $REAL_USER -c 'asm-setup').\n"
+        )
+        sys.exit(2)
+
+
 def main() -> None:
+    _refuse_root()
+
     # ── PipeWire configs ──
     # 10-arctis-virtual-sinks.conf → pipewire.conf.d (loaded by pipewire itself)
     # sink-virtual-surround-7.1-hesuvi.conf → filter-chain.conf.d (loaded by filter-chain service)
@@ -209,11 +230,36 @@ def main() -> None:
     _run_systemctl(["enable", "--now", fc_service])
     _run_systemctl(["enable", "arctis-gui.service"])
 
+    # ── Validate device YAML overrides ──
+    # asm-setup keeps copying YAMLs into ~/.config/arctis_manager/devices/ on
+    # every run (the user can override them) — but if a previous run was
+    # interrupted mid-copy, one of those files might be corrupt and would
+    # crash the daemon. Check each is valid YAML before considering setup done.
+    bad_yamls: list[str] = []
+    if _DEVICE_DIR.is_dir():
+        try:
+            from ruamel.yaml import YAML
+            yaml = YAML(typ='safe')
+            for f in _DEVICE_DIR.glob('*.yaml'):
+                try:
+                    payload = yaml.load(f)
+                    if not isinstance(payload, dict) or 'device' not in payload:
+                        bad_yamls.append(f.name)
+                except Exception:
+                    bad_yamls.append(f.name)
+        except Exception:
+            pass
+    if bad_yamls:
+        print(f"  [!] Invalid device YAMLs in {_DEVICE_DIR}: {bad_yamls} — daemon will skip them.")
+
     # Mark setup as done — checked by /etc/xdg/autostart/asm-first-run.desktop
     flag = Path.home() / ".config" / "arctis_manager" / ".setup_done"
     flag.parent.mkdir(parents=True, exist_ok=True)
     flag.touch()
 
+    if bad_yamls:
+        print("\n==> Setup complete with warnings (see above).")
+        sys.exit(1)
     print("\n==> Setup complete!")
 
 

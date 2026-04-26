@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 
 from dbus_next.aio.message_bus import MessageBus
+from dbus_next.constants import RequestNameReply
 from dbus_next.service import ServiceInterface, method
 
 from arctis_sound_manager.config import parsed_status
@@ -294,7 +295,33 @@ class DbusManager:
 
         self.core_engine = core_engine
 
-        bus = await MessageBus().connect()
+        # ── Bus connection ────────────────────────────────────────────────
+        # The session bus may not be reachable yet at boot (running before
+        # the user session is fully up) or at all (TTY-only / container).
+        # Retry with a short backoff so transient races resolve themselves;
+        # raise a clear error if it never comes up so systemd can decide
+        # whether to restart us.
+        bus = None
+        last_err: Exception | None = None
+        for attempt in range(1, 6):
+            try:
+                bus = await asyncio.wait_for(MessageBus().connect(), timeout=5.0)
+                break
+            except asyncio.TimeoutError:
+                last_err = TimeoutError("MessageBus.connect() timed out after 5s")
+            except Exception as e:
+                last_err = e
+            self.log.warning(
+                f"D-Bus connect attempt {attempt}/5 failed: {last_err!r} — retrying in {attempt}s..."
+            )
+            await asyncio.sleep(attempt)
+        if bus is None:
+            raise RuntimeError(
+                f"Could not connect to the D-Bus session bus after 5 attempts: {last_err!r}. "
+                "Is DBUS_SESSION_BUS_ADDRESS set? On a TTY-only host the daemon "
+                "needs `dbus-run-session` or a real graphical session."
+            )
+
         for tpl in [
             (ArctisManagerDbusConfigService, DBUS_CONFIG_OBJECT_PATH),
             (ArctisManagerDbusSettingsService, DBUS_SETTINGS_OBJECT_PATH),
@@ -303,7 +330,26 @@ class DbusManager:
             interface = tpl[0](self.core_engine)
             bus.export(tpl[1], interface)
 
-        await bus.request_name(DBUS_BUS_NAME)
+        # ── Bus name acquisition ──────────────────────────────────────────
+        # An old daemon left running (e.g. via systemd + manual launch) will
+        # still own the well-known name. Detect EXISTS / IN_QUEUE explicitly
+        # instead of silently registering as a queued listener that never
+        # answers any GUI request.
+        try:
+            reply = await bus.request_name(DBUS_BUS_NAME)
+        except Exception as e:
+            raise RuntimeError(
+                f"Could not request D-Bus name {DBUS_BUS_NAME!r}: {e!r}"
+            ) from e
+
+        if reply not in (RequestNameReply.PRIMARY_OWNER, RequestNameReply.ALREADY_OWNER):
+            raise RuntimeError(
+                f"D-Bus name {DBUS_BUS_NAME!r} is already taken (reply={reply.name}). "
+                "Another asm-daemon is probably running — stop it with "
+                "`systemctl --user stop arctis-manager.service` or `pkill -f asm-daemon` "
+                "and retry."
+            )
+        self.log.info(f"D-Bus name {DBUS_BUS_NAME!r} acquired ({reply.name}).")
 
     async def wait_for_stop(self) -> None:
         while not getattr(self, '_stopping', False):

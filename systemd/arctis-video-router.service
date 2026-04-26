@@ -1,5 +1,5 @@
 [Unit]
-Description=Arctis Sound Manager — Media Router
+Description=Arctis Sound Manager — Media Router (auto-route browsers/video to Arctis_Media)
 After=pipewire.service arctis-manager.service
 Requires=pipewire.service
 

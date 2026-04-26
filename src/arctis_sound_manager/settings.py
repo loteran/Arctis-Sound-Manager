@@ -1,3 +1,5 @@
+import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -157,11 +159,51 @@ class GeneralSettings(JsonSerializable):
 
         yaml = YAML(typ='safe')
 
-        return GeneralSettings(**yaml.load(settings_file))
-    
+        try:
+            data = yaml.load(settings_file)
+        except Exception as e:
+            # YAML corrupt / partial write from a previous crash. Backup the
+            # broken file (so the user can recover anything custom) and fall
+            # back to defaults instead of crashing the daemon at startup.
+            logging.getLogger(__name__).warning(
+                f"general_settings.yaml is unreadable ({e!r}); backing up and using defaults."
+            )
+            try:
+                settings_file.rename(settings_file.with_suffix('.yaml.broken'))
+            except OSError:
+                pass
+            return GeneralSettings()
+
+        if not isinstance(data, dict):
+            logging.getLogger(__name__).warning(
+                f"general_settings.yaml has unexpected shape ({type(data).__name__}); using defaults."
+            )
+            return GeneralSettings()
+
+        return GeneralSettings(**data)
+
     def write_to_file(self):
         settings_file = SETTINGS_FOLDER / 'general_settings.yaml'
         settings_file.parent.mkdir(parents=True, exist_ok=True)
-        
+
+        # Atomic write: serialize to a sibling tempfile, fsync, then rename.
+        # Prevents the on-disk file from ever being half-written if the
+        # process is killed mid-flush (which used to make the next start
+        # fall back to defaults — now it won't).
         yaml = YAML(typ='safe')
-        yaml.dump(self.__dict__, settings_file)
+        tmp = settings_file.with_suffix('.yaml.tmp')
+        try:
+            with tmp.open('w', encoding='utf-8') as fh:
+                yaml.dump(self.__dict__, fh)
+                fh.flush()
+                try:
+                    os.fsync(fh.fileno())
+                except OSError:
+                    pass
+            tmp.replace(settings_file)
+        finally:
+            if tmp.exists():
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass

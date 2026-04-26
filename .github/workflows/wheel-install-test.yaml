@@ -56,7 +56,21 @@ jobs:
         run: |
           python --version | awk '{split($2,v,"."); print v[1]"."v[2]}' > .python-version
           uv build
-    
+
+      - name: Run pytest (mock-based, no hardware needed)
+        run: |
+          uv sync --all-extras --dev
+          # tests/test_device_detection.py covers all 13 device families and ~40 PIDs
+          # via mocked usb.core / pyudev — must pass on every distro to guarantee
+          # detection logic stays portable.
+          uv run pytest tests/test_device_detection.py -v
+
+      - name: Verify shared udev generator works headless
+        run: |
+          # Exercise both entry points to catch import-path regressions:
+          uv run python3 scripts/generate_udev_rules.py | grep "uaccess" | wc -l
+          uv run python3 -c "from arctis_sound_manager.udev_rules import generate_rules; from pathlib import Path; print(generate_rules([Path('src/arctis_sound_manager/devices')])[:200])"
+
       - name: Install test (pipx, pip)
         run: |
           chmod +x tests/install-wheel-test.sh

@@ -11,6 +11,11 @@ PYLIB = $(DEST)/usr/lib/python3/dist-packages
 	dh $@
 
 override_dh_auto_build:
+	# Regenerate debian/changelog from CHANGELOG.md so the .deb is always
+	# in sync with the project changelog (it had previously drifted by
+	# 39 versions because the file was hand-maintained).
+	python3 scripts/generate_debian_changelog.py --in-place
+
 	# If pre-built wheels exist (PPA / CI), use them; otherwise build
 	if [ -d debian/wheels ]; then \
 	    echo "Using pre-built wheels from debian/wheels/"; \
@@ -43,11 +48,13 @@ override_dh_auto_install:
 	    > $(DEST)/usr/lib/udev/rules.d/91-steelseries-arctis.rules
 	chmod 644 $(DEST)/usr/lib/udev/rules.d/91-steelseries-arctis.rules
 
-	# ── Systemd user services ──────────────────────────────
-	install -Dm644 debian/arctis-manager.service \
+	# ── Systemd user services (single source of truth in systemd/) ──
+	install -Dm644 systemd/arctis-manager.service \
 	    $(DEST)/usr/lib/systemd/user/arctis-manager.service
-	install -Dm644 debian/arctis-video-router.service \
+	install -Dm644 systemd/arctis-video-router.service \
 	    $(DEST)/usr/lib/systemd/user/arctis-video-router.service
+	install -Dm644 systemd/arctis-gui.service \
+	    $(DEST)/usr/lib/systemd/user/arctis-gui.service
 
 	# ── Desktop entry ───────────────────────────────────────
 	install -Dm644 src/arctis_sound_manager/desktop/ArctisManager.desktop \
@@ -57,7 +64,8 @@ override_dh_auto_install:
 	install -Dm644 src/arctis_sound_manager/gui/images/steelseries_logo.svg \
 	    $(DEST)/usr/share/icons/hicolor/scalable/apps/arctis-manager.svg
 
-	# ── AppStream metainfo ──────────────────────────────────
+	# ── AppStream metainfo (releases injected from CHANGELOG.md) ──
+	python3 scripts/generate_metainfo_releases.py --in-place
 	install -Dm644 src/arctis_sound_manager/desktop/com.github.loteran.arctis-sound-manager.metainfo.xml \
 	    $(DEST)/usr/share/metainfo/com.github.loteran.arctis-sound-manager.metainfo.xml
 

@@ -13,7 +13,8 @@ import pulsectl
 
 from arctis_sound_manager.pw_utils import get_native_streams, move_native_stream
 
-logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
+from arctis_sound_manager.log_setup import configure_logging
+configure_logging(default=logging.INFO, fmt="[%(levelname)s] %(message)s")
 log = logging.getLogger("video_router")
 
 # Wake up on PulseAudio events; fall back to periodic check for native PW streams

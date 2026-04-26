@@ -184,7 +184,17 @@ class CoreEngine:
         for device_config in self.device_configurations:
             if device_config.vendor_id == vendor_id and product_id in device_config.product_ids:
                 self.configure_virtual_sinks()
-                break
+                return
+
+        # Reached only when the connected device matches no YAML — surface this
+        # loudly so unsupported PIDs are easy to spot in journalctl / bug
+        # reports. Limited to the SteelSeries vendor to avoid noise from the
+        # rest of the bus when running under the polling backend.
+        if vendor_id == 0x1038:
+            self.logger.warning(
+                f"USB device {vendor_id:04x}:{product_id:04x} appeared but no device YAML matches. "
+                "If this is a SteelSeries Arctis headset, please open an issue with this PID so support can be added."
+            )
     
     def on_device_disconnected(self, vendor_id: int, product_id: int) -> None:
         # vendor_id and product_id are not available. Check if the current device is still plugged in.
@@ -366,9 +376,28 @@ class CoreEngine:
         self.logger.info("Initializing device...")
         if self.device_config and self.device_config.device_init:
             endpoint = self.get_command_endpoint_address()
+            total = len(self.device_config.device_init)
 
-            for bytes in self.device_config.device_init:
-                self.send_command(self.translate_init_bytes(bytes), endpoint)
+            for index, bytes in enumerate(self.device_config.device_init, start=1):
+                # One retry on USBError — most failures here are transient
+                # (kernel driver re-attached itself between detach and write,
+                # device still warming up after enumeration). Persistent
+                # failures continue with the remaining commands so partial
+                # state at least powers something rather than nothing.
+                for attempt in (1, 2):
+                    try:
+                        self.send_command(self.translate_init_bytes(bytes), endpoint)
+                        break
+                    except usb.core.USBError as e:
+                        if attempt == 1:
+                            self.logger.warning(
+                                f"init_device cmd {index}/{total} failed ({e!r}); retrying once."
+                            )
+                            continue
+                        self.logger.error(
+                            f"init_device cmd {index}/{total} still failing after retry: {e!r}. "
+                            "Device may be left in a partially-configured state."
+                        )
 
         self._apply_stored_eq()
 
@@ -567,18 +596,23 @@ class CoreEngine:
         """
         self.logger.info(f"Detaching kernel driver for device: {usb_device.idVendor:04x}:{usb_device.idProduct:04x} ({config.name})")
 
+        ok = True
         for interface in self._all_used_interfaces(config):
             try:
                 if usb_device.is_kernel_driver_active(interface):
                     self.logger.info(f"Kernel driver active on interface {interface}, detaching...")
                     usb_device.detach_kernel_driver(interface)
             except usb.core.USBError as e:
+                # Per-interface failure (device disconnected mid-detach, EACCES,
+                # interface already claimed) is logged via _log_usb_access_error
+                # — the loop continues so the rest of the device still claims.
                 self._log_usb_access_error(e, usb_device, config, interface, action="detaching")
-                return False
-        # All interfaces succeeded — clear any prior permission_error flag
-        # so the GUI banner disappears once udev rules are working.
-        self.permission_error = False
-        return True
+                ok = False
+        if ok:
+            # All interfaces succeeded — clear any prior permission_error flag
+            # so the GUI banner disappears once udev rules are working.
+            self.permission_error = False
+        return ok
 
     def kernel_attach(self, usb_device: TypedDevice, config: DeviceConfiguration) -> bool:
         """Re-attach the kernel driver. Returns False on USB error (best effort)."""

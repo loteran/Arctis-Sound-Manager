@@ -227,13 +227,38 @@ def load_device_configurations() -> list[DeviceConfiguration]:
     for config_path in DEVICES_CONFIG_FOLDER:
         logger.info(f'\t- {config_path}')
 
+    # Track which (family_name) first claimed a PID so we can warn on real
+    # cross-family conflicts. Same-family duplicates across paths (HOME shadowing
+    # SRC) are by-design and shouldn't warn.
+    seen_pids: dict[int, tuple[str, str]] = {}  # pid -> (family_name, file.name)
     for config_path in DEVICES_CONFIG_FOLDER:
         if not config_path.exists() or not config_path.is_dir():
             continue
 
-        for file in config_path.glob('*.yaml'):
-            config_yaml = yaml.load(file)
-            config = DeviceConfiguration(config_yaml)
+        for file in sorted(config_path.glob('*.yaml')):
+            try:
+                config_yaml = yaml.load(file)
+                config = DeviceConfiguration(config_yaml)
+            except Exception as e:
+                # A single malformed YAML (typo in a user override under
+                # ~/.config/arctis_manager/devices, partial download, etc.)
+                # used to crash the whole daemon. Skip the offending file
+                # and surface it loudly so the rest of the headsets still work.
+                logger.error(f'Skipping invalid device YAML {file}: {e!r}')
+                continue
+
+            real_duplicates = [
+                pid for pid in config.product_ids
+                if pid in seen_pids and seen_pids[pid][0] != config.name
+            ]
+            if real_duplicates:
+                first_owner = seen_pids[real_duplicates[0]]
+                logger.warning(
+                    f'{file.name}: PIDs {[f"0x{pid:04x}" for pid in real_duplicates]} '
+                    f'already claimed by family {first_owner[0]!r} ({first_owner[1]}) — runtime selection is order-dependent.'
+                )
+            for pid in config.product_ids:
+                seen_pids.setdefault(pid, (config.name, file.name))
 
             logger.info(f'Found: {config.name} (0x{config.vendor_id:04x}, {[f"0x{pid:04x}" for pid in config.product_ids]}) from {file}')
 

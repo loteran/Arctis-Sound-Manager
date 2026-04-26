@@ -34,6 +34,12 @@ SRC_CONFIG_FOLDER = Path(__file__).parent / 'devices'
 DEVICES_CONFIG_FOLDER: list[Path] = [HOME_CONFIG_FOLDER, SRC_CONFIG_FOLDER]
 
 UDEV_RULES_PATHS = [
+    # /etc has highest priority — local admin / asm-cli writes here.
     '/etc/udev/rules.d/91-steelseries-arctis.rules',
+    # Distro-installed rules (Arch, Fedora, modern Debian/Ubuntu with usrmerge).
     '/usr/lib/udev/rules.d/91-steelseries-arctis.rules',
+    # Pre-usrmerge Debian / Ubuntu locations, kept for backwards compat.
+    '/lib/udev/rules.d/91-steelseries-arctis.rules',
+    # Runtime overlay (transient, used by some package managers and NixOS).
+    '/run/udev/rules.d/91-steelseries-arctis.rules',
 ]

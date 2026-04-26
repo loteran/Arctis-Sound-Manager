@@ -141,9 +141,11 @@ jobs:
           sed -i "s/arctis-sound-manager-[0-9][0-9.]*\.tar\.gz/arctis-sound-manager-${VERSION}.tar.gz/g" aur/.SRCINFO
           sed -i "s|releases/download/v[0-9][0-9.]*/|releases/download/v${VERSION}/|g" aur/.SRCINFO
           sed -i "s/sha256sums = [^ ]*/sha256sums = SKIP/" aur/.SRCINFO
-          git add aur/PKGBUILD aur/.SRCINFO
+          # Keep pyproject.toml version in sync (single source of truth for Python tooling)
+          sed -i "s/^version = \"[^\"]*\"/version = \"${VERSION}\"/" pyproject.toml
+          git add aur/PKGBUILD aur/.SRCINFO pyproject.toml
           git diff --cached --quiet && echo "No changes to sync" && exit 0
-          git commit -m "chore(aur): sync PKGBUILD and .SRCINFO template to v${VERSION}"
+          git commit -m "chore: sync PKGBUILD/.SRCINFO/pyproject.toml to v${VERSION}"
           git push origin HEAD:develop
 
   copr-build:

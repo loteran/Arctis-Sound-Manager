@@ -56,19 +56,154 @@
   <content_rating type="oars-1.1" />
 
   <releases>
-    <release version="1.0.4" date="2026-03-29">
+    <release version="1.0.65" date="2026-04-22">
       <description>
-        <p>External output EQ, volume control, stream routing, update notifications, clean exit.</p>
+        <p>DEB build: fixed CI release workflow failure — debian/91-steelseries-arctis.rules was removed from the repo but build-deb.sh still referenced it as a static file. The script now generates udev rules at build time via uv run python3 scripts/generate_udev_rules.py.</p>
       </description>
     </release>
-    <release version="1.0.1" date="2026-03-29">
+    <release version="1.0.60" date="2026-04-21">
       <description>
-        <p>Fix ANC/Transparent mode toggle from GUI on device init.</p>
+        <p>udev rules (RPM/DEB): rules are now generated at build time from device YAMLs via scripts/generate_udev_rules.py — no more hardcoded rules that drift out of sync with the device definitions. debian/91-steelseries-arctis.rules removed. asm-cli udev dump-rules: new subcommand that prints the generated udev rules to stdout (used by packaging scripts). generate_udev_rules_content(): extracted as a public function in cli.py for reuse by both write-rules and dump-rules.</p>
       </description>
     </release>
-    <release version="1.0.0" date="2026-03-28">
+    <release version="1.0.59" date="2026-04-21">
       <description>
-        <p>First stable release with full Sonar EQ, micro processing, ANC control, and AUR package.</p>
+        <p>udev rules (RPM/DEB): add missing PID 0x1294 for Arctis Pro Wireless — the audio PID was never included in the installed rules file, causing [Errno 13] Access denied on Fedora/Nobara. udev rules (RPM/DEB): remove ENV{DEVTYPE}=="usb_device" condition from all rules — this condition can fail silently on some kernels, preventing rules from matching. udev rules (RPM/DEB): sync all PIDs with device yamls — add missing PIDs for Arctis 1/7X/7P Wireless, Arctis Pro 2019, Nova 3P/3X, Nova 7 Gen 1/Gen 2.</p>
+      </description>
+    </release>
+    <release version="1.0.53" date="2026-04-18">
+      <description>
+        <p>Telemetry: added User-Agent header to outgoing requests — Cloudflare was silently returning 403 to Python-urllib, so no data was ever reaching the stats endpoint.</p>
+      </description>
+    </release>
+    <release version="1.0.52" date="2026-04-18">
+      <description>
+        <p>udev rules: clicking "Install rules" in the GUI now triggers a single password prompt instead of three — the file write, udevadm control --reload-rules and udevadm trigger are now bundled into one elevated shell script.</p>
+      </description>
+    </release>
+    <release version="1.0.50" date="2026-04-17">
+      <description>
+        <p>73 new Sonar presets imported from SteelSeries Sonar v1.91 — game titles, Music and Movie categories (all names sanitized, no special characters).</p>
+      </description>
+    </release>
+    <release version="1.0.49" date="2026-04-17">
+      <description>
+        <p>2 new Sonar presets: Podcast [Game], Podcast [Chat] — imported from SteelSeries Sonar v1.91.</p>
+      </description>
+    </release>
+    <release version="1.0.48" date="2026-04-17">
+      <description>
+        <p>Anonymous telemetry (opt-in): on first launch, ASM asks whether you want to share your Linux distribution, headset model and ASM version once per day. No personal data or IP address is stored. Can be toggled at any time in Settings. Community stats dashboard: aggregated usage data is publicly visible at loteran.github.io/Arctis-Sound-Manager/stats. Auto-updated README: the Supported Devices and Tested Distributions tables in the README are now updated automatically every week from telemetry data. Devices with 5+ user reports are promoted from ⚠️ to ✅ automatically.</p>
+      </description>
+    </release>
+    <release version="1.0.42" date="2026-04-16">
+      <description>
+        <p>Dial interface auto-detection: the daemon now probes USB interfaces at startup to find the dial interface automatically, with a per-device cache to avoid re-probing on reconnect. Arctis Nova 7: moved PID 0x227a to the correct nova_7_discrete_battery device definition. CI: fixed aur-update and copr-build sync jobs rejecting push to develop when the branch advanced since checkout — now checkout develop directly before applying changes.</p>
+      </description>
+    </release>
+    <release version="1.0.41" date="2026-04-16">
+      <description>
+        <p>Arctis Pro Wireless: added alternate USB PID 0x1294 to device definition and introduced HID-aware device detection — the daemon now automatically selects the USB interface that exposes an HID class (bInterfaceClass == 3), fixing [Errno 13] Access denied on systems where the control interface is exposed under a different PID.</p>
+      </description>
+    </release>
+    <release version="1.0.40" date="2026-04-15">
+      <description>
+        <p>udev rules: removed GROUP="plugdev" from generated rules — the group does not exist on Fedora/RHEL and caused the entire rule line to be silently ignored, leaving the device inaccessible. MODE="0666" + TAG+="uaccess" are sufficient on all distros. Bug report dialog: fixed clipboard copy (added activateWindow() + explicit QClipboard.Mode.Clipboard to fix silent failure on Wayland/VM); "Copy to clipboard" button now shows "Copied!" feedback for 2 s. Bug report dialog: "Open GitHub issue" button now copies the report to the clipboard and opens a blank issue (title only) instead of encoding the full report in the URL, which exceeded GitHub's URL length limit.</p>
+      </description>
+    </release>
+    <release version="1.0.38" date="2026-04-14">
+      <description>
+        <p>Presets: God of War Ragnarök : renommé en God of War Ragnarok — le caractère ö causait également une erreur bsdtar lors du packaging.</p>
+      </description>
+    </release>
+    <release version="1.0.37" date="2026-04-14">
+      <description>
+        <p>AUR: packaging : uv pip install --prefix remplace uv pip download (sous-commande inexistante). Plus besoin de python-pip en makedep. Presets: noms de fichiers : suppression des caractères ™ et ® dans les noms de fichiers de presets — causaient des erreurs bsdtar lors du packaging (impossible de traduire en UTF-8 dans l'environnement fakeroot).</p>
+      </description>
+    </release>
+    <release version="1.0.36" date="2026-04-12">
+      <description>
+        <p>Toutes les distros: permissions USB : règles udev générées avec plugdev group et sans ENV{DEVTYPE} check — fonctionne désormais sur Fedora, Ubuntu et toutes distros sans TAG+="uaccess" (cross-distro fix).</p>
+      </description>
+    </release>
+    <release version="1.0.35" date="2026-04-12">
+      <description>
+        <p>Toutes les distros: règles udev malformées : une règle par PID au lieu de plusieurs PIDs séparés par | dans ATTRS{idProduct} — syntaxe multi-valeur non supportée par toutes les versions de udev.</p>
+      </description>
+    </release>
+    <release version="1.0.34" date="2026-04-12">
+      <description>
+        <p>Ubuntu/Debian: python3-pulsectl and dbus-next absent des dépôts : les deux bibliothèques sont maintenant bundlées directement dans le .deb (comme dbus-next l'était déjà). Plus aucune dépendance apt non résolvable. Ubuntu 22.04: python3-pyside6 absent des dépôts : le postinst détecte l'absence de PySide6 et installe automatiquement pyside6 via pip3 --user pour l'utilisateur réel ($SUDO_USER). Toutes les distros: wireplumber absent des dépendances : ajouté dans Depends (.deb), Requires (RPM) et depends (AUR).</p>
+      </description>
+    </release>
+    <release version="1.0.32" date="2026-04-11">
+      <description>
+        <p>HeSuVi config deployed to wrong directory in asm-setup (AUR/COPR/DEB): sink-virtual-surround-7.1-hesuvi.conf was copied to pipewire.conf.d/ instead of filter-chain.conf.d/, recreating the duplicate-node bug (#14) on every package install. filter-chain.service missing on Fedora and Ubuntu: the service is not shipped by default on these distros. A bundled filter-chain.service is now included in all packages and auto-installed by asm-setup and install.sh when the system service is absent. Hardcoded Nova Pro Wireless node.target in PipeWire static configs: 10-arctis-virtual-sinks.conf and sink-virtual-surround-7.1-hesuvi.conf contained a hardcoded ALSA sink name — all three virtual sinks (Game/Chat/Media) were silent on startup for any headset other than Nova Pro Wireless. Removed; sinks now connect to the default sink until the daemon reconfigures them.</p>
+      </description>
+    </release>
+    <release version="1.0.27" date="2026-04-10">
+      <description>
+        <p>Silent Game channel persists after Sonar mode switch (issue #14, root cause): install.sh deploys the HeSuVi config to pipewire.conf.d/ (loaded by the main PipeWire process). When Sonar EQ is enabled, ASM also generates a dynamic config into filter-chain.conf.d/. Both files register the same node name (effect_input.virtual-surround-7.1-hesuvi), causing a conflict that leaves the game EQ routing to a non-existent node — audio disappears silently. Fixed by:. generate_hesuvi_conf() now removes the static copy from pipewire.conf.d/ when writing the dynamic version. check_and_fix_stale_configs() now detects and removes the conflict on daemon startup.</p>
+      </description>
+    </release>
+    <release version="1.0.26" date="2026-04-10">
+      <description>
+        <p>Silent Game channel on first Sonar mode switch (issue #14): when switching to Sonar EQ for the first time, Arctis_Game was rerouted to effect_input.sonar-game-eq before sonar-game-eq.conf existed. The node was never created, leaving the Game sink connected to nothing. Fixed by calling ensure_sonar_eq_configs() before generate_virtual_sinks_conf() in the mode-switch worker, and from check_and_fix_stale_configs() at startup.</p>
+      </description>
+    </release>
+    <release version="1.0.25" date="2026-04-10">
+      <description>
+        <p>install.sh PATH regression (issue #3): export PATH="$HOME/.local/bin:$PATH" was only executed inside the uv install block. On a reinstall (uv already present), all asm-cli and asm-daemon calls silently failed with *command not found*, preventing udev rule installation, service file creation, and systemctl enable. PATH is now exported unconditionally at the top of the script.</p>
+      </description>
+    </release>
+    <release version="1.0.21" date="2026-04-09">
+      <description>
+        <p>PPA source build: replaced debuild -- --no-pre-clean with dpkg-buildpackage -S --no-pre-clean — debuild was injecting --rules-target before the extra argument, calling debian/rules --no-pre-clean as a make target (exit 2). dpkg-buildpackage accepts --no-pre-clean directly and skips the clean step so debian/wheels/ survives into the source package.</p>
+      </description>
+    </release>
+    <release version="1.0.20" date="2026-04-09">
+      <description>
+        <p>PPA build failure (Failed to build on Launchpad): debuild -S runs debian/rules clean before packaging the source, deleting debian/wheels/ — Launchpad received a source package without wheels and couldn't download them (no internet in sandbox). Fixed by:. Adding --no-pre-clean to debuild -S so wheels survive source packaging. Removing debian/wheels from override_dh_auto_clean so Launchpad's pre-build clean doesn't destroy them either.</p>
+      </description>
+    </release>
+    <release version="1.0.19" date="2026-04-09">
+      <description>
+        <p>PPA upload workflow: removed oracular (Ubuntu 24.10, EOL since July 2025) from the target matrix — Launchpad no longer accepts uploads for this series. Only noble (24.04 LTS) is targeted.</p>
+      </description>
+    </release>
+    <release version="1.0.18" date="2026-04-09">
+      <description>
+        <p>PPA upload workflow: sed pattern (.*) in basic regex matched only literal parentheses, leaving the previous distroseries name in place — Launchpad rejected uploads with Unable to find distroseries: oracular noble. Fixed by replacing the entire first changelog line.</p>
+      </description>
+    </release>
+    <release version="1.0.17" date="2026-04-09">
+      <description>
+        <p>Arctis Nova Pro Wired config (0x12cb / 0x12cd): corrected two issues found via hardware testing (asm-cli tools arctis-devices):. command_transport: ctrl_output — device has no interrupt OUT endpoint, commands must be sent via HID SET_REPORT. command_padding.length: 16 — IN endpoint MaxPacketSize is 16 bytes (was incorrectly set to 64).</p>
+      </description>
+    </release>
+    <release version="1.0.16" date="2026-04-08">
+      <description>
+        <p>Arctis Nova Pro Wired support (0x12cb) and its Xbox variant (0x12cd): sidetone, mic volume, mic LED brightness, audio gain (low/high), ChatMix, EQ. Protocol confirmed from reverse-engineering of the Nova Pro family (shared HID interface 4, same 0x06-prefixed command set as Nova Pro Wireless).</p>
+      </description>
+    </release>
+    <release version="1.0.15" date="2026-04-08">
+      <description>
+        <p>Context-aware privilege elevation (sudo_it): the elevation tool is now chosen based on the execution context rather than tried blindly in a fixed order:. Terminal (TTY) → sudo first (native prompt), then graphical tools as fallback. GUI / no TTY → DE-specific graphical tools (kdesu on KDE, lxqt-sudo on LXQt) then pkexec — sudo is never attempted without a TTY.</p>
+      </description>
+    </release>
+    <release version="1.0.14" date="2026-04-08">
+      <description>
+        <p>udev rules check at startup: GUI shows a dialog at startup when udev rules are missing or invalid, with an "Install rules" button that runs the fix automatically (requires administrator password). The daemon also logs a warning on the same condition. sudo_it() fallback: now tries sudo if pkexec is unavailable or fails, and catches CalledProcessError instead of crashing. write_udev_rules() blocking input(): removed interactive prompt that caused hangs in non-interactive installs (scripts, TTY-less environments).</p>
+      </description>
+    </release>
+    <release version="1.0.13" date="2026-04-04">
+      <description>
+        <p>DeviceConfiguration uninitialized attributes: device_init and status could raise AttributeError on devices missing these optional YAML fields — now always initialized to None. Settings SELECT widget crash: IndexError/KeyError when options list is empty or not yet loaded — callback now guards bounds before calling. device_state thread safety: module-level globals now protected by threading.Lock, preventing torn reads between USB monitor thread and main loop.</p>
+      </description>
+    </release>
+    <release version="1.0.12" date="2026-04-04">
+      <description>
+        <p>LADSPA control parameters: noise gate, RNNoise noise cancellation, and SC4M compressor were silently broken — missing = signs in PipeWire filter-chain control syntax caused all mic processing nodes to have no effect. check_and_fix_stale_configs: output channel stale configs were incorrectly routed to the physical device instead of passthrough. get_physical_source() retry: microphone source detection now retries 15× on PulseAudio error, matching sink detection resilience.</p>
       </description>
     </release>
   </releases>

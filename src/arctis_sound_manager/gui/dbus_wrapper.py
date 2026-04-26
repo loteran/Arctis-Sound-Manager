@@ -21,12 +21,33 @@ from arctis_sound_manager.constants import (DBUS_BUS_NAME,
 class DbusWrapper(QObject):
     sig_status = Signal(object)
     sig_settings = Signal(object)
+    # Emitted with True the first time a request succeeds, and with False when
+    # a streak of consecutive failures suggests the daemon is no longer
+    # responding. Lets the UI surface a banner instead of just stalling.
+    sig_daemon_alive = Signal(bool)
 
     logger = logging.getLogger('DbusWrapper')
     _executor = ThreadPoolExecutor(max_workers=4)
+    _CONNECT_TIMEOUT_SECONDS = 5.0
+    _CALL_TIMEOUT_SECONDS = 5.0
+    _DEAD_AFTER_FAILURES = 3
 
     def __init__(self, parent: QObject|None = None):
         super().__init__(parent)
+        self._consecutive_failures = 0
+        self._last_alive_state: bool | None = None
+
+    def _record_success(self):
+        self._consecutive_failures = 0
+        if self._last_alive_state is not True:
+            self._last_alive_state = True
+            self.sig_daemon_alive.emit(True)
+
+    def _record_failure(self):
+        self._consecutive_failures += 1
+        if self._consecutive_failures >= self._DEAD_AFTER_FAILURES and self._last_alive_state is not False:
+            self._last_alive_state = False
+            self.sig_daemon_alive.emit(False)
 
     def stop(self):
         self.logger.info("Stopping D-Bus wrapper...")
@@ -276,28 +297,46 @@ class DbusWrapper(QObject):
         while not hasattr(self, '_stopping'):
             dbus_bus = None
             try:
-                dbus_bus = await MessageBus().connect()
-                reply = await dbus_bus.call(Message(
-                    destination=destination,
-                    path=path,
-                    interface=interface,
-                    member=member,
-                    message_type=MessageType.METHOD_CALL
-                ))
+                # connect() can hang indefinitely when the session bus address
+                # points to a stale socket (graphical session crashed), so cap
+                # both the connect and the actual call.
+                dbus_bus = await asyncio.wait_for(
+                    MessageBus().connect(), timeout=self._CONNECT_TIMEOUT_SECONDS,
+                )
+                reply = await asyncio.wait_for(
+                    dbus_bus.call(Message(
+                        destination=destination,
+                        path=path,
+                        interface=interface,
+                        member=member,
+                        message_type=MessageType.METHOD_CALL
+                    )),
+                    timeout=self._CALL_TIMEOUT_SECONDS,
+                )
 
                 if reply is None:
                     self.logger.error('Error getting settings: no reply')
-
+                    self._record_failure()
                 elif reply.message_type == MessageType.ERROR:
                     self.logger.error('Error getting settings: %s', reply.body)
-
+                    self._record_failure()
                 else:
                     sig.emit(json.loads(reply.body[0]) or {})
+                    self._record_success()
+            except asyncio.TimeoutError:
+                self.logger.warning(
+                    f'D-Bus {member} timed out after {self._CALL_TIMEOUT_SECONDS}s — daemon unresponsive?'
+                )
+                self._record_failure()
             except Exception as e:
                 self.logger.error('Error in dbus_request: %s', e)
+                self._record_failure()
             finally:
                 if dbus_bus is not None:
-                    dbus_bus.disconnect()
+                    try:
+                        dbus_bus.disconnect()
+                    except Exception:
+                        pass
 
             if freq == 0:
                 return

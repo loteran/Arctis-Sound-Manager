@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.79] - 26 April 2026
+
+Cross-distro robustness sprint (22 commits, four phases applied: bloquants, runtime, cross-distro, qualité de vie). Promoted from the 1.0.79b develop pre-release.
+
+### Fixed
+
+- **udev (RPM)**: `udevadm trigger` now uses `--action=add` so device permissions are actually re-evaluated after upgrade on Fedora/Nobara/RHEL (was the same fix as cli.py / aur / debian).
+- **udev**: `is_udev_rules_valid()` is now content-based (parses real rule lines) instead of substring-matching `'uaccess'`/`'1038'` — no more false positives from comments, no more false negatives from a stale file at one path masking a valid file at another.
+- **udev paths**: `UDEV_RULES_PATHS` now includes `/run/udev/rules.d/` (NixOS, runtime overlays) and `/lib/udev/rules.d/` (pre-usrmerge Debian).
+- **monitor**: `pyudev` is now optional. When the import or netlink setup fails (containers, restricted sandboxes, NixOS modules), the monitor falls back to a 2s polling loop scoped to vendor 0x1038 instead of crashing the daemon at startup.
+- **core**: `kernel_detach`/`kernel_attach` no longer crash on a single failing interface (device unplugged mid-detach, permission denied) — the loop continues so init still runs on the interfaces that did claim.
+- **core**: `init_device()` retries each command once on `usb.core.USBError` and logs N/total progress. A persistent failure logs at ERROR but doesn't abort the rest of the init list.
+- **core**: log a WARNING when a vendor 0x1038 device appears but no YAML matches — easy to spot new/firmware-bumped PIDs in journalctl/bug reports.
+- **dbus**: daemon retries `MessageBus().connect()` (5×, 5s timeout each) and explicitly checks `request_name()` reply — a queued/conflicting daemon now fails with a clear "another asm-daemon is running" error instead of silently ignoring all GUI calls.
+- **dbus (gui)**: `dbus_request_async` now wraps connect+call in `asyncio.wait_for` (5s) and emits a new `sig_daemon_alive` signal after 3 consecutive failures so views can show a banner instead of silently freezing.
+- **daemon**: SIGTERM/SIGINT registered via `loop.add_signal_handler` and now actually cancels long-lived asyncio tasks (`core_loop`, `dbus_awake`) — daemon exits promptly even if a worker is mid-blocking-call.
+- **settings**: `general_settings.yaml` reads catch corruption (move to `.broken`, fall back to defaults) and writes are now atomic (tmp+rename+fsync). A killed process can no longer leave a half-written file.
+- **config**: a single malformed device YAML used to crash the entire daemon. We now log+skip the offending file and load the rest. Real cross-family duplicate PIDs are warned (same-family overrides between HOME and SRC are ignored — by design).
+- **gui**: clear errors instead of XCB tracebacks when DISPLAY/WAYLAND_DISPLAY is missing or the Qt platform plugin failed to load (suggests `qt6-wayland` per distro).
+- **pactl**: `PulseAudioManager` retries the initial connection 12× with 0.5→4s exponential backoff so the daemon survives the boot race against pipewire-pulse instead of crashing.
+- **setup**: `asm-setup` refuses to run as root (silent failure mode where `systemctl --user` and `~/.config` go to the wrong user), and validates every device YAML in `~/.config/arctis_manager/devices/` at the end so a previous interrupted run doesn't leave broken files behind.
+
+### Added
+
+- **`asm-cli diagnose [-o file]`**: one-shot bug-report dump (versions, USB tree, udev state, sinks, journalctl, redacted settings, last 100 service log lines). Local-only.
+- **`asm-daemon --verify-setup`**: preflight checks (YAMLs, udev, PulseAudio, D-Bus, USB monitor backend) with a clear OK/FAIL summary and exit code, safe to run before launching the daemon or in CI.
+- **`ARCTIS_LOG_LEVEL` env var** (debug/info/warn/error/numeric): bump verbosity for bug reports without rebuilding or passing flags. Honored by daemon, GUI and video-router.
+- **i18n EN fallback**: missing translation keys in non-en locales now fall back to the en string instead of showing the raw key, with a log-once warning per missing key for translators.
+
+### Changed (packaging)
+
+- **AppStream metainfo**: `<releases>` block is now generated from `CHANGELOG.md` at build (`scripts/generate_metainfo_releases.py`) — was frozen at v1.0.4 (61 versions behind), GNOME Software / KDE Discover finally show recent updates. Wired into AUR/PKGBUILD, RPM .spec and debian/rules.
+- **debian/changelog**: now generated from `CHANGELOG.md` at build (`scripts/generate_debian_changelog.py`) — was frozen at v1.0.27 (39 versions behind).
+- **systemd units**: single source of truth in `systemd/*.service`. PKGBUILD and the .spec used to embed three heredocs each; debian shipped 2/3 (arctis-gui.service was missing from the .deb). Now all three packagers install from the same files.
+- **udev rules**: single shared generator (`arctis_sound_manager.udev_rules`) used by both `asm-cli udev write/dump-rules` and `scripts/generate_udev_rules.py` — output is byte-identical regardless of which entry point produced it.
+- **pyproject.toml**: version is now bumped automatically by the release workflow (was stuck at 1.0.66 while PKGBUILD/spec advanced to 1.0.78).
+
+### CI
+
+- Cross-distro pytest + udev generator smoke runs on every PR/push across Fedora 42/43, Ubuntu 24.04/25.10, Debian trixie/bookworm, Arch and CachyOS.
+
 ## [1.0.78] - 25 April 2026
 
 ### Fixed
