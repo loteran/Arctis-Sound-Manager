@@ -102,12 +102,34 @@ class ReportBugDialog(QDialog):
         sub_lbl.setWordWrap(True)
         layout.addWidget(sub_lbl)
 
+        # ── User description (free-form, prepended to both body + file) ──────
+        desc_hint = QLabel("Describe what happened (steps to reproduce, expected vs actual):")
+        desc_hint.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;")
+        layout.addWidget(desc_hint)
+
+        self._description = QPlainTextEdit()
+        self._description.setStyleSheet(
+            f"QPlainTextEdit {{"
+            f"  background-color: {BG_CARD}; color: {TEXT_PRIMARY};"
+            f"  border: 1px solid {BORDER}; border-radius: 6px;"
+            f"  font-size: 10pt; padding: 8px;"
+            f"}}"
+        )
+        self._description.setPlaceholderText(
+            "Example: \"I clicked the Sonar tab, switched to the Bass Boost preset and "
+            "the Game channel went silent until I restarted ASM.\"\n\n"
+            "(Optional but very helpful — leave blank if you have no extra context.)"
+        )
+        self._description.setMaximumHeight(140)
+        layout.addWidget(self._description)
+
         # ── Preview of the FULL report (read-only, just for review) ─────────
-        hint = QLabel("Preview of the full diagnostic (saved on disk, not in the URL):")
+        hint = QLabel("Preview of the full diagnostic that will be submitted:")
         hint.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;")
         layout.addWidget(hint)
 
         self._editor = QPlainTextEdit()
+        self._editor.setReadOnly(True)
         self._editor.setStyleSheet(
             f"QPlainTextEdit {{"
             f"  background-color: {BG_CARD}; color: {TEXT_PRIMARY};"
@@ -184,6 +206,27 @@ class ReportBugDialog(QDialog):
         if is_crash:
             clear_crash_report()
 
+    def _user_description_block(self) -> str:
+        """Markdown block with the user's free-form description, or empty
+        string if they didn't write anything. Goes at the TOP of both the
+        short URL body and the full diagnostic file so it's the first thing
+        a maintainer sees on the issue."""
+        text = (self._description.toPlainText() if hasattr(self, '_description') else '').strip()
+        if not text:
+            return ''
+        return f'## What happened\n{text}\n\n'
+
+    def _write_full_report_with_description(self) -> None:
+        """Write the full diagnostic to disk with the user's description
+        prepended. Stored in self._report_path."""
+        body = format_bug_report(self._traceback)
+        prefix = self._user_description_block()
+        full = prefix + body if prefix else body
+        target = write_full_report_to_file(self._traceback)
+        if prefix:
+            target.write_text(full, encoding='utf-8')
+        self._report_path = target
+
     def _copy(self) -> None:
         self.activateWindow()
         QApplication.clipboard().setText(self._editor.toPlainText(), QClipboard.Mode.Clipboard)
@@ -214,13 +257,13 @@ class ReportBugDialog(QDialog):
         secret gist → create the issue with the gist link → open the new issue
         URL in the browser. Falls back to the manual flow if anything fails."""
         try:
-            self._report_path = write_full_report_to_file(self._traceback)
+            self._write_full_report_with_description()
         except Exception as e:
             self._status_lbl.setText(f"Could not write diagnostic file: {e!r}")
             return
 
         title = "Crash report" if self._is_crash else "Bug report"
-        short = format_bug_report_short(self._traceback, attachment_path=None)
+        short = self._user_description_block() + format_bug_report_short(self._traceback, attachment_path=None)
 
         self._auto_btn.setEnabled(False)
         self._auto_btn.setText("Uploading…")
@@ -243,16 +286,20 @@ class ReportBugDialog(QDialog):
         self._open_folder_btn.setEnabled(True)
 
     def _open_github(self) -> None:
-        # 1. Save the full report to a local file the user can attach.
+        # 1. Save the full report (with user description prepended) to a local
+        # file the user can drag-and-drop into the GitHub editor.
         try:
-            self._report_path = write_full_report_to_file(self._traceback)
+            self._write_full_report_with_description()
         except Exception as e:
             self._status_lbl.setText(f"Could not write diagnostic file: {e!r}")
             return
 
-        # 2. Build a short URL body that fits in `?body=`.
+        # 2. Build a short URL body that fits in `?body=`, including the user's
+        # description at the top.
         title = "Crash report" if self._is_crash else "Bug report"
-        short = format_bug_report_short(self._traceback, attachment_path=self._report_path)
+        short = self._user_description_block() + format_bug_report_short(
+            self._traceback, attachment_path=self._report_path,
+        )
         url = github_issue_url(title, body=short)
 
         # 3. Open the browser. Browsers cap URLs around 8 kB; if we exceed,
