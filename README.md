@@ -6,7 +6,6 @@
 
 A Linux GUI for SteelSeries Arctis headsets — manages device settings and provides a 4-channel audio mixer (Game / Chat / Media / HDMI) with automatic media routing, and a full **Sonar EQ** system powered by PipeWire filter-chain.
 
-> Based on [Arctis Sound Manager](https://github.com/elegos/Linux-Arctis-Manager) by elegos.
 
 ---
 
