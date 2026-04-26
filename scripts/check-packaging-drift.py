@@ -181,6 +181,66 @@ def check_dependencies() -> None:
                 )
 
 
+# ── 4. Path existence in packaging scripts ─────────────────────────────────
+#
+# Catches the class of bug where a refactor moves a source file (e.g.
+# debian/*.service → systemd/*.service in commit fda7475) but a packager
+# script still references the old path. The .deb job then fails at
+# `install -Dm644 debian/arctis-manager.service: cannot stat`, which used to
+# cascade-skip the AUR/COPR jobs and leave users on the previous version.
+
+# Scripts to scan + the install command shape they use.
+_PATH_SOURCES: tuple[tuple[Path, re.Pattern], ...] = (
+    # debian/build-deb.sh and debian/rules use POSIX-style `install -Dm644 SRC DST`
+    (ROOT / "debian" / "build-deb.sh",
+     re.compile(r'install\s+-Dm[0-9]+\s+([^\s\\"\'$]+)')),
+    (ROOT / "debian" / "rules",
+     re.compile(r'install\s+-Dm[0-9]+\s+([^\s\\"\'$]+)')),
+    # PKGBUILD: same shape but inside bash, plus `cp SRC DST`.
+    (ROOT / "aur" / "PKGBUILD",
+     re.compile(r'install\s+-Dm[0-9]+\s+([^\s\\"\'$]+)')),
+    # RPM spec uses %{buildroot} which the regex naturally skips.
+    (ROOT / "arctis-sound-manager.spec",
+     re.compile(r'install\s+-Dm[0-9]+\s+([^\s\\"\'%]+)')),
+)
+
+# Sources to ignore (heredoc artefacts, generated paths, build outputs).
+_IGNORE_PREFIXES = ("/dev/", "/tmp/", "build/", "$(", "${", "%{")
+_IGNORE_NAMES = {"-"}
+
+
+def check_referenced_paths() -> None:
+    for script, pattern in _PATH_SOURCES:
+        if not script.is_file():
+            continue
+        text = read(script)
+        seen: set[str] = set()
+        for m in pattern.finditer(text):
+            src = m.group(1).strip()
+            if not src or src in _IGNORE_NAMES:
+                continue
+            if src.startswith(_IGNORE_PREFIXES):
+                continue
+            if src.startswith("/"):
+                continue  # absolute paths point to the install root, not the source tree
+            if src in seen:
+                continue
+            seen.add(src)
+            # Resolve relative to repo root (every packaging script `cd`s to it
+            # before any install call, or uses paths already relative to it).
+            src_path = ROOT / src
+            # Some lines use globs like devices/*.yaml — accept any match.
+            if "*" in src or "?" in src:
+                if not list(ROOT.glob(src)):
+                    fail(f"{script.relative_to(ROOT)}: glob {src!r} matches no file in the repo")
+                continue
+            if not src_path.exists():
+                fail(
+                    f"{script.relative_to(ROOT)}: references missing file {src!r} "
+                    "— probably renamed/moved without updating this script"
+                )
+
+
 # ── main ────────────────────────────────────────────────────────────────────
 
 def main() -> int:
@@ -189,6 +249,7 @@ def main() -> int:
     check_metainfo()
     check_debian_changelog()
     check_dependencies()
+    check_referenced_paths()
 
     if not ERRORS:
         print("packaging drift check: OK")
