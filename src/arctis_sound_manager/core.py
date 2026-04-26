@@ -178,7 +178,17 @@ class CoreEngine:
         for device_config in self.device_configurations:
             if device_config.vendor_id == vendor_id and product_id in device_config.product_ids:
                 self.configure_virtual_sinks()
-                break
+                return
+
+        # Reached only when the connected device matches no YAML — surface this
+        # loudly so unsupported PIDs are easy to spot in journalctl / bug
+        # reports. Limited to the SteelSeries vendor to avoid noise from the
+        # rest of the bus when running under the polling backend.
+        if vendor_id == 0x1038:
+            self.logger.warning(
+                f"USB device {vendor_id:04x}:{product_id:04x} appeared but no device YAML matches. "
+                "If this is a SteelSeries Arctis headset, please open an issue with this PID so support can be added."
+            )
     
     def on_device_disconnected(self, vendor_id: int, product_id: int) -> None:
         # vendor_id and product_id are not available. Check if the current device is still plugged in.
