@@ -7,13 +7,18 @@ from arctis_sound_manager.constants import HOME_LANG_FOLDER
 
 
 _LANG_FILE = Path.home() / ".config" / "arctis_manager" / ".language"
+_logger = logging.getLogger('I18n')
 
 
 class I18n:
     _instance: 'I18n'
     translations: ConfigParser
+    _en_translations: ConfigParser
     _lang: str = 'en'
     _callbacks: list = []
+    # Avoid logging the same missing key on every translate() call (UI refresh
+    # easily produces hundreds of lookups per second).
+    _missing_logged: set[tuple[str, str]] = set()
 
     @staticmethod
     def get_instance() -> 'I18n':
@@ -24,6 +29,14 @@ class I18n:
 
     def __init__(self):
         self.translations = ConfigParser()
+        self._en_translations = ConfigParser()
+        # Pre-load EN once so we can fall back when the active locale lacks a key.
+        en_path = Path(__file__).parent / 'lang' / 'en.ini'
+        if en_path.is_file():
+            try:
+                self._en_translations.read(en_path)
+            except Exception as e:
+                _logger.warning(f'Failed to pre-load en.ini for fallback: {e!r}')
         self._callbacks = []
         saved = self._load_saved_lang()
         self.set_language(saved)
@@ -77,4 +90,25 @@ class I18n:
 
     @staticmethod
     def translate(section: str, key: str|int) -> str:
-        return f'{I18n.get_instance().translations.get(section, f"{key}", fallback=key)}'.split('#')[0].strip()
+        inst = I18n.get_instance()
+        skey = f'{key}'
+        # 1. Active locale.
+        if inst.translations.has_option(section, skey):
+            return inst.translations.get(section, skey).split('#')[0].strip()
+        # 2. EN fallback so a missing translation in fr/de/etc. still shows
+        #    a real string instead of the bare lookup key.
+        if inst._lang != 'en' and inst._en_translations.has_option(section, skey):
+            sentinel = (section, skey)
+            if sentinel not in inst._missing_logged:
+                inst._missing_logged.add(sentinel)
+                _logger.warning(
+                    f'Missing translation [{inst._lang}] {section}.{skey} — using en fallback.'
+                )
+            return inst._en_translations.get(section, skey).split('#')[0].strip()
+        # 3. No translation anywhere — return the key so the UI shows
+        #    something readable, and log once.
+        sentinel = (section, skey)
+        if sentinel not in inst._missing_logged:
+            inst._missing_logged.add(sentinel)
+            _logger.warning(f'Missing translation [{inst._lang}] {section}.{skey} — using key as label.')
+        return skey
