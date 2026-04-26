@@ -5,9 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.79b] - 26 April 2026
+## [1.0.79] - 26 April 2026
 
-Develop pre-release covering the cross-distro robustness sprint (22 commits, plan: ASM_PLAN_REMEDIATION). All four audit phases applied: bloquants, runtime, cross-distro, qualité de vie.
+Cross-distro robustness sprint (22 commits, four phases applied: bloquants, runtime, cross-distro, qualité de vie). Promoted from the 1.0.79b develop pre-release.
 
 ### Fixed
 
