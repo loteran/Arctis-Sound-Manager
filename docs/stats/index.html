@@ -185,6 +185,18 @@
     return result.sort((a, b) => b.nb - a.nb);
   }
 
+  function wrapLabel(label, maxLen = 12) {
+    if (label.length <= maxLen || !label.includes(" ")) return label;
+    const mid = Math.floor(label.length / 2);
+    let splitAt = -1;
+    for (let i = 0; i < label.length; i++) {
+      if (label[i] === " " && (splitAt === -1 || Math.abs(i - mid) < Math.abs(splitAt - mid))) {
+        splitAt = i;
+      }
+    }
+    return splitAt === -1 ? label : [label.slice(0, splitAt), label.slice(splitAt + 1)];
+  }
+
   function mkChart(id, labels, values, type = "bar") {
     const ctx = document.getElementById(id);
     return new Chart(ctx, {
@@ -237,7 +249,7 @@
 
       // Charts
       mkChart("chart-distros",
-        data.distros.map(r => r.label), data.distros.map(r => r.nb));
+        data.distros.map(r => wrapLabel(r.label)), data.distros.map(r => r.nb));
       mkChart("chart-headsets",
         headsets.map(r => r.product_id === "Unknown" ? r.label : r.label + " (0x" + r.product_id + ")"),
         headsets.map(r => r.nb), "doughnut");
