@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.0.85" date="2026-04-27">
+      <description>
+        <p>Fix (issue #22) — switching the Output Sonar preset (e.g. Music – Punchy) made Firefox lose its Arctis_Media routing because the filter-chain restart tears down all Arctis_* virtual sinks momentarily; the restore loop ran before they reappeared, so streams stayed orphaned on the system default. Now the apply worker waits for each saved Arctis_* target sink to come back before re-issuing pactl move-sink-input. Fix — asm-cli arctis-usb-info no longer tracebacks with USBError when the user has no permission to read string descriptors; prints "(no permission)" instead with a hint to run asm-setup.</p>
+      </description>
+    </release>
     <release version="1.0.84" date="2026-04-27">
       <description>
         <p>Fix (issue #22) — TypeError crash in on_settings_received when the daemon flags a USB EACCES: UdevRulesDialog was created with parent=self where self is a QObject, not a QWidget. Pass self.main_window instead so the dialog opens correctly on Nobara/Fedora setups where udev rules need to be reloaded against the currently-attached dongle.</p>

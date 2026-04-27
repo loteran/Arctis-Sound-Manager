@@ -428,6 +428,20 @@ class _ApplyWorker(QThread):
                 self.done.emit(False)
                 return
 
+            # Filter-chain restart also tears down the Arctis_* virtual sinks
+            # (Game/Chat/Media). On the Output channel only filter-chain is
+            # restarted, but those sinks still flap — wait for any saved
+            # target sinks to come back before attempting move-sink-input,
+            # otherwise streams stay orphaned on the system default (issue #22).
+            _restore_remap = {
+                "effect_input.sonar-game-eq": "Arctis_Game",
+                "effect_input.sonar-chat-eq": "Arctis_Chat",
+            }
+            for sink_name in saved_sink_inputs.keys():
+                target = _restore_remap.get(sink_name, sink_name)
+                if target.startswith("Arctis_"):
+                    self._wait_for_node(target, timeout_ms=4000)
+
             # After pipewire restart, stream IDs are invalid;
             # asm-router re-applies overrides automatically.
             # Only the micro default source needs explicit restore.
