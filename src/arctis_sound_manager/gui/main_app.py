@@ -276,7 +276,7 @@ class QMainApp(QBaseDesktopApp):
             self._udev_reload_dialog_open = True
             try:
                 from arctis_sound_manager.gui.udev_dialog import UdevRulesDialog
-                UdevRulesDialog(parent=self, mode="reload").exec()
+                UdevRulesDialog(parent=self.main_window, mode="reload").exec()
             finally:
                 self._udev_reload_dialog_open = False
 

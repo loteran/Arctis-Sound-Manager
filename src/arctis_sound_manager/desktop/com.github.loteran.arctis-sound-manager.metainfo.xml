@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.0.84" date="2026-04-27">
+      <description>
+        <p>Fix (issue #22) — TypeError crash in on_settings_received when the daemon flags a USB EACCES: UdevRulesDialog was created with parent=self where self is a QObject, not a QWidget. Pass self.main_window instead so the dialog opens correctly on Nobara/Fedora setups where udev rules need to be reloaded against the currently-attached dongle.</p>
+      </description>
+    </release>
     <release version="1.0.83" date="2026-04-26">
       <description>
         <p>Bug report — full system diagnostic — the report payload now includes Python library versions (pulsectl / pyudev / pyusb / dbus-next / ruamel-yaml / PySide6 / pillow via importlib.metadata), multi-install detection (rpm + pacman + apt + pipx + every asm-daemon binary in $PATH), the actual content of the active udev rules file with is_udev_rules_valid()'s verdict, the full PipeWire sink list, wpctl status, the USB monitor backend (pyudev event-driven vs polling fallback) and the D-Bus session bus path. Goes from a 6 kB report to a ~13 kB one — every block is actionable for triage. Bug report — short URL body + full file attachment — GitHub's ?body= query param is capped around 8 kB; the expanded report no longer fits. ASM now writes the full diagnostic to ~/.cache/arctis-sound-manager/reports/bug-report-YYYYMMDD-HHMMSS.md, opens the GitHub issue editor with a short summary (~600 chars) and an "Open folder" button so the user can drag-and-drop the diagnostic file into the issue editor. Bug report — one-click auto-submit via gh CLI — when the user has gh auth status configured, a "Submit automatically (gh CLI)" button uploads the diagnostic as a secret gist, creates the issue with a link to the gist, and opens the new issue URL in the browser. Zero clicks past the dialog. Falls back to the manual drag-and-drop flow on any failure.</p>
