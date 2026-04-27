@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.85] - 27 April 2026
+
+### Fixed
+
+- **Sonar Output preset switch dropped Firefox / Arctis_Media routing (issue #22)** — restarting the PipeWire filter-chain to apply a new Output EQ preset (e.g. *Music – Punchy*) tears down the `Arctis_Game/Chat/Media` virtual sinks momentarily. The stream-restore loop only waited for the EQ filter node to reappear before re-issuing `pactl move-sink-input`, so when the Arctis virtual sinks were not yet back the moves silently failed and streams stayed orphaned on the system default. The apply worker now waits up to 4 s per saved `Arctis_*` target sink before issuing the move-back commands.
+- **`asm-cli arctis-usb-info` traceback on EACCES (issue #22)** — when udev rules were missing or not yet applied to the currently-attached dongle, reading `device.manufacturer` raised `usb.core.USBError: [Errno 13] Access denied` and aborted the diagnostic. Now wrapped with `try/except`; prints `(no permission)` with a hint to run `asm-setup` instead of crashing the whole CLI report.
+
+## [1.0.84] - 27 April 2026
+
+### Fixed
+
+- **`TypeError` crash in `on_settings_received` when the daemon flagged a USB EACCES (issue #22)** — `UdevRulesDialog(parent=self, ...)` was called from `QMainApp`, which inherits from `QObject`, not `QWidget`, so `QDialog.__init__` rejected the parent and the GUI tracebacked instead of opening the "Apply now" dialog. Pass `self.main_window` (the actual `QMainWindow`) so the runtime fix-permissions flow shipped in v1.0.81 finally fires on Nobara/Fedora setups where the dongle was plugged in before the udev rules took effect.
+
 ## [1.0.83] - 26 April 2026
 
 ### Added

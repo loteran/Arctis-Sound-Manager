@@ -58,12 +58,12 @@
   <releases>
     <release version="1.0.85" date="2026-04-27">
       <description>
-        <p>Fix (issue #22) — switching the Output Sonar preset (e.g. Music – Punchy) made Firefox lose its Arctis_Media routing because the filter-chain restart tears down all Arctis_* virtual sinks momentarily; the restore loop ran before they reappeared, so streams stayed orphaned on the system default. Now the apply worker waits for each saved Arctis_* target sink to come back before re-issuing pactl move-sink-input. Fix — asm-cli arctis-usb-info no longer tracebacks with USBError when the user has no permission to read string descriptors; prints "(no permission)" instead with a hint to run asm-setup.</p>
+        <p>Sonar Output preset switch dropped Firefox / Arctis_Media routing (issue #22) — restarting the PipeWire filter-chain to apply a new Output EQ preset (e.g. *Music – Punchy*) tears down the Arctis_Game/Chat/Media virtual sinks momentarily. The stream-restore loop only waited for the EQ filter node to reappear before re-issuing pactl move-sink-input, so when the Arctis virtual sinks were not yet back the moves silently failed and streams stayed orphaned on the system default. The apply worker now waits up to 4 s per saved Arctis_* target sink before issuing the move-back commands. asm-cli arctis-usb-info traceback on EACCES (issue #22) — when udev rules were missing or not yet applied to the currently-attached dongle, reading device.manufacturer raised usb.core.USBError: [Errno 13] Access denied and aborted the diagnostic. Now wrapped with try/except; prints (no permission) with a hint to run asm-setup instead of crashing the whole CLI report.</p>
       </description>
     </release>
     <release version="1.0.84" date="2026-04-27">
       <description>
-        <p>Fix (issue #22) — TypeError crash in on_settings_received when the daemon flags a USB EACCES: UdevRulesDialog was created with parent=self where self is a QObject, not a QWidget. Pass self.main_window instead so the dialog opens correctly on Nobara/Fedora setups where udev rules need to be reloaded against the currently-attached dongle.</p>
+        <p>TypeError crash in on_settings_received when the daemon flagged a USB EACCES (issue #22) — UdevRulesDialog(parent=self, ...) was called from QMainApp, which inherits from QObject, not QWidget, so QDialog.__init__ rejected the parent and the GUI tracebacked instead of opening the "Apply now" dialog. Pass self.main_window (the actual QMainWindow) so the runtime fix-permissions flow shipped in v1.0.81 finally fires on Nobara/Fedora setups where the dongle was plugged in before the udev rules took effect.</p>
       </description>
     </release>
     <release version="1.0.83" date="2026-04-26">
@@ -204,16 +204,6 @@
     <release version="1.0.19" date="2026-04-09">
       <description>
         <p>PPA upload workflow: removed oracular (Ubuntu 24.10, EOL since July 2025) from the target matrix — Launchpad no longer accepts uploads for this series. Only noble (24.04 LTS) is targeted.</p>
-      </description>
-    </release>
-    <release version="1.0.18" date="2026-04-09">
-      <description>
-        <p>PPA upload workflow: sed pattern (.*) in basic regex matched only literal parentheses, leaving the previous distroseries name in place — Launchpad rejected uploads with Unable to find distroseries: oracular noble. Fixed by replacing the entire first changelog line.</p>
-      </description>
-    </release>
-    <release version="1.0.17" date="2026-04-09">
-      <description>
-        <p>Arctis Nova Pro Wired config (0x12cb / 0x12cd): corrected two issues found via hardware testing (asm-cli tools arctis-devices):. command_transport: ctrl_output — device has no interrupt OUT endpoint, commands must be sent via HID SET_REPORT. command_padding.length: 16 — IN endpoint MaxPacketSize is 16 bytes (was incorrectly set to 64).</p>
       </description>
     </release>
   </releases>
