@@ -76,9 +76,9 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 | Arctis 1 / 7X / 7P Wireless | ⚠️ | ⚠️ |  | 12b3, 12b6, 12d5, 12d7 |
 | Arctis 7 / 7 2019 / Pro 2019 / Pro GameDAC | ⚠️ | ⚠️ |  | 1260, 12ad, 1252, 1280 |
 | Arctis 7+ / PS5 / Xbox / Destiny | ⚠️ | ⚠️ |  | 220e, 2212, 2216, 2236 |
-| **Arctis 9 Wireless** | ✅ | ✅ | 👥 2 | $\color{cyan}{\textbf{12c2}}$ |
+| **Arctis 9 Wireless** | ✅ | ✅ | 👥 1 | $\color{cyan}{\textbf{12c2}}$ |
 | Arctis Pro Wireless | ⚠️ | ⚠️ |  | 1290, 1294 |
-| Arctis Nova Pro Wireless / X | ✅ | ✅ | 👥 3 | $\color{cyan}{\textbf{12e0}}$, 12e5 |
+| Arctis Nova Pro Wireless / X | ✅ | ✅ | 👥 4 | $\color{cyan}{\textbf{12e0}}$, 12e5 |
 | Arctis Nova Pro Wired / Xbox Wired | ✅ | ✅ |  | 12cb, 12cd |
 | Arctis Nova 3 | ⚠️ | ⚠️ |  | 12ec |
 | Arctis Nova 3P / 3X Wireless | ⚠️ | ⚠️ |  | 2269, 226d |
@@ -97,9 +97,9 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 <!-- STATS:TESTED_DISTROS:START -->
 | Distribution | Install method | Users |
 |---|---|---|
-| CachyOS | 🎯 AUR | 👥 3 |
-| Nobara Linux 43 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 2 |
+| CachyOS | 🎯 AUR | 👥 4 |
 | Ubuntu 24.04.4 LTS | 🎯 PPA | 👥 1 |
+| Nobara Linux 43 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 1 |
 
 <!-- STATS:TESTED_DISTROS:END -->
 
@@ -111,7 +111,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 > [View interactive dashboard →](https://loteran.github.io/Arctis-Sound-Manager/stats)
 
 <!-- STATS:META:START -->
-_Based on **6** unique anonymous users — last updated 2026-04-28_
+_Based on **6** unique anonymous users — last updated 2026-04-29_
 
 <!-- STATS:META:END -->
 
@@ -120,8 +120,8 @@ _Based on **6** unique anonymous users — last updated 2026-04-28_
 <!-- STATS:HEADSETS:START -->
 | Headset | Installs |
 |---|---|
-| Arctis Nova Pro Wireless | 3 |
-| Arctis 9 Wireless | 2 |
+| Arctis Nova Pro Wireless | 4 |
+| Arctis 9 Wireless | 1 |
 | Arctis Nova 7 (Gen 1) | 1 |
 
 <!-- STATS:HEADSETS:END -->
@@ -131,9 +131,9 @@ _Based on **6** unique anonymous users — last updated 2026-04-28_
 <!-- STATS:DISTROS:START -->
 | Distribution | Installs |
 |---|---|
-| CachyOS | 3 |
-| Nobara Linux 43 (KDE Plasma Desktop Edition) | 2 |
+| CachyOS | 4 |
 | Ubuntu 24.04.4 LTS | 1 |
+| Nobara Linux 43 (KDE Plasma Desktop Edition) | 1 |
 
 <!-- STATS:DISTROS:END -->
 
