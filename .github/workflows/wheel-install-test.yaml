@@ -79,6 +79,16 @@ jobs:
           # scripts/check-packaging-drift.py for the rules.
           uv run python3 scripts/check-packaging-drift.py
 
+      - name: Runtime deps drift check (system_deps_checker registry)
+        run: |
+          # Fails the matrix run if a new third-party `import X` or external
+          # `subprocess.run(["foo", …])` was added to src/ without a matching
+          # entry in system_deps_checker._build_checks(). The runtime
+          # self-healing dialog (Phase 4 of ASM_PLAN_DEPS_CHECK) only fixes
+          # deps it knows about — silent additions are exactly the trap that
+          # made issue #23 silently break Spatial Audio on Fedora.
+          python3 scripts/check-deps-drift.py
+
       - name: Install test (pipx, pip)
         run: |
           chmod +x tests/install-wheel-test.sh

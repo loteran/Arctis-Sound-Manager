@@ -483,6 +483,59 @@ def _build_checks() -> list[DepCheck]:
             },
         ),
         DepCheck(
+            name="PySide6 (python module)",
+            severity=Severity.BLOCKING,
+            feature="entire GUI",
+            detect=lambda: _can_import("PySide6"),
+            install_commands={
+                "fedora": ["dnf", "install", "-y", "python3-pyside6"],
+                # Debian splits PySide6 into per-Qt-module packages — the
+                # debian/control file lists each one with a `python3-pip`
+                # fallback. Installing the umbrella is enough for the import
+                # to succeed.
+                "debian": ["apt-get", "install", "-y",
+                           "python3-pyside6.qtcore",
+                           "python3-pyside6.qtgui",
+                           "python3-pyside6.qtwidgets",
+                           "python3-pyside6.qtsvg",
+                           "python3-pyside6.qtnetwork"],
+                "arch":   ["pacman", "-S", "--noconfirm", "pyside6"],
+            },
+        ),
+        DepCheck(
+            name="pyusb (python module)",
+            severity=Severity.BLOCKING,
+            feature="USB device control (HID commands)",
+            detect=lambda: _can_import("usb"),
+            install_commands={
+                "fedora": ["dnf", "install", "-y", "python3-pyusb"],
+                "debian": ["apt-get", "install", "-y", "python3-usb"],
+                "arch":   ["pacman", "-S", "--noconfirm", "python-pyusb"],
+            },
+        ),
+        DepCheck(
+            name="pw-metadata",
+            severity=Severity.DEGRADED,
+            feature="EQ profile metadata + default-sink switching",
+            detect=lambda: _which("pw-metadata"),
+            install_commands={
+                "fedora": ["dnf", "install", "-y", "pipewire"],
+                "debian": ["apt-get", "install", "-y", "pipewire"],
+                "arch":   ["pacman", "-S", "--noconfirm", "pipewire"],
+            },
+        ),
+        DepCheck(
+            name="dbus-send",
+            severity=Severity.DEGRADED,
+            feature="bug-report dialog D-Bus diagnostic dump",
+            detect=lambda: _which("dbus-send"),
+            install_commands={
+                "fedora": ["dnf", "install", "-y", "dbus-tools"],
+                "debian": ["apt-get", "install", "-y", "dbus-bin"],
+                "arch":   ["pacman", "-S", "--noconfirm", "dbus"],
+            },
+        ),
+        DepCheck(
             name="PIL / Pillow (python module)",
             severity=Severity.DEGRADED,
             feature="GameDAC OLED rendering",
