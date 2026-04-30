@@ -300,6 +300,35 @@ class CoreEngine:
             device_name=device_config.name,
         )
 
+        # Repair stale PipeWire configs at daemon startup (issue #23).
+        #
+        # Without this call, the static `10-arctis-virtual-sinks.conf` shipped
+        # by `asm-setup` lacks a `node.target` for the Game/Chat sinks, so
+        # WirePlumber connects them straight to the physical output and audio
+        # bypasses the Sonar EQ + HeSuVi surround chain entirely. The check
+        # was previously only run when the user opened the Sonar page in the
+        # GUI — users running headless (or never opening that page) saw the
+        # bug forever.
+        try:
+            from arctis_sound_manager.sonar_to_pipewire import check_and_fix_stale_configs
+            fixed, needs_pw_restart = check_and_fix_stale_configs()
+            if fixed:
+                import subprocess
+                if needs_pw_restart:
+                    self.logger.info("Stale PipeWire configs migrated — restarting PipeWire")
+                    subprocess.run(
+                        ["systemctl", "--user", "restart",
+                         "pipewire", "wireplumber", "pipewire-pulse", "filter-chain"],
+                        check=False, timeout=20,
+                    )
+                else:
+                    self.logger.info("Stale Sonar configs fixed — restarting filter-chain")
+                    subprocess.run(["systemctl", "--user", "restart", "filter-chain"],
+                                   check=False, timeout=15)
+        except Exception as exc:
+            # Never let a config-repair failure block device init.
+            self.logger.warning(f"check_and_fix_stale_configs failed: {exc!r}")
+
         # Configure the device
         self.init_device()
 

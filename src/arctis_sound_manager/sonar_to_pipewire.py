@@ -920,6 +920,13 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
             fixed = True
 
     # Ensure virtual sink targets match current EQ mode
+    #
+    # The virtual sinks file lives in pipewire.conf.d/ (loaded by main PipeWire,
+    # not by filter-chain), so when we rewrite it we must signal a full PipeWire
+    # restart — otherwise the file on disk is correct but the running graph
+    # still uses the previous targets (or no target at all if the static
+    # asm-setup template was loaded). This is what made issue #23 silent for
+    # users who never opened the Sonar page in the GUI.
     state_file = Path.home() / ".config" / "arctis_manager" / ".eq_mode"
     sonar = state_file.exists() and state_file.read_text().strip() == "sonar"
     sinks_path = _SINKS_CONF_DIR / "10-arctis-virtual-sinks.conf"
@@ -930,10 +937,12 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
             log.warning("Virtual sink targets out of sync with EQ mode, regenerating")
             generate_virtual_sinks_conf(sonar=sonar)
             fixed = True
+            needs_pw_restart = True
     else:
         log.warning("Virtual sinks config missing, generating")
         generate_virtual_sinks_conf(sonar=sonar)
         fixed = True
+        needs_pw_restart = True
 
     # Ensure HeSuVi config targets the current physical output (catches configs written
     # with the old hardcoded _PHYSICAL_OUT constant before v1.0.23).

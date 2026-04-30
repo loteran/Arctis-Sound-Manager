@@ -35,7 +35,12 @@ Requires:       libusb1
 Requires:       pulseaudio-libs
 
 Recommends:     noise-suppression-for-voice
-Recommends:     swh-plugins
+# Fedora ships the Steve Harris SWH LADSPA pack as `ladspa-swh-plugins`
+# (the upstream name `swh-plugins` is the Debian/Arch package name and
+# does not exist in Fedora repos — the old line silently pulled in
+# nothing). Required by HeSuVi 7.1 virtual surround (`plate_1423`
+# reverb plugin) — Spatial Audio is silent without it (issue #23).
+Recommends:     ladspa-swh-plugins
 
 %description
 Arctis Sound Manager is a Linux application for configuring SteelSeries Arctis

@@ -199,7 +199,8 @@ def test_check_and_fix_stale_configs_fixes_gain(tmp_path):
     (tmp_path / "sonar-game-eq.conf").write_text(stale)
 
     with patch("arctis_sound_manager.sonar_to_pipewire._CONF_DIR", tmp_path):
-        assert check_and_fix_stale_configs() is True
+        fixed, _needs_pw_restart = check_and_fix_stale_configs()
+        assert fixed is True
 
     fixed = (tmp_path / "sonar-game-eq.conf").read_text()
     assert "label = gain" not in fixed
@@ -217,26 +218,50 @@ def test_check_and_fix_stale_configs_fixes_2ch_game(tmp_path):
     (tmp_path / "sonar-game-eq.conf").write_text(stale)
 
     with patch("arctis_sound_manager.sonar_to_pipewire._CONF_DIR", tmp_path):
-        assert check_and_fix_stale_configs() is True
+        fixed, _needs_pw_restart = check_and_fix_stale_configs()
+        assert fixed is True
 
     fixed = (tmp_path / "sonar-game-eq.conf").read_text()
     assert "audio.channels = 8" in fixed
 
 
-def test_check_and_fix_stale_configs_noop_when_clean(tmp_path):
-    clean = (
+def test_check_and_fix_stale_configs_noop_when_clean(tmp_path, monkeypatch):
+    # ensure_sonar_eq_configs() validates that BOTH game and chat configs
+    # exist with the right target+channels — the fixture must mirror the
+    # full contract for the noop assertion to hold. Use stable test values
+    # for both physical-out helpers so the expected node.target is known
+    # (no real Arctis is plugged into CI runners).
+    monkeypatch.setattr(
+        "arctis_sound_manager.sonar_to_pipewire._get_physical_out",
+        lambda: "alsa_output.test-headset",
+    )
+
+    game_clean = (
         'context.modules = [\n'
         '  { name = libpipewire-module-filter-chain\n'
         '    args = { filter.graph = { nodes = [\n'
         '      { type = builtin  name = copy  label = copy }\n'
         '    ] }\n'
-        '    capture.props = { audio.channels = 8 } } }\n'
+        '    capture.props  = { audio.channels = 8 }\n'
+        '    playback.props = { node.target         = "effect_input.virtual-surround-7.1-hesuvi" } } }\n'
         ']\n'
     )
-    (tmp_path / "sonar-game-eq.conf").write_text(clean)
+    chat_clean = (
+        'context.modules = [\n'
+        '  { name = libpipewire-module-filter-chain\n'
+        '    args = { filter.graph = { nodes = [\n'
+        '      { type = builtin  name = copy  label = copy }\n'
+        '    ] }\n'
+        '    capture.props  = { audio.channels = 2 }\n'
+        '    playback.props = { node.target         = "alsa_output.test-headset" } } }\n'
+        ']\n'
+    )
+    (tmp_path / "sonar-game-eq.conf").write_text(game_clean)
+    (tmp_path / "sonar-chat-eq.conf").write_text(chat_clean)
 
     with patch("arctis_sound_manager.sonar_to_pipewire._CONF_DIR", tmp_path):
-        assert check_and_fix_stale_configs() is False
+        fixed, _needs_pw_restart = check_and_fix_stale_configs()
+        assert fixed is False
 
 
 def test_check_and_fix_stale_configs_fixes_micro_source_virtual(tmp_path):
@@ -250,7 +275,8 @@ def test_check_and_fix_stale_configs_fixes_micro_source_virtual(tmp_path):
     (tmp_path / "sonar-micro-eq.conf").write_text(stale)
 
     with patch("arctis_sound_manager.sonar_to_pipewire._CONF_DIR", tmp_path):
-        assert check_and_fix_stale_configs() is True
+        fixed, _needs_pw_restart = check_and_fix_stale_configs()
+        assert fixed is True
 
     fixed = (tmp_path / "sonar-micro-eq.conf").read_text()
     assert "Audio/Source/Virtual" not in fixed
