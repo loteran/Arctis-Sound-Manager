@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.0.86" date="2026-04-30">
+      <description>
+        <p>System Deps dialog at GUI startup — a runtime self-healing dialog that detects every missing system component ASM relies on (LADSPA plate_1423 + librnnoise, HRIR file, filter-chain.service, PipeWire ≥ 1.0, wpctl, pkexec, pyudev/pulsectl/PySide6/pyusb/PIL/ruamel.yaml/dbus-next, dbus-send, pw-metadata, curl, D-Bus session, udev rules, gh CLI). Each missing dep shows a severity badge (BLOCKING / DEGRADED / OPTIONAL), what feature breaks if it stays missing, and an Install/Run button that runs the right pkexec dnf|apt-get|pacman install … for the detected distro. Install all missing groups by package manager so a single polkit prompt fixes the whole list. Don't show again until ASM is upgraded writes a version-aware skip marker that auto-resets on the next ASM upgrade. Copy cmd falls back to clipboard mode for unsupported distros. Triggered after the existing udev / telemetry dialogs at T+2.5 s on first launch — no nag. asm-daemon --verify-setup runs the same dep registry — headless preflight now logs each missing component with its severity tier and per-distro install command, plus the detected distro on the summary line. Exit 1 on BLOCKING/DEGRADED, 0 if only OPTIONAL — safe to wire into systemd ExecStartPre. scripts/check-deps-drift.py CI guard — AST-walks src/, fails the wheel-install-test matrix on every supported distro if a new third-party import or subprocess.run([…]) is added without a matching DepCheck entry. Closes the silent-failure trap class issue #23 was about: any new external dep is forced through the runtime checker too, so the GUI dialog never goes blind.</p>
+      </description>
+    </release>
     <release version="1.0.85" date="2026-04-27">
       <description>
         <p>Sonar Output preset switch dropped Firefox / Arctis_Media routing (issue #22) — restarting the PipeWire filter-chain to apply a new Output EQ preset (e.g. *Music – Punchy*) tears down the Arctis_Game/Chat/Media virtual sinks momentarily. The stream-restore loop only waited for the EQ filter node to reappear before re-issuing pactl move-sink-input, so when the Arctis virtual sinks were not yet back the moves silently failed and streams stayed orphaned on the system default. The apply worker now waits up to 4 s per saved Arctis_* target sink before issuing the move-back commands. asm-cli arctis-usb-info traceback on EACCES (issue #22) — when udev rules were missing or not yet applied to the currently-attached dongle, reading device.manufacturer raised usb.core.USBError: [Errno 13] Access denied and aborted the diagnostic. Now wrapped with try/except; prints (no permission) with a hint to run asm-setup instead of crashing the whole CLI report.</p>
@@ -199,11 +204,6 @@
     <release version="1.0.20" date="2026-04-09">
       <description>
         <p>PPA build failure (Failed to build on Launchpad): debuild -S runs debian/rules clean before packaging the source, deleting debian/wheels/ — Launchpad received a source package without wheels and couldn't download them (no internet in sandbox). Fixed by:. Adding --no-pre-clean to debuild -S so wheels survive source packaging. Removing debian/wheels from override_dh_auto_clean so Launchpad's pre-build clean doesn't destroy them either.</p>
-      </description>
-    </release>
-    <release version="1.0.19" date="2026-04-09">
-      <description>
-        <p>PPA upload workflow: removed oracular (Ubuntu 24.10, EOL since July 2025) from the target matrix — Launchpad no longer accepts uploads for this series. Only noble (24.04 LTS) is targeted.</p>
       </description>
     </release>
   </releases>
