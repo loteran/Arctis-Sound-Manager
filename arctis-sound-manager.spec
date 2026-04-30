@@ -33,8 +33,12 @@ Requires:       pipewire-pulseaudio
 Requires:       wireplumber
 Requires:       libusb1
 Requires:       pulseaudio-libs
-
-Recommends:     noise-suppression-for-voice
+# Used by asm-setup to download the HRIR file (~/.local/share/pipewire/
+# hrir_hesuvi/EAC_Default.wav) on first run. asm-setup tries curl first,
+# then wget — but if both are missing the HRIR never lands and Spatial
+# Audio stays silent forever. curl is in the Fedora minimal install set
+# but minimal containers / Server netinstall may strip it.
+Requires:       curl
 # Fedora ships the Steve Harris SWH LADSPA pack as `ladspa-swh-plugins`
 # (the upstream name `swh-plugins` is the Debian/Arch package name and
 # does not exist in Fedora repos). Required by HeSuVi 7.1 virtual
@@ -47,6 +51,12 @@ Recommends:     noise-suppression-for-voice
 # initial install, so existing users would otherwise stay broken until
 # they ran `dnf reinstall arctis-sound-manager` manually.
 Requires:       ladspa-swh-plugins
+# rnnoise LADSPA plugin used by the ClearCast / mic noise-suppression
+# feature exposed in the Settings page. Promoted from Recommends: to
+# Requires: per the "no soft deps" mandate — without it the toggle in
+# the GUI is a no-op and the user has no way to know why. Same Fedora
+# package name as Debian/Arch.
+Requires:       noise-suppression-for-voice
 
 %description
 Arctis Sound Manager is a Linux application for configuring SteelSeries Arctis
