@@ -4,8 +4,9 @@
 
 > ☕ [Buy me a coffee](https://ko-fi.com/loteran) if you find it useful!
 
-A Linux GUI for SteelSeries Arctis headsets — manages device settings and provides a 4-channel audio mixer (Game / Chat / Media / HDMI) with automatic media routing, and a full **Sonar EQ** system powered by PipeWire filter-chain.
+A Linux GUI for SteelSeries Arctis headsets — manages device settings and provides a 4-channel audio mixer (Game / Chat / Media / Output) with automatic media routing, and a full **Sonar EQ** system powered by PipeWire filter-chain.
 
+> Based on [Arctis Sound Manager](https://github.com/elegos/Linux-Arctis-Manager) by elegos.
 
 ---
 
@@ -14,7 +15,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 - **4-channel audio mixer** — separate Game, Chat, Media and Output virtual sinks (Output targets any external device: HDMI, USB speakers, sound card…)
 - **True multichannel external output** — route any app directly to an HDMI or other external output (5.1 / 7.1 native passthrough)
 - **Automatic media routing** — browsers (Firefox, Chromium…) and video players (VLC, mpv, Haruna…) are automatically routed to the Media sink
-- **Smart stream adoption** — apps that were already running when ASM starts are automatically pulled into the headset (Arctis_Media) instead of staying glued to a non-Arctis sink. Manual KDE-mixer placements still take priority and are remembered.
+- **Smart stream adoption** — apps already running when ASM starts are pulled into the headset (`Arctis_Media`) instead of staying glued to a non-Arctis sink. Manual placements you make in your system mixer are remembered as persistent overrides.
 - **Manual stream control** — move any audio stream between channels on the fly via the G / C / M / O buttons
 - **Persistent routing** — manual moves are remembered across app restarts
 - **Native PipeWire support** — detects apps that bypass PulseAudio (mpv, Haruna…)
@@ -31,8 +32,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 - **ANC / Transparent mode indicator** — reflects the physical button state (Off / Transparent / ANC) in real time
 - **Device status page** — battery, mic mute, sidetone, and more depending on your device
 - **Audio Profiles** — save and restore your complete audio configuration in one click:
-  - Stores EQ mode (Sonar / Custom), active preset per channel, macro slider values, Spatial Audio state, channel volumes **and the full DAC tab** (OLED brightness / timeout / scroll, custom-display toggle, show-element toggles, display order, per-element font sizes, weather config)
-  - Profiles **survive uninstall** when using `scripts/uninstall.sh --purge` — they live in `~/.config/arctis_manager/profiles/` which is preserved by default
+  - Stores EQ mode (Sonar / Custom), active preset per channel, macro slider values, Spatial Audio state and channel volumes
   - Profile bar on the Home page for instant switching; also accessible from the system tray
   - Right-click a profile chip to delete it
 - **Launch at startup** — toggle in Settings to enable/disable the daemon and system tray autostart via systemd (`arctis-gui.service`)
@@ -43,7 +43,8 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
   - Choose and reorder display elements: Time, Battery, active Profile, EQ Preset, Weather temperature
   - Per-element font size control (7–30 pt)
   - Built-in weather integration: city lookup, °C / °F selector, auto-refresh
-- **Built-in diagnostics** — `asm-daemon --verify-setup` runs preflight checks (YAMLs, udev rules, PipeWire/PulseAudio, D-Bus session, USB monitor backend) and exits 0/1 with a clear summary. `asm-cli diagnose -o file.txt` writes a full local-only diagnostic dump for bug reports.
+- **Self-healing system deps** _(v1.0.86)_ — at startup ASM checks every system component it relies on (LADSPA plugins, HRIR file, PipeWire ≥ 1.0, `wpctl`, `pkexec`, `pyudev`/`pulsectl`/`PySide6`/…, `dbus-send`, `pw-metadata`, `curl`, D-Bus session, udev rules). If anything is missing, a one-click dialog runs the right `pkexec dnf|apt-get|pacman install …` for your distro — single password prompt fixes the whole batch. **Install all missing**, **Re-check**, **Copy cmd** for unsupported distros, and a version-aware skip option that auto-resets on the next ASM upgrade.
+- **Built-in diagnostics** — `asm-daemon --verify-setup` runs the same registry headless and exits 0/1 with a per-distro install hint per missing dep. `asm-cli diagnose -o file.txt` writes a full local-only diagnostic dump for bug reports.
 - **One-click bug reports** — when filing an issue, the dialog auto-uploads the full diagnostic as a secret GitHub gist and opens a pre-filled issue linking to it (requires authenticated `gh` CLI). Falls back to a manual drag-and-drop attachment otherwise.
 - **`ARCTIS_LOG_LEVEL` env var** — bump verbosity for support tickets without rebuilding: `ARCTIS_LOG_LEVEL=debug systemctl --user restart arctis-manager`. Honored by daemon, GUI and video-router.
 - **Help page** — built-in user manual in English, French and Spanish
@@ -76,17 +77,16 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 | Arctis 1 / 7X / 7P Wireless | ⚠️ | ⚠️ |  | 12b3, 12b6, 12d5, 12d7 |
 | Arctis 7 / 7 2019 / Pro 2019 / Pro GameDAC | ⚠️ | ⚠️ |  | 1260, 12ad, 1252, 1280 |
 | Arctis 7+ / PS5 / Xbox / Destiny | ⚠️ | ⚠️ |  | 220e, 2212, 2216, 2236 |
-| **Arctis 9 Wireless** | ✅ | ✅ | 👥 1 | $\color{cyan}{\textbf{12c2}}$ |
+| Arctis 9 Wireless | ⚠️ | ⚠️ |  | 12c2 |
 | Arctis Pro Wireless | ⚠️ | ⚠️ |  | 1290, 1294 |
-| Arctis Nova Pro Wireless / X | ✅ | ✅ | 👥 4 | $\color{cyan}{\textbf{12e0}}$, 12e5 |
+| Arctis Nova Pro Wireless / X | ✅ | ✅ | 11 | $\color{royalblue}{\textbf{12e0}}$, 12e5 |
 | Arctis Nova Pro Wired / Xbox Wired | ✅ | ✅ |  | 12cb, 12cd |
 | Arctis Nova 3 | ⚠️ | ⚠️ |  | 12ec |
 | Arctis Nova 3P / 3X Wireless | ⚠️ | ⚠️ |  | 2269, 226d |
 | Arctis Nova 5 / 5X | ⚠️ | ⚠️ |  | 2232, 2253 |
-| **Arctis Nova 7 Gen 1** | ✅ | ✅ | 👥 1 | $\color{cyan}{\textbf{2202}}$, 2206, 223a, 227a, 22a4 |
-| **Arctis Nova 7 Gen 2** | ✅ | ✅ | 👥 1 | 22a1, $\color{cyan}{\textbf{227e}}$, 2258, 229e, 22a9, 22a5 |
-| Arctis Nova 7P | ⚠️ | ⚠️ |  | 220a, 22a7 |
-
+| Arctis Nova 7 Gen 1 | ⚠️ | ⚠️ |  | 2202, 2206, 223a, 227a, 22a4 |
+| Arctis Nova 7 Gen 2 | ⚠️ | ⚠️ |  | 22a1, 227e, 2258, 229e, 22a9, 22a5 |
+| **Arctis Nova 7P** | ✅ | ✅ | 2 | $\color{royalblue}{\textbf{220a}}$, $\color{royalblue}{\textbf{22a7}}$ |
 <!-- STATS:DEVICES:END -->
 
 > ✅ Fully supported · ⚠️ Config available, community testing welcome · ❓ Not yet supported
@@ -95,13 +95,11 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 ## Tested Distributions
 
 <!-- STATS:TESTED_DISTROS:START -->
-| Distribution | Install method | Users |
-|---|---|---|
-| CachyOS | 🎯 AUR | 👥 4 |
-| Ubuntu 24.04.4 LTS | 🎯 PPA | 👥 1 |
-| Nobara Linux 43 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 1 |
-| Fedora Linux 44 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 1 |
-
+| Distribution | Reports |
+|---|---|
+| CachyOS | 10 |
+| Linux Mint 22.3 | 2 |
+| Arch Linux | 1 |
 <!-- STATS:TESTED_DISTROS:END -->
 
 ---
@@ -112,7 +110,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 > [View interactive dashboard →](https://loteran.github.io/Arctis-Sound-Manager/stats)
 
 <!-- STATS:META:START -->
-_Based on **7** unique anonymous users — last updated 2026-04-30_
+_Based on **11** anonymous data points — last updated 2026-04-21_
 
 <!-- STATS:META:END -->
 
@@ -121,10 +119,8 @@ _Based on **7** unique anonymous users — last updated 2026-04-30_
 <!-- STATS:HEADSETS:START -->
 | Headset | Installs |
 |---|---|
-| Arctis Nova Pro Wireless | 4 |
-| Arctis 9 Wireless | 1 |
-| Arctis Nova 7 (Gen 1) | 1 |
-| Arctis Nova 7 (Gen 2) | 1 |
+| Arctis Nova Pro Wireless | 10 |
+| Arctis Nova 7P (Gen 1) | 1 |
 
 <!-- STATS:HEADSETS:END -->
 
@@ -133,10 +129,9 @@ _Based on **7** unique anonymous users — last updated 2026-04-30_
 <!-- STATS:DISTROS:START -->
 | Distribution | Installs |
 |---|---|
-| CachyOS | 4 |
-| Ubuntu 24.04.4 LTS | 1 |
-| Nobara Linux 43 (KDE Plasma Desktop Edition) | 1 |
-| Fedora Linux 44 (KDE Plasma Desktop Edition) | 1 |
+| CachyOS | 8 |
+| Linux Mint 22.3 | 2 |
+| Arch Linux | 1 |
 
 <!-- STATS:DISTROS:END -->
 
@@ -144,27 +139,22 @@ _Based on **7** unique anonymous users — last updated 2026-04-30_
 
 ## Requirements
 
-- Linux with **PipeWire** (+ `pipewire-pulse`)
+- Linux with **PipeWire ≥ 1.0** (+ `pipewire-pulse`, `wireplumber`)
 - **Python 3.10+**
 - System libraries: `libusb`, `libpulse`, `libudev`
 
-**Arch / CachyOS / Manjaro** — also install `noise-suppression-for-voice` (used by mic processing):
-```bash
-sudo pacman -S libusb libpulse noise-suppression-for-voice
-```
+The native packages on **Arch / CachyOS / Fedora / Debian / Ubuntu** declare every dep as a hard requirement — `paru -S` / `dnf install` / `apt install` pulls in everything ASM features rely on (LADSPA plugins for Spatial Audio + ClearCast mic noise suppression, `curl` for HRIR download, `wireplumber`, etc.) automatically. No optional follow-up `pacman -S` step.
 
-**Fedora / Debian / Ubuntu** — native packages handle all dependencies automatically (see [Installation](#installation)).
+If something later goes missing (manual `dnf remove`, immutable distro that didn't replay an upgrade, …), the **System Deps dialog** at GUI startup detects it and offers a one-click pkexec install — see [Features](#features).
 
 **Other distros (source install)** — install `pipx` + system libraries:
 ```bash
 # Debian / Ubuntu
-sudo apt install pipx libusb-1.0-0 libpulse0 libudev1
+sudo apt install pipx libusb-1.0-0 libpulse0 libudev1 swh-plugins noise-suppression-for-voice curl
 
 # Fedora
-sudo dnf install pipx libusb1 pulseaudio-libs systemd-libs
+sudo dnf install pipx libusb1 pulseaudio-libs systemd-libs ladspa-swh-plugins noise-suppression-for-voice curl
 ```
-
-> **Optional — Spatial Audio Distance effect**: The "Distance" slider in Spatial Audio uses the `plate_1423` LADSPA plugin (`swh-plugins` on Arch, `swh-plugins` on Fedora/Ubuntu). It is **only loaded when Distance > 0**; leaving it at 0 (default) requires no additional package.
 
 ---
 
@@ -369,7 +359,20 @@ systemctl --user restart arctis-manager.service
 
 ## Uninstall
 
-The dedicated uninstaller detects every install method present (rpm + pacman + apt + pipx + orphan binaries in `$PATH`) and lets you pick which one(s) to remove. **Audio profiles are preserved by default** — they survive an uninstall+reinstall cycle.
+Native packages (AUR / COPR / PPA) ship a real cleanup hook since v1.0.86 — `paru -R` / `dnf remove` / `apt remove` now removes `~/.config/pipewire/pipewire.conf.d/10-arctis-virtual-sinks.conf` and the chat/media/HeSuVi siblings as your real user, then restarts pipewire so the ghost Arctis sinks vanish immediately. Audio profiles in `~/.config/arctis_manager/profiles/` are **preserved by default** so a future reinstall picks them back up.
+
+```bash
+# Arch / CachyOS / Manjaro
+paru -R arctis-sound-manager
+
+# Fedora
+sudo dnf remove arctis-sound-manager
+
+# Debian / Ubuntu
+sudo apt remove arctis-sound-manager
+```
+
+For source / pipx installs, or to wipe everything (including profiles + HRIR), use the standalone uninstaller — it auto-detects every install method present (rpm + pacman + apt + pipx + orphan binaries in `$PATH`) and lets you pick which one(s) to remove:
 
 ```bash
 # Interactive: detects everything, prompts for each install method
@@ -394,8 +397,6 @@ bash scripts/uninstall.sh --yes           # non-interactive (skip confirmations)
 
 `--purge` keeps `~/.config/arctis_manager/profiles/` and `.active_profile` so a future `pipx install arctis-sound-manager --force` (or AUR/COPR/PPA reinstall) immediately picks them back up. A separate confirm at the end offers to delete the profiles too if you want a true clean slate.
 
-> **Manual cleanup** is still possible if you prefer (the script just automates these): see the comments inside `scripts/uninstall.sh` for the exact paths it touches.
-
 ---
 
 ## Reporting a bug
@@ -419,8 +420,10 @@ Then click one of:
 Two commands give you the same data without the dialog:
 
 ```bash
-# Preflight checks: YAMLs, udev, PulseAudio/PipeWire, D-Bus, USB monitor backend.
-# Exits 0 if everything is OK, 1 otherwise. Safe to run before launching the daemon.
+# Preflight checks: YAMLs, udev, PulseAudio/PipeWire, D-Bus, USB monitor, every
+# system dep ASM relies on (LADSPA plugins, HRIR, filter-chain, …). Exits 0 if
+# everything is green, 1 otherwise. Each missing dep prints a per-distro
+# `sudo dnf|apt-get|pacman install …` hint. Safe to wire into systemd ExecStartPre.
 asm-daemon --verify-setup
 
 # Full local-only diagnostic dump (same content as the GUI's report).
@@ -480,42 +483,26 @@ src/arctis_sound_manager/
 │   ├── anc_widget.py           # ANC / Transparent mode indicator
 │   ├── settings_widget.py      # Per-device settings panel (D-Bus backed)
 │   ├── profile_bar.py          # Profile chip bar + SaveProfileDialog (Home page)
-│   ├── udev_dialog.py          # Two-mode dialog: install rules at startup OR re-trigger them at runtime when EACCES
-│   ├── report_dialog.py        # Bug report dialog (gh CLI auto-submit + drag-and-drop fallback)
+│   ├── udev_dialog.py          # Startup dialog when udev rules are missing
 │   ├── help_page.py            # Built-in user manual (EN/FR/ES)
 │   ├── presets/                # 334 bundled Sonar presets (312 Game, 8 Chat, 14 Mic)
 │   ├── components.py           # Reusable widgets
 │   └── theme.py                # Color constants
-├── profile_manager.py     # Audio profile: snapshot, save/load/apply, pulsectl volumes (incl. DAC tab)
+├── profile_manager.py     # Audio profile: snapshot, save/load/apply, pulsectl volumes
 ├── sonar_to_pipewire.py   # PipeWire filter-chain config generator (Sonar EQ)
 ├── pw_utils.py            # Native PipeWire stream detection
-├── pactl.py               # PulseAudio virtual sink management (with retry-at-init)
-├── udev_checker.py        # udev rules validation — content-based, parses real rules
-├── udev_rules.py          # Single shared generator for cli + packaging
-├── usb_devices_monitor.py # USB hotplug — pyudev event-driven w/ polling fallback
-├── log_setup.py           # ARCTIS_LOG_LEVEL env var honoured by all entry points
-├── diagnose.py            # asm-cli diagnose: full local-only bug-report dump
-├── bug_reporter.py        # System info collection + issue submission (gh CLI gist + manual)
-└── devices/               # Per-device configuration files — one YAML per headset, single source of truth for udev rules
+├── pactl.py               # PulseAudio virtual sink management
+├── udev_checker.py        # udev rules validation (used at GUI/daemon startup)
+└── devices/               # Per-device configuration files (one YAML per headset)
 
 scripts/
 ├── install.sh                              # Main installer (source installs)
-├── uninstall.sh                            # Per-method selective uninstaller (preserves audio profiles)
 ├── setup-surround.sh                       # Standalone virtual surround setup
 ├── filter-chain.service                    # Bundled systemd service (auto-installed on distros that don't ship one)
-├── generate_udev_rules.py                  # AUR/RPM/DEB build hook → udev rules from device YAMLs
-├── generate_metainfo_releases.py           # AUR/RPM/DEB build hook → AppStream <releases> from CHANGELOG.md
-├── generate_debian_changelog.py            # debian/rules build hook → debian/changelog from CHANGELOG.md
-├── check-packaging-drift.py                # CI guard: pyproject ↔ packagers sync, generators, deps
 ├── pipewire/
 │   ├── 10-arctis-virtual-sinks.conf           # PipeWire loopback sinks (Game/Chat/Media)
 │   └── sink-virtual-surround-7.1-hesuvi.conf  # HeSuVi 7.1 virtual surround filter-chain
 └── arctis-video-router.service             # Systemd service for asm-router
-
-systemd/                                     # Single source of truth for systemd user units
-├── arctis-manager.service                   # consumed by AUR/PKGBUILD, RPM .spec, debian/rules
-├── arctis-video-router.service
-└── arctis-gui.service
 ```
 If you want to buy me a coffee ;) --> https://ko-fi.com/loteran
 
