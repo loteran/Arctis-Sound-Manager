@@ -56,6 +56,46 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.0.86" date="2026-04-30">
+      <description>
+        <p>System Deps dialog at GUI startup — a runtime self-healing dialog that detects every missing system component ASM relies on (LADSPA plate_1423 + librnnoise, HRIR file, filter-chain.service, PipeWire ≥ 1.0, wpctl, pkexec, pyudev/pulsectl/PySide6/pyusb/PIL/ruamel.yaml/dbus-next, dbus-send, pw-metadata, curl, D-Bus session, udev rules, gh CLI). Each missing dep shows a severity badge (BLOCKING / DEGRADED / OPTIONAL), what feature breaks if it stays missing, and an Install/Run button that runs the right pkexec dnf|apt-get|pacman install … for the detected distro. Install all missing groups by package manager so a single polkit prompt fixes the whole list. Don't show again until ASM is upgraded writes a version-aware skip marker that auto-resets on the next ASM upgrade. Copy cmd falls back to clipboard mode for unsupported distros. Triggered after the existing udev / telemetry dialogs at T+2.5 s on first launch — no nag. asm-daemon --verify-setup runs the same dep registry — headless preflight now logs each missing component with its severity tier and per-distro install command, plus the detected distro on the summary line. Exit 1 on BLOCKING/DEGRADED, 0 if only OPTIONAL — safe to wire into systemd ExecStartPre. scripts/check-deps-drift.py CI guard — AST-walks src/, fails the wheel-install-test matrix on every supported distro if a new third-party import or subprocess.run([…]) is added without a matching DepCheck entry. Closes the silent-failure trap class issue #23 was about: any new external dep is forced through the runtime checker too, so the GUI dialog never goes blind.</p>
+      </description>
+    </release>
+    <release version="1.0.85" date="2026-04-27">
+      <description>
+        <p>Sonar Output preset switch dropped Firefox / Arctis_Media routing (issue #22) — restarting the PipeWire filter-chain to apply a new Output EQ preset (e.g. *Music – Punchy*) tears down the Arctis_Game/Chat/Media virtual sinks momentarily. The stream-restore loop only waited for the EQ filter node to reappear before re-issuing pactl move-sink-input, so when the Arctis virtual sinks were not yet back the moves silently failed and streams stayed orphaned on the system default. The apply worker now waits up to 4 s per saved Arctis_* target sink before issuing the move-back commands. asm-cli arctis-usb-info traceback on EACCES (issue #22) — when udev rules were missing or not yet applied to the currently-attached dongle, reading device.manufacturer raised usb.core.USBError: [Errno 13] Access denied and aborted the diagnostic. Now wrapped with try/except; prints (no permission) with a hint to run asm-setup instead of crashing the whole CLI report.</p>
+      </description>
+    </release>
+    <release version="1.0.84" date="2026-04-27">
+      <description>
+        <p>TypeError crash in on_settings_received when the daemon flagged a USB EACCES (issue #22) — UdevRulesDialog(parent=self, ...) was called from QMainApp, which inherits from QObject, not QWidget, so QDialog.__init__ rejected the parent and the GUI tracebacked instead of opening the "Apply now" dialog. Pass self.main_window (the actual QMainWindow) so the runtime fix-permissions flow shipped in v1.0.81 finally fires on Nobara/Fedora setups where the dongle was plugged in before the udev rules took effect.</p>
+      </description>
+    </release>
+    <release version="1.0.83" date="2026-04-26">
+      <description>
+        <p>Bug report — full system diagnostic — the report payload now includes Python library versions (pulsectl / pyudev / pyusb / dbus-next / ruamel-yaml / PySide6 / pillow via importlib.metadata), multi-install detection (rpm + pacman + apt + pipx + every asm-daemon binary in $PATH), the actual content of the active udev rules file with is_udev_rules_valid()'s verdict, the full PipeWire sink list, wpctl status, the USB monitor backend (pyudev event-driven vs polling fallback) and the D-Bus session bus path. Goes from a 6 kB report to a ~13 kB one — every block is actionable for triage. Bug report — short URL body + full file attachment — GitHub's ?body= query param is capped around 8 kB; the expanded report no longer fits. ASM now writes the full diagnostic to ~/.cache/arctis-sound-manager/reports/bug-report-YYYYMMDD-HHMMSS.md, opens the GitHub issue editor with a short summary (~600 chars) and an "Open folder" button so the user can drag-and-drop the diagnostic file into the issue editor. Bug report — one-click auto-submit via gh CLI — when the user has gh auth status configured, a "Submit automatically (gh CLI)" button uploads the diagnostic as a secret gist, creates the issue with a link to the gist, and opens the new issue URL in the browser. Zero clicks past the dialog. Falls back to the manual drag-and-drop flow on any failure.</p>
+      </description>
+    </release>
+    <release version="1.0.82" date="2026-04-26">
+      <description>
+        <p>Multi-device routing (issue #20) — on systems with several audio outputs (Logitech G560, Razer Kiyo, internal speakers, etc.) plus an Arctis headset, apps that were already running when ASM started used to stay glued to their previous sink because _auto_route() only matched a hardcoded list of browser/game/chat app names. Now video_router.py adopts any orphan stream onto Arctis_Media when Arctis is the default sink — Spotify, VLC, Steam and friends finally end up in the headset on first launch. Streams already on an Arctis sink (virtual or filter-chain) are left untouched, and the adoption is saved as a routing override so manual KDE-mixer placements take over from there. Same logic applied to native PipeWire streams (mpv, haruna).</p>
+      </description>
+    </release>
+    <release version="1.0.81" date="2026-04-26">
+      <description>
+        <p>Runtime "Apply now" popup on USB EACCES — restores the v1.0.71 behaviour lost during the v1.0.79 merge. The existing startup dialog only fires when the udev rules file is missing/incomplete on disk, but if the rules are correct AND the headset was plugged in before they took effect (typical after a paru -Syu or dnf upgrade), the daemon used to hit EACCES on kernel_detach and the GUI was silent. Users had to figure out replug or sudo asm-cli udev reload-rules on their own. Now CoreEngine.kernel_detach flags permission_error=True per-interface on errno 13, the daemon exposes that flag through GetSettings, and the GUI opens UdevRulesDialog(mode="reload") automatically — one click runs asm-cli udev reload-rules with a single pkexec prompt and the device becomes accessible without unplugging. UdevRulesDialog two modes: write (existing — install missing rules) and reload (new — re-trigger udev on the currently-attached device). Both share the same one-prompt elevation flow. debian/build-deb.sh referenced stale unit paths (debian/*.service) that had moved to systemd/*.service in v1.0.79. The .deb job in release.yaml failed at build, which cascade-skipped aur-update and copr-build, leaving AUR / COPR users on v1.0.78 even though the v1.0.79 / v1.0.80 tags were pushed. Updated to use the canonical systemd/ paths.</p>
+      </description>
+    </release>
+    <release version="1.0.80" date="2026-04-26">
+      <description>
+        <p>scripts/uninstall.sh — dedicated uninstaller. Detects every install method on the system (rpm / pacman / apt / pipx) and lets the user pick which one(s) to remove. When both pipx and a distro package coexist, offers a 1/2/3 menu (pipx only / distro only / both). --purge wipes settings, PipeWire configs, HRIR data, user systemd units and the manually-written udev rules in /etc, but preserves audio profiles (~/.config/arctis_manager/profiles/ and the active-profile pointer) so a future reinstall picks them right back up. A separate explicit confirm offers to delete the profiles too. Profiles capture DAC tab settings — audio profiles now snapshot and restore the full DAC state in addition to EQ/macros/spatial/volumes: OLED brightness, screen timeout, scroll speed, custom-display toggle, show-element toggles, display order, per-element font sizes, weather configuration. Older profile files (pre-v1.0.80) load with an empty DAC block — restoring them is a no-op for the DAC side, exactly as before. scripts/check-packaging-drift.py — CI-enforced drift detector. Runs on every PR/push across the 8-distro matrix and fails the build if pyproject.toml / PKGBUILD / .SRCINFO / RPM spec are out of sync, if any generator (udev rules, AppStream metainfo, debian/changelog) produces output that differs from the committed file, or if a pyproject dep is missing from PKGBUILD depends, the spec's Requires: lines, or debian/control Depends:. Closes the class of bug that left AppStream stuck at v1.0.4 and debian/changelog at v1.0.27 for months.</p>
+      </description>
+    </release>
+    <release version="1.0.79" date="2026-04-26">
+      <description>
+        <p>udev (RPM): udevadm trigger now uses --action=add so device permissions are actually re-evaluated after upgrade on Fedora/Nobara/RHEL (was the same fix as cli.py / aur / debian). udev: is_udev_rules_valid() is now content-based (parses real rule lines) instead of substring-matching 'uaccess'/'1038' — no more false positives from comments, no more false negatives from a stale file at one path masking a valid file at another. udev paths: UDEV_RULES_PATHS now includes /run/udev/rules.d/ (NixOS, runtime overlays) and /lib/udev/rules.d/ (pre-usrmerge Debian).</p>
+      </description>
+    </release>
     <release version="1.0.65" date="2026-04-22">
       <description>
         <p>DEB build: fixed CI release workflow failure — debian/91-steelseries-arctis.rules was removed from the repo but build-deb.sh still referenced it as a static file. The script now generates udev rules at build time via uv run python3 scripts/generate_udev_rules.py.</p>
@@ -164,46 +204,6 @@
     <release version="1.0.20" date="2026-04-09">
       <description>
         <p>PPA build failure (Failed to build on Launchpad): debuild -S runs debian/rules clean before packaging the source, deleting debian/wheels/ — Launchpad received a source package without wheels and couldn't download them (no internet in sandbox). Fixed by:. Adding --no-pre-clean to debuild -S so wheels survive source packaging. Removing debian/wheels from override_dh_auto_clean so Launchpad's pre-build clean doesn't destroy them either.</p>
-      </description>
-    </release>
-    <release version="1.0.19" date="2026-04-09">
-      <description>
-        <p>PPA upload workflow: removed oracular (Ubuntu 24.10, EOL since July 2025) from the target matrix — Launchpad no longer accepts uploads for this series. Only noble (24.04 LTS) is targeted.</p>
-      </description>
-    </release>
-    <release version="1.0.18" date="2026-04-09">
-      <description>
-        <p>PPA upload workflow: sed pattern (.*) in basic regex matched only literal parentheses, leaving the previous distroseries name in place — Launchpad rejected uploads with Unable to find distroseries: oracular noble. Fixed by replacing the entire first changelog line.</p>
-      </description>
-    </release>
-    <release version="1.0.17" date="2026-04-09">
-      <description>
-        <p>Arctis Nova Pro Wired config (0x12cb / 0x12cd): corrected two issues found via hardware testing (asm-cli tools arctis-devices):. command_transport: ctrl_output — device has no interrupt OUT endpoint, commands must be sent via HID SET_REPORT. command_padding.length: 16 — IN endpoint MaxPacketSize is 16 bytes (was incorrectly set to 64).</p>
-      </description>
-    </release>
-    <release version="1.0.16" date="2026-04-08">
-      <description>
-        <p>Arctis Nova Pro Wired support (0x12cb) and its Xbox variant (0x12cd): sidetone, mic volume, mic LED brightness, audio gain (low/high), ChatMix, EQ. Protocol confirmed from reverse-engineering of the Nova Pro family (shared HID interface 4, same 0x06-prefixed command set as Nova Pro Wireless).</p>
-      </description>
-    </release>
-    <release version="1.0.15" date="2026-04-08">
-      <description>
-        <p>Context-aware privilege elevation (sudo_it): the elevation tool is now chosen based on the execution context rather than tried blindly in a fixed order:. Terminal (TTY) → sudo first (native prompt), then graphical tools as fallback. GUI / no TTY → DE-specific graphical tools (kdesu on KDE, lxqt-sudo on LXQt) then pkexec — sudo is never attempted without a TTY.</p>
-      </description>
-    </release>
-    <release version="1.0.14" date="2026-04-08">
-      <description>
-        <p>udev rules check at startup: GUI shows a dialog at startup when udev rules are missing or invalid, with an "Install rules" button that runs the fix automatically (requires administrator password). The daemon also logs a warning on the same condition. sudo_it() fallback: now tries sudo if pkexec is unavailable or fails, and catches CalledProcessError instead of crashing. write_udev_rules() blocking input(): removed interactive prompt that caused hangs in non-interactive installs (scripts, TTY-less environments).</p>
-      </description>
-    </release>
-    <release version="1.0.13" date="2026-04-04">
-      <description>
-        <p>DeviceConfiguration uninitialized attributes: device_init and status could raise AttributeError on devices missing these optional YAML fields — now always initialized to None. Settings SELECT widget crash: IndexError/KeyError when options list is empty or not yet loaded — callback now guards bounds before calling. device_state thread safety: module-level globals now protected by threading.Lock, preventing torn reads between USB monitor thread and main loop.</p>
-      </description>
-    </release>
-    <release version="1.0.12" date="2026-04-04">
-      <description>
-        <p>LADSPA control parameters: noise gate, RNNoise noise cancellation, and SC4M compressor were silently broken — missing = signs in PipeWire filter-chain control syntax caused all mic processing nodes to have no effect. check_and_fix_stale_configs: output channel stale configs were incorrectly routed to the physical device instead of passthrough. get_physical_source() retry: microphone source detection now retries 15× on PulseAudio error, matching sink detection resilience.</p>
       </description>
     </release>
   </releases>

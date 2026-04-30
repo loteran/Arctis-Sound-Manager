@@ -39,47 +39,52 @@ def verify_setup() -> int:
         log.error(f'Device YAMLs:    FAIL ({e!r})')
         issues += 1
 
-    # 2. udev rules cover every PID.
+    # 2. Comprehensive system deps check (Phase 3 — see ~/Bureau/ASM_PLAN_DEPS_CHECK.md).
+    #
+    # Subsumes the previous individual checks for udev rules, PulseAudio/PW
+    # reachability, D-Bus session, and pyudev — all four are now part of
+    # `system_deps_checker._build_checks()`. The single shared registry
+    # ensures the GUI dialog (Phase 4) and `--verify-setup` agree on what
+    # to verify and how to fix it.
+    #
+    # Catches the silent-failure traps the older preflight didn't cover —
+    # missing LADSPA plugins (issue #23 root cause), HRIR file gone after a
+    # cache wipe, filter-chain.service unreachable, gh CLI not authenticated,
+    # etc. Each missing dep is logged with its severity tier and the exact
+    # command to install it on this distro.
     try:
-        from arctis_sound_manager.udev_checker import is_udev_rules_valid
-        if is_udev_rules_valid():
-            log.info('udev rules:      OK')
-        else:
-            log.error('udev rules:      MISSING/STALE — run `asm-cli udev write-rules --force --reload`')
-            issues += 1
-    except Exception as e:
-        log.error(f'udev rules:      FAIL ({e!r})')
-        issues += 1
+        from arctis_sound_manager.system_deps_checker import (
+            run_all_checks, Severity, install_command_for, detect_distro,
+        )
+        results = run_all_checks()
+        passed = sum(1 for r in results if r.ok)
+        log.info(f'System deps:     {passed}/{len(results)} OK (distro={detect_distro()})')
 
-    # 3. PulseAudio / PipeWire reachable.
-    try:
-        import pulsectl
-        client = pulsectl.Pulse('arctis-verify-setup')
-        sinks = len(client.sink_list())
-        client.disconnect()
-        log.info(f'PulseAudio/PW:   OK ({sinks} sinks)')
+        for r in results:
+            if r.ok:
+                continue
+            argv = install_command_for(r.check)
+            install_hint = (
+                f'  Install:  sudo {" ".join(argv)}'
+                if argv and argv[0] != 'asm-setup' and argv[0] != 'asm-cli'
+                else (f'  Run:      {" ".join(argv)}' if argv else '  (no automatic install path on this distro)')
+            )
+            tier = r.check.severity
+            line = f'{r.check.name} MISSING — breaks: {r.check.feature}'
+            if tier is Severity.BLOCKING:
+                log.error(f'  [BLOCKING] {line}')
+                issues += 1
+            elif tier is Severity.DEGRADED:
+                log.warning(f'  [DEGRADED] {line}')
+                issues += 1
+            else:  # OPTIONAL
+                log.info(f'  [OPTIONAL] {line}')
+                # OPTIONAL doesn't bump `issues` — exit 0 stays achievable.
+            log.info(install_hint)
+            if r.check.user_action:
+                log.info(f'  Note:     {r.check.user_action}')
     except Exception as e:
-        log.error(f'PulseAudio/PW:   UNREACHABLE ({e!r}) — is pipewire-pulse running for this user?')
-        issues += 1
-
-    # 4. D-Bus session bus.
-    if not os.environ.get('DBUS_SESSION_BUS_ADDRESS') and not os.path.exists(
-        f'/run/user/{os.getuid()}/bus'
-    ):
-        log.error('D-Bus session:   NOT FOUND — DBUS_SESSION_BUS_ADDRESS unset and /run/user/$UID/bus missing.')
-        issues += 1
-    else:
-        log.info('D-Bus session:   OK')
-
-    # 5. pyudev backend.
-    try:
-        from arctis_sound_manager.usb_devices_monitor import _PYUDEV_AVAILABLE
-        if _PYUDEV_AVAILABLE:
-            log.info('USB monitor:     OK (pyudev event-driven)')
-        else:
-            log.warning('USB monitor:     polling fallback (pyudev not importable — degraded but functional)')
-    except Exception as e:
-        log.error(f'USB monitor:     FAIL ({e!r})')
+        log.error(f'System deps:     FAIL to run checker ({e!r})')
         issues += 1
 
     if issues == 0:

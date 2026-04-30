@@ -1,5 +1,5 @@
 Name:           arctis-sound-manager
-Version:        1.0.78
+Version:        1.0.86
 Release:        1%{?dist}
 Summary:        Linux GUI for SteelSeries Arctis headsets
 
@@ -23,6 +23,7 @@ BuildRequires:  desktop-file-utils
 BuildRequires:  libappstream-glib
 
 Requires:       python3-pyside6
+Requires:       python3-pillow
 Requires:       python3-pulsectl
 Requires:       python3-pyudev
 Requires:       python3-pyusb
@@ -32,9 +33,30 @@ Requires:       pipewire-pulseaudio
 Requires:       wireplumber
 Requires:       libusb1
 Requires:       pulseaudio-libs
-
-Recommends:     noise-suppression-for-voice
-Recommends:     swh-plugins
+# Used by asm-setup to download the HRIR file (~/.local/share/pipewire/
+# hrir_hesuvi/EAC_Default.wav) on first run. asm-setup tries curl first,
+# then wget — but if both are missing the HRIR never lands and Spatial
+# Audio stays silent forever. curl is in the Fedora minimal install set
+# but minimal containers / Server netinstall may strip it.
+Requires:       curl
+# Fedora ships the Steve Harris SWH LADSPA pack as `ladspa-swh-plugins`
+# (the upstream name `swh-plugins` is the Debian/Arch package name and
+# does not exist in Fedora repos). Required by HeSuVi 7.1 virtual
+# surround (`plate_1423` reverb plugin) — Spatial Audio is silent
+# without it (issue #23).
+#
+# Promoted from Recommends: to Requires: so DNF auto-pulls the package
+# on upgrade for users who installed earlier ASM versions before this
+# spec carried the dependency. `Recommends:` is only re-evaluated at
+# initial install, so existing users would otherwise stay broken until
+# they ran `dnf reinstall arctis-sound-manager` manually.
+Requires:       ladspa-swh-plugins
+# rnnoise LADSPA plugin used by the ClearCast / mic noise-suppression
+# feature exposed in the Settings page. Promoted from Recommends: to
+# Requires: per the "no soft deps" mandate — without it the toggle in
+# the GUI is a no-op and the user has no way to know why. Same Fedora
+# package name as Debian/Arch.
+Requires:       noise-suppression-for-voice
 
 %description
 Arctis Sound Manager is a Linux application for configuring SteelSeries Arctis
@@ -126,6 +148,45 @@ fi
 
 %postun
 %systemd_user_postun arctis-manager.service arctis-video-router.service arctis-gui.service
+# Clean up user-level PipeWire configs on real removal (not upgrade).
+# RPM passes the post-transaction package count as $1 — 0 means uninstall,
+# >=1 means an upgrade is in progress and we must keep configs in place.
+# Without this block the "ghost" Arctis virtual sinks keep being loaded
+# by PipeWire on every login because asm-setup deployed them to
+# ~/.config/pipewire/ and the package can't reach into $HOME (issue #24).
+# Audio profiles in ~/.config/arctis_manager/profiles/ are PRESERVED.
+if [ "$1" = "0" ]; then
+    REAL_USER="${SUDO_USER:-}"
+    if [ -n "$REAL_USER" ]; then
+        REAL_UID=$(id -u "$REAL_USER" 2>/dev/null || echo "")
+        if [ -n "$REAL_UID" ]; then
+            XDG_RUNTIME_DIR="/run/user/$REAL_UID"
+            DBUS_SOCKET="$XDG_RUNTIME_DIR/bus"
+            echo "==> Cleaning up user-level configs for ${REAL_USER} (audio profiles preserved)..."
+            su -l "$REAL_USER" -c "
+                XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS=unix:path=$DBUS_SOCKET
+                export XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS
+                for unit in arctis-manager.service arctis-video-router.service arctis-gui.service filter-chain.service; do
+                    systemctl --user disable --now \"\$unit\" >/dev/null 2>&1 || true
+                done
+                rm -f \"\$HOME/.config/pipewire/pipewire.conf.d/10-arctis-virtual-sinks.conf\"
+                rm -f \"\$HOME/.config/pipewire/filter-chain.conf.d/sink-virtual-surround-7.1-hesuvi.conf\"
+                rm -f \"\$HOME/.config/pipewire/filter-chain.conf.d\"/sonar-*.conf
+                rm -f \"\$HOME/.config/systemd/user/arctis-manager.service\"
+                rm -f \"\$HOME/.config/systemd/user/arctis-video-router.service\"
+                rm -f \"\$HOME/.config/systemd/user/arctis-gui.service\"
+                if [ -S \"\$DBUS_SOCKET\" ]; then
+                    systemctl --user daemon-reload >/dev/null 2>&1 || true
+                    systemctl --user restart pipewire pipewire-pulse >/dev/null 2>&1 || true
+                fi
+            " 2>/dev/null || true
+        fi
+    else
+        echo "==> arctis-sound-manager removed."
+        echo "    To finish cleaning up ghost virtual sinks (run as your normal user):"
+        echo "    curl -fsSL https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/scripts/uninstall.sh | bash -s -- --purge --yes"
+    fi
+fi
 
 %files
 %license LICENSE

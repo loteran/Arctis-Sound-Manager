@@ -39,6 +39,11 @@ class CoreEngine:
     general_settings: GeneralSettings
     device_settings: DeviceSettings
 
+    # Set to True when kernel_detach hits EACCES on a USB interface — read by
+    # the GUI (via D-Bus GetSettings) to surface UdevRulesDialog(mode="reload").
+    # Cleared automatically on the next successful kernel_detach pass.
+    permission_error: bool = False
+
     device_status: ObservableDict[str, int]|None = None
     oled_manager: 'OledManager | None' = None
 
@@ -308,6 +313,35 @@ class CoreEngine:
             spatial_engine=device_config.spatial_engine,
             device_name=device_config.name,
         )
+
+        # Repair stale PipeWire configs at daemon startup (issue #23).
+        #
+        # Without this call, the static `10-arctis-virtual-sinks.conf` shipped
+        # by `asm-setup` lacks a `node.target` for the Game/Chat sinks, so
+        # WirePlumber connects them straight to the physical output and audio
+        # bypasses the Sonar EQ + HeSuVi surround chain entirely. The check
+        # was previously only run when the user opened the Sonar page in the
+        # GUI — users running headless (or never opening that page) saw the
+        # bug forever.
+        try:
+            from arctis_sound_manager.sonar_to_pipewire import check_and_fix_stale_configs
+            fixed, needs_pw_restart = check_and_fix_stale_configs()
+            if fixed:
+                import subprocess
+                if needs_pw_restart:
+                    self.logger.info("Stale PipeWire configs migrated — restarting PipeWire")
+                    subprocess.run(
+                        ["systemctl", "--user", "restart",
+                         "pipewire", "wireplumber", "pipewire-pulse", "filter-chain"],
+                        check=False, timeout=20,
+                    )
+                else:
+                    self.logger.info("Stale Sonar configs fixed — restarting filter-chain")
+                    subprocess.run(["systemctl", "--user", "restart", "filter-chain"],
+                                   check=False, timeout=15)
+        except Exception as exc:
+            # Never let a config-repair failure block device init.
+            self.logger.warning(f"check_and_fix_stale_configs failed: {exc!r}")
 
         # Configure the device
         self.init_device()
@@ -596,23 +630,37 @@ class CoreEngine:
         """
         self.logger.info(f"Detaching kernel driver for device: {usb_device.idVendor:04x}:{usb_device.idProduct:04x} ({config.name})")
 
-        ok = True
+        had_eacces = False
         for interface in self._all_used_interfaces(config):
             try:
                 if usb_device.is_kernel_driver_active(interface):
                     self.logger.info(f"Kernel driver active on interface {interface}, detaching...")
                     usb_device.detach_kernel_driver(interface)
             except usb.core.USBError as e:
-                # Per-interface failure (device disconnected mid-detach, EACCES,
-                # interface already claimed) is logged via _log_usb_access_error
-                # — the loop continues so the rest of the device still claims.
-                self._log_usb_access_error(e, usb_device, config, interface, action="detaching")
-                ok = False
-        if ok:
-            # All interfaces succeeded — clear any prior permission_error flag
-            # so the GUI banner disappears once udev rules are working.
-            self.permission_error = False
-        return ok
+                # Per-interface failure: device disconnected mid-detach, EACCES
+                # (udev rules not applied to this device), or already claimed.
+                # Log with remediation steps for EACCES, continue the loop so
+                # the rest of the device still claims.
+                if getattr(e, "errno", None) == 13:
+                    had_eacces = True
+                    self.logger.error(
+                        "USB access denied while detaching the kernel driver for %s "
+                        "(0x%04x:0x%04x) on interface %d. udev rules are missing or "
+                        "have not been applied to the currently-attached device. "
+                        "Try one of: 1) replug the dongle, "
+                        "2) `sudo asm-cli udev reload-rules`, "
+                        "3) reinstall ASM via your distro package so the rules go "
+                        "to /etc/udev/rules.d/. The GUI will offer a one-click fix "
+                        "if it's open. The daemon will keep running.",
+                        config.name, usb_device.idVendor, usb_device.idProduct, interface,
+                    )
+                else:
+                    self.logger.warning(
+                        f"Could not detach kernel driver on interface {interface}: {e!r}. "
+                        "Continuing with remaining interfaces."
+                    )
+        # Surface the EACCES state to the GUI; clear it once a clean pass happens.
+        self.permission_error = had_eacces
 
     def kernel_attach(self, usb_device: TypedDevice, config: DeviceConfiguration) -> bool:
         """Re-attach the kernel driver. Returns False on USB error (best effort)."""

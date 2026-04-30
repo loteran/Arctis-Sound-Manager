@@ -70,6 +70,8 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
         gs = self.core_engine.general_settings
         settings = {
             'general': gs.to_dict(),
+            # True when kernel_detach hit EACCES on the current device — the
+            # GUI uses this to surface UdevRulesDialog(mode="reload").
             'permission_error': bool(getattr(self.core_engine, 'permission_error', False)),
             'device': {},
             'dac': {k: getattr(gs, k) for k in (

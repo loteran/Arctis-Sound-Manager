@@ -22,13 +22,16 @@ Depends: ${misc:Depends},
          python3-pyside6.qtnetwork | python3-pip,
          python3-pyudev,
          python3-usb,
+         python3-pulsectl,
+         python3-pil,
          python3-ruamel.yaml,
          pipewire,
          pipewire-pulse,
          wireplumber,
-         libusb-1.0-0
-Recommends: noise-suppression-for-voice,
-            swh-plugins
+         libusb-1.0-0,
+         curl,
+         swh-plugins,
+         noise-suppression-for-voice
 Description: Linux GUI for SteelSeries Arctis headsets
  Arctis Sound Manager is a Linux application for configuring SteelSeries Arctis
  headsets. It provides a 4-channel audio mixer (Game / Chat / Media / HDMI),

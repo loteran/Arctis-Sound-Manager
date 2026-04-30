@@ -33,8 +33,15 @@ def arctis_usb_info(vendor_id: int = 0x1038, bInterfaceClass: int = 0x03):
         
         if not hasattr(device, 'langids') or not device.langids:
             device._langids = (1033,) # Fixed value for English (United States)
-        
-        print(f'{device.manufacturer} {device.product} ({device.idVendor:04x}:{device.idProduct:04x})')
+
+        try:
+            manufacturer = device.manufacturer
+            product = device.product
+        except (usb.core.USBError, ValueError):
+            manufacturer = "(no permission)"
+            product = "(udev rules missing — run asm-setup)"
+
+        print(f'{manufacturer} {product} ({device.idVendor:04x}:{device.idProduct:04x})')
         for config in device:
             print(f'\tConfiguration: {config.bConfigurationValue}')
             for interface in config:

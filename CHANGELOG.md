@@ -5,6 +5,81 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.86] - 30 April 2026
+
+### Added
+
+- **System Deps dialog at GUI startup** — a runtime self-healing dialog that detects every missing system component ASM relies on (LADSPA `plate_1423` + `librnnoise`, HRIR file, `filter-chain.service`, PipeWire ≥ 1.0, `wpctl`, `pkexec`, `pyudev`/`pulsectl`/`PySide6`/`pyusb`/`PIL`/`ruamel.yaml`/`dbus-next`, `dbus-send`, `pw-metadata`, `curl`, D-Bus session, udev rules, `gh` CLI). Each missing dep shows a severity badge (BLOCKING / DEGRADED / OPTIONAL), what feature breaks if it stays missing, and an `Install`/`Run` button that runs the right `pkexec dnf|apt-get|pacman install …` for the detected distro. **Install all missing** groups by package manager so a single polkit prompt fixes the whole list. **Don't show again until ASM is upgraded** writes a version-aware skip marker that auto-resets on the next ASM upgrade. **Copy cmd** falls back to clipboard mode for unsupported distros. Triggered after the existing udev / telemetry dialogs at T+2.5 s on first launch — no nag.
+- **`asm-daemon --verify-setup` runs the same dep registry** — headless preflight now logs each missing component with its severity tier and per-distro install command, plus the detected distro on the summary line. Exit 1 on BLOCKING/DEGRADED, 0 if only OPTIONAL — safe to wire into systemd `ExecStartPre`.
+- **`scripts/check-deps-drift.py` CI guard** — AST-walks `src/`, fails the wheel-install-test matrix on every supported distro if a new third-party `import` or `subprocess.run([…])` is added without a matching `DepCheck` entry. Closes the silent-failure trap class issue #23 was about: any new external dep is forced through the runtime checker too, so the GUI dialog never goes blind.
+
+### Fixed
+
+- **Spatial Audio silently inaudible on Fedora (issue #23)** — `Recommends: swh-plugins` in the spec was a no-op on Fedora because the package is named `ladspa-swh-plugins` there; DNF silently pulled in nothing and the HeSuVi filter-chain failed to load `plate_1423` (reverb) on every Fedora install. The spec now hard-`Requires: ladspa-swh-plugins`, and the dep is also a `Depends:` (not `Recommends:`) on Debian + a `depends=` (not `optdepends=`) on Arch — DNF/APT auto-pull it on `upgrade`, no manual `dnf install` needed.
+- **Audio bypassed Sonar EQ + HeSuVi chain on first run (issue #23)** — `asm-setup` deployed a static `10-arctis-virtual-sinks.conf` with no `node.target`, so WirePlumber connected the Game/Chat virtual sinks straight to the physical headset, skipping the Sonar EQ and HeSuVi nodes entirely. The drift-checker (`check_and_fix_stale_configs`) was only invoked from `SonarPage.__init__` in the GUI, so users who never opened the Equalizer page kept the broken layout forever. The daemon now runs the drift-check from `configure_virtual_sinks()` at startup, and the check now flags `needs_pw_restart=True` when it rewrites the virtual-sinks file (which lives in `pipewire.conf.d/`, not `filter-chain.conf.d/`, so a filter-chain restart alone wouldn't reload it).
+- **Ghost Arctis virtual sinks survived `paru -R arctis-sound-manager` (issue #24)** — the AUR `post_remove` hook only echoed cleanup instructions that buried `paru`/`yay` output drowned, so users on CachyOS reported phantom Game/Chat/Media devices remaining after uninstall. The AUR/RPM/DEB hooks now actually run a cleanup as `$SUDO_USER` (via `su -l`) that removes `~/.config/pipewire/pipewire.conf.d/10-arctis-virtual-sinks.conf` + the chat/media/HeSuVi siblings + stale `~/.config/systemd/user/arctis-*.service` copies, then restarts pipewire so the ghost sinks vanish immediately. Audio profiles in `~/.config/arctis_manager/profiles/` are preserved (matches the `scripts/uninstall.sh --purge` contract).
+- **No soft deps remain** — `noise-suppression-for-voice` (rnnoise LADSPA, drives the ClearCast toggle), `swh-plugins` (Arch), and `curl` (asm-setup HRIR download) were promoted from `Recommends:` / `optdepends=` to hard requirements across all three packagers. Any feature ASM exposes in the GUI now has a hard package dep behind it — the runtime checker is the safety net for users who later remove a package by hand or ride an immutable distro that didn't replay the upgrade transaction.
+
+## [1.0.85] - 27 April 2026
+
+### Fixed
+
+- **Sonar Output preset switch dropped Firefox / Arctis_Media routing (issue #22)** — restarting the PipeWire filter-chain to apply a new Output EQ preset (e.g. *Music – Punchy*) tears down the `Arctis_Game/Chat/Media` virtual sinks momentarily. The stream-restore loop only waited for the EQ filter node to reappear before re-issuing `pactl move-sink-input`, so when the Arctis virtual sinks were not yet back the moves silently failed and streams stayed orphaned on the system default. The apply worker now waits up to 4 s per saved `Arctis_*` target sink before issuing the move-back commands.
+- **`asm-cli arctis-usb-info` traceback on EACCES (issue #22)** — when udev rules were missing or not yet applied to the currently-attached dongle, reading `device.manufacturer` raised `usb.core.USBError: [Errno 13] Access denied` and aborted the diagnostic. Now wrapped with `try/except`; prints `(no permission)` with a hint to run `asm-setup` instead of crashing the whole CLI report.
+
+## [1.0.84] - 27 April 2026
+
+### Fixed
+
+- **`TypeError` crash in `on_settings_received` when the daemon flagged a USB EACCES (issue #22)** — `UdevRulesDialog(parent=self, ...)` was called from `QMainApp`, which inherits from `QObject`, not `QWidget`, so `QDialog.__init__` rejected the parent and the GUI tracebacked instead of opening the "Apply now" dialog. Pass `self.main_window` (the actual `QMainWindow`) so the runtime fix-permissions flow shipped in v1.0.81 finally fires on Nobara/Fedora setups where the dongle was plugged in before the udev rules took effect.
+
+## [1.0.83] - 26 April 2026
+
+### Added
+
+- **Bug report — full system diagnostic** — the report payload now includes Python library versions (pulsectl / pyudev / pyusb / dbus-next / ruamel-yaml / PySide6 / pillow via `importlib.metadata`), multi-install detection (rpm + pacman + apt + pipx + every `asm-daemon` binary in `$PATH`), the actual content of the active udev rules file with `is_udev_rules_valid()`'s verdict, the full PipeWire sink list, `wpctl status`, the USB monitor backend (pyudev event-driven vs polling fallback) and the D-Bus session bus path. Goes from a 6 kB report to a ~13 kB one — every block is actionable for triage.
+- **Bug report — short URL body + full file attachment** — GitHub's `?body=` query param is capped around 8 kB; the expanded report no longer fits. ASM now writes the full diagnostic to `~/.cache/arctis-sound-manager/reports/bug-report-YYYYMMDD-HHMMSS.md`, opens the GitHub issue editor with a short summary (~600 chars) and an "Open folder" button so the user can drag-and-drop the diagnostic file into the issue editor.
+- **Bug report — one-click auto-submit via `gh` CLI** — when the user has `gh auth status` configured, a "Submit automatically (gh CLI)" button uploads the diagnostic as a secret gist, creates the issue with a link to the gist, and opens the new issue URL in the browser. Zero clicks past the dialog. Falls back to the manual drag-and-drop flow on any failure.
+- **Bug report — free-form description** — the dialog has a dedicated "Describe what happened" field at the top with a placeholder example. The text is prepended as a `## What happened` markdown block to BOTH the URL body and the full diagnostic file so the maintainer sees it first.
+
+### Fixed
+
+- **Channel button label `H` → `O`** — the 4th audio channel was renamed from "HDMI" to "Output" because it can target any external sink (HDMI, USB speakers, sound card…), not just HDMI. The drop button on application pills was already `O`, but the help-page text in the three locales (en/fr/es) still referenced the old `G / C / M / H` shortcut and "H sends it to HDMI" — updated to `G / C / M / O` and "O sends it to your external Output (HDMI, USB speakers, sound card…)".
+
+## [1.0.82] - 26 April 2026
+
+### Fixed
+
+- **Multi-device routing (issue #20)** — on systems with several audio outputs (Logitech G560, Razer Kiyo, internal speakers, etc.) plus an Arctis headset, apps that were already running when ASM started used to stay glued to their previous sink because `_auto_route()` only matched a hardcoded list of browser/game/chat app names. Now `video_router.py` adopts any orphan stream onto `Arctis_Media` when Arctis is the default sink — Spotify, VLC, Steam and friends finally end up in the headset on first launch. Streams already on an Arctis sink (virtual or filter-chain) are left untouched, and the adoption is saved as a routing override so manual KDE-mixer placements take over from there. Same logic applied to native PipeWire streams (mpv, haruna).
+
+## [1.0.81] - 26 April 2026
+
+### Added
+
+- **Runtime "Apply now" popup on USB EACCES** — restores the v1.0.71 behaviour lost during the v1.0.79 merge. The existing startup dialog only fires when the udev rules file is missing/incomplete on disk, but if the rules are correct AND the headset was plugged in before they took effect (typical after a `paru -Syu` or `dnf upgrade`), the daemon used to hit EACCES on `kernel_detach` and the GUI was silent. Users had to figure out replug or `sudo asm-cli udev reload-rules` on their own. Now `CoreEngine.kernel_detach` flags `permission_error=True` per-interface on errno 13, the daemon exposes that flag through `GetSettings`, and the GUI opens `UdevRulesDialog(mode="reload")` automatically — one click runs `asm-cli udev reload-rules` with a single pkexec prompt and the device becomes accessible without unplugging.
+- **`UdevRulesDialog` two modes**: `write` (existing — install missing rules) and `reload` (new — re-trigger udev on the currently-attached device). Both share the same one-prompt elevation flow.
+
+### Fixed
+
+- **`debian/build-deb.sh` referenced stale unit paths** (`debian/*.service`) that had moved to `systemd/*.service` in v1.0.79. The .deb job in `release.yaml` failed at build, which cascade-skipped `aur-update` and `copr-build`, leaving AUR / COPR users on v1.0.78 even though the v1.0.79 / v1.0.80 tags were pushed. Updated to use the canonical `systemd/` paths.
+
+### Hardened
+
+- **CI drift detector** now also validates that every relative source path in `debian/build-deb.sh`, `debian/rules`, `aur/PKGBUILD` and the RPM spec actually exists in the repo. Catches the exact regression described above before merge — verified by sim-test.
+
+## [1.0.80] - 26 April 2026
+
+### Added
+
+- **`scripts/uninstall.sh`** — dedicated uninstaller. Detects every install method on the system (rpm / pacman / apt / pipx) and lets the user pick which one(s) to remove. When both pipx and a distro package coexist, offers a 1/2/3 menu (pipx only / distro only / both). `--purge` wipes settings, PipeWire configs, HRIR data, user systemd units and the manually-written udev rules in /etc, **but preserves audio profiles** (`~/.config/arctis_manager/profiles/` and the active-profile pointer) so a future reinstall picks them right back up. A separate explicit confirm offers to delete the profiles too.
+- **Profiles capture DAC tab settings** — audio profiles now snapshot and restore the full DAC state in addition to EQ/macros/spatial/volumes: OLED brightness, screen timeout, scroll speed, custom-display toggle, show-element toggles, display order, per-element font sizes, weather configuration. Older profile files (pre-v1.0.80) load with an empty DAC block — restoring them is a no-op for the DAC side, exactly as before.
+- **`scripts/check-packaging-drift.py`** — CI-enforced drift detector. Runs on every PR/push across the 8-distro matrix and fails the build if pyproject.toml / PKGBUILD / .SRCINFO / RPM spec are out of sync, if any generator (udev rules, AppStream metainfo, debian/changelog) produces output that differs from the committed file, or if a pyproject dep is missing from PKGBUILD `depends`, the spec's `Requires:` lines, or debian/control `Depends:`. Closes the class of bug that left AppStream stuck at v1.0.4 and debian/changelog at v1.0.27 for months.
+
+### Fixed
+
+- **Packaging drifts surfaced by the new check** — added `pillow` to the three packagers (was in pyproject but missing everywhere), added `python3-pulsectl` to debian/control, regenerated debian/changelog (14 versions behind) and AppStream metainfo (no v1.0.79 entry).
+- **`udevadm trigger` scope alignment** — AUR install hook and debian postinst now narrow the trigger to `--subsystem-match=usb` like the RPM spec and asm-cli already do. Cosmetic; functional behaviour unchanged.
+
 ## [1.0.79] - 26 April 2026
 
 Cross-distro robustness sprint (22 commits, four phases applied: bloquants, runtime, cross-distro, qualité de vie). Promoted from the 1.0.79b develop pre-release.

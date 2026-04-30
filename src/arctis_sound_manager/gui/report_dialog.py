@@ -1,11 +1,12 @@
 """
 ReportBugDialog — modal dialog to review and submit a bug report to GitHub.
 """
+import subprocess
 import webbrowser
 from typing import Optional
 
-from PySide6.QtCore import QTimer, Qt
-from PySide6.QtGui import QClipboard
+from PySide6.QtCore import QTimer, Qt, QUrl
+from PySide6.QtGui import QClipboard, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -19,7 +20,11 @@ from PySide6.QtWidgets import (
 from arctis_sound_manager.bug_reporter import (
     clear_crash_report,
     format_bug_report,
+    format_bug_report_short,
     github_issue_url,
+    is_gh_cli_ready,
+    submit_via_gh_cli,
+    write_full_report_to_file,
 )
 from arctis_sound_manager.gui.theme import (
     ACCENT,
@@ -41,8 +46,11 @@ _BTN = (
 
 class ReportBugDialog(QDialog):
     """
-    Shows an editable bug report pre-filled with system info (+ crash traceback
-    if applicable) and offers Copy and Open-GitHub-Issue actions.
+    Shows a previewable bug report. Two artefacts:
+      - a short summary that goes into the GitHub URL `?body=` (fits in
+        the URL, no truncation).
+      - a full diagnostic file written to ~/.cache/arctis-sound-manager/
+        reports/ that the user drag-and-drops into the issue editor.
     """
 
     def __init__(
@@ -53,8 +61,10 @@ class ReportBugDialog(QDialog):
     ):
         super().__init__(parent)
         self._is_crash = is_crash
+        self._traceback = traceback_str
+        self._report_path = None  # set when the user clicks "Open issue"
         self.setWindowTitle("Report a bug — Arctis Sound Manager")
-        self.setMinimumSize(700, 540)
+        self.setMinimumSize(720, 580)
         self.setStyleSheet(f"background-color: {BG_MAIN}; color: {TEXT_PRIMARY};")
 
         layout = QVBoxLayout(self)
@@ -65,14 +75,18 @@ class ReportBugDialog(QDialog):
         if is_crash:
             title_text = "A crash occurred in the last session"
             sub_text = (
-                "ASM encountered an unexpected error. "
-                "Review the report below and open a GitHub issue to help fix it."
+                "ASM encountered an unexpected error. Click \"Open GitHub issue\" "
+                "to file a report — a short summary opens in your browser, and a "
+                "full diagnostic file is saved locally that you can drag-and-drop "
+                "into the issue editor."
             )
         else:
             title_text = "Report a bug"
             sub_text = (
-                "The report below is pre-filled with your system info and recent logs. "
-                "Add a description of the problem, then open a GitHub issue."
+                "Click \"Open GitHub issue\" to start filing a report. A short "
+                "summary opens in your browser; a full diagnostic file (USB tree, "
+                "udev rules, PA/PW sinks, journalctl, etc.) is saved locally — "
+                "drag-and-drop it into the GitHub editor as an attachment."
             )
 
         title_lbl = QLabel(title_text)
@@ -88,12 +102,34 @@ class ReportBugDialog(QDialog):
         sub_lbl.setWordWrap(True)
         layout.addWidget(sub_lbl)
 
-        # ── Editable report ─────────────────────────────────────────────────
-        hint = QLabel("You can edit the report before submitting:")
+        # ── User description (free-form, prepended to both body + file) ──────
+        desc_hint = QLabel("Describe what happened (steps to reproduce, expected vs actual):")
+        desc_hint.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;")
+        layout.addWidget(desc_hint)
+
+        self._description = QPlainTextEdit()
+        self._description.setStyleSheet(
+            f"QPlainTextEdit {{"
+            f"  background-color: {BG_CARD}; color: {TEXT_PRIMARY};"
+            f"  border: 1px solid {BORDER}; border-radius: 6px;"
+            f"  font-size: 10pt; padding: 8px;"
+            f"}}"
+        )
+        self._description.setPlaceholderText(
+            "Example: \"I clicked the Sonar tab, switched to the Bass Boost preset and "
+            "the Game channel went silent until I restarted ASM.\"\n\n"
+            "(Optional but very helpful — leave blank if you have no extra context.)"
+        )
+        self._description.setMaximumHeight(140)
+        layout.addWidget(self._description)
+
+        # ── Preview of the FULL report (read-only, just for review) ─────────
+        hint = QLabel("Preview of the full diagnostic that will be submitted:")
         hint.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;")
         layout.addWidget(hint)
 
         self._editor = QPlainTextEdit()
+        self._editor.setReadOnly(True)
         self._editor.setStyleSheet(
             f"QPlainTextEdit {{"
             f"  background-color: {BG_CARD}; color: {TEXT_PRIMARY};"
@@ -104,15 +140,30 @@ class ReportBugDialog(QDialog):
         self._editor.setPlainText(format_bug_report(traceback_str))
         layout.addWidget(self._editor, stretch=1)
 
+        # ── Status line shown after the report file is written ──────────────
+        self._status_lbl = QLabel("")
+        self._status_lbl.setStyleSheet(
+            f"color: {ACCENT}; font-size: 9pt; background: transparent;"
+        )
+        self._status_lbl.setWordWrap(True)
+        layout.addWidget(self._status_lbl)
+
         # ── Buttons ─────────────────────────────────────────────────────────
         btn_row = QHBoxLayout()
         btn_row.setSpacing(10)
 
-        self._copy_btn = QPushButton("Copy to clipboard")
+        self._copy_btn = QPushButton("Copy full report")
         self._copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._copy_btn.setStyleSheet(_BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, hover=BG_BUTTON_HOVER))
         self._copy_btn.clicked.connect(self._copy)
         btn_row.addWidget(self._copy_btn)
+
+        self._open_folder_btn = QPushButton("Open folder")
+        self._open_folder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._open_folder_btn.setStyleSheet(_BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, hover=BG_BUTTON_HOVER))
+        self._open_folder_btn.clicked.connect(self._open_folder)
+        self._open_folder_btn.setEnabled(False)
+        btn_row.addWidget(self._open_folder_btn)
 
         btn_row.addStretch()
 
@@ -122,9 +173,30 @@ class ReportBugDialog(QDialog):
         close_btn.clicked.connect(self.accept)
         btn_row.addWidget(close_btn)
 
-        self._github_btn = QPushButton("Copy & Open GitHub issue ↗")
+        # If `gh` CLI is installed and authenticated, offer one-click auto-
+        # submission (creates a secret gist with the full diagnostic + an
+        # issue linking to it, all without leaving ASM). Falls back to the
+        # manual drag-and-drop flow otherwise.
+        self._gh_ready = is_gh_cli_ready()
+
+        if self._gh_ready:
+            self._auto_btn = QPushButton("Submit automatically (gh CLI) ↗")
+            self._auto_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self._auto_btn.setToolTip(
+                "Creates a secret GitHub gist with the full diagnostic, "
+                "then opens a new issue linking to it. Uses your gh CLI auth."
+            )
+            self._auto_btn.setStyleSheet(_BTN.format(bg=ACCENT, fg="#ffffff", hover=BG_BUTTON_HOVER))
+            self._auto_btn.clicked.connect(self._submit_auto)
+            btn_row.addWidget(self._auto_btn)
+
+        self._github_btn = QPushButton(
+            "Open GitHub issue ↗" if not self._gh_ready else "Open manually ↗"
+        )
         self._github_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._github_btn.setStyleSheet(_BTN.format(bg=ACCENT, fg="#ffffff", hover=BG_BUTTON_HOVER))
+        gh_bg = BG_BUTTON if self._gh_ready else ACCENT
+        gh_fg = TEXT_PRIMARY if self._gh_ready else "#ffffff"
+        self._github_btn.setStyleSheet(_BTN.format(bg=gh_bg, fg=gh_fg, hover=BG_BUTTON_HOVER))
         self._github_btn.clicked.connect(self._open_github)
         btn_row.addWidget(self._github_btn)
 
@@ -134,18 +206,125 @@ class ReportBugDialog(QDialog):
         if is_crash:
             clear_crash_report()
 
+    def _user_description_block(self) -> str:
+        """Markdown block with the user's free-form description, or empty
+        string if they didn't write anything. Goes at the TOP of both the
+        short URL body and the full diagnostic file so it's the first thing
+        a maintainer sees on the issue."""
+        text = (self._description.toPlainText() if hasattr(self, '_description') else '').strip()
+        if not text:
+            return ''
+        return f'## What happened\n{text}\n\n'
+
+    def _write_full_report_with_description(self) -> None:
+        """Write the full diagnostic to disk with the user's description
+        prepended. Stored in self._report_path."""
+        body = format_bug_report(self._traceback)
+        prefix = self._user_description_block()
+        full = prefix + body if prefix else body
+        target = write_full_report_to_file(self._traceback)
+        if prefix:
+            target.write_text(full, encoding='utf-8')
+        self._report_path = target
+
     def _copy(self) -> None:
         self.activateWindow()
         QApplication.clipboard().setText(self._editor.toPlainText(), QClipboard.Mode.Clipboard)
         self._copy_btn.setText("Copied!")
         self._copy_btn.setEnabled(False)
-        QTimer.singleShot(2000, lambda: (self._copy_btn.setText("Copy to clipboard"), self._copy_btn.setEnabled(True)))
+        QTimer.singleShot(2000, lambda: (self._copy_btn.setText("Copy full report"), self._copy_btn.setEnabled(True)))
+
+    def _open_folder(self) -> None:
+        if self._report_path is None:
+            return
+        # Prefer the FreeDesktop file manager so the file is selected, not
+        # just the folder opened. Fallback to QDesktopServices if dbus call
+        # isn't available (no DE / minimal session).
+        try:
+            subprocess.Popen([
+                "dbus-send", "--session", "--print-reply",
+                "--dest=org.freedesktop.FileManager1",
+                "/org/freedesktop/FileManager1",
+                "org.freedesktop.FileManager1.ShowItems",
+                f"array:string:file://{self._report_path}",
+                "string:",
+            ])
+        except Exception:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._report_path.parent)))
+
+    def _submit_auto(self) -> None:
+        """One-click submission via gh CLI: write the full report → upload as
+        secret gist → create the issue with the gist link → open the new issue
+        URL in the browser. Falls back to the manual flow if anything fails."""
+        try:
+            self._write_full_report_with_description()
+        except Exception as e:
+            self._status_lbl.setText(f"Could not write diagnostic file: {e!r}")
+            return
+
+        title = "Crash report" if self._is_crash else "Bug report"
+        short = self._user_description_block() + format_bug_report_short(self._traceback, attachment_path=None)
+
+        self._auto_btn.setEnabled(False)
+        self._auto_btn.setText("Uploading…")
+        QApplication.processEvents()
+
+        issue_url = submit_via_gh_cli(title, short, self._report_path)
+        if not issue_url:
+            self._status_lbl.setText(
+                "gh CLI submission failed (auth expired or network issue). "
+                "Falling back to the manual flow — opening browser now."
+            )
+            self._auto_btn.setEnabled(True)
+            self._auto_btn.setText("Submit automatically (gh CLI) ↗")
+            self._open_github()
+            return
+
+        self._status_lbl.setText(f"Issue filed: {issue_url}")
+        webbrowser.open(issue_url)
+        self._auto_btn.setText("Issue filed ✓")
+        self._open_folder_btn.setEnabled(True)
 
     def _open_github(self) -> None:
-        self.activateWindow()
-        QApplication.clipboard().setText(self._editor.toPlainText(), QClipboard.Mode.Clipboard)
+        # 1. Save the full report (with user description prepended) to a local
+        # file the user can drag-and-drop into the GitHub editor.
+        try:
+            self._write_full_report_with_description()
+        except Exception as e:
+            self._status_lbl.setText(f"Could not write diagnostic file: {e!r}")
+            return
+
+        # 2. Build a short URL body that fits in `?body=`, including the user's
+        # description at the top.
         title = "Crash report" if self._is_crash else "Bug report"
-        webbrowser.open(github_issue_url(title))
-        self._github_btn.setText("Copied! Paste in the issue body ↗")
+        short = self._user_description_block() + format_bug_report_short(
+            self._traceback, attachment_path=self._report_path,
+        )
+        url = github_issue_url(title, body=short)
+
+        # 3. Open the browser. Browsers cap URLs around 8 kB; if we exceed,
+        # fall back to a body-less URL and put the short summary on the
+        # clipboard so the user can paste manually.
+        if len(url) > 7500:
+            QApplication.clipboard().setText(short, QClipboard.Mode.Clipboard)
+            url = github_issue_url(title)
+            self._status_lbl.setText(
+                f"Diagnostic saved to {self._report_path}. "
+                "Short summary copied to clipboard (URL was too long for the browser) — "
+                "paste it as the issue body, then drag-and-drop the file as an attachment."
+            )
+        else:
+            self._status_lbl.setText(
+                f"Diagnostic saved to {self._report_path}. "
+                "GitHub editor will open with the summary pre-filled — drag-and-drop "
+                "the file from the folder below into the editor as an attachment."
+            )
+
+        webbrowser.open(url)
+        self._open_folder_btn.setEnabled(True)
+        self._github_btn.setText("Issue opened ↗ — drop the file in")
         self._github_btn.setEnabled(False)
-        QTimer.singleShot(4000, lambda: (self._github_btn.setText("Copy & Open GitHub issue ↗"), self._github_btn.setEnabled(True)))
+        QTimer.singleShot(
+            6000,
+            lambda: (self._github_btn.setText("Open GitHub issue ↗"), self._github_btn.setEnabled(True)),
+        )

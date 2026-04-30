@@ -171,6 +171,20 @@ def main():
             set_consent(dlg.exec() == QDialog.Accepted)
         QTimer.singleShot(2000, _ask_telemetry)
 
+    # ── System deps self-healing dialog (Phase 4 of ASM_PLAN_DEPS_CHECK) ──
+    # Re-runs the system_deps_checker registry shared with --verify-setup;
+    # if any BLOCKING or DEGRADED dep is missing, offers a one-click pkexec
+    # install per matching distro. The OPTIONAL `gh` CLI never triggers
+    # the dialog. Skip-marker written by the user is honoured so we don't
+    # nag on every launch — it expires automatically on ASM upgrade.
+    def _check_deps():
+        from arctis_sound_manager.gui.system_deps_dialog import (
+            SystemDepsDialog, should_show_dialog,
+        )
+        if should_show_dialog():
+            SystemDepsDialog().exec()
+    QTimer.singleShot(2500, _check_deps)
+
     # Open the window once the event loop is running.
     if not args.systray:
         QTimer.singleShot(0, q_object.open_main_window)

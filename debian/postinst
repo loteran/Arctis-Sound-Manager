@@ -4,7 +4,7 @@ set -e
 if [ "$1" = "configure" ]; then
     # Reload udev rules (system-level, runs as root)
     udevadm control --reload-rules 2>/dev/null || true
-    udevadm trigger --action=add 2>/dev/null || true
+    udevadm trigger --action=add --subsystem-match=usb 2>/dev/null || true
 
     REAL_USER="${SUDO_USER:-}"
 

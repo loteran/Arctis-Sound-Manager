@@ -76,12 +76,12 @@ uv run --with ruamel.yaml python3 scripts/generate_udev_rules.py > build/deb/91-
 install -Dm644 build/deb/91-steelseries-arctis.rules \
     "${PKGDIR}/usr/lib/udev/rules.d/91-steelseries-arctis.rules"
 
-# ── Systemd user services ──────────────────────────────────
-install -Dm644 debian/arctis-manager.service \
+# ── Systemd user services (single source of truth in systemd/) ──
+install -Dm644 systemd/arctis-manager.service \
     "${PKGDIR}/usr/lib/systemd/user/arctis-manager.service"
-install -Dm644 debian/arctis-video-router.service \
+install -Dm644 systemd/arctis-video-router.service \
     "${PKGDIR}/usr/lib/systemd/user/arctis-video-router.service"
-install -Dm644 debian/arctis-gui.service \
+install -Dm644 systemd/arctis-gui.service \
     "${PKGDIR}/usr/lib/systemd/user/arctis-gui.service"
 
 # ── Desktop entry ───────────────────────────────────────────

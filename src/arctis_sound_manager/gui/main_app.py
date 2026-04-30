@@ -269,21 +269,17 @@ class QMainApp(QBaseDesktopApp):
         if not has_dac and self._stack.currentIndex() == 3:
             self._switch_page(0)
 
-        # Daemon flagged a USB EACCES (udev rules missing or not yet applied
-        # to the currently-connected device). Surface a one-shot dialog with a
-        # "fix it" button. Tracked locally so we don't re-popup on every poll.
-        if settings.get('permission_error') and not getattr(self, '_perm_dialog_shown', False):
-            self._perm_dialog_shown = True
-            from arctis_sound_manager.gui.udev_dialog import UdevRulesDialog
-            dlg = UdevRulesDialog(parent=self.main_window, mode='reload')
-            if dlg.exec() == QDialog.DialogCode.Accepted:
-                # Tell the daemon to re-scan USB now that rules are applied.
-                self.dbus_wrapper.reload_configs()
-                # Allow another popup if the next reload still fails.
-                self._perm_dialog_shown = False
-        elif not settings.get('permission_error'):
-            # Permission state cleared — reset so we can re-prompt later if needed.
-            self._perm_dialog_shown = False
+        # Daemon flagged a USB EACCES on the currently-attached device. The
+        # rules file might be valid (so the startup dialog at gui.py:142
+        # didn't fire) but they weren't applied to this device because it
+        # was plugged in before they took effect. Offer a one-click reload.
+        if settings.get('permission_error') and not getattr(self, '_udev_reload_dialog_open', False):
+            self._udev_reload_dialog_open = True
+            try:
+                from arctis_sound_manager.gui.udev_dialog import UdevRulesDialog
+                UdevRulesDialog(parent=self.main_window, mode="reload").exec()
+            finally:
+                self._udev_reload_dialog_open = False
 
     def on_status_received(self, status: dict):
         if status == self.status:
