@@ -95,12 +95,12 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 ## Tested Distributions
 
 <!-- STATS:TESTED_DISTROS:START -->
-| Distribution | Reports |
-|---|---|
-| CachyOS | 4 |
-| Ubuntu 24.04.4 LTS | 1 |
-| Nobara Linux 43 (KDE Plasma Desktop Edition) | 1 |
-| Fedora Linux 44 (KDE Plasma Desktop Edition) | 1 |
+| Distribution | Install method | Users |
+|---|---|---|
+| CachyOS | 🎯 AUR | 👥 4 |
+| Ubuntu 24.04.4 LTS | 🎯 PPA | 👥 1 |
+| Nobara Linux 43 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 1 |
+| Fedora Linux 44 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 1 |
 <!-- STATS:TESTED_DISTROS:END -->
 
 ---
@@ -111,8 +111,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 > [View interactive dashboard →](https://loteran.github.io/Arctis-Sound-Manager/stats)
 
 <!-- STATS:META:START -->
-_Based on **11** anonymous data points — last updated 2026-04-21_
-
+_Based on **7** anonymous data points — last updated 2026-05-01_
 <!-- STATS:META:END -->
 
 ### Most used headsets
@@ -120,9 +119,10 @@ _Based on **11** anonymous data points — last updated 2026-04-21_
 <!-- STATS:HEADSETS:START -->
 | Headset | Installs |
 |---|---|
-| Arctis Nova Pro Wireless | 10 |
-| Arctis Nova 7P (Gen 1) | 1 |
-
+| Arctis Nova Pro Wireless | 3 |
+| Arctis Nova 7 (Gen 2) | 2 |
+| Arctis 9 Wireless | 1 |
+| Arctis Nova 7 (Gen 1) | 1 |
 <!-- STATS:HEADSETS:END -->
 
 ### Most used Linux distributions
@@ -130,10 +130,10 @@ _Based on **11** anonymous data points — last updated 2026-04-21_
 <!-- STATS:DISTROS:START -->
 | Distribution | Installs |
 |---|---|
-| CachyOS | 8 |
-| Linux Mint 22.3 | 2 |
-| Arch Linux | 1 |
-
+| CachyOS | 4 |
+| Ubuntu 24.04.4 LTS | 1 |
+| Nobara Linux 43 (KDE Plasma Desktop Edition) | 1 |
+| Fedora Linux 44 (KDE Plasma Desktop Edition) | 1 |
 <!-- STATS:DISTROS:END -->
 
 ---
