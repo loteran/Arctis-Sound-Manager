@@ -96,66 +96,6 @@
         <p>udev (RPM): udevadm trigger now uses --action=add so device permissions are actually re-evaluated after upgrade on Fedora/Nobara/RHEL (was the same fix as cli.py / aur / debian). udev: is_udev_rules_valid() is now content-based (parses real rule lines) instead of substring-matching 'uaccess'/'1038' — no more false positives from comments, no more false negatives from a stale file at one path masking a valid file at another. udev paths: UDEV_RULES_PATHS now includes /run/udev/rules.d/ (NixOS, runtime overlays) and /lib/udev/rules.d/ (pre-usrmerge Debian).</p>
       </description>
     </release>
-    <release version="1.0.78" date="2026-04-25">
-      <description>
-        <p>Weather city search: typing in the city field was interrupted every few hundred milliseconds because update_settings unconditionally overwrote _city_input with the saved value on every daemon poll. The field is now only updated when it does not have focus.</p>
-      </description>
-    </release>
-    <release version="1.0.77" date="2026-04-25">
-      <description>
-        <p>Headset page: device name in the "Devices" card flickered between the i18n status category label ("Headset" / "Casque") and the actual device name ("Arctis Nova Pro Wireless"). update_status was overwriting _device_name_label on every status poll; the label is now only set by update_settings.</p>
-      </description>
-    </release>
-    <release version="1.0.76" date="2026-04-25">
-      <description>
-        <p>GUI fails to open (regression in 1.0.69): generate_hesuvi_conf() raised UnboundLocalError: cannot access local variable '_log' when no Arctis device was attached. The early-return guard called the module-level _log, but a later import logging as _log inside the same function rebinds _log, which Python treats as a function-local for the entire scope. Replaced the local rebinding with a direct _log.warning(...) so the module-level logger stays accessible.</p>
-      </description>
-    </release>
-    <release version="1.0.75" date="2026-04-25">
-      <description>
-        <p>First version published on PyPI — install / upgrade is now a one-liner that always pulls the latest:</p>
-      </description>
-    </release>
-    <release version="1.0.74" date="2026-04-25">
-      <description>
-        <p>Automatic PyPI publish on every tagged release via PyPA's gh-action-pypi-publish action using OIDC Trusted Publishers (no token in repo secrets). Once the project is published once, end-users can install/upgrade with the canonical one-liner pipx install arctis-sound-manager --force instead of having to track release URLs. Release workflow writes the deterministic AUR source tarball to build/aur/ instead of dist/, so the hyphen-named archive doesn't get scooped up by twine when publishing to PyPI. The GitHub release upload list now reflects the new path.</p>
-      </description>
-    </release>
-    <release version="1.0.73" date="2026-04-25">
-      <description>
-        <p>scripts/clean-reinstall.sh — a self-contained, curl | bash-friendly script that audits every existing ASM install (rpm + dpkg + pacman + pipx + orphan binaries in $PATH), uninstalls all of them, then installs the latest release via the user's chosen method, runs asm-setup and verifies that the daemon is active. Solves the dup-binary mess that built up across mixed install methods (RPM + pipx --force etc.). Multi-install detection in the in-app updater: clicking "Install update" now checks whether ASM is currently installed by more than one method (rpm + pipx, etc.) and refuses to upgrade until the conflict is resolved, opening a clear dialog that points to clean-reinstall.sh with a copy-to-clipboard command. In-app updater now runs asm-setup after a pipx upgrade (via the new FirstRunDialog), so udev rules are reloaded and PipeWire restarted on the new binary. Previously only asm-cli desktop write was called, which left udev permissions stale on already-attached devices.</p>
-      </description>
-    </release>
-    <release version="1.0.72" date="2026-04-25">
-      <description>
-        <p>Auto-run asm-setup on first GUI launch for installs that didn't go through a distro-package post-install hook (typically pipx). When the GUI starts and ~/.config/arctis_manager/.setup_done is missing, a new FirstRunDialog opens, runs asm-setup as a subprocess and streams its output live in the dialog so the user can follow what's happening (HRIR download, services, udev install). Distro packages already shipped /etc/xdg/autostart/asm-first-run.desktop for this — pipx users were left out, which was the root cause behind issue #22.</p>
-      </description>
-    </release>
-    <release version="1.0.71" date="2026-04-25">
-      <description>
-        <p>asm-setup now always reloads + triggers udev rules, even when the rules file on disk is already valid. Previously it printed [ok] udev rules already valid — skipping and exited, leaving the currently-attached dongle without the new permissions — which was the root cause behind issue #22 ("no device detected after upgrade"). GUI dialog "Apply now" when the daemon detects an EACCES on the USB device. The daemon now exposes a permission_error flag over D-Bus; when the GUI sees it, it surfaces a dialog explaining that the rules exist but were not applied to the connected device, with a one-click button that runs asm-cli udev reload-rules (with pkexec/sudo) and then asks the daemon to re-scan via the existing ReloadConfigs D-Bus method. CoreEngine exposes a new permission_error: bool attribute set by _log_usb_access_error and cleared on the next successful kernel_detach. ArctisManagerDbusSettingsService.GetSettings now returns it under the permission_error key.</p>
-      </description>
-    </release>
-    <release version="1.0.70" date="2026-04-25">
-      <description>
-        <p>Daemon crash on USB permission errors (#22): when is_kernel_driver_active() or detach_kernel_driver() raised a USBError (typically [Errno 13] Access denied because udev rules were not yet applied to a device that was already plugged in), the entire daemon crashed at startup. The GUI then failed to appear because the systemd service was in a failed state. kernel_detach() and kernel_attach() now catch USBError and return a status flag instead of propagating the exception. On EACCES, a clear error message is logged with three concrete remediation steps (replug, udevadm reload-rules + trigger, or reinstall via the distro package).</p>
-      </description>
-    </release>
-    <release version="1.0.69" date="2026-04-24">
-      <description>
-        <p>Remove all remaining hardcoded Nova Pro Wireless defaults (follow-up to #21): device_state.py used Nova Pro Wireless ALSA node names and the string "Arctis Nova Pro Wireless" as initial values AND as post-disconnect values. sonar_to_pipewire.py had the same strings as fallback constants in dead-code except branches. On a system without a Nova Pro Wireless, any code path that generated a filter-chain config before a device was attached (or after a disconnect) would write configs pointing to a sink that does not exist — same class of bug as #21, just at a different moment. device_state now defaults to empty strings and exposes is_device_set() so callers can distinguish "no device" from "device ready". All PipeWire config generators in sonar_to_pipewire.py (generate_sonar_eq_conf for device-dependent channels, generate_sonar_micro_conf, generate_virtual_sinks_conf, generate_hesuvi_conf) now skip generation with a clear warning when no device is attached, instead of writing configs with a hardcoded wrong target.</p>
-      </description>
-    </release>
-    <release version="1.0.68" date="2026-04-24">
-      <description>
-        <p>Audio routing on non-Nova-Pro-Wireless devices (#21): when the ALSA sink lookup failed for the attached device, the daemon fell back to a hardcoded alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.analog-stereo sink name. On any other headset (e.g. Arctis Nova 7, Nova 3, Nova 5…), this sink does not exist, so the generated virtual sinks routed audio into the void and the headset disappeared from KDE / GNOME audio trays. The PID comparison in pactl.py now parses both sides as integers, so it matches regardless of hex casing or 0x prefix differences across PipeWire versions. configure_virtual_sinks now retries the sink lookup for up to ~4 s, giving PipeWire time to enumerate a freshly-attached USB audio card at boot.</p>
-      </description>
-    </release>
-    <release version="1.0.67" date="2026-04-24">
-      <description>
-        <p>Anonymous telemetry: each submission now includes an installation_id — a salted SHA-256 hash of /etc/machine-id (irreversible, no personal data). The server uses this ID to deduplicate unique users exactly, instead of grouping by (distro, headset). Falls back to a random UUID stored in ~/.config/arctis_manager/telemetry.yaml on systems where /etc/machine-id is unreadable. Stats dashboard &amp; README: all usage stats (distributions, headsets, versions, totals) are now computed per unique installation instead of per raw event. The KPI previously labelled "Data points" is now "Unique users".</p>
-      </description>
-    </release>
     <release version="1.0.65" date="2026-04-22">
       <description>
         <p>DEB build: fixed CI release workflow failure — debian/91-steelseries-arctis.rules was removed from the repo but build-deb.sh still referenced it as a static file. The script now generates udev rules at build time via uv run python3 scripts/generate_udev_rules.py.</p>
@@ -204,6 +144,66 @@
     <release version="1.0.41" date="2026-04-16">
       <description>
         <p>Arctis Pro Wireless: added alternate USB PID 0x1294 to device definition and introduced HID-aware device detection — the daemon now automatically selects the USB interface that exposes an HID class (bInterfaceClass == 3), fixing [Errno 13] Access denied on systems where the control interface is exposed under a different PID.</p>
+      </description>
+    </release>
+    <release version="1.0.40" date="2026-04-15">
+      <description>
+        <p>udev rules: removed GROUP="plugdev" from generated rules — the group does not exist on Fedora/RHEL and caused the entire rule line to be silently ignored, leaving the device inaccessible. MODE="0666" + TAG+="uaccess" are sufficient on all distros. Bug report dialog: fixed clipboard copy (added activateWindow() + explicit QClipboard.Mode.Clipboard to fix silent failure on Wayland/VM); "Copy to clipboard" button now shows "Copied!" feedback for 2 s. Bug report dialog: "Open GitHub issue" button now copies the report to the clipboard and opens a blank issue (title only) instead of encoding the full report in the URL, which exceeded GitHub's URL length limit.</p>
+      </description>
+    </release>
+    <release version="1.0.38" date="2026-04-14">
+      <description>
+        <p>Presets: God of War Ragnarök : renommé en God of War Ragnarok — le caractère ö causait également une erreur bsdtar lors du packaging.</p>
+      </description>
+    </release>
+    <release version="1.0.37" date="2026-04-14">
+      <description>
+        <p>AUR: packaging : uv pip install --prefix remplace uv pip download (sous-commande inexistante). Plus besoin de python-pip en makedep. Presets: noms de fichiers : suppression des caractères ™ et ® dans les noms de fichiers de presets — causaient des erreurs bsdtar lors du packaging (impossible de traduire en UTF-8 dans l'environnement fakeroot).</p>
+      </description>
+    </release>
+    <release version="1.0.36" date="2026-04-12">
+      <description>
+        <p>Toutes les distros: permissions USB : règles udev générées avec plugdev group et sans ENV{DEVTYPE} check — fonctionne désormais sur Fedora, Ubuntu et toutes distros sans TAG+="uaccess" (cross-distro fix).</p>
+      </description>
+    </release>
+    <release version="1.0.35" date="2026-04-12">
+      <description>
+        <p>Toutes les distros: règles udev malformées : une règle par PID au lieu de plusieurs PIDs séparés par | dans ATTRS{idProduct} — syntaxe multi-valeur non supportée par toutes les versions de udev.</p>
+      </description>
+    </release>
+    <release version="1.0.34" date="2026-04-12">
+      <description>
+        <p>Ubuntu/Debian: python3-pulsectl and dbus-next absent des dépôts : les deux bibliothèques sont maintenant bundlées directement dans le .deb (comme dbus-next l'était déjà). Plus aucune dépendance apt non résolvable. Ubuntu 22.04: python3-pyside6 absent des dépôts : le postinst détecte l'absence de PySide6 et installe automatiquement pyside6 via pip3 --user pour l'utilisateur réel ($SUDO_USER). Toutes les distros: wireplumber absent des dépendances : ajouté dans Depends (.deb), Requires (RPM) et depends (AUR).</p>
+      </description>
+    </release>
+    <release version="1.0.32" date="2026-04-11">
+      <description>
+        <p>HeSuVi config deployed to wrong directory in asm-setup (AUR/COPR/DEB): sink-virtual-surround-7.1-hesuvi.conf was copied to pipewire.conf.d/ instead of filter-chain.conf.d/, recreating the duplicate-node bug (#14) on every package install. filter-chain.service missing on Fedora and Ubuntu: the service is not shipped by default on these distros. A bundled filter-chain.service is now included in all packages and auto-installed by asm-setup and install.sh when the system service is absent. Hardcoded Nova Pro Wireless node.target in PipeWire static configs: 10-arctis-virtual-sinks.conf and sink-virtual-surround-7.1-hesuvi.conf contained a hardcoded ALSA sink name — all three virtual sinks (Game/Chat/Media) were silent on startup for any headset other than Nova Pro Wireless. Removed; sinks now connect to the default sink until the daemon reconfigures them.</p>
+      </description>
+    </release>
+    <release version="1.0.27" date="2026-04-10">
+      <description>
+        <p>Silent Game channel persists after Sonar mode switch (issue #14, root cause): install.sh deploys the HeSuVi config to pipewire.conf.d/ (loaded by the main PipeWire process). When Sonar EQ is enabled, ASM also generates a dynamic config into filter-chain.conf.d/. Both files register the same node name (effect_input.virtual-surround-7.1-hesuvi), causing a conflict that leaves the game EQ routing to a non-existent node — audio disappears silently. Fixed by:. generate_hesuvi_conf() now removes the static copy from pipewire.conf.d/ when writing the dynamic version. check_and_fix_stale_configs() now detects and removes the conflict on daemon startup.</p>
+      </description>
+    </release>
+    <release version="1.0.26" date="2026-04-10">
+      <description>
+        <p>Silent Game channel on first Sonar mode switch (issue #14): when switching to Sonar EQ for the first time, Arctis_Game was rerouted to effect_input.sonar-game-eq before sonar-game-eq.conf existed. The node was never created, leaving the Game sink connected to nothing. Fixed by calling ensure_sonar_eq_configs() before generate_virtual_sinks_conf() in the mode-switch worker, and from check_and_fix_stale_configs() at startup.</p>
+      </description>
+    </release>
+    <release version="1.0.25" date="2026-04-10">
+      <description>
+        <p>install.sh PATH regression (issue #3): export PATH="$HOME/.local/bin:$PATH" was only executed inside the uv install block. On a reinstall (uv already present), all asm-cli and asm-daemon calls silently failed with *command not found*, preventing udev rule installation, service file creation, and systemctl enable. PATH is now exported unconditionally at the top of the script.</p>
+      </description>
+    </release>
+    <release version="1.0.21" date="2026-04-09">
+      <description>
+        <p>PPA source build: replaced debuild -- --no-pre-clean with dpkg-buildpackage -S --no-pre-clean — debuild was injecting --rules-target before the extra argument, calling debian/rules --no-pre-clean as a make target (exit 2). dpkg-buildpackage accepts --no-pre-clean directly and skips the clean step so debian/wheels/ survives into the source package.</p>
+      </description>
+    </release>
+    <release version="1.0.20" date="2026-04-09">
+      <description>
+        <p>PPA build failure (Failed to build on Launchpad): debuild -S runs debian/rules clean before packaging the source, deleting debian/wheels/ — Launchpad received a source package without wheels and couldn't download them (no internet in sandbox). Fixed by:. Adding --no-pre-clean to debuild -S so wheels survive source packaging. Removing debian/wheels from override_dh_auto_clean so Launchpad's pre-build clean doesn't destroy them either.</p>
       </description>
     </release>
   </releases>
