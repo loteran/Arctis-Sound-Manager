@@ -38,7 +38,14 @@ WantedBy=pipewire-session-manager.service
 """
 
 
+def _has_systemctl() -> bool:
+    return shutil.which("systemctl") is not None
+
+
 def _run_systemctl(args: list[str]) -> None:
+    if not _has_systemctl():
+        print(f"  [skip] systemctl not found (non-systemd init) — skipping: {' '.join(args)}")
+        return
     cmd = ["systemctl", "--user"] + args
     result = subprocess.run(cmd, capture_output=True, text=True)
     label = " ".join(args)
@@ -53,6 +60,10 @@ def _ensure_filter_chain_service() -> str:
 
     Returns the service name to use (e.g. 'filter-chain.service').
     """
+    if not _has_systemctl():
+        print("  [skip] systemctl not found — skipping filter-chain service detection (non-systemd init)")
+        return "filter-chain.service"
+
     for name in ("filter-chain.service", "pipewire-filter-chain.service"):
         result = subprocess.run(
             ["systemctl", "--user", "list-unit-files", name],
