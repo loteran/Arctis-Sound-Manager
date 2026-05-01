@@ -113,7 +113,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 > [View interactive dashboard →](https://loteran.github.io/Arctis-Sound-Manager/stats)
 
 <!-- STATS:META:START -->
-_Based on **7** unique anonymous users — last updated 2026-04-30_
+_Based on **7** unique anonymous users — last updated 2026-05-01_
 
 <!-- STATS:META:END -->
 
