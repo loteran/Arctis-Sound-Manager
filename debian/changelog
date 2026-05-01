@@ -302,6 +302,195 @@ arctis-sound-manager (1.0.79-1) noble; urgency=medium
 
  -- loteran <axel.valadon@gmail.com>  Sun, 26 Apr 2026 00:00:00 +0000
 
+arctis-sound-manager (1.0.78-1) noble; urgency=medium
+
+  * Weather city search: typing in the city field was interrupted every few
+    hundred milliseconds because update_settings unconditionally overwrote
+    _city_input with the saved value on every daemon poll. The field is now
+    only updated when it does not have focus.
+
+ -- loteran <axel.valadon@gmail.com>  Sat, 25 Apr 2026 00:00:00 +0000
+
+arctis-sound-manager (1.0.77-1) noble; urgency=medium
+
+  * Headset page: device name in the "Devices" card flickered between the
+    i18n status category label ("Headset" / "Casque") and the actual device
+    name ("Arctis Nova Pro Wireless"). update_status was overwriting
+    _device_name_label on every status poll; the label is now only set by
+    update_settings.
+
+ -- loteran <axel.valadon@gmail.com>  Sat, 25 Apr 2026 00:00:00 +0000
+
+arctis-sound-manager (1.0.76-1) noble; urgency=medium
+
+  * GUI fails to open (regression in 1.0.69): generate_hesuvi_conf() raised
+    UnboundLocalError: cannot access local variable '_log' when no Arctis
+    device was attached. The early-return guard called the module-level
+    _log, but a later import logging as _log inside the same function
+    rebinds _log, which Python treats as a function-local for the entire
+    scope. Replaced the local rebinding with a direct _log.warning(...) so
+    the module-level logger stays accessible.
+
+ -- loteran <axel.valadon@gmail.com>  Sat, 25 Apr 2026 00:00:00 +0000
+
+arctis-sound-manager (1.0.75-1) noble; urgency=medium
+
+  * First version published on PyPI — install / upgrade is now a one-liner
+    that always pulls the latest:
+
+ -- loteran <axel.valadon@gmail.com>  Sat, 25 Apr 2026 00:00:00 +0000
+
+arctis-sound-manager (1.0.74-1) noble; urgency=medium
+
+  * Automatic PyPI publish on every tagged release via PyPA's
+    gh-action-pypi-publish action using OIDC Trusted Publishers (no token in
+    repo secrets). Once the project is published once, end-users can
+    install/upgrade with the canonical one-liner pipx install
+    arctis-sound-manager --force instead of having to track release URLs.
+  * Release workflow writes the deterministic AUR source tarball to
+    build/aur/ instead of dist/, so the hyphen-named archive doesn't get
+    scooped up by twine when publishing to PyPI. The GitHub release upload
+    list now reflects the new path.
+
+ -- loteran <axel.valadon@gmail.com>  Sat, 25 Apr 2026 00:00:00 +0000
+
+arctis-sound-manager (1.0.73-1) noble; urgency=medium
+
+  * scripts/clean-reinstall.sh — a self-contained, curl | bash-friendly
+    script that audits every existing ASM install (rpm + dpkg + pacman +
+    pipx + orphan binaries in $PATH), uninstalls all of them, then installs
+    the latest release via the user's chosen method, runs asm-setup and
+    verifies that the daemon is active. Solves the dup-binary mess that
+    built up across mixed install methods (RPM + pipx --force etc.).
+  * Multi-install detection in the in-app updater: clicking "Install update"
+    now checks whether ASM is currently installed by more than one method
+    (rpm + pipx, etc.) and refuses to upgrade until the conflict is
+    resolved, opening a clear dialog that points to clean-reinstall.sh with
+    a copy-to-clipboard command.
+  * In-app updater now runs asm-setup after a pipx upgrade (via the new
+    FirstRunDialog), so udev rules are reloaded and PipeWire restarted on
+    the new binary. Previously only asm-cli desktop write was called, which
+    left udev permissions stale on already-attached devices.
+  * update_checker.detect_install_method() now wraps a new
+    detect_all_install_methods() -> list[InstallMethod] so callers can
+    detect duplicate installations rather than silently picking the first
+    match.
+
+ -- loteran <axel.valadon@gmail.com>  Sat, 25 Apr 2026 00:00:00 +0000
+
+arctis-sound-manager (1.0.72-1) noble; urgency=medium
+
+  * Auto-run asm-setup on first GUI launch for installs that didn't go
+    through a distro-package post-install hook (typically pipx). When the
+    GUI starts and ~/.config/arctis_manager/.setup_done is missing, a new
+    FirstRunDialog opens, runs asm-setup as a subprocess and streams its
+    output live in the dialog so the user can follow what's happening (HRIR
+    download, services, udev install). Distro packages already shipped
+    /etc/xdg/autostart/asm-first-run.desktop for this — pipx users were left
+    out, which was the root cause behind issue #22.
+
+ -- loteran <axel.valadon@gmail.com>  Sat, 25 Apr 2026 00:00:00 +0000
+
+arctis-sound-manager (1.0.71-1) noble; urgency=medium
+
+  * asm-setup now always reloads + triggers udev rules, even when the rules
+    file on disk is already valid. Previously it printed [ok] udev rules
+    already valid — skipping and exited, leaving the currently-attached
+    dongle without the new permissions — which was the root cause behind
+    issue #22 ("no device detected after upgrade").
+  * GUI dialog "Apply now" when the daemon detects an EACCES on the USB
+    device. The daemon now exposes a permission_error flag over D-Bus; when
+    the GUI sees it, it surfaces a dialog explaining that the rules exist
+    but were not applied to the connected device, with a one-click button
+    that runs asm-cli udev reload-rules (with pkexec/sudo) and then asks the
+    daemon to re-scan via the existing ReloadConfigs D-Bus method.
+  * CoreEngine exposes a new permission_error: bool attribute set by
+    _log_usb_access_error and cleared on the next successful kernel_detach.
+    ArctisManagerDbusSettingsService.GetSettings now returns it under the
+    permission_error key.
+
+ -- loteran <axel.valadon@gmail.com>  Sat, 25 Apr 2026 00:00:00 +0000
+
+arctis-sound-manager (1.0.70-1) noble; urgency=medium
+
+  * Daemon crash on USB permission errors (#22): when
+    is_kernel_driver_active() or detach_kernel_driver() raised a USBError
+    (typically [Errno 13] Access denied because udev rules were not yet
+    applied to a device that was already plugged in), the entire daemon
+    crashed at startup. The GUI then failed to appear because the systemd
+    service was in a failed state.
+  * kernel_detach() and kernel_attach() now catch USBError and return a
+    status flag instead of propagating the exception.
+  * On EACCES, a clear error message is logged with three concrete
+    remediation steps (replug, udevadm reload-rules + trigger, or reinstall
+    via the distro package).
+  * configure_virtual_sinks() checks the detach result and bails out cleanly
+    so the daemon stays alive even if a device is currently inaccessible.
+
+ -- loteran <axel.valadon@gmail.com>  Sat, 25 Apr 2026 00:00:00 +0000
+
+arctis-sound-manager (1.0.69-1) noble; urgency=medium
+
+  * Remove all remaining hardcoded Nova Pro Wireless defaults (follow-up to
+    #21): device_state.py used Nova Pro Wireless ALSA node names and the
+    string "Arctis Nova Pro Wireless" as initial values AND as
+    post-disconnect values. sonar_to_pipewire.py had the same strings as
+    fallback constants in dead-code except branches. On a system without a
+    Nova Pro Wireless, any code path that generated a filter-chain config
+    before a device was attached (or after a disconnect) would write configs
+    pointing to a sink that does not exist — same class of bug as #21, just
+    at a different moment.
+  * device_state now defaults to empty strings and exposes is_device_set()
+    so callers can distinguish "no device" from "device ready".
+  * All PipeWire config generators in sonar_to_pipewire.py
+    (generate_sonar_eq_conf for device-dependent channels,
+    generate_sonar_micro_conf, generate_virtual_sinks_conf,
+    generate_hesuvi_conf) now skip generation with a clear warning when no
+    device is attached, instead of writing configs with a hardcoded wrong
+    target.
+  * Removed the dead-code _PHYSICAL_OUT / _PHYSICAL_IN constants and the
+    "Arctis Nova Pro Wireless" string fallbacks from sonar_to_pipewire.py.
+
+ -- loteran <axel.valadon@gmail.com>  Fri, 24 Apr 2026 00:00:00 +0000
+
+arctis-sound-manager (1.0.68-1) noble; urgency=medium
+
+  * Audio routing on non-Nova-Pro-Wireless devices (#21): when the ALSA sink
+    lookup failed for the attached device, the daemon fell back to a
+    hardcoded
+    alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.analog-stereo
+    sink name. On any other headset (e.g. Arctis Nova 7, Nova 3, Nova 5…),
+    this sink does not exist, so the generated virtual sinks routed audio
+    into the void and the headset disappeared from KDE / GNOME audio trays.
+  * The PID comparison in pactl.py now parses both sides as integers, so it
+    matches regardless of hex casing or 0x prefix differences across
+    PipeWire versions.
+  * configure_virtual_sinks now retries the sink lookup for up to ~4 s,
+    giving PipeWire time to enumerate a freshly-attached USB audio card at
+    boot.
+  * If the exact PID is never exposed by PipeWire (some distros/kernels),
+    ASM now falls back to any SteelSeries sink instead of the wrong
+    hardcoded Pro Wireless default.
+  * If no sink is found at all, ASM now logs a clear error with remediation
+    steps and skips virtual sink setup instead of silently breaking audio.
+
+ -- loteran <axel.valadon@gmail.com>  Fri, 24 Apr 2026 00:00:00 +0000
+
+arctis-sound-manager (1.0.67-1) noble; urgency=medium
+
+  * Anonymous telemetry: each submission now includes an installation_id — a
+    salted SHA-256 hash of /etc/machine-id (irreversible, no personal data).
+    The server uses this ID to deduplicate unique users exactly, instead of
+    grouping by (distro, headset). Falls back to a random UUID stored in
+    ~/.config/arctis_manager/telemetry.yaml on systems where /etc/machine-id
+    is unreadable.
+  * Stats dashboard & README: all usage stats (distributions, headsets,
+    versions, totals) are now computed per unique installation instead of
+    per raw event. The KPI previously labelled "Data points" is now "Unique
+    users".
+
+ -- loteran <axel.valadon@gmail.com>  Fri, 24 Apr 2026 00:00:00 +0000
+
 arctis-sound-manager (1.0.65-1) noble; urgency=medium
 
   * DEB build: fixed CI release workflow failure —
