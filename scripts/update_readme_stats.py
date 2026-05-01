@@ -177,7 +177,7 @@ def _build_devices(block: str, headset_counts: dict[str, int], seen: set[str],
         if len(cells) < 4:
             new_rows.append(row)
             continue
-        device_name, status, _users, pids = cells[:4]
+        device_name, _working, _users, pids = cells[:4]
         pids_clean  = _PID_STRIP_RE.sub(r'\1', pids).replace("**", "")
         device_pids = {p.strip().lower() for p in pids_clean.split(",")}
 
@@ -194,12 +194,11 @@ def _build_devices(block: str, headset_counts: dict[str, int], seen: set[str],
 
         # force_confirm: name-matched users but PID not in seen (unknown exact PID)
         force_confirm = name_user_count > 0 and not device_pids.intersection(seen)
+        working_cell  = "✅" if user_count >= PROMOTE_THRESHOLD else ""
         user_cell     = str(user_count) if user_count else ""
         fmt_pids      = _format_pids(pids_clean, seen, force_confirm=force_confirm)
-        if user_count >= PROMOTE_THRESHOLD:
-            status = status.replace("⚠️", "✅")
         new_rows.append(
-            f"| {device_name} | {status} | {user_cell} | {fmt_pids} |"
+            f"| {device_name} | {working_cell} | {user_cell} | {fmt_pids} |"
         )
     return "\n".join([header, sep] + new_rows)
 
