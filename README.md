@@ -87,6 +87,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 | Arctis Nova 7 Gen 1 | ✅ | 1 | $\color{royalblue}{\textbf{2202}}$, 2206, 223a, 227a, 22a4 |
 | Arctis Nova 7 Gen 2 | ✅ | 2 | $\color{royalblue}{\textbf{22a1}}$, $\color{royalblue}{\textbf{227e}}$, 2258, 229e, 22a9, 22a5 |
 | Arctis Nova 7P |  |  | 220a, 22a7 |
+| Arctis Nova Elite |  |  | 2244, 2249 |
 <!-- STATS:DEVICES:END -->
 
 > ✅ Working = confirmed by at least one opted-in user · PIDs in blue confirmed by telemetry
