@@ -59,19 +59,20 @@ jobs:
           # debian/wheels/ is still present when the source is packaged.
           dpkg-buildpackage -S -sa -d --no-pre-clean -k"$GPG_KEY_ID"
 
-      - name: Configure dput to use HTTPS (FTP is blocked on GitHub Actions runners)
+      - name: Configure dput (passive FTP — active mode fails on GitHub Actions runners)
         run: |
-          cat > ~/.dput.cf << 'EOF'
-          [DEFAULT]
-          default_host_main = notspecified
+          cat > ~/.dput.cf << 'DPUTCF'
+[DEFAULT]
+default_host_main = notspecified
 
-          [ppa]
-          fqdn = ppa.launchpad.net
-          method = https
-          incoming = ~%(login)s/
-          login = loteran
-          allow_unsigned_uploads = 0
-          EOF
+[ppa]
+fqdn = ppa.launchpad.net
+method = ftp
+incoming = ~%(login)s/
+login = anonymous
+passive_ftp = 1
+allow_unsigned_uploads = 0
+DPUTCF
 
       - name: Upload to PPA
         run: |
