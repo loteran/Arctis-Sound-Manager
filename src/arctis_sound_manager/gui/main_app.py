@@ -273,13 +273,16 @@ class QMainApp(QBaseDesktopApp):
         # rules file might be valid (so the startup dialog at gui.py:142
         # didn't fire) but they weren't applied to this device because it
         # was plugged in before they took effect. Offer a one-click reload.
-        if settings.get('permission_error') and not getattr(self, '_udev_reload_dialog_open', False):
-            self._udev_reload_dialog_open = True
-            try:
-                from arctis_sound_manager.gui.udev_dialog import UdevRulesDialog
-                UdevRulesDialog(parent=self.main_window, mode="reload").exec()
-            finally:
-                self._udev_reload_dialog_open = False
+        if settings.get('permission_error') and not getattr(self, '_perm_dialog_shown', False):
+            self._perm_dialog_shown = True
+            from arctis_sound_manager.gui.udev_dialog import UdevRulesDialog
+            from PySide6.QtWidgets import QDialog
+            dlg = UdevRulesDialog(parent=self.main_window, mode='reload')
+            if dlg.exec() == QDialog.DialogCode.Accepted:
+                self.dbus_wrapper.reload_configs()
+                self._perm_dialog_shown = False
+        elif not settings.get('permission_error'):
+            self._perm_dialog_shown = False
 
     def on_status_received(self, status: dict):
         if status == self.status:

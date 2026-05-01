@@ -38,7 +38,14 @@ WantedBy=pipewire-session-manager.service
 """
 
 
+def _has_systemctl() -> bool:
+    return shutil.which("systemctl") is not None
+
+
 def _run_systemctl(args: list[str]) -> None:
+    if not _has_systemctl():
+        print(f"  [skip] systemctl not found (non-systemd init) — skipping: {' '.join(args)}")
+        return
     cmd = ["systemctl", "--user"] + args
     result = subprocess.run(cmd, capture_output=True, text=True)
     label = " ".join(args)
@@ -53,6 +60,10 @@ def _ensure_filter_chain_service() -> str:
 
     Returns the service name to use (e.g. 'filter-chain.service').
     """
+    if not _has_systemctl():
+        print("  [skip] systemctl not found — skipping filter-chain service detection (non-systemd init)")
+        return "filter-chain.service"
+
     for name in ("filter-chain.service", "pipewire-filter-chain.service"):
         result = subprocess.run(
             ["systemctl", "--user", "list-unit-files", name],
@@ -205,9 +216,8 @@ def main() -> None:
         print("  [!] asm-cli not found — run manually: asm-cli udev write-rules --force --reload")
 
     # Always reload+trigger when the rules were not freshly written, so that
-    # any device that was already plugged in gets the new permissions applied.
-    # (Skipping this is the most common cause of EACCES on first run after
-    # an upgrade.)
+    # any device already plugged in gets the new permissions applied.
+    # Skipping this is the most common cause of EACCES on first run after upgrade.
     if rules_already_valid and asm_cli:
         print("\n==> Applying udev rules to currently-connected devices...")
         result = subprocess.run([asm_cli, "udev", "reload-rules"], text=True)

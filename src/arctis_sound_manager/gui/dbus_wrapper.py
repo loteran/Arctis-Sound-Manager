@@ -342,3 +342,30 @@ class DbusWrapper(QObject):
                 return
 
             sleep(freq)
+
+    @staticmethod
+    def reload_configs() -> None:
+        """Tell the daemon to re-scan USB and re-configure virtual sinks."""
+        DbusWrapper._executor.submit(DbusWrapper._reload_configs_thread)
+
+    @staticmethod
+    def _reload_configs_thread() -> None:
+        asyncio.run(DbusWrapper._reload_configs_async())
+
+    @staticmethod
+    async def _reload_configs_async() -> None:
+        dbus_bus = None
+        try:
+            dbus_bus = await MessageBus().connect()
+            await dbus_bus.call(Message(
+                destination=DBUS_BUS_NAME,
+                path=DBUS_CONFIG_OBJECT_PATH,
+                interface=DBUS_CONFIG_INTERFACE_NAME,
+                member='ReloadConfigs',
+                message_type=MessageType.METHOD_CALL,
+            ))
+        except Exception as e:
+            DbusWrapper.logger.error('Error in reload_configs: %s', e)
+        finally:
+            if dbus_bus is not None:
+                dbus_bus.disconnect()
