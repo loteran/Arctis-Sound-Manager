@@ -59,6 +59,20 @@ jobs:
           # debian/wheels/ is still present when the source is packaged.
           dpkg-buildpackage -S -sa -d --no-pre-clean -k"$GPG_KEY_ID"
 
+      - name: Configure dput to use HTTPS (FTP is blocked on GitHub Actions runners)
+        run: |
+          cat > ~/.dput.cf << 'EOF'
+          [DEFAULT]
+          default_host_main = notspecified
+
+          [ppa]
+          fqdn = ppa.launchpad.net
+          method = https
+          incoming = ~%(login)s/
+          login = loteran
+          allow_unsigned_uploads = 0
+          EOF
+
       - name: Upload to PPA
         run: |
           dput ppa:loteran/arctis-sound-manager ../arctis-sound-manager_*.changes
