@@ -108,6 +108,17 @@ def _headset_users(stats: dict) -> dict[str, int]:
     return counts
 
 
+def _headset_pid_counts(stats: dict) -> dict[str, int]:
+    """Map product_id (lowercase hex, no 0x prefix) → total user reports."""
+    counts: dict[str, int] = {}
+    for row in stats.get("headsets", []):
+        pid = str(row.get("product_id") or "").lower().lstrip("0x").strip()
+        if pid and pid != "unknown":
+            nb = int(row.get("nb", 0))
+            counts[pid] = counts.get(pid, 0) + nb
+    return counts
+
+
 def _seen_pids(stats: dict) -> set[str]:
     pids: set[str] = set()
     for row in stats.get("headsets", []):
@@ -153,11 +164,13 @@ def _replace_block(text: str, marker: str, new_content: str) -> str:
 
 # ── section builders ──────────────────────────────────────────────────────────
 
-def _build_devices(block: str, headset_counts: dict[str, int], seen: set[str]) -> str:
+def _build_devices(block: str, headset_counts: dict[str, int], seen: set[str],
+                   pid_counts: dict[str, int] | None = None) -> str:
     lines  = block.strip().splitlines()
     if len(lines) < 2:
         return block
     header, sep, *rows = lines
+    pid_counts = pid_counts or {}
     new_rows = []
     for row in rows:
         cells = [c.strip() for c in row.strip().strip("|").split("|")]
@@ -165,15 +178,22 @@ def _build_devices(block: str, headset_counts: dict[str, int], seen: set[str]) -
             new_rows.append(row)
             continue
         device_name, mixer, advanced, _users, pids = cells[:5]
-        pids_clean = _PID_STRIP_RE.sub(r'\1', pids).replace("**", "")
-        user_count = 0
-        for tname, count in headset_counts.items():
+        pids_clean  = _PID_STRIP_RE.sub(r'\1', pids).replace("**", "")
+        device_pids = {p.strip().lower() for p in pids_clean.split(",")}
+
+        # Count by PID first (exact match, never ambiguous), fall back to name
+        pid_user_count = sum(pid_counts.get(p, 0) for p in device_pids)
+        name_user_count = 0
+        if pid_user_count == 0:
             dn = device_name.strip("* ").lower()
-            tn = tname.lower()
-            if tn in dn or dn in tn:
-                user_count += count
-        device_pids  = {p.strip().lower() for p in pids_clean.split(",")}
-        force_confirm = user_count > 0 and not device_pids.intersection(seen)
+            for tname, count in headset_counts.items():
+                tn = tname.lower()
+                if tn in dn or dn in tn:
+                    name_user_count += count
+        user_count = pid_user_count or name_user_count
+
+        # force_confirm: name-matched users but PID not in seen (unknown exact PID)
+        force_confirm = name_user_count > 0 and not device_pids.intersection(seen)
         user_cell     = str(user_count) if user_count else ""
         fmt_pids      = _format_pids(pids_clean, seen, force_confirm=force_confirm)
         if user_count >= PROMOTE_THRESHOLD:
@@ -244,6 +264,7 @@ def main() -> None:
     print(f"  total={total}, unique_users={unique}")
 
     headset_counts = _headset_users(stats)
+    pid_counts     = _headset_pid_counts(stats)
     seen           = _seen_pids(stats)
 
     readme = README.read_text()
@@ -256,7 +277,7 @@ def main() -> None:
     if not m:
         print("ERROR: STATS:DEVICES block not found", file=sys.stderr)
         sys.exit(1)
-    new_devices = _build_devices(m.group(1), headset_counts, seen)
+    new_devices = _build_devices(m.group(1), headset_counts, seen, pid_counts)
 
     new_readme = readme
     new_readme = _replace_block(new_readme, "DEVICES",        new_devices)
