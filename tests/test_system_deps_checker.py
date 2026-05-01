@@ -260,7 +260,7 @@ def test_hrir_present_returns_false_when_missing(tmp_path, monkeypatch):
 
 def test_hrir_present_returns_true_when_file_nonempty(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
-    target = tmp_path / ".local" / "share" / "pipewire" / "hrir_hesuvi" / "EAC_Default.wav"
+    target = tmp_path / ".local" / "share" / "pipewire" / "hrir_hesuvi" / "hrir.wav"
     target.parent.mkdir(parents=True)
     target.write_bytes(b"RIFF" + b"\x00" * 100)
     assert sdc._hrir_present() is True
@@ -268,7 +268,7 @@ def test_hrir_present_returns_true_when_file_nonempty(tmp_path, monkeypatch):
 
 def test_hrir_present_returns_false_for_empty_file(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
-    target = tmp_path / ".local" / "share" / "pipewire" / "hrir_hesuvi" / "EAC_Default.wav"
+    target = tmp_path / ".local" / "share" / "pipewire" / "hrir_hesuvi" / "hrir.wav"
     target.parent.mkdir(parents=True)
     target.write_bytes(b"")
     assert sdc._hrir_present() is False

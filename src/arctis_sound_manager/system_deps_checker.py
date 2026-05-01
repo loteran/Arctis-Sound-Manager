@@ -216,7 +216,7 @@ def _which(binary: str) -> bool:
 
 
 def _hrir_present() -> bool:
-    p = Path.home() / ".local" / "share" / "pipewire" / "hrir_hesuvi" / "EAC_Default.wav"
+    p = Path.home() / ".local" / "share" / "pipewire" / "hrir_hesuvi" / "hrir.wav"
     try:
         return p.is_file() and p.stat().st_size > 0
     except OSError:
