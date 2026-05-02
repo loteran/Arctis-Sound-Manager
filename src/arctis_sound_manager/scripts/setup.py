@@ -105,6 +105,38 @@ def _refuse_root() -> None:
         sys.exit(2)
 
 
+_USER_SYSTEMD_DIR = Path.home() / ".config" / "systemd" / "user"
+_GUI_SERVICE_NAME = "arctis-gui.service"
+
+
+def _cleanup_stale_gui_service() -> None:
+    """Remove a user-level arctis-gui.service whose ExecStart binary is gone.
+
+    Pipx installs wrote ExecStart pointing to ~/.local/bin/asm-gui.  After
+    migrating to a system package the binary no longer exists, so the service
+    crashes in a restart loop and masks the correct system-level unit.
+    """
+    user_unit = _USER_SYSTEMD_DIR / _GUI_SERVICE_NAME
+    if not user_unit.exists():
+        return
+    try:
+        content = user_unit.read_text()
+    except OSError:
+        return
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("ExecStart="):
+            continue
+        binary = stripped[len("ExecStart="):].split()[0]
+        if not Path(binary).exists():
+            try:
+                user_unit.unlink()
+                print(f"  [ok] Removed stale {_GUI_SERVICE_NAME} (ExecStart={binary} not found)")
+            except OSError as e:
+                print(f"  [!] Could not remove stale {_GUI_SERVICE_NAME}: {e}")
+        break
+
+
 def main() -> None:
     _refuse_root()
 
@@ -226,6 +258,13 @@ def main() -> None:
         else:
             print("  [!] reload failed — run manually: asm-cli udev reload-rules")
             print("      (or: sudo udevadm control --reload-rules && sudo udevadm trigger)")
+
+    # ── Stale user-level arctis-gui.service cleanup ──
+    # Pipx installs used to write ~/.config/systemd/user/arctis-gui.service with
+    # ExecStart pointing to ~/.local/bin/asm-gui. After migrating to a system
+    # package (AUR/COPR/DEB) that binary no longer exists, causing a crash loop.
+    # Remove the stale override so the system-level unit takes precedence.
+    _cleanup_stale_gui_service()
 
     # ── Systemd services ──
     print("\n==> Enabling services...")
