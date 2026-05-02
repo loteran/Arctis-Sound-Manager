@@ -17,10 +17,12 @@ What this guards:
 Exit codes: 0 = clean, 1 = drift detected.
 
 Run locally:  python3 scripts/check-packaging-drift.py
-Run in CI:    same — output is grep-friendly.
+Fix locally:  python3 scripts/check-packaging-drift.py --fix
+Run in CI:    same (without --fix) — output is grep-friendly.
 """
 from __future__ import annotations
 
+import argparse
 import difflib
 import re
 import subprocess
@@ -62,7 +64,7 @@ def read(path: Path) -> str:
 
 # ── 1. Version sync ─────────────────────────────────────────────────────────
 
-def check_versions() -> None:
+def check_versions(fix: bool = False) -> None:
     pp = re.search(r'^version\s*=\s*"([^"]+)"', read(PYPROJECT), re.MULTILINE)
     if not pp:
         fail(f"could not parse version in {PYPROJECT}")
@@ -71,15 +73,27 @@ def check_versions() -> None:
 
     pb = re.search(r"^pkgver=([^\s]+)", read(PKGBUILD), re.MULTILINE)
     if pb and pb.group(1) != canonical:
-        fail(f"version drift: aur/PKGBUILD pkgver={pb.group(1)} ≠ pyproject {canonical}")
+        if fix:
+            PKGBUILD.write_text(re.sub(r"^pkgver=[^\s]+", f"pkgver={canonical}", read(PKGBUILD), count=1, flags=re.MULTILINE))
+            print(f"  [fix] aur/PKGBUILD pkgver → {canonical}")
+        else:
+            fail(f"version drift: aur/PKGBUILD pkgver={pb.group(1)} ≠ pyproject {canonical}")
 
     si = re.search(r"^\s*pkgver\s*=\s*(\S+)", read(SRCINFO), re.MULTILINE)
     if si and si.group(1) != canonical:
-        fail(f"version drift: aur/.SRCINFO pkgver={si.group(1)} ≠ pyproject {canonical}")
+        if fix:
+            SRCINFO.write_text(re.sub(r"^(\s*pkgver\s*=\s*)\S+", rf"\g<1>{canonical}", read(SRCINFO), count=1, flags=re.MULTILINE))
+            print(f"  [fix] aur/.SRCINFO pkgver → {canonical}")
+        else:
+            fail(f"version drift: aur/.SRCINFO pkgver={si.group(1)} ≠ pyproject {canonical}")
 
     sp = re.search(r"^Version:\s+(\S+)", read(SPEC), re.MULTILINE)
     if sp and sp.group(1) != canonical:
-        fail(f"version drift: arctis-sound-manager.spec Version={sp.group(1)} ≠ pyproject {canonical}")
+        if fix:
+            SPEC.write_text(re.sub(r"^Version:\s+\S+", f"Version:        {canonical}", read(SPEC), count=1, flags=re.MULTILINE))
+            print(f"  [fix] arctis-sound-manager.spec Version → {canonical}")
+        else:
+            fail(f"version drift: arctis-sound-manager.spec Version={sp.group(1)} ≠ pyproject {canonical}")
 
 
 # ── 2. Generated files — re-run and diff ────────────────────────────────────
@@ -115,24 +129,32 @@ def check_udev_rules() -> None:
         fail("udev generator output missing vendor 0x1038 or uaccess tag")
 
 
-def check_metainfo() -> None:
+def check_metainfo(fix: bool = False) -> None:
     try:
         regen = _run(["python3", "scripts/generate_metainfo_releases.py"])
     except Exception as e:
         fail(f"metainfo generator crashed: {e!r}")
         return
-    _diff_or_fail("AppStream metainfo", regen, read(METAINFO),
-                  "python3 scripts/generate_metainfo_releases.py --in-place")
+    if fix and regen != read(METAINFO):
+        _run(["python3", "scripts/generate_metainfo_releases.py", "--in-place"])
+        print("  [fix] AppStream metainfo regenerated")
+    else:
+        _diff_or_fail("AppStream metainfo", regen, read(METAINFO),
+                      "python3 scripts/generate_metainfo_releases.py --in-place")
 
 
-def check_debian_changelog() -> None:
+def check_debian_changelog(fix: bool = False) -> None:
     try:
         regen = _run(["python3", "scripts/generate_debian_changelog.py"])
     except Exception as e:
         fail(f"debian changelog generator crashed: {e!r}")
         return
-    _diff_or_fail("debian/changelog", regen, read(DEB_CHANGELOG),
-                  "python3 scripts/generate_debian_changelog.py --in-place")
+    if fix and regen != read(DEB_CHANGELOG):
+        _run(["python3", "scripts/generate_debian_changelog.py", "--in-place"])
+        print("  [fix] debian/changelog regenerated")
+    else:
+        _diff_or_fail("debian/changelog", regen, read(DEB_CHANGELOG),
+                      "python3 scripts/generate_debian_changelog.py --in-place")
 
 
 # ── 3. Dependency coverage ───────────────────────────────────────────────────
@@ -244,6 +266,19 @@ def check_referenced_paths() -> None:
 # ── main ────────────────────────────────────────────────────────────────────
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--fix", action="store_true",
+                        help="auto-fix version drift and regenerate generated files in-place")
+    args = parser.parse_args()
+
+    if args.fix:
+        print("packaging drift fix:")
+        check_versions(fix=True)
+        check_metainfo(fix=True)
+        check_debian_changelog(fix=True)
+        # Re-run full check to confirm everything is clean
+        print("\npackaging drift check (post-fix):")
+
     check_versions()
     check_udev_rules()
     check_metainfo()
