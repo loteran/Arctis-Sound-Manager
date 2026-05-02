@@ -88,7 +88,8 @@ def fetch_stats() -> dict:
         # All-time confirmed PIDs/headsets from stats — used only for ✅ badge
         # and blue-PID colouring so devices remain confirmed once reported.
         headsets_all_time = _d1_query(
-            "SELECT DISTINCT headset AS label, product_id FROM stats",
+            "SELECT headset AS label, product_id, COUNT(*) AS nb FROM stats "
+            "GROUP BY headset, product_id ORDER BY nb DESC LIMIT 100",
             token, account_id, db_id,
         )
         return {
