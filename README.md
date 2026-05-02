@@ -272,6 +272,29 @@ asm-setup
 
 > **Ubuntu 24.04 (Noble)** is the currently supported series. Other series may work via the `.deb` attached to each [GitHub release](https://github.com/loteran/Arctis-Sound-Manager/releases).
 
+### Immutable distros (Bazzite, SteamOS, Silverblue)
+
+On immutable distros where the host filesystem is read-only, ASM runs inside a
+[Distrobox](https://distrobox.it/) container and is exported transparently to the host.
+Binaries, the desktop entry, systemd user services, and udev rules are all installed
+on the host side — the container is invisible during normal use.
+
+```bash
+# Default: Arch-based container (full deps, including noise-suppression-for-voice)
+bash <(curl -fsSL https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/scripts/distrobox-install.sh)
+
+# Fedora-based container (COPR, no noise-suppression)
+bash <(curl -fsSL https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/scripts/distrobox-install.sh) --base fedora
+```
+
+The script is idempotent — re-run it at any time to upgrade ASM inside the container.
+Use `--uninstall` to fully remove the container, services, and exported binaries.
+
+> **Note:** Ubuntu is not supported as a base image because PySide6 >= 6.10.1 is required
+> and is not packaged in Ubuntu repos.
+
+---
+
 ### Other distros (from source)
 
 ```bash
@@ -508,6 +531,7 @@ src/arctis_sound_manager/
 
 scripts/
 ├── install.sh                              # Main installer (source installs)
+├── distrobox-install.sh                    # Distrobox installer for immutable distros (Bazzite, SteamOS, Silverblue)
 ├── setup-surround.sh                       # Standalone virtual surround setup
 ├── filter-chain.service                    # Bundled systemd service (auto-installed on distros that don't ship one)
 ├── pipewire/
