@@ -1,0 +1,6 @@
+type = process
+command = /usr/bin/pipewire -c {fc_conf}
+restart = true
+# Adjust depends-on if PipeWire has a different service name on your distro.
+depends-on = pipewire
+logfile = /tmp/pipewire-filter-chain.log

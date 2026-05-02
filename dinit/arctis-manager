@@ -1,0 +1,6 @@
+type = process
+command = /usr/bin/asm-daemon
+restart = true
+# Adjust depends-on if PipeWire has a different service name on your distro.
+depends-on = pipewire
+logfile = /tmp/arctis-manager.log
