@@ -85,12 +85,19 @@ def fetch_stats() -> dict:
             "GROUP BY version ORDER BY nb DESC LIMIT 20",
             token, account_id, db_id,
         )
+        # All-time confirmed PIDs/headsets from stats — used only for ✅ badge
+        # and blue-PID colouring so devices remain confirmed once reported.
+        headsets_all_time = _d1_query(
+            "SELECT DISTINCT headset AS label, product_id FROM stats",
+            token, account_id, db_id,
+        )
         return {
-            "total":        total_row[0]["nb"]  if total_row  else 0,
-            "unique_users": unique_row[0]["nb"] if unique_row else None,
-            "distros":      distros_rows,
-            "headsets":     headsets_rows,
-            "versions":     versions_rows,
+            "total":             total_row[0]["nb"]  if total_row  else 0,
+            "unique_users":      unique_row[0]["nb"] if unique_row else None,
+            "distros":           distros_rows,
+            "headsets":          headsets_rows,
+            "headsets_all_time": headsets_all_time,
+            "versions":          versions_rows,
         }
     else:
         print("  source: public endpoint (no CF_TOKEN set)")
@@ -169,12 +176,14 @@ def _replace_block(text: str, marker: str, new_content: str) -> str:
 # ── section builders ──────────────────────────────────────────────────────────
 
 def _build_devices(block: str, headset_counts: dict[str, int], seen: set[str],
-                   pid_counts: dict[str, int] | None = None) -> str:
+                   pid_counts: dict[str, int] | None = None,
+                   headset_counts_all_time: dict[str, int] | None = None) -> str:
     lines  = block.strip().splitlines()
     if len(lines) < 2:
         return block
     header, sep, *rows = lines
-    pid_counts = pid_counts or {}
+    pid_counts              = pid_counts or {}
+    headset_counts_all_time = headset_counts_all_time or headset_counts
     new_rows = []
     for row in rows:
         cells = [c.strip() for c in row.strip().strip("|").split("|")]
@@ -185,7 +194,7 @@ def _build_devices(block: str, headset_counts: dict[str, int], seen: set[str],
         pids_clean  = _PID_STRIP_RE.sub(r'\1', pids).replace("**", "")
         device_pids = {p.strip().lower() for p in pids_clean.split(",")}
 
-        # Count by PID first (exact match, never ambiguous), fall back to name
+        # Current user count (from users table — unique per installation).
         pid_user_count = sum(pid_counts.get(p, 0) for p in device_pids)
         name_user_count = 0
         if pid_user_count == 0:
@@ -196,9 +205,19 @@ def _build_devices(block: str, headset_counts: dict[str, int], seen: set[str],
                     name_user_count += count
         user_count = pid_user_count or name_user_count
 
-        # force_confirm: name-matched users but PID not in seen (unknown exact PID)
-        force_confirm = name_user_count > 0 and not device_pids.intersection(seen)
-        working_cell  = "✅" if user_count >= PROMOTE_THRESHOLD else ""
+        # ✅ badge uses all-time data so devices stay confirmed once reported.
+        at_pid_count  = sum(1 for p in device_pids if p in seen)
+        at_name_count = 0
+        if at_pid_count == 0:
+            dn = device_name.strip("* ").lower()
+            for tname in headset_counts_all_time:
+                if tname.lower() in dn or dn in tname.lower():
+                    at_name_count += headset_counts_all_time[tname]
+        ever_confirmed = (at_pid_count > 0 or at_name_count >= PROMOTE_THRESHOLD)
+
+        # force_confirm: name-matched all-time users but PID not in seen
+        force_confirm = at_name_count > 0 and not device_pids.intersection(seen)
+        working_cell  = "✅" if ever_confirmed else ""
         user_cell     = str(user_count) if user_count else ""
         fmt_pids      = _format_pids(pids_clean, seen, force_confirm=force_confirm)
         new_rows.append(
@@ -269,6 +288,13 @@ def main() -> None:
     pid_counts     = _headset_pid_counts(stats)
     seen           = _seen_pids(stats)
 
+    # For ✅ badge and blue-PID colouring: use all-time data if available so
+    # devices remain confirmed even when a user has switched headsets since their
+    # last report (D1 users table only keeps the latest state per installation).
+    all_time_stats = {"headsets": stats.get("headsets_all_time", stats["headsets"])}
+    seen_all_time  = _seen_pids(all_time_stats)
+    headset_counts_all_time = _headset_users(all_time_stats)
+
     readme = README.read_text()
 
     # DEVICES block — read dynamically from README, never hardcoded
@@ -279,7 +305,10 @@ def main() -> None:
     if not m:
         print("ERROR: STATS:DEVICES block not found", file=sys.stderr)
         sys.exit(1)
-    new_devices = _build_devices(m.group(1), headset_counts, seen, pid_counts)
+    new_devices = _build_devices(
+        m.group(1), headset_counts, seen_all_time, pid_counts,
+        headset_counts_all_time=headset_counts_all_time,
+    )
 
     new_readme = readme
     new_readme = _replace_block(new_readme, "DEVICES",        new_devices)
