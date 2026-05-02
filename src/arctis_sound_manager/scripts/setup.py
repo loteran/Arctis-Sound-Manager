@@ -13,12 +13,87 @@ import subprocess
 import sys
 from pathlib import Path
 
+from arctis_sound_manager.init_system import detect_init, HOME_DINIT_SERVICE_FOLDER, filter_chain_conf_path
+
 _SHARE_DIR = Path("/usr/share/arctis-sound-manager")
 _PW_CONF_DIR = Path.home() / ".config" / "pipewire" / "pipewire.conf.d"
 _FC_CONF_DIR = Path.home() / ".config" / "pipewire" / "filter-chain.conf.d"
 _DEVICE_DIR = Path.home() / ".config" / "arctis_manager" / "devices"
 _HRIR_DIR = Path.home() / ".local" / "share" / "pipewire" / "hrir_hesuvi"
 _HRIR_URL = "https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/hrir/EAC_Default.wav"
+
+_DINIT_FILTER_CHAIN_TEMPLATE = """\
+type = process
+command = /usr/bin/pipewire -c {fc_conf}
+restart = true
+# Adjust depends-on if PipeWire has a different service name on your distro.
+depends-on = pipewire
+logfile = /tmp/pipewire-filter-chain.log
+"""
+
+_DINIT_ARCTIS_MANAGER = """\
+type = process
+command = {asm_daemon}
+restart = true
+# Adjust depends-on if PipeWire has a different service name on your distro.
+depends-on = pipewire
+logfile = /tmp/arctis-manager.log
+"""
+
+_DINIT_ARCTIS_VIDEO_ROUTER = """\
+type = process
+command = {asm_router}
+restart = true
+depends-on = arctis-manager
+logfile = /tmp/arctis-video-router.log
+"""
+
+_DINIT_ARCTIS_GUI = """\
+type = process
+command = {asm_gui} --systray
+restart = false
+depends-on = arctis-manager
+logfile = /tmp/arctis-gui.log
+"""
+
+
+def _setup_dinit_services() -> None:
+    """Install dinit user service files and start ASM services. Called on dinit systems only."""
+    HOME_DINIT_SERVICE_FOLDER.mkdir(parents=True, exist_ok=True)
+
+    asm_daemon = shutil.which("asm-daemon") or "/usr/bin/asm-daemon"
+    asm_router = shutil.which("asm-router") or "/usr/bin/asm-router"
+    asm_gui = shutil.which("asm-gui") or "/usr/bin/asm-gui"
+
+    (HOME_DINIT_SERVICE_FOLDER / "arctis-manager").write_text(
+        _DINIT_ARCTIS_MANAGER.format(asm_daemon=asm_daemon))
+    (HOME_DINIT_SERVICE_FOLDER / "arctis-video-router").write_text(
+        _DINIT_ARCTIS_VIDEO_ROUTER.format(asm_router=asm_router))
+    (HOME_DINIT_SERVICE_FOLDER / "arctis-gui").write_text(
+        _DINIT_ARCTIS_GUI.format(asm_gui=asm_gui))
+
+    # filter-chain uses absolute path to filter-chain.conf (no WorkingDirectory in dinit)
+    fc_conf = filter_chain_conf_path()
+    (HOME_DINIT_SERVICE_FOLDER / "pipewire-filter-chain").write_text(
+        _DINIT_FILTER_CHAIN_TEMPLATE.format(fc_conf=fc_conf))
+
+    print("  [dinit] service files written to", HOME_DINIT_SERVICE_FOLDER)
+
+    # Restart PipeWire best-effort (may fail if not a dinit service)
+    subprocess.run(["dinitctl", "restart", "pipewire"], check=False,
+                   capture_output=True)
+
+    # Enable and start each service (use 'start' not 'restart' — idempotent if not yet running)
+    for svc in ["arctis-manager", "arctis-video-router", "pipewire-filter-chain"]:
+        subprocess.run(["dinitctl", "enable", svc], check=False, capture_output=True)
+        result = subprocess.run(["dinitctl", "start", svc], check=False, capture_output=True)
+        status = "ok" if result.returncode == 0 else "failed"
+        print(f"  [dinit] {svc}: {status}")
+
+    # Enable arctis-gui but do NOT start it (same as systemd path: enable only)
+    subprocess.run(["dinitctl", "enable", "arctis-gui"], check=False, capture_output=True)
+    print("  [dinit] arctis-gui: enabled (will start on next login)")
+
 
 # Minimal filter-chain.service for distros that don't ship one (Fedora, Ubuntu…)
 _FILTER_CHAIN_SERVICE = """\
@@ -60,6 +135,13 @@ def _ensure_filter_chain_service() -> str:
 
     Returns the service name to use (e.g. 'filter-chain.service').
     """
+    if detect_init() == "dinit":
+        svc_file = HOME_DINIT_SERVICE_FOLDER / "pipewire-filter-chain"
+        if not svc_file.exists():
+            svc_file.parent.mkdir(parents=True, exist_ok=True)
+            svc_file.write_text(_DINIT_FILTER_CHAIN_TEMPLATE.format(fc_conf=filter_chain_conf_path()))
+        return "pipewire-filter-chain"
+    # --- existing systemd code follows unchanged ---
     if not _has_systemctl():
         print("  [skip] systemctl not found — skipping filter-chain service detection (non-systemd init)")
         return "filter-chain.service"
@@ -300,18 +382,21 @@ def main() -> None:
     # Remove the stale override so the system-level unit takes precedence.
     _cleanup_stale_gui_service()
 
-    # ── Systemd services ──
+    # ── Systemd / dinit services ──
     print("\n==> Enabling services...")
-    fc_service = _ensure_filter_chain_service()
-    _run_systemctl(["daemon-reload"])
+    if detect_init() == "dinit":
+        _setup_dinit_services()
+    else:
+        fc_service = _ensure_filter_chain_service()
+        _run_systemctl(["daemon-reload"])
 
-    # Restart PipeWire first so it picks up the new pipewire.conf.d configs
-    _run_systemctl(["restart", "pipewire", "pipewire-pulse"])
+        # Restart PipeWire first so it picks up the new pipewire.conf.d configs
+        _run_systemctl(["restart", "pipewire", "pipewire-pulse"])
 
-    _run_systemctl(["enable", "--now", "arctis-manager.service"])
-    _run_systemctl(["enable", "--now", "arctis-video-router.service"])
-    _run_systemctl(["enable", "--now", fc_service])
-    _run_systemctl(["enable", "arctis-gui.service"])
+        _run_systemctl(["enable", "--now", "arctis-manager.service"])
+        _run_systemctl(["enable", "--now", "arctis-video-router.service"])
+        _run_systemctl(["enable", "--now", fc_service])
+        _run_systemctl(["enable", "arctis-gui.service"])
 
     # ── Validate device YAML overrides ──
     # asm-setup keeps copying YAMLs into ~/.config/arctis_manager/devices/ on
