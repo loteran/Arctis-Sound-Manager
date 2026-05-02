@@ -51,21 +51,19 @@ def _pids_in_rules(content: str) -> set[int]:
     return pids
 
 
-def is_udev_rules_valid() -> bool:
-    """Return True iff at least one installed rules file covers every known PID.
+def get_udev_rules_status() -> str:
+    """Return the status of the installed udev rules.
 
-    Iterates all configured paths so a stale/unreadable file at one location
-    does not mask a valid file at another. The check is content-based (real
-    rule lines only — comments are ignored) instead of relying on substring
-    matches like 'uaccess' which can appear in headers or unrelated rules.
+    'ok'       — at least one rules file covers every known PID.
+    'outdated' — a rules file exists but is missing PIDs added by new device YAMLs.
+    'missing'  — no rules file exists at any configured path.
     """
     expected = {pid for _, pid in _expected_pids()}
     if not expected:
-        # Couldn't load YAMLs — fail closed so the GUI prompts the user to
-        # reinstall rules instead of silently claiming everything is fine.
-        _logger.warning("udev_checker: no expected PIDs available — treating rules as invalid.")
-        return False
+        _logger.warning("udev_checker: no expected PIDs available — treating rules as missing.")
+        return 'missing'
 
+    any_file_found = False
     for p in UDEV_RULES_PATHS:
         path = Path(p)
         if not path.exists():
@@ -75,15 +73,20 @@ def is_udev_rules_valid() -> bool:
         except OSError as e:
             _logger.warning(f"udev_checker: cannot read {path}: {e!r}")
             continue
-
+        any_file_found = True
         covered = _pids_in_rules(content)
         if expected.issubset(covered):
-            return True
-
+            return 'ok'
         missing = sorted(expected - covered)
         if missing:
             _logger.info(
                 f"udev_checker: {path} missing PIDs: "
                 + ', '.join(f'0x{pid:04x}' for pid in missing)
             )
-    return False
+
+    return 'outdated' if any_file_found else 'missing'
+
+
+def is_udev_rules_valid() -> bool:
+    """Return True iff at least one installed rules file covers every known PID."""
+    return get_udev_rules_status() == 'ok'
