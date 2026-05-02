@@ -62,16 +62,20 @@ def fetch_stats() -> dict:
 
     if token:
         print("  source: Cloudflare D1 (direct)")
+        # Query `users` (one row per installation) for per-user counts so the
+        # README device table and headsets section stay consistent with the stats
+        # page (which also deduplicates by installation_id).
         distros_rows  = _d1_query(
-            "SELECT distro AS label, COUNT(*) AS nb FROM stats "
+            "SELECT distro AS label, COUNT(*) AS nb FROM users "
             "GROUP BY distro ORDER BY nb DESC LIMIT 30",
             token, account_id, db_id,
         )
         headsets_rows = _d1_query(
-            "SELECT headset AS label, product_id, COUNT(*) AS nb FROM stats "
+            "SELECT headset AS label, product_id, COUNT(*) AS nb FROM users "
             "GROUP BY headset, product_id ORDER BY nb DESC LIMIT 30",
             token, account_id, db_id,
         )
+        # `stats` keeps all historical pings — used only for the "data points" counter.
         total_row     = _d1_query("SELECT COUNT(*) AS nb FROM stats",
                                   token, account_id, db_id)
         unique_row    = _d1_query("SELECT COUNT(*) AS nb FROM users",
