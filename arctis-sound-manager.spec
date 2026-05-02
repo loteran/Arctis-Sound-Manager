@@ -86,6 +86,13 @@ install -Dm644 systemd/arctis-manager.service       %{buildroot}%{_userunitdir}/
 install -Dm644 systemd/arctis-video-router.service  %{buildroot}%{_userunitdir}/arctis-video-router.service
 install -Dm644 systemd/arctis-gui.service           %{buildroot}%{_userunitdir}/arctis-gui.service
 
+# dinit service templates
+install -Dm644 dinit/arctis-manager %{buildroot}%{_datadir}/%{name}/dinit/arctis-manager
+install -Dm644 dinit/arctis-video-router %{buildroot}%{_datadir}/%{name}/dinit/arctis-video-router
+install -Dm644 dinit/arctis-gui %{buildroot}%{_datadir}/%{name}/dinit/arctis-gui
+install -Dm644 dinit/pipewire-filter-chain %{buildroot}%{_datadir}/%{name}/dinit/pipewire-filter-chain
+install -Dm755 scripts/asm-diag-dinit.py %{buildroot}%{_bindir}/asm-diag-dinit
+
 # Desktop entry
 install -Dm644 src/arctis_sound_manager/desktop/ArctisManager.desktop \
     %{buildroot}%{_datadir}/applications/ArctisManager.desktop
@@ -204,6 +211,8 @@ fi
 %{_userunitdir}/arctis-manager.service
 %{_userunitdir}/arctis-video-router.service
 %{_userunitdir}/arctis-gui.service
+%{_datadir}/%{name}/dinit/
+%{_bindir}/asm-diag-dinit
 %{_datadir}/applications/ArctisManager.desktop
 %{_datadir}/icons/hicolor/scalable/apps/arctis-manager.svg
 %{_metainfodir}/com.github.loteran.arctis-sound-manager.metainfo.xml

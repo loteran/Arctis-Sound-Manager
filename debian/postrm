@@ -27,6 +27,12 @@ if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
                 rm -f \"\$HOME/.config/systemd/user/arctis-manager.service\"
                 rm -f \"\$HOME/.config/systemd/user/arctis-video-router.service\"
                 rm -f \"\$HOME/.config/systemd/user/arctis-gui.service\"
+                if command -v dinitctl >/dev/null 2>&1; then
+                    for svc in arctis-manager arctis-video-router arctis-gui pipewire-filter-chain; do
+                        dinitctl disable \"\$svc\" 2>/dev/null || true
+                        rm -f \"\$HOME/.config/dinit.d/\$svc\" 2>/dev/null || true
+                    done
+                fi
                 if [ -S \"\$DBUS_SOCKET\" ]; then
                     systemctl --user daemon-reload >/dev/null 2>&1 || true
                     systemctl --user restart pipewire pipewire-pulse >/dev/null 2>&1 || true
