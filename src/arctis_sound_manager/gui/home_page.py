@@ -905,8 +905,13 @@ class HomePage(QWidget):
             FirstRunDialog(self).exec()
             # Restart the daemon + router + GUI on the new binary.
             import subprocess, sys, os
-            subprocess.Popen(["systemctl", "--user", "restart", "arctis-manager"])
-            subprocess.Popen(["systemctl", "--user", "restart", "arctis-video-router"])
+            from arctis_sound_manager.init_system import detect_init
+            if detect_init() == "dinit":
+                subprocess.Popen(["dinitctl", "restart", "arctis-manager"])
+                subprocess.Popen(["dinitctl", "restart", "arctis-video-router"])
+            else:
+                subprocess.Popen(["systemctl", "--user", "restart", "arctis-manager"])
+                subprocess.Popen(["systemctl", "--user", "restart", "arctis-video-router"])
             os.execv(sys.executable, [sys.executable, "-m", "arctis_sound_manager.scripts.gui"])
         else:
             self._update_install_btn.setText(I18n.translate("ui", "install_update"))

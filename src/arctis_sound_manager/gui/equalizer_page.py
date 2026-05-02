@@ -282,10 +282,19 @@ class _ToggleWorker(QThread):
         saved_si, saved_so = self._snapshot_streams(log)
 
         # Phase 1: restart PipeWire stack and wait for ALSA sinks to be recreated
-        result = subprocess.run(
-            ["systemctl", "--user", "restart", "pipewire", "wireplumber", "pipewire-pulse"],
-            check=False, timeout=20,
-        )
+        from arctis_sound_manager.init_system import detect_init
+        if detect_init() == "dinit":
+            for svc in ["pipewire", "wireplumber", "pipewire-pulse"]:
+                subprocess.run(["dinitctl", "restart", svc], check=False)
+            result = subprocess.run(
+                ["dinitctl", "restart", "pipewire-pulse"],
+                check=False, timeout=20,
+            )
+        else:
+            result = subprocess.run(
+                ["systemctl", "--user", "restart", "pipewire", "wireplumber", "pipewire-pulse"],
+                check=False, timeout=20,
+            )
         if result.returncode != 0:
             _apply_yaml(self._old_mode)
             self.done.emit(False, self._old_mode)
@@ -295,10 +304,17 @@ class _ToggleWorker(QThread):
         self.msleep(2000)
 
         # Phase 2: restart filter-chain and arctis-manager
-        result = subprocess.run(
-            ["systemctl", "--user", "restart", "filter-chain", "arctis-manager"],
-            check=False, timeout=20,
-        )
+        if detect_init() == "dinit":
+            subprocess.run(["dinitctl", "start", "pipewire-filter-chain"], check=False, timeout=20)
+            result = subprocess.run(
+                ["dinitctl", "restart", "arctis-manager"],
+                check=False, timeout=20,
+            )
+        else:
+            result = subprocess.run(
+                ["systemctl", "--user", "restart", "filter-chain", "arctis-manager"],
+                check=False, timeout=20,
+            )
         if result.returncode != 0:
             _apply_yaml(self._old_mode)
             self.done.emit(False, self._old_mode)
