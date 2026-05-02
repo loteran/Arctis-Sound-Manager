@@ -154,12 +154,26 @@ def main():
     # Run AFTER the first-run dialog has had time to install rules (delay 2500ms
     # vs 300ms for first-run). On a normal launch (setup already done), this
     # fires at 500ms as before.
-    from arctis_sound_manager.udev_checker import is_udev_rules_valid
+    from arctis_sound_manager.udev_checker import get_udev_rules_status
     udev_delay_ms = 2500 if setup_was_missing else 500
     def _check_udev():
-        if not is_udev_rules_valid():
+        status = get_udev_rules_status()
+        if status == 'ok':
+            return
+        if status == 'missing':
             from arctis_sound_manager.gui.udev_dialog import UdevRulesDialog
             UdevRulesDialog().exec()
+        elif status == 'outdated':
+            # Rules file exists but new device YAMLs added PIDs not yet in it.
+            # Silently re-write — one pkexec prompt from the OS, no Qt dialog.
+            import shutil
+            import subprocess
+            cli = shutil.which('asm-cli')
+            if cli:
+                subprocess.run([cli, 'udev', 'write-rules', '--force', '--reload'], check=False)
+            else:
+                from arctis_sound_manager.gui.udev_dialog import UdevRulesDialog
+                UdevRulesDialog().exec()
     QTimer.singleShot(udev_delay_ms, _check_udev)
 
     # ── Telemetry consent (first launch only) ─────────────────────────────────
