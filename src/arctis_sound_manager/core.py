@@ -661,6 +661,7 @@ class CoreEngine:
                     )
         # Surface the EACCES state to the GUI; clear it once a clean pass happens.
         self.permission_error = had_eacces
+        return not had_eacces
 
     def kernel_attach(self, usb_device: TypedDevice, config: DeviceConfiguration) -> bool:
         """Re-attach the kernel driver. Returns False on USB error (best effort)."""
