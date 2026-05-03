@@ -231,33 +231,60 @@ def main() -> None:
 
     # ── Udev rules ──
     print("\n==> Installing udev rules...")
-    from arctis_sound_manager.udev_checker import is_udev_rules_valid
-    rules_already_valid = is_udev_rules_valid()
-    if rules_already_valid:
-        print("  [ok] udev rules already valid — skipping write (installed by package)")
-    elif asm_cli:
-        result = subprocess.run(
-            [asm_cli, "udev", "write-rules", "--force", "--reload"],
-            text=True,
-        )
-        if result.returncode == 0:
-            print("  [ok] udev rules installed (reload+trigger included)")
-        else:
-            print("  [!] udev rules failed — run manually: asm-cli udev write-rules --force --reload")
-    else:
-        print("  [!] asm-cli not found — run manually: asm-cli udev write-rules --force --reload")
+    from arctis_sound_manager.udev_checker import is_udev_rules_valid, _expected_pids, _pids_in_rules
 
-    # Always reload+trigger when the rules were not freshly written, so that
-    # any device already plugged in gets the new permissions applied.
-    # Skipping this is the most common cause of EACCES on first run after upgrade.
-    if rules_already_valid and asm_cli:
-        print("\n==> Applying udev rules to currently-connected devices...")
-        result = subprocess.run([asm_cli, "udev", "reload-rules"], text=True)
-        if result.returncode == 0:
-            print("  [ok] udev rules reloaded and triggered")
+    # Fix D: write .setup_done BEFORE any elevated step so that a cancelled
+    # pkexec prompt doesn't cause the autostart to re-trigger asm-setup on every
+    # subsequent login. Any remaining udev issue is caught by the GUI's _check_udev().
+    flag = Path.home() / ".config" / "arctis_manager" / ".setup_done"
+    flag.parent.mkdir(parents=True, exist_ok=True)
+    flag.touch()
+
+    rules_already_valid = is_udev_rules_valid()
+    if not rules_already_valid:
+        if asm_cli:
+            result = subprocess.run(
+                [asm_cli, "udev", "write-rules", "--force", "--reload"],
+                text=True,
+            )
+            if result.returncode == 0:
+                print("  [ok] udev rules installed (reload+trigger included)")
+            else:
+                print("  [!] udev rules failed — run manually: asm-cli udev write-rules --force --reload")
         else:
-            print("  [!] reload failed — run manually: asm-cli udev reload-rules")
-            print("      (or: sudo udevadm control --reload-rules && sudo udevadm trigger)")
+            print("  [!] asm-cli not found — run manually: asm-cli udev write-rules --force --reload")
+    else:
+        print("  [ok] udev rules already valid — skipping write (installed by package)")
+        # Fix C: detect a stale /etc rules file that udev prioritises over /usr/lib.
+        # udev processes /etc before /usr/lib, so a leftover /etc file with fewer
+        # PIDs silently shadows the up-to-date package rules for newer devices.
+        _etc_rules = Path("/etc/udev/rules.d/91-steelseries-arctis.rules")
+        if _etc_rules.exists() and asm_cli:
+            try:
+                _expected = {pid for _, pid in _expected_pids()}
+                _covered = _pids_in_rules(_etc_rules.read_text())
+                if _expected and not _expected.issubset(_covered):
+                    _missing = sorted(_expected - _covered)
+                    print(
+                        "  [!] Stale /etc udev rules found (missing "
+                        + ", ".join(f"0x{p:04x}" for p in _missing)
+                        + ") — updating in-place..."
+                    )
+                    result = subprocess.run(
+                        [asm_cli, "udev", "write-rules", "--force", "--reload"],
+                        text=True,
+                    )
+                    if result.returncode == 0:
+                        print("  [ok] /etc rules updated and reloaded")
+                    else:
+                        print("  [!] could not update /etc rules — run manually: "
+                              "asm-cli udev write-rules --force --reload")
+            except OSError:
+                pass
+    # Fix B: do NOT call 'reload-rules' separately when rules are valid.
+    # The package post-install hook (pacman/rpm/deb) already ran udevadm
+    # reload+trigger as root at install time. Calling it again from a user
+    # session only triggers an unnecessary pkexec prompt on every asm-setup run.
 
     # ── Stale user-level arctis-gui.service cleanup ──
     # Pipx installs used to write ~/.config/systemd/user/arctis-gui.service with
@@ -300,11 +327,6 @@ def main() -> None:
             pass
     if bad_yamls:
         print(f"  [!] Invalid device YAMLs in {_DEVICE_DIR}: {bad_yamls} — daemon will skip them.")
-
-    # Mark setup as done — checked by /etc/xdg/autostart/asm-first-run.desktop
-    flag = Path.home() / ".config" / "arctis_manager" / ".setup_done"
-    flag.parent.mkdir(parents=True, exist_ok=True)
-    flag.touch()
 
     if bad_yamls:
         print("\n==> Setup complete with warnings (see above).")
