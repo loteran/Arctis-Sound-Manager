@@ -116,6 +116,7 @@ class QSettingsWidget(QWidget):
     def get_widget(self, config: ConfigSetting, value: bool|str|int, callback: Callable) -> QWidget|None:
         main_widget = QWidget()
         main_layout = QHBoxLayout()
+        main_layout.setContentsMargins(0, 4, 0, 4)
         main_widget.setLayout(main_layout)
 
         widget: QWidget|None = None
@@ -129,6 +130,7 @@ class QSettingsWidget(QWidget):
         elif config.type == SettingType.SLIDER:
             widget = QWidget()
             widget_layout = QHBoxLayout()
+            widget_layout.setContentsMargins(0, 0, 0, 0)
             widget.setLayout(widget_layout)
 
             slider = QSlider(Qt.Orientation.Horizontal)
