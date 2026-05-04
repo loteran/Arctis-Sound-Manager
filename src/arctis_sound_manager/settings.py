@@ -96,6 +96,7 @@ class GeneralSettings(JsonSerializable):
     # OLED screen timeout in seconds (0 = never)
     oled_screen_timeout: int = 30
     oled_scroll_speed: int = 2
+    oled_eq_scroll_speed: int = 2
 
     # Whether to push custom frames to the OLED (False = leave original DAC UI)
     oled_custom_display: bool = True
@@ -136,6 +137,7 @@ class GeneralSettings(JsonSerializable):
         ConfigSetting('oled_brightness', SettingType.SLIDER, 8, min=0, max=10, step=1),
         ConfigSetting('oled_screen_timeout', SettingType.SLIDER, 30, min=0, max=300, step=10),
         ConfigSetting('oled_scroll_speed', SettingType.SLIDER, 2, min=0, max=5, step=1),
+        ConfigSetting('oled_eq_scroll_speed', SettingType.SLIDER, 2, min=0, max=5, step=1),
         ConfigSetting('oled_show_time', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('oled_show_battery', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('oled_show_profile', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),

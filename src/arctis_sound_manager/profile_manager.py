@@ -20,6 +20,7 @@ DAC_KEYS: tuple[str, ...] = (
     "oled_brightness",
     "oled_screen_timeout",
     "oled_scroll_speed",
+    "oled_eq_scroll_speed",
     "oled_show_time",
     "oled_show_battery",
     "oled_show_profile",

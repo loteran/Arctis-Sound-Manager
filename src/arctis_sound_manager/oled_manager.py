@@ -35,7 +35,6 @@ _SCROLL_PAUSE_TOP_S = 5.0       # seconds to pause at top before scrolling
 _SCROLL_PAUSE_BOTTOM_S = 3.0    # seconds to pause at bottom before resetting
 _EQ_SCROLL_PAUSE_START_S = 2.0  # pause before EQ marquee starts (readability)
 _EQ_SCROLL_PAUSE_END_S = 2.0    # pause at end before snapping back
-_EQ_SCROLL_INTERVAL_S = 0.04    # seconds per pixel (~25 px/s)
 
 _BURN_IN_INTERVAL_S = 60.0
 _BURN_IN_POSITIONS: list[tuple[int, int]] = [
@@ -316,7 +315,8 @@ class OledManager:
                 self._eq_scroll_offset = 0
 
                 gs = self._core.general_settings
-                if not gs.oled_show_eq or not gs.oled_custom_display:
+                eq_speed = gs.oled_eq_scroll_speed
+                if not gs.oled_show_eq or not gs.oled_custom_display or eq_speed == 0:
                     if self._eq_scroll_wait(0.5):
                         continue
                     continue
@@ -335,14 +335,16 @@ class OledManager:
                 if self._eq_scroll_wait(_EQ_SCROLL_PAUSE_START_S):
                     continue
 
-                # Scroll left pixel by pixel
+                # Scroll left pixel by pixel using the configured speed
+                interval = _SPEED_TO_INTERVAL.get(eq_speed, 0.2)
                 while self._eq_scroll_offset < max_offset:
                     if self._stop_event.is_set() or self._eq_reset_event.is_set():
                         break
                     self._eq_scroll_offset += 1
                     self._update_eq_frame()
-                    if self._eq_scroll_wait(_EQ_SCROLL_INTERVAL_S):
+                    if self._eq_scroll_wait(interval):
                         break
+                    interval = _SPEED_TO_INTERVAL.get(gs.oled_eq_scroll_speed, 0.2)
                 else:
                     # Reached end — pause 2s then snap back
                     if self._eq_scroll_wait(_EQ_SCROLL_PAUSE_END_S):

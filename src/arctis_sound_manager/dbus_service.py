@@ -75,7 +75,7 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
             'permission_error': bool(getattr(self.core_engine, 'permission_error', False)),
             'device': {},
             'dac': {k: getattr(gs, k) for k in (
-                'oled_brightness', 'oled_screen_timeout', 'oled_scroll_speed', 'oled_custom_display',
+                'oled_brightness', 'oled_screen_timeout', 'oled_scroll_speed', 'oled_eq_scroll_speed', 'oled_custom_display',
                 'oled_show_time', 'oled_show_battery', 'oled_show_profile',
                 'oled_show_eq', 'oled_display_order',
                 'oled_font_time', 'oled_font_battery', 'oled_font_profile',
