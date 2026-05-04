@@ -154,7 +154,14 @@ def main() -> None:
             else:
                 dst = _PW_CONF_DIR / conf.name
             if not dst.exists():
-                shutil.copy2(conf, dst)
+                text = conf.read_text()
+                if "${HRIR_DIR}" in text:
+                    # Substitute placeholder with the absolute HRIR path so PipeWire
+                    # can find the WAV regardless of its working directory.
+                    text = text.replace("${HRIR_DIR}", str(_HRIR_DIR))
+                    dst.write_text(text)
+                else:
+                    shutil.copy2(conf, dst)
                 print(f"  [ok] {conf.name} → {dst}")
             else:
                 print(f"  [skip] {dst} already exists")

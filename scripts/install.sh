@@ -83,13 +83,18 @@ fi
 echo "==> Installing native PipeWire configs..."
 PIPEWIRE_CONF_DIR="$HOME/.config/pipewire/pipewire.conf.d"
 FILTERCHAIN_CONF_DIR="$HOME/.config/pipewire/filter-chain.conf.d"
+HRIR_DIR="$HOME/.local/share/pipewire/hrir_hesuvi"
 mkdir -p "$PIPEWIRE_CONF_DIR" "$FILTERCHAIN_CONF_DIR"
 # Virtual sinks (Arctis_Game, Arctis_Chat, Arctis_Media)
 cp "$REPO_DIR/scripts/pipewire/10-arctis-virtual-sinks.conf" "$PIPEWIRE_CONF_DIR/"
 # HeSuVi surround sink — goes in filter-chain.conf.d (managed by the filter-chain service).
 # The daemon regenerates this file with the correct physical output at runtime;
 # the copy here serves as the initial default before the daemon writes its own version.
-cp "$REPO_DIR/scripts/pipewire/sink-virtual-surround-7.1-hesuvi.conf" "$FILTERCHAIN_CONF_DIR/"
+# Substitute ${HRIR_DIR} placeholder with the resolved absolute path so PipeWire
+# can find the WAV file regardless of its working directory.
+sed "s|\${HRIR_DIR}|$HRIR_DIR|g" \
+    "$REPO_DIR/scripts/pipewire/sink-virtual-surround-7.1-hesuvi.conf" \
+    > "$FILTERCHAIN_CONF_DIR/sink-virtual-surround-7.1-hesuvi.conf"
 # Remove stale copy from pipewire.conf.d if present (old installs put it there, causing
 # a duplicate-node conflict with the filter-chain version → silent Game channel).
 rm -f "$PIPEWIRE_CONF_DIR/sink-virtual-surround-7.1-hesuvi.conf"
@@ -97,7 +102,6 @@ systemctl --user restart pipewire pipewire-pulse || true
 echo "    [ok] PipeWire configs deployed."
 
 # 9. Install HRIR file for virtual surround (if not already present)
-HRIR_DIR="$HOME/.local/share/pipewire/hrir_hesuvi"
 mkdir -p "$HRIR_DIR"
 _hrir_valid() { [ -f "$1" ] && head -c 4 "$1" | grep -q "^RIFF"; }
 HRIR_URL="https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/hrir/EAC_Default.wav"
