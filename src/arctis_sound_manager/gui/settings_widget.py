@@ -37,6 +37,7 @@ class QSettingsWidget(QWidget):
         layout.addWidget(title_widget)
 
         self.main_layout = QVBoxLayout()
+        self.main_layout.setSpacing(3)
         layout.addLayout(self.main_layout)
 
         self.title = I18n.get_instance().translate('ui', i18n_section_name)
