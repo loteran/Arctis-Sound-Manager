@@ -16,8 +16,11 @@ echo "==> Setting up virtual surround 7.1 (HeSuVi / PipeWire filter-chain)..."
 rm -f "$HOME/.config/pipewire/pipewire.conf.d/sink-virtual-surround-7.1-hesuvi.conf"
 
 # 1. Install the config into filter-chain.conf.d
+# Substitute ${HRIR_DIR} placeholder with the resolved absolute path so PipeWire
+# can find the WAV file regardless of its working directory.
 mkdir -p "$FC_CONF_DIR"
-cp "$CONF_SRC" "$FC_CONF_DIR/sink-virtual-surround-7.1-hesuvi.conf"
+sed "s|\${HRIR_DIR}|$HRIR_DIR|g" "$CONF_SRC" \
+    > "$FC_CONF_DIR/sink-virtual-surround-7.1-hesuvi.conf"
 echo "    [ok] HeSuVi config installed to filter-chain.conf.d."
 
 # 2. Install HRIR file
