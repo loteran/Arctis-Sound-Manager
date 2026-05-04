@@ -294,6 +294,7 @@ class OledManager:
                         self._send_oled_packet(self._protocol.build_return_to_ui_packet())
                     else:
                         self.update_display(activity=False)
+                        self.set_brightness(gs.oled_brightness)
             except Exception as e:
                 logger.warning("OLED refresh error: %s", e)
 
