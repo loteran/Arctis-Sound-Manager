@@ -36,3 +36,28 @@ def filter_chain_conf_path() -> str:
     if user_conf.exists():
         return str(user_conf)
     return "/usr/share/pipewire/filter-chain.conf"
+
+
+_DINIT_SERVICE_DIRS = [
+    HOME_DINIT_SERVICE_FOLDER,
+    Path("/etc/dinit.d"),
+    Path("/usr/lib/dinit.d"),
+]
+
+
+def is_dinit_service_enabled(svc: str) -> bool:
+    """Return True if a waits-for.d/<svc> symlink exists in any dinit service directory.
+
+    dinit has no 'is-enabled' subcommand (verified against upstream dinitctl.cc).
+    Enabling a service creates a symlink in the parent service's waits-for.d directory;
+    this function walks all known dinit service dirs to detect that symlink.
+    """
+    for base in _DINIT_SERVICE_DIRS:
+        if not base.is_dir():
+            continue
+        for wfd in base.glob("*.waits-for.d"):
+            if (wfd / svc).exists():
+                return True
+        if (base / "boot.d" / svc).exists():
+            return True
+    return False

@@ -38,6 +38,30 @@ def found(binary: str) -> bool:
     return shutil.which(binary) is not None
 
 
+_DINIT_SERVICE_DIRS = [
+    Path.home() / ".config" / "dinit.d",
+    Path("/etc/dinit.d"),
+    Path("/usr/lib/dinit.d"),
+]
+
+
+def _is_dinit_service_enabled(svc: str) -> bool:
+    """Return True if a waits-for.d/<svc> symlink exists in any dinit service directory.
+
+    dinit has no 'is-enabled' subcommand (verified against upstream dinitctl.cc).
+    Enabling creates a symlink in the parent service's waits-for.d directory.
+    """
+    for base in _DINIT_SERVICE_DIRS:
+        if not base.is_dir():
+            continue
+        for wfd in base.glob("*.waits-for.d"):
+            if (wfd / svc).exists():
+                return True
+        if (base / "boot.d" / svc).exists():
+            return True
+    return False
+
+
 def section(title: str) -> None:
     print(f"\n{'─' * 60}")
     print(f"  {title}")
@@ -87,23 +111,9 @@ def check_init() -> dict:
     # dinitctl version
     rc, out, _ = run(["dinitctl", "--version"])
     if rc == 0:
-        # Parse version string, e.g. "dinitctl 0.21.0"
         version_str = out.splitlines()[0] if out else ""
         result["dinitctl_version"] = version_str
-        # Extract numeric version
-        m = re.search(r"(\d+)\.(\d+)\.(\d+)", version_str)
-        if m:
-            major, minor, patch = int(m.group(1)), int(m.group(2)), int(m.group(3))
-            version_tuple = (major, minor, patch)
-            if version_tuple >= (0, 17, 0):
-                ok("dinitctl accessible, version ≥ 0.17", version_str)
-            else:
-                err(
-                    "dinitctl version < 0.17 — is-enabled not supported",
-                    version_str,
-                )
-        else:
-            ok("dinitctl accessible", version_str)
+        ok("dinitctl accessible", version_str)
     else:
         err("dinitctl not found or not accessible")
         result["dinitctl_version"] = None
@@ -192,13 +202,13 @@ def check_services() -> dict:
             out.splitlines()[0] if out else "not running",
         )
 
-        # dinitctl is-enabled <svc>
-        rc2, out2, _ = run(["dinitctl", "is-enabled", svc])
-        enabled = rc2 == 0
+        # autostart check — dinit has no 'is-enabled' subcommand; enabled state
+        # is encoded as a symlink in the parent service's waits-for.d directory
+        enabled = _is_dinit_service_enabled(svc)
         result["services_enabled"][svc] = enabled
         (ok if enabled else miss)(
-            f"dinitctl is-enabled {svc}",
-            out2.splitlines()[0] if out2 else ("enabled" if enabled else "not enabled"),
+            f"autostart (waits-for.d symlink) for {svc}",
+            "found" if enabled else "absent — service won't autostart after next login",
         )
 
         # depends-on

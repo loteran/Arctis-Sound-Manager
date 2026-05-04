@@ -46,11 +46,9 @@ _GUI_SERVICE = "arctis-gui.service"
 
 
 def _autostart_enabled() -> bool:
-    from arctis_sound_manager.init_system import detect_init
+    from arctis_sound_manager.init_system import detect_init, is_dinit_service_enabled
     if detect_init() == "dinit":
-        result = subprocess.run(["dinitctl", "is-enabled", "arctis-manager"],
-                                capture_output=True)
-        return result.returncode == 0
+        return is_dinit_service_enabled("arctis-manager")
     result = subprocess.run(
         ["systemctl", "--user", "is-enabled", _SERVICE],
         capture_output=True, text=True,
