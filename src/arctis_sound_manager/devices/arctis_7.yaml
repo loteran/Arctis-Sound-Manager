@@ -11,6 +11,8 @@ device:
     position: end
     filler: 0x00
 
+  command_transport: ctrl_output
+
   # Vendor HID interface (interrupt OUT endpoint available)
   command_interface_index: [5, 0]
   listen_interface_indexes: [5]
