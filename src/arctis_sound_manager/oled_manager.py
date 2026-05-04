@@ -73,6 +73,9 @@ class OledManager:
         self._eq_scroll_offset: int = 0
         self._eq_reset_event = threading.Event()
         self._eq_scroll_thread: threading.Thread | None = None
+        self._profile_scroll_offset: int = 0
+        self._profile_reset_event = threading.Event()
+        self._profile_scroll_thread: threading.Thread | None = None
         self._last_render_params: dict = {}
         self._burn_in_step: int = 0
         self._burn_in_x: int = 0
@@ -103,9 +106,15 @@ class OledManager:
             name="OledEqScroll",
             daemon=True,
         )
+        self._profile_scroll_thread = threading.Thread(
+            target=self._profile_scroll_loop,
+            name="OledProfileScroll",
+            daemon=True,
+        )
         self._thread.start()
         self._scroll_thread.start()
         self._eq_scroll_thread.start()
+        self._profile_scroll_thread.start()
         self.set_brightness(self._core.general_settings.oled_brightness)
         self._show_splash()
         logger.info("OledManager started (interval=%.1fs)", _REFRESH_INTERVAL_S)
@@ -144,13 +153,18 @@ class OledManager:
         if self._eq_scroll_thread is not None:
             self._eq_scroll_thread.join(timeout=2.0)
             self._eq_scroll_thread = None
+        if self._profile_scroll_thread is not None:
+            self._profile_scroll_thread.join(timeout=2.0)
+            self._profile_scroll_thread = None
         logger.info("OledManager stopped")
 
     def _reset_scroll(self) -> None:
         self._scroll_offset = 0
         self._eq_scroll_offset = 0
+        self._profile_scroll_offset = 0
         self._reset_scroll_event.set()
         self._eq_reset_event.set()
+        self._profile_reset_event.set()
 
     def update_display(self, activity: bool = True) -> None:
         if datetime.now().timestamp() < self._splash_until:
@@ -213,6 +227,7 @@ class OledManager:
         image = self._renderer.render_status_image(
             **self._last_render_params,
             eq_scroll_offset=self._eq_scroll_offset,
+            profile_scroll_offset=self._profile_scroll_offset,
         )
 
         with self._image_lock:
@@ -282,13 +297,15 @@ class OledManager:
             except Exception as e:
                 logger.warning("OLED refresh error: %s", e)
 
-    def _update_eq_frame(self) -> None:
-        """Re-render _current_image with the current eq_scroll_offset and send it."""
+    def _update_scroll_frame(self) -> None:
+        """Re-render _current_image with current eq/profile scroll offsets and send it."""
         params = self._last_render_params
         if not params:
             return
         image = self._renderer.render_status_image(
-            **params, eq_scroll_offset=self._eq_scroll_offset
+            **params,
+            eq_scroll_offset=self._eq_scroll_offset,
+            profile_scroll_offset=self._profile_scroll_offset,
         )
         with self._image_lock:
             self._current_image = image
@@ -341,7 +358,7 @@ class OledManager:
                     if self._stop_event.is_set() or self._eq_reset_event.is_set():
                         break
                     self._eq_scroll_offset += 1
-                    self._update_eq_frame()
+                    self._update_scroll_frame()
                     if self._eq_scroll_wait(interval):
                         break
                     interval = _SPEED_TO_INTERVAL.get(gs.oled_eq_scroll_speed, 0.2)
@@ -350,10 +367,69 @@ class OledManager:
                     if self._eq_scroll_wait(_EQ_SCROLL_PAUSE_END_S):
                         continue
                     self._eq_scroll_offset = 0
-                    self._update_eq_frame()
+                    self._update_scroll_frame()
 
             except Exception as e:
                 logger.warning("OLED EQ scroll error: %s", e)
+                self._stop_event.wait(0.5)
+
+    def _profile_scroll_wait(self, seconds: float) -> bool:
+        deadline = datetime.now().timestamp() + seconds
+        while True:
+            if self._stop_event.is_set():
+                return True
+            if self._profile_reset_event.is_set():
+                return True
+            remaining = deadline - datetime.now().timestamp()
+            if remaining <= 0:
+                return False
+            self._stop_event.wait(min(remaining, 0.05))
+
+    def _profile_scroll_loop(self) -> None:
+        """Horizontal marquee thread for the Profile name line when it overflows 128px."""
+        while not self._stop_event.is_set():
+            try:
+                self._profile_reset_event.clear()
+                self._profile_scroll_offset = 0
+
+                gs = self._core.general_settings
+                speed = gs.oled_eq_scroll_speed
+                if not gs.oled_show_profile or not gs.oled_custom_display or speed == 0:
+                    if self._profile_scroll_wait(0.5):
+                        continue
+                    continue
+
+                active_profile = profile_manager.active_profile_name() or (
+                    self._core.device_config.name if self._core.device_config else "Unknown"
+                )
+                text_w = self._renderer.measure_profile_text(active_profile, gs.oled_font_profile)
+                max_offset = text_w - (self._renderer.WIDTH - 1)
+
+                if max_offset <= 0:
+                    if self._profile_scroll_wait(0.5):
+                        continue
+                    continue
+
+                if self._profile_scroll_wait(_EQ_SCROLL_PAUSE_START_S):
+                    continue
+
+                interval = _SPEED_TO_INTERVAL.get(speed, 0.2)
+                while self._profile_scroll_offset < max_offset:
+                    if self._stop_event.is_set() or self._profile_reset_event.is_set():
+                        break
+                    self._profile_scroll_offset += 1
+                    self._update_scroll_frame()
+                    if self._profile_scroll_wait(interval):
+                        break
+                    interval = _SPEED_TO_INTERVAL.get(gs.oled_eq_scroll_speed, 0.2)
+                else:
+                    if self._profile_scroll_wait(_EQ_SCROLL_PAUSE_END_S):
+                        continue
+                    self._profile_scroll_offset = 0
+                    self._update_scroll_frame()
+
+            except Exception as e:
+                logger.warning("OLED Profile scroll error: %s", e)
                 self._stop_event.wait(0.5)
 
     def _scroll_wait(self, seconds: float) -> bool:
