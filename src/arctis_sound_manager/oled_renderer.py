@@ -98,6 +98,11 @@ class OledRenderer:
 
     _DEFAULT_DISPLAY_ORDER = ['profile', 'eq', 'weather']
 
+    def measure_eq_text(self, eq_preset: str, sz_eq: int) -> int:
+        """Return pixel width of 'EQ: <eq_preset>' at the given font size."""
+        font = ImageFont.load_default(size=max(7, min(30, sz_eq)))
+        return int(font.getlength(f"EQ: {eq_preset}"))
+
     def render_status_image(
         self,
         battery_percent: int,
@@ -114,6 +119,7 @@ class OledRenderer:
         show_eq: bool = True,
         display_order: "list[str] | None" = None,
         font_sizes: "dict[str, int] | None" = None,
+        eq_scroll_offset: int = 0,
     ) -> Image.Image:
         """Render all content at natural height, no clipping."""
         order = display_order if display_order is not None else self._DEFAULT_DISPLAY_ORDER
@@ -171,8 +177,8 @@ class OledRenderer:
                 draw.text((1, y), f"Profile: {active_profile}", font=font_profile, fill=1)
                 y += sz_profile + 3
             elif element == 'eq' and show_eq and eq_preset:
-                label = eq_preset if len(eq_preset) <= 18 else eq_preset[:17] + "\u2026"
-                draw.text((1, y), f"EQ: {label}", font=font_eq, fill=1)
+                # Negative x scrolls the text left; PIL clips at canvas edge automatically
+                draw.text((1 - eq_scroll_offset, y), f"EQ: {eq_preset}", font=font_eq, fill=1)
                 y += sz_eq + 3
             elif element == 'weather' and weather is not None:
                 y += 2
@@ -255,11 +261,13 @@ class OledRenderer:
         show_profile: bool = True,
         show_eq: bool = True,
         scroll_offset: int = 0,
+        eq_scroll_offset: int = 0,
     ) -> bytes:
         image = self.render_status_image(
             battery_percent=battery_percent, charging=charging, connected=connected,
             time_str=time_str, active_profile=active_profile, blink_state=blink_state,
             eq_preset=eq_preset, weather=weather, show_time=show_time,
             show_battery=show_battery, show_profile=show_profile, show_eq=show_eq,
+            eq_scroll_offset=eq_scroll_offset,
         )
         return self.crop_frame(image, scroll_offset)
