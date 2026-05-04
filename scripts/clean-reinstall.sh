@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Arctis Sound Manager — clean reinstall
 #
-# Detects every existing install (pipx + system packages), uninstalls all of
-# them, then installs the latest release via the user's chosen method, runs
-# asm-setup and verifies everything is in working order.
+# Detects every existing install (pipx + system packages). If more than one
+# is found, asks which one(s) to remove BEFORE reinstalling. Single installs
+# are upgraded in place.
 #
 # Run interactively:
 #   curl -fsSL https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/scripts/clean-reinstall.sh | bash
@@ -47,11 +47,38 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+# All interactive reads go through /dev/tty so the script works with curl|bash
+_read() { read -r "$@" </dev/tty; }
+
 confirm() {
     [ "$ASSUME_YES" -eq 1 ] && return 0
-    local prompt="$1"
-    read -rp "$prompt [y/N] " ans
+    local prompt="$1" ans
+    printf "%s [y/N] " "$prompt"
+    _read ans
     [[ "$ans" =~ ^[Yy]$ ]]
+}
+
+# ── Removal helper ────────────────────────────────────────────────────────────
+_remove_one() {
+    local m="$1"
+    case "$m" in
+        rpm)
+            info "running: sudo dnf remove -y arctis-sound-manager"
+            sudo dnf remove -y arctis-sound-manager || warn "dnf remove failed"
+            ;;
+        pacman)
+            info "running: sudo pacman -Rns --noconfirm arctis-sound-manager"
+            sudo pacman -Rns --noconfirm arctis-sound-manager || warn "pacman remove failed"
+            ;;
+        apt)
+            info "running: sudo apt-get remove -y arctis-sound-manager"
+            sudo apt-get remove -y arctis-sound-manager || warn "apt-get remove failed"
+            ;;
+        pipx)
+            info "running: pipx uninstall arctis-sound-manager"
+            pipx uninstall arctis-sound-manager || warn "pipx uninstall failed"
+            ;;
+    esac
 }
 
 # ── Detection ─────────────────────────────────────────────────────────────────
@@ -88,23 +115,82 @@ if command -v pipx >/dev/null 2>&1 && pipx list --short 2>/dev/null | grep -q "^
     info "pipx:   arctis-sound-manager $v"
 fi
 
-# Also list orphan binaries in PATH (shows duplicates the package managers don't know about)
 ORPHAN_BINS=$(command -v -a asm-daemon 2>/dev/null || true)
 if [ -n "$ORPHAN_BINS" ]; then
     info "asm-daemon binaries in PATH:"
     while IFS= read -r p; do info "    $p"; done <<<"$ORPHAN_BINS"
 fi
 
-if [ "${#INSTALLED_METHODS[@]}" -eq 0 ]; then
-    info "No existing installation detected."
-elif [ "${#INSTALLED_METHODS[@]}" -gt 1 ]; then
+# ── Handle duplicate installs ─────────────────────────────────────────────────
+# When multiple installs coexist, ask which one(s) to remove FIRST, before
+# touching the "which method to use going forward" question.
+if [ "${#INSTALLED_METHODS[@]}" -gt 1 ]; then
     warn "${#INSTALLED_METHODS[@]} install methods active simultaneously — this is the cause of the bug."
+    printf "\n  What do you want to do?\n\n"
+
+    declare -a KEEP_OPTIONS=()
+    local_i=1
+    for m in "${INSTALLED_METHODS[@]}"; do
+        others=""
+        for o in "${INSTALLED_METHODS[@]}"; do
+            [ "$o" = "$m" ] && continue
+            others="${others:+$others + }$o"
+        done
+        printf "  %d) Remove %s  (keep %s %s)\n" \
+            "$local_i" "$others" "$m" "${INSTALLED_VERSIONS[$m]}"
+        KEEP_OPTIONS+=("$m")
+        local_i=$((local_i + 1))
+    done
+    printf "  a) Remove all, then reinstall clean\n"
+    printf "  q) Cancel\n\n"
+    if [ "$ASSUME_YES" -eq 1 ]; then
+        dup_choice="a"
+        info "Non-interactive (--yes): removing all, then reinstalling"
+    else
+        printf "  Choice [a]: "
+        _read dup_choice || dup_choice=""
+        dup_choice="${dup_choice:-a}"
+    fi
+
+    case "$dup_choice" in
+        q)
+            info "Cancelled."
+            exit 0
+            ;;
+        a)
+            # Fall through — remove all below, then reinstall
+            ;;
+        [0-9]*)
+            if [ "$dup_choice" -ge 1 ] && [ "$dup_choice" -le "${#KEEP_OPTIONS[@]}" ] 2>/dev/null; then
+                KEEP_METHOD="${KEEP_OPTIONS[$((dup_choice - 1))]}"
+                step "Stopping ASM services"
+                for svc in arctis-manager.service arctis-gui.service arctis-video-router.service filter-chain.service; do
+                    systemctl --user stop "$svc" 2>/dev/null || true
+                done
+                ok "services stopped"
+                step "Removing duplicate installs (keeping $KEEP_METHOD ${INSTALLED_VERSIONS[$KEEP_METHOD]})"
+                for m in "${INSTALLED_METHODS[@]}"; do
+                    [ "$m" = "$KEEP_METHOD" ] && continue
+                    _remove_one "$m"
+                done
+                ok "Duplicates removed — keeping ${KEEP_METHOD} ${INSTALLED_VERSIONS[$KEEP_METHOD]}."
+                step "Restarting services"
+                systemctl --user restart arctis-manager.service arctis-gui.service 2>/dev/null || true
+                ok "Done. No reinstall needed."
+                exit 0
+            else
+                err "Invalid choice '$dup_choice'"; exit 2
+            fi
+            ;;
+        *)
+            err "Invalid choice '$dup_choice'"; exit 2
+            ;;
+    esac
 fi
 
 # ── Method selection ─────────────────────────────────────────────────────────
 step "Choose the install method to use going forward"
 
-# Auto-detect best default for the distro
 DEFAULT_METHOD="pipx"
 if [ -f /etc/os-release ]; then
     . /etc/os-release
@@ -128,13 +214,13 @@ if [ -z "$METHOD" ]; then
 
 EOF
         printf "  Choice [default: %s]: " "$DEFAULT_METHOD"
-        read -r choice
+        _read choice || choice=""
         case "${choice:-$DEFAULT_METHOD}" in
             1|pipx)   METHOD="pipx" ;;
             2|dnf)    METHOD="dnf" ;;
             3|apt)    METHOD="apt" ;;
             4|pacman) METHOD="pacman" ;;
-            *) err "Invalid choice"; exit 2 ;;
+            *) err "Invalid choice '${choice}'"; exit 2 ;;
         esac
     fi
 fi
@@ -150,29 +236,12 @@ for svc in arctis-manager.service arctis-gui.service arctis-video-router.service
 done
 ok "services stopped"
 
-# ── Uninstall every detected method ──────────────────────────────────────────
+# ── Uninstall all detected installs ──────────────────────────────────────────
 if [ "${#INSTALLED_METHODS[@]}" -gt 0 ]; then
     step "Removing existing installations"
     if confirm "  Proceed with removal of: ${INSTALLED_METHODS[*]} ?"; then
         for m in "${INSTALLED_METHODS[@]}"; do
-            case "$m" in
-                rpm)
-                    info "running: sudo dnf remove -y arctis-sound-manager"
-                    sudo dnf remove -y arctis-sound-manager || warn "dnf remove failed"
-                    ;;
-                apt)
-                    info "running: sudo apt-get remove -y arctis-sound-manager"
-                    sudo apt-get remove -y arctis-sound-manager || warn "apt-get remove failed"
-                    ;;
-                pacman)
-                    info "running: sudo pacman -Rns --noconfirm arctis-sound-manager"
-                    sudo pacman -Rns --noconfirm arctis-sound-manager || warn "pacman remove failed"
-                    ;;
-                pipx)
-                    info "running: pipx uninstall arctis-sound-manager"
-                    pipx uninstall arctis-sound-manager || warn "pipx uninstall failed"
-                    ;;
-            esac
+            _remove_one "$m"
         done
         ok "removal complete"
     else
@@ -192,7 +261,6 @@ case "$METHOD" in
             err "pipx not found. Install it first (e.g. 'sudo dnf install pipx' or 'sudo apt install pipx')."
             exit 1
         fi
-        # Find the latest wheel URL from the GitHub API.
         LATEST_TAG=$(curl -fsSL https://api.github.com/repos/loteran/Arctis-Sound-Manager/releases/latest \
                      | grep '"tag_name"' | head -n1 | cut -d'"' -f4)
         [ -n "$LATEST_TAG" ] || { err "Could not query latest release tag"; exit 1; }
@@ -203,7 +271,6 @@ case "$METHOD" in
         ;;
     dnf)
         if ! command -v dnf >/dev/null 2>&1; then err "dnf not found"; exit 1; fi
-        # Enable the COPR repo if not already (idempotent)
         sudo dnf copr enable -y loteran/arctis-sound-manager 2>/dev/null || true
         sudo dnf install -y arctis-sound-manager
         ;;
@@ -230,7 +297,6 @@ ok "package installed via ${METHOD}"
 
 # ── Run asm-setup ────────────────────────────────────────────────────────────
 step "Running asm-setup (PipeWire, udev rules, services)"
-# Make sure asm-setup is in PATH (for pipx, $HOME/.local/bin must be there)
 export PATH="$HOME/.local/bin:$PATH"
 if ! command -v asm-setup >/dev/null 2>&1; then
     err "asm-setup not in PATH. Open a new terminal and run 'asm-setup' manually."
@@ -248,8 +314,6 @@ else
     warn "arctis-manager.service is not active. Run: systemctl --user restart arctis-manager.service"
 fi
 
-# Surface any leftover binaries that didn't get cleaned up (rare, but possible
-# if a previous install was done by a different user or with --user pip).
 NEW_BINS=$(command -v -a asm-daemon 2>/dev/null | sort -u || true)
 if [ "$(echo "$NEW_BINS" | wc -l)" -gt 1 ]; then
     warn "Multiple asm-daemon binaries still in PATH:"
