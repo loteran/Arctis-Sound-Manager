@@ -10,7 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      id-token: write   # PyPI Trusted Publishers (OIDC, no token in secrets)
     outputs:
       version: ${{ steps.src.outputs.version }}
       sha256: ${{ steps.src.outputs.sha256 }}
@@ -51,21 +50,6 @@ jobs:
           SHA=$(sha256sum "build/aur/arctis-sound-manager-${VERSION}.tar.gz" | awk '{print $1}')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "sha256=$SHA" >> $GITHUB_OUTPUT
-
-      - name: Publish to PyPI
-        # OIDC Trusted Publisher — no token required. The PyPI project must
-        # be configured at https://pypi.org/manage/account/publishing/ with:
-        #   Owner = loteran
-        #   Repo  = Arctis-Sound-Manager
-        #   Workflow = release.yaml
-        # `skip-existing` keeps the workflow idempotent if a tag is re-pushed.
-        # `continue-on-error` so a PyPI hiccup never blocks the GitHub release
-        # / AUR / COPR jobs that come after.
-        uses: pypa/gh-action-pypi-publish@release/v1
-        continue-on-error: true
-        with:
-          packages-dir: dist/
-          skip-existing: true
 
       - name: Create release
         uses: softprops/action-gh-release@v2
