@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.95] - 04 May 2026
+
+### Added
+
+- **OLED horizontal marquee for EQ preset name** — when the EQ preset name overflows the 128 px display width, the text now scrolls left pixel-by-pixel. It pauses 2 s at the start (readability), scrolls to the end, pauses 2 s, then snaps back. Speed is controlled by the new **Scroll Speed (Horizontal)** slider (0 = disabled, 1–5 = slow to fast).
+- **OLED horizontal marquee for Profile name** — same marquee behaviour applied to the active profile name line.
+- **DAC tab — Scroll Speed (Horizontal) slider** — new `oled_eq_scroll_speed` setting controls the horizontal marquee speed for both EQ preset and profile name lines. The existing scroll slider is renamed to **Scroll Speed (Vertical)**.
+
+### Fixed
+
+- **OLED brightness reset by headset firmware** — when `oled_brightness` was set to a value other than the headset default and `screen_timeout = 0`, the headset firmware silently overrode the brightness back to its own value every few seconds. ASM now re-asserts the configured brightness level every 5 s in the refresh loop (only when the screen is active), keeping the setting stable without interfering with the screen-timeout dim-to-black behaviour.
+- **DAC tab slider spacing** — the default `QHBoxLayout` content margins caused excessive vertical padding between slider rows. Margins are now explicitly set to 4 px top/bottom, halving the visual gap.
+
 ## [1.0.94] - 4 May 2026
 
 ### Fixed
