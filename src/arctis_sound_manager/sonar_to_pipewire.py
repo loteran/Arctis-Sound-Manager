@@ -54,18 +54,21 @@ def _device_attached() -> bool:
 _CHANNEL_CHANNELS: dict[str, int] = {
     "game":   8,
     "chat":   2,
+    "media":  8,
     "output": 8,
 }
 
 _CHANNEL_POSITION: dict[str, str] = {
     "game":   "FL FR FC LFE RL RR SL SR",
     "chat":   "FL FR",
+    "media":  "FL FR FC LFE RL RR SL SR",
     "output": "FL FR FC LFE RL RR SL SR",
 }
 
-# Static channel targets (game/output); chat target is device-specific → use _get_physical_out()
+# Static channel targets; chat target is device-specific → use _get_physical_out()
 _CHANNEL_TARGET: dict[str, str] = {
     "game":   _SURROUND,
+    "media":  _SURROUND,
     "output": "",
 }
 
@@ -160,15 +163,16 @@ def generate_sonar_eq_conf(
     target_override: str | None = None,
 ) -> str:
     """
-    Build and optionally write a filter-chain .conf for a game/chat/output EQ channel.
+    Build and optionally write a filter-chain .conf for a game/chat/media/output EQ channel.
 
     Game channel: 8ch 7.1, single filter nodes (PipeWire auto-duplicates per channel),
     no explicit inputs/outputs, targets HeSuVi virtual surround.
     Chat channel: 2ch stereo, L/R filter pairs, explicit inputs/outputs, targets ALSA.
+    Media channel: 2ch stereo, same as chat, targets physical Arctis output.
     Output channel: 8ch 7.1, single filter nodes, targets external sink (HDMI, etc.).
     """
-    if channel not in ("game", "chat", "output"):
-        raise ValueError(f"channel must be 'game', 'chat' or 'output', got {channel!r}")
+    if channel not in ("game", "chat", "media", "output"):
+        raise ValueError(f"channel must be 'game', 'chat', 'media' or 'output', got {channel!r}")
 
     # Channels that depend on the physical Arctis output need a connected device.
     needs_physical = channel == "chat" or (channel == "game" and not spatial_audio)
@@ -189,6 +193,7 @@ def generate_sonar_eq_conf(
         channels = _CHANNEL_CHANNELS[channel]
         position = _CHANNEL_POSITION[channel]
     else:
+        # game (spatial on), media, output → static targets
         target = target_override or _CHANNEL_TARGET.get(channel, "")
         channels = _CHANNEL_CHANNELS[channel]
         position = _CHANNEL_POSITION[channel]
@@ -748,7 +753,7 @@ _VIRTUAL_SINKS = [
     {"desc": "Chat",  "capture": "Arctis_Chat",  "playback": "Arctis_Chat_sink_out",
      "sonar_target": "effect_input.sonar-chat-eq"},
     {"desc": "Media", "capture": "Arctis_Media", "playback": "Arctis_Media_sink_out",
-     "sonar_target": None},  # no Sonar EQ for media
+     "sonar_target": "effect_input.sonar-media-eq"},
 ]
 
 

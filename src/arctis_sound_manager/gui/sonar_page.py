@@ -89,7 +89,7 @@ _CFG          = Path.home() / ".config" / "arctis_manager"
 _PRESETS_DIR  = _CFG / "sonar_presets"
 _RAW_DIR      = Path(__file__).parent / "presets"
 
-_CHANNEL_TAG  = {"game": "[Game]", "chat": "[Chat]", "micro": "[Mic]", "output": "[Game]"}
+_CHANNEL_TAG  = {"game": "[Game]", "media": "[Game]", "chat": "[Chat]", "micro": "[Mic]", "output": "[Game]"}
 _MAX_FAV      = 9
 _APPLY_DELAY  = 600   # ms debounce before restarting filter-chain
 
@@ -449,8 +449,9 @@ class _ApplyWorker(QThread):
             # target sinks to come back before attempting move-sink-input,
             # otherwise streams stay orphaned on the system default (issue #22).
             _restore_remap = {
-                "effect_input.sonar-game-eq": "Arctis_Game",
-                "effect_input.sonar-chat-eq": "Arctis_Chat",
+                "effect_input.sonar-game-eq":  "Arctis_Game",
+                "effect_input.sonar-chat-eq":  "Arctis_Chat",
+                "effect_input.sonar-media-eq": "Arctis_Media",
             }
             for sink_name in saved_sink_inputs.keys():
                 target = _restore_remap.get(sink_name, sink_name)
@@ -483,8 +484,9 @@ class _ApplyWorker(QThread):
                 # Game/Chat: restore each stream to its original Arctis sink.
                 # Remap effect_input sinks to their Arctis equivalents.
                 _effect_remap = {
-                    "effect_input.sonar-game-eq": "Arctis_Game",
-                    "effect_input.sonar-chat-eq": "Arctis_Chat",
+                    "effect_input.sonar-game-eq":  "Arctis_Game",
+                    "effect_input.sonar-chat-eq":  "Arctis_Chat",
+                    "effect_input.sonar-media-eq": "Arctis_Media",
                 }
                 if self._channel == "output":
                     _effect_remap["effect_input.sonar-output-eq"] = "effect_input.sonar-output-eq"
@@ -508,7 +510,7 @@ class _ApplyWorker(QThread):
 
 
 class _ApplyAllWorker(QThread):
-    """Apply all 3 EQ channels (game/chat/micro) in a single filter-chain restart."""
+    """Apply all EQ channels (game/media/chat/micro) in a single filter-chain restart."""
     done = Signal(bool)
 
     def __init__(self):
@@ -524,7 +526,7 @@ class _ApplyAllWorker(QThread):
             spatial = _load_spatial_audio()
 
             # Generate conf for each channel
-            for channel in ("game", "chat"):
+            for channel in ("game", "media", "chat"):
                 spatial_on = spatial["enabled"] if channel == "game" else True
                 try:
                     bands = _parse_preset(
@@ -1040,7 +1042,7 @@ class SonarChannelWidget(QWidget):
             scl.setContentsMargins(0, 0, 0, 0)
             scl.addStretch(1)
             root.addWidget(settings_card)
-        elif channel in ("game", "chat"):
+        elif channel in ("game", "chat", "media"):
             settings_card = QWidget()
             settings_card.setObjectName("settingsCard")
             settings_card.setStyleSheet(f"""
@@ -1077,7 +1079,7 @@ class SonarChannelWidget(QWidget):
             self._smart = SmartVolumeWidget()
             scl.addWidget(self._smart)
 
-            if channel in ("chat", "output"):
+            if channel in ("chat", "media", "output"):
                 scl.addStretch(1)
 
             root.addWidget(settings_card)
@@ -2074,11 +2076,13 @@ class SonarPage(QWidget):
         """)
 
         self._game_widget   = SonarChannelWidget("game")
+        self._media_widget  = SonarChannelWidget("media")
         self._chat_widget   = SonarChannelWidget("chat")
         self._micro_widget  = SonarMicroWidget()
         self._output_widget = SonarChannelWidget("output")
 
         self._tabs.addTab(self._game_widget,   _t("game"))
+        self._tabs.addTab(self._media_widget,  _t("media"))
         self._tabs.addTab(self._chat_widget,   _t("chat"))
         self._tabs.addTab(self._micro_widget,  _t("micro"))
         self._tabs.addTab(self._output_widget, _t("output"))
@@ -2092,6 +2096,8 @@ class SonarPage(QWidget):
         self._game_widget._spatial.state_changed.connect(self._on_spatial_changed)
         self._game_widget._boost.state_changed.connect(self._on_boost_changed)
         self._game_widget._smart.state_changed.connect(self._on_smart_changed)
+        self._media_widget._boost.state_changed.connect(self._on_boost_changed)
+        self._media_widget._smart.state_changed.connect(self._on_smart_changed)
         self._chat_widget._boost.state_changed.connect(self._on_boost_changed)
         self._chat_widget._smart.state_changed.connect(self._on_smart_changed)
 
@@ -2133,14 +2139,16 @@ class SonarPage(QWidget):
         self._game_widget._schedule_apply()
 
     def _on_boost_changed(self):
-        """Boost changed — re-apply all three channels."""
+        """Boost changed — re-apply all EQ channels."""
         self._game_widget._schedule_apply()
+        self._media_widget._schedule_apply()
         self._chat_widget._schedule_apply()
         self._micro_widget._schedule_apply()
 
     def _on_smart_changed(self):
-        """Smart Volume changed — re-apply game and chat channels."""
+        """Smart Volume changed — re-apply game, media and chat channels."""
         self._game_widget._schedule_apply()
+        self._media_widget._schedule_apply()
         self._chat_widget._schedule_apply()
 
     def apply_all_from_files(self) -> None:
