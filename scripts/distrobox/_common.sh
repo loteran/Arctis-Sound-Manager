@@ -10,6 +10,11 @@ ASM_CONTAINER_NAME="arctis-sound-manager"
 ASM_LOG_FILE="${XDG_CACHE_HOME:-$HOME/.cache}/asm-distrobox-install.log"
 ASM_SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 ASM_UDEV_RULES_PATH="/etc/udev/rules.d/91-steelseries-arctis.rules"
+ASM_HIDRAW_SYMLINK_RULES="/etc/udev/rules.d/90-asm-hidraw-symlink.rules"
+ASM_HIDRAW_RUN_DIR="/run/asm-hidraw"
+
+# Root of the ASM scripts/ directory (resolved relative to this file)
+ASM_SCRIPT_DIR="${ASM_SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
 # Container images — keep in sync with COPR build matrix
 # fix B1: was ghcr.io/ublue-os/arch-distrobox (image does not exist)
@@ -59,26 +64,40 @@ asm_check_host_prereqs() {
 
 # ---------------------------------------------------------------------------
 # asm_list_hidraw_flags
-# Outputs one --additional-flags=--device=X per line for each /dev/hidrawN
+# P0-B: hidraw are now managed via /run/asm-hidraw (udev symlink dir, rslave).
+# Kept as a no-op so callers don't need updating.
 # ---------------------------------------------------------------------------
 asm_list_hidraw_flags() {
-    for dev in /dev/hidraw*; do
-        [[ -e "$dev" ]] && echo "--additional-flags=--device=$dev"
-    done
+    return 0
 }
 
 # ---------------------------------------------------------------------------
-# asm_pipewire_volume_flags  (fix B3: PipeWire sockets missing from container)
+# asm_hidraw_volume_flag  (P0-B: stable hot-plug hidraw via udev symlink dir)
+# ---------------------------------------------------------------------------
+asm_hidraw_volume_flag() {
+    sudo mkdir -p "$ASM_HIDRAW_RUN_DIR"
+    echo "--additional-flags=--volume=$ASM_HIDRAW_RUN_DIR:$ASM_HIDRAW_RUN_DIR:rslave"
+}
+
+# ---------------------------------------------------------------------------
+# asm_usb_bus_volume_flag  (P0-A: expose /dev/bus/usb so libusb/PyUSB works)
+# Uses rslave: host udev events propagate in, nothing leaks out.
+# ---------------------------------------------------------------------------
+asm_usb_bus_volume_flag() {
+    if [[ -d /dev/bus/usb ]]; then
+        echo "--additional-flags=--volume=/dev/bus/usb:/dev/bus/usb:rslave"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# asm_pipewire_volume_flags  (fix B3 + P2-B: PipeWire sockets for container)
 # Outputs one --additional-flags=--volume=... per line for each PW socket
 # ---------------------------------------------------------------------------
 asm_pipewire_volume_flags() {
     local rt="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-    if [[ -S "$rt/pipewire-0" ]]; then
-        echo "--additional-flags=--volume=$rt/pipewire-0:$rt/pipewire-0"
-    fi
-    if [[ -d "$rt/pulse" ]]; then
-        echo "--additional-flags=--volume=$rt/pulse:$rt/pulse"
-    fi
+    [[ -S "$rt/pipewire-0" ]]         && echo "--additional-flags=--volume=$rt/pipewire-0:$rt/pipewire-0"
+    [[ -S "$rt/pipewire-0-manager" ]] && echo "--additional-flags=--volume=$rt/pipewire-0-manager:$rt/pipewire-0-manager"
+    [[ -d "$rt/pulse" ]]              && echo "--additional-flags=--volume=$rt/pulse:$rt/pulse"
 }
 
 # ---------------------------------------------------------------------------
@@ -89,20 +108,13 @@ asm_container_exists() {
 }
 
 # ---------------------------------------------------------------------------
-# asm_create_container <image>  (fix B3: passes PipeWire sockets to container)
+# asm_create_container <image>  (P0-A, P0-B, P2-B: USB bus + hidraw + PipeWire)
 # ---------------------------------------------------------------------------
 asm_create_container() {
     local image="${1:?asm_create_container requires an image argument}"
     log_step "Creating Distrobox container '$ASM_CONTAINER_NAME' (image: $image)..."
 
-    local hidraw_count
-    hidraw_count=$(ls /dev/hidraw* 2>/dev/null | wc -l || echo 0)
-    if [[ "$hidraw_count" -eq 0 ]]; then
-        log_warn "No /dev/hidraw* devices found. Plug in your headset before running ASM."
-        log_warn "If hidraw devices appear later, recreate the container with --reinstall."
-    else
-        log_info "Passing $hidraw_count hidraw device(s) to container"
-    fi
+    log_info "hidraw hot-plug handled via $ASM_HIDRAW_RUN_DIR (udev rslave mount)"
 
     local create_cmd=(
         distrobox create
@@ -113,10 +125,17 @@ asm_create_container() {
         --yes
     )
 
-    while IFS= read -r flag; do
-        [[ -n "$flag" ]] && create_cmd+=("$flag")
-    done < <(asm_list_hidraw_flags)
+    # P0-B: stable hidraw directory (hot-plug works without --reinstall)
+    local hidraw_flag
+    hidraw_flag="$(asm_hidraw_volume_flag)"
+    [[ -n "$hidraw_flag" ]] && create_cmd+=("$hidraw_flag")
 
+    # P0-A: USB bus for libusb / PyUSB
+    local usb_flag
+    usb_flag="$(asm_usb_bus_volume_flag)"
+    [[ -n "$usb_flag" ]] && create_cmd+=("$usb_flag")
+
+    # PipeWire sockets (B3 + P2-B)
     while IFS= read -r flag; do
         [[ -n "$flag" ]] && create_cmd+=("$flag")
     done < <(asm_pipewire_volume_flags)
@@ -127,7 +146,26 @@ asm_create_container() {
 }
 
 # ---------------------------------------------------------------------------
-# asm_install_arch_in_container  (fix B5: pacman-key --init before makepkg)
+# asm_verify_container_health  (P2-A: ensure container responds before install)
+# ---------------------------------------------------------------------------
+asm_verify_container_health() {
+    log_step "Verifying container health..."
+    local timeout=30 elapsed=0
+    until distrobox enter "$ASM_CONTAINER_NAME" -- true 2>/dev/null; do
+        sleep 1
+        elapsed=$((elapsed + 1))
+        if [[ $elapsed -ge $timeout ]]; then
+            log_error "Container '$ASM_CONTAINER_NAME' not responding after ${timeout}s."
+            log_error "Inspect: distrobox enter $ASM_CONTAINER_NAME -- bash"
+            log_error "Or delete and retry: bash scripts/distrobox-install.sh --reinstall"
+            return 1
+        fi
+    done
+    log_ok "Container healthy (${elapsed}s)"
+}
+
+# ---------------------------------------------------------------------------
+# asm_install_arch_in_container  (B5 + P1-C + P3-A + P0-A)
 # ---------------------------------------------------------------------------
 asm_install_arch_in_container() {
     log_step "Installing ASM inside container (Arch / AUR)..."
@@ -135,19 +173,29 @@ asm_install_arch_in_container() {
     distrobox enter "$ASM_CONTAINER_NAME" -- bash -lc '
         set -euo pipefail
 
-        echo "[arch-install] Initialising pacman keyring..."
-        sudo pacman-key --init
-        sudo pacman-key --populate archlinux
+        # P1-C: init keyring only if not already initialised
+        echo "[arch-install] Checking pacman keyring..."
+        if [[ ! -d /etc/pacman.d/gnupg ]] || ! sudo test -s /etc/pacman.d/gnupg/pubring.gpg; then
+            echo "[arch-install] Initialising pacman keyring (first time)..."
+            sudo pacman-key --init
+            sudo pacman-key --populate archlinux
+        else
+            echo "[arch-install] Keyring already initialised — skipping"
+        fi
 
         echo "[arch-install] Updating system..."
         sudo pacman -Syu --noconfirm
 
         if ! command -v paru &>/dev/null; then
             echo "[arch-install] Installing paru (AUR helper)..."
-            sudo pacman -S --noconfirm base-devel git
+            # P0-A: include libusb and hidapi so PyUSB can open the headset
+            sudo pacman -S --needed --noconfirm base-devel git libusb hidapi
+            # P3-A: trap ensures tmpdir is cleaned even if makepkg fails
             tmpdir=$(mktemp -d)
+            trap "rm -rf \"$tmpdir\"" EXIT
             git clone https://aur.archlinux.org/paru-bin.git "$tmpdir/paru"
             (cd "$tmpdir/paru" && makepkg -si --noconfirm)
+            trap - EXIT
             rm -rf "$tmpdir"
         fi
 
@@ -159,7 +207,7 @@ asm_install_arch_in_container() {
 }
 
 # ---------------------------------------------------------------------------
-# asm_install_fedora_in_container
+# asm_install_fedora_in_container  (P0-A: add libusbx + hidapi for PyUSB)
 # ---------------------------------------------------------------------------
 asm_install_fedora_in_container() {
     log_step "Installing ASM inside container (Fedora / COPR)..."
@@ -169,6 +217,10 @@ asm_install_fedora_in_container() {
 
         echo "[fedora-install] Updating system..."
         sudo dnf upgrade -y
+
+        # P0-A: libusb + hidapi so PyUSB can open the headset
+        echo "[fedora-install] Installing USB libraries..."
+        sudo dnf install -y libusbx hidapi
 
         echo "[fedora-install] Enabling COPR: loteran/arctis-sound-manager..."
         sudo dnf copr enable -y loteran/arctis-sound-manager
@@ -206,11 +258,19 @@ asm_export_binaries() {
 }
 
 # ---------------------------------------------------------------------------
-# asm_write_systemd_units  (fix B4: WantedBy includes gamescope-session.target)
+# asm_write_systemd_units <mode>  (P1-D: gamescope-session.target is conditional)
+# mode: desktop (default) | steamdeck
 # ---------------------------------------------------------------------------
 asm_write_systemd_units() {
-    log_step "Writing host systemd user units..."
+    local mode="${1:-desktop}"
+    log_step "Writing host systemd user units (mode=$mode)..."
     mkdir -p "$ASM_SYSTEMD_USER_DIR"
+
+    # gamescope-session.target only exists on Steam Deck / Bazzite Game Mode
+    local wanted_by="graphical-session.target"
+    if [[ "$mode" == "steamdeck" ]]; then
+        wanted_by="graphical-session.target gamescope-session.target"
+    fi
 
     cat > "$ASM_SYSTEMD_USER_DIR/arctis-manager.service" <<EOF
 [Unit]
@@ -227,7 +287,7 @@ Restart=on-failure
 RestartSec=5
 
 [Install]
-WantedBy=graphical-session.target gamescope-session.target
+WantedBy=${wanted_by}
 EOF
     log_ok "Written: $ASM_SYSTEMD_USER_DIR/arctis-manager.service"
 
@@ -244,7 +304,7 @@ Restart=on-failure
 RestartSec=5
 
 [Install]
-WantedBy=graphical-session.target gamescope-session.target
+WantedBy=${wanted_by}
 EOF
     log_ok "Written: $ASM_SYSTEMD_USER_DIR/arctis-gui.service"
 
@@ -267,14 +327,34 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
-# asm_install_udev_rules [mode]  (fix B2: sudo direct, no distrobox-host-exec)
-# distrobox-host-exec only exists INSIDE a container; these scripts run on host.
-# mode "steamos" → wrap with steamos-readonly disable/enable
+# asm_install_udev_rules [mode]  (B2 + P0-B + P2-C + P2-D)
+# mode "steamos" → wraps write operations with steamos-readonly disable/enable
 # ---------------------------------------------------------------------------
 asm_install_udev_rules() {
     local mode="${1:-}"
     log_step "Installing udev rules on host..."
 
+    # P2-D: guarantee steamos-readonly is re-enabled even if we exit early
+    if [[ "$mode" == "steamos" ]] && command -v steamos-readonly &>/dev/null; then
+        log_warn "SteamOS: disabling read-only filesystem temporarily..."
+        if ! steamos-readonly disable; then
+            log_error "steamos-readonly disable failed — cannot write udev rules."
+            return 1
+        fi
+        trap 'steamos-readonly enable 2>/dev/null || true' RETURN
+        log_info "steamos-readonly disabled (will re-enable on function return)"
+    fi
+
+    # P0-B: install the hot-plug symlink rule (static file, not generated)
+    local hotplug_src="$ASM_SCRIPT_DIR/distrobox/udev-helpers/90-asm-hidraw-symlink.rules"
+    if [[ -f "$hotplug_src" ]]; then
+        sudo install -m644 "$hotplug_src" "$ASM_HIDRAW_SYMLINK_RULES"
+        log_ok "Hot-plug hidraw rule installed: $ASM_HIDRAW_SYMLINK_RULES"
+    else
+        log_warn "Hot-plug rule not found at $hotplug_src — hidraw hot-plug will not work"
+    fi
+
+    # Generated device rules (ASM-specific, per device YAML)
     local rules_tmp
     rules_tmp="$(mktemp /tmp/91-steelseries-arctis.rules.XXXXXX)"
 
@@ -283,36 +363,21 @@ asm_install_udev_rules() {
         "asm-cli udev dump-rules" > "$rules_tmp"
 
     if [[ ! -s "$rules_tmp" ]]; then
-        log_warn "asm-cli udev dump-rules produced empty output — skipping udev install"
+        log_warn "asm-cli udev dump-rules produced empty output — skipping device rules"
         rm -f "$rules_tmp"
-        return 0
+    else
+        log_info "Rules generated: $(wc -l < "$rules_tmp") lines"
+        sudo install -m644 "$rules_tmp" "$ASM_UDEV_RULES_PATH"
+        rm -f "$rules_tmp"
     fi
 
-    log_info "Rules generated: $(wc -l < "$rules_tmp") lines"
-
-    if [[ "$mode" == "steamos" ]] && command -v steamos-readonly &>/dev/null; then
-        log_warn "SteamOS: disabling read-only filesystem temporarily..."
-        steamos-readonly disable || {
-            log_error "steamos-readonly disable failed."
-            log_error "Manual: steamos-readonly disable && sudo install -m644 $rules_tmp $ASM_UDEV_RULES_PATH"
-            rm -f "$rules_tmp"
-            return 1
-        }
-        log_info "steamos-readonly disabled"
-    fi
-
-    log_info "Installing rules to $ASM_UDEV_RULES_PATH (requires sudo)..."
-    sudo install -m644 "$rules_tmp" "$ASM_UDEV_RULES_PATH"
     sudo udevadm control --reload-rules
-    sudo udevadm trigger --subsystem-match=usb
+    # P2-C: trigger only SteelSeries devices, not every USB device on the system
+    sudo udevadm trigger --subsystem-match=usb --attr-match=idVendor=1038 \
+        || sudo udevadm trigger --subsystem-match=hidraw
 
-    if [[ "$mode" == "steamos" ]] && command -v steamos-readonly &>/dev/null; then
-        steamos-readonly enable 2>/dev/null || true
-        log_info "steamos-readonly re-enabled"
-    fi
-
-    rm -f "$rules_tmp"
     log_ok "udev rules installed and reloaded"
+    # trap RETURN re-enables steamos-readonly here if mode==steamos
 }
 
 # ---------------------------------------------------------------------------
@@ -351,6 +416,20 @@ asm_enable_services() {
             log_warn "Could not enable $svc (may need a full desktop session restart)"
         fi
     done
+}
+
+# ---------------------------------------------------------------------------
+# asm_reload_pipewire_host  (P3-B: pick up filter-chain configs written by asm-setup)
+# ---------------------------------------------------------------------------
+asm_reload_pipewire_host() {
+    log_step "Reloading PipeWire on host (picks up new filter-chain configs)..."
+    if systemctl --user is-active pipewire.service &>/dev/null; then
+        systemctl --user restart pipewire pipewire-pulse wireplumber 2>/dev/null \
+            && log_ok "PipeWire restarted" \
+            || log_warn "PipeWire restart partially failed — check manually"
+    else
+        log_warn "pipewire.service not active — skipping restart"
+    fi
 }
 
 # ---------------------------------------------------------------------------

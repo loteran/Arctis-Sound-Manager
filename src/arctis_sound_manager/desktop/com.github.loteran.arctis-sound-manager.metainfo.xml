@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.0.98" date="2026-05-05">
+      <description>
+        <p>Distrobox hot-plug (issue #26) — the headset can now be plugged in *after* the container is created without requiring --reinstall. A new udev rule (90-asm-hidraw-symlink.rules) maintains /run/asm-hidraw/ as a stable directory of symlinks to SteelSeries hidraw nodes; the container mounts this directory with rslave propagation so additions and removals on the host are immediately visible inside. libusb / PyUSB access from container — /dev/bus/usb is now bind-mounted into the container (rslave), giving PyUSB full access to the USB device tree. Previously only /dev/hidraw* was passed, which blocked the libusb backend entirely. Fedora Silverblue/Kinoite variants auto-detected — distrobox-install.sh now correctly routes Bluefin, Aurora, Sericea, Onyx, and Cosmic Atomic to silverblue.sh (Fedora COPR container) instead of incorrectly using the Arch/AUR container.</p>
+      </description>
+    </release>
     <release version="1.0.97" date="2026-05-05">
       <description>
         <p>Sonar Media tab (issue #29) — new Media EQ tab placed between Game and Chat in the Sonar page. The channel runs through the HeSuVi 7.1 surround pipeline (same routing as Game), giving music and video apps the full spatial-audio treatment. The complete 300+ preset library ([Game] tag — games, music genres, movies, podcasts) is available from day one. Boost Volume and Smart Volume cards are wired up identically to Game and Chat. Arctis_Media → sonar-media-eq — the Media virtual sink now routes through its own dedicated EQ filter-chain node instead of bypassing Sonar entirely. Stream restore after filter-chain restart remaps effect_input.sonar-media-eq ↔ Arctis_Media correctly.</p>
@@ -199,11 +204,6 @@
     <release version="1.0.52" date="2026-04-18">
       <description>
         <p>udev rules: clicking "Install rules" in the GUI now triggers a single password prompt instead of three — the file write, udevadm control --reload-rules and udevadm trigger are now bundled into one elevated shell script.</p>
-      </description>
-    </release>
-    <release version="1.0.50" date="2026-04-17">
-      <description>
-        <p>73 new Sonar presets imported from SteelSeries Sonar v1.91 — game titles, Music and Movie categories (all names sanitized, no special characters).</p>
       </description>
     </release>
   </releases>

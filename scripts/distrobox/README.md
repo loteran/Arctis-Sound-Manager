@@ -49,6 +49,18 @@ bash scripts/distrobox-diag.sh
 
 **Privacy note:** the diagnostic report redacts your hostname, device serial numbers, MAC addresses, and audio sink names before writing to disk. Review the output file before attaching it to a GitHub issue.
 
+## Environment variables
+
+| Variable | Default | Effect |
+|---|---|---|
+| `ASM_RESTART_PIPEWIRE` | `1` | Set to `0` to skip PipeWire restart after install |
+
+## Migration note
+
+If you installed a previous version of the distrobox scripts, run with `--reinstall`
+to recreate the container. The new install mounts `/dev/bus/usb` and `/run/asm-hidraw`
+which are required for USB headset access and hot-plug.
+
 ## Files in this directory
 
 | File | Description |
@@ -58,4 +70,5 @@ bash scripts/distrobox-diag.sh
 | `silverblue.sh` | Installer for Silverblue / Kinoite (Fedora 41 container) |
 | `steamos.sh` | Installer for SteamOS / Steam Deck (Arch container) |
 | `uninstall.sh` | Uninstaller |
+| `udev-helpers/90-asm-hidraw-symlink.rules` | udev rule for hot-plug hidraw symlinks |
 | `README.md` | This file |

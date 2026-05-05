@@ -65,9 +65,10 @@ else
     asm_create_container "$ASM_ARCH_IMAGE"
 fi
 
+asm_verify_container_health || exit 1
 asm_install_arch_in_container
 asm_export_binaries
-asm_write_systemd_units
+asm_write_systemd_units desktop
 asm_install_udev_rules ""
 asm_verify_pipewire
 
@@ -75,6 +76,10 @@ if [[ $SKIP_SERVICES -eq 0 ]]; then
     asm_enable_services
 else
     log_info "Skipping service activation (--no-services)"
+fi
+
+if [[ "${ASM_RESTART_PIPEWIRE:-1}" == "1" ]]; then
+    asm_reload_pipewire_host
 fi
 
 asm_print_summary "Bazzite"

@@ -94,17 +94,27 @@ do_uninstall() {
     fi
 
     if [[ $REMOVE_UDEV -eq 1 ]]; then
+        local removed=0
         if [[ -f "$ASM_UDEV_RULES_PATH" ]]; then
             sudo rm -f "$ASM_UDEV_RULES_PATH"
+            removed=1
+            log_info "Removed: $ASM_UDEV_RULES_PATH"
+        fi
+        if [[ -f "$ASM_HIDRAW_SYMLINK_RULES" ]]; then
+            sudo rm -f "$ASM_HIDRAW_SYMLINK_RULES"
+            removed=1
+            log_info "Removed: $ASM_HIDRAW_SYMLINK_RULES"
+        fi
+        if [[ $removed -eq 1 ]]; then
             sudo udevadm control --reload-rules
             log_ok "udev rules removed and reloaded"
         else
-            log_info "No udev rules found at $ASM_UDEV_RULES_PATH"
+            log_info "No udev rules found to remove"
         fi
     else
         echo ""
-        echo "Note: udev rules at $ASM_UDEV_RULES_PATH were NOT removed."
-        echo "Remove manually if desired: bash scripts/distrobox/uninstall.sh --remove-udev"
+        echo "Note: udev rules were NOT removed."
+        echo "Remove manually: bash scripts/distrobox/uninstall.sh --remove-udev"
     fi
 
     log_ok "Uninstall complete"

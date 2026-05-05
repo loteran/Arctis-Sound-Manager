@@ -55,16 +55,26 @@ detect_distro() {
         id_like="$(. /etc/os-release && echo "${ID_LIKE:-}")"
         name="$(. /etc/os-release && echo "${ID:-}${VARIANT_ID:-}${NAME:-}" | tr '[:upper:]' '[:lower:]')"
 
+        # Bazzite is explicit (Arch container — gaming/Steam stack)
         if echo "$name" | grep -q "bazzite"; then
             echo "bazzite"
             return
         fi
-        # ublue-os (Universal Blue) derivatives other than Bazzite → treat as bazzite
-        if echo "$id_like $name" | grep -qiE 'ublue|bazzite'; then
-            echo "bazzite"
+
+        # P1-A: Bluefin and Aurora are Universal Blue Fedora desktops → silverblue
+        if echo "$name" | grep -qiE 'bluefin|aurora'; then
+            echo "silverblue"
             return
         fi
-        if echo "$name" | grep -qiE 'silverblue|kinoite'; then
+
+        # P1-B: other Fedora Atomic variants (Kinoite, Sericea, Onyx, Cosmic…)
+        if echo "$name" | grep -qiE 'silverblue|kinoite|sericea|onyx|cosmic-atomic'; then
+            echo "silverblue"
+            return
+        fi
+
+        # Remaining Universal Blue derivatives (not Bazzite) → silverblue
+        if echo "$id_like $name" | grep -qiE 'ublue'; then
             echo "silverblue"
             return
         fi
