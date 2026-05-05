@@ -1,3 +1,80 @@
+arctis-sound-manager (1.0.97-1) noble; urgency=medium
+
+  * Sonar Media tab (issue #29) — new Media EQ tab placed between Game and
+    Chat in the Sonar page. The channel runs through the HeSuVi 7.1 surround
+    pipeline (same routing as Game), giving music and video apps the full
+    spatial-audio treatment. The complete 300+ preset library ([Game] tag —
+    games, music genres, movies, podcasts) is available from day one. Boost
+    Volume and Smart Volume cards are wired up identically to Game and Chat.
+  * Arctis_Media → sonar-media-eq — the Media virtual sink now routes
+    through its own dedicated EQ filter-chain node instead of bypassing
+    Sonar entirely. Stream restore after filter-chain restart remaps
+    effect_input.sonar-media-eq ↔ Arctis_Media correctly.
+
+ -- loteran <axel.valadon@gmail.com>  Tue, 05 May 2026 00:00:00 +0000
+
+arctis-sound-manager (1.0.96-1) noble; urgency=medium
+
+  * dinit support (Artix Linux / issue #25) — ASM now works end-to-end on
+    init systems other than systemd. asm-setup detects dinit via
+    /proc/1/comm and writes service files to ~/.config/dinit.d/ instead of
+    calling systemctl. All service management calls in the GUI (Sonar EQ
+    restarts, autostart toggle, systray shutdown) are branched: systemd
+    systems are completely unaffected, dinit systems get the correct
+    dinitctl start/stop/enable calls.
+  * _ensure_dinit_boot_target() — on Artix dinit-userservd there is no
+    default user boot service, so dinitctl enable silently failed ("service
+    'boot' has no waits-for.d directory"). asm-setup now creates a minimal
+    ~/.config/dinit.d/boot + boot.d/ when absent (never overwrites an
+    existing one), matching the upstream dinit getting-started guide.
+  * asm-diag-dinit diagnostic script — reports init system, service file
+    presence, running/enabled state (via waits-for.d symlink inspection),
+    filter-chain, virtual sinks, udev rules and D-Bus in a single read-only
+    pass. Useful for triage on any non-systemd distro.
+  * init_system.py — is_dinit_service_enabled(svc) — replaces the
+    non-existent dinitctl is-enabled subcommand (dinit only has
+    is-started/is-failed). Enabled state is determined by walking
+    *.waits-for.d/ and boot.d/ symlinks across all known service
+    directories.
+  * asm-setup crashed on non-systemd init — every service management call
+    was hardwired to systemctl without checking for its presence. On
+    Artix/dinit the setup crashed immediately with FileNotFoundError: [Errno
+    2] No such file or directory: 'systemctl'. A _has_systemctl() guard now
+    skips all systemd-specific steps cleanly on non-systemd systems.
+  * Autostart toggle broken on dinit — the GUI checked autostart state using
+    dinitctl is-enabled which doesn't exist as a subcommand. The toggle
+    always showed "disabled". Now uses is_dinit_service_enabled() (symlink
+    inspection) for correct detection, and dinitctl enable/disable for
+    mutation.
+
+ -- loteran <axel.valadon@gmail.com>  Tue, 05 May 2026 00:00:00 +0000
+
+arctis-sound-manager (1.0.95-1) noble; urgency=medium
+
+  * OLED horizontal marquee for EQ preset name — when the EQ preset name
+    overflows the 128 px display width, the text now scrolls left
+    pixel-by-pixel. It pauses 2 s at the start (readability), scrolls to the
+    end, pauses 2 s, then snaps back. Speed is controlled by the new Scroll
+    Speed (Horizontal) slider (0 = disabled, 1–5 = slow to fast).
+  * OLED horizontal marquee for Profile name — same marquee behaviour
+    applied to the active profile name line.
+  * DAC tab — Scroll Speed (Horizontal) slider — new oled_eq_scroll_speed
+    setting controls the horizontal marquee speed for both EQ preset and
+    profile name lines. The existing scroll slider is renamed to Scroll
+    Speed (Vertical).
+  * OLED brightness reset by headset firmware — when oled_brightness was set
+    to a value other than the headset default and screen_timeout = 0, the
+    headset firmware silently overrode the brightness back to its own value
+    every few seconds. ASM now re-asserts the configured brightness level
+    every 5 s in the refresh loop (only when the screen is active), keeping
+    the setting stable without interfering with the screen-timeout
+    dim-to-black behaviour.
+  * DAC tab slider spacing — the default QHBoxLayout content margins caused
+    excessive vertical padding between slider rows. Margins are now
+    explicitly set to 4 px top/bottom, halving the visual gap.
+
+ -- loteran <axel.valadon@gmail.com>  Mon, 04 May 2026 00:00:00 +0000
+
 arctis-sound-manager (1.0.94-1) noble; urgency=medium
 
   * Arctis 7 2019 (0x12ad) failed to initialize — no battery, no chatmix

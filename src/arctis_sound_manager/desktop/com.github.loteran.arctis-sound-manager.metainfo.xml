@@ -56,6 +56,21 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.0.97" date="2026-05-05">
+      <description>
+        <p>Sonar Media tab (issue #29) — new Media EQ tab placed between Game and Chat in the Sonar page. The channel runs through the HeSuVi 7.1 surround pipeline (same routing as Game), giving music and video apps the full spatial-audio treatment. The complete 300+ preset library ([Game] tag — games, music genres, movies, podcasts) is available from day one. Boost Volume and Smart Volume cards are wired up identically to Game and Chat. Arctis_Media → sonar-media-eq — the Media virtual sink now routes through its own dedicated EQ filter-chain node instead of bypassing Sonar entirely. Stream restore after filter-chain restart remaps effect_input.sonar-media-eq ↔ Arctis_Media correctly.</p>
+      </description>
+    </release>
+    <release version="1.0.96" date="2026-05-05">
+      <description>
+        <p>dinit support (Artix Linux / issue #25) — ASM now works end-to-end on init systems other than systemd. asm-setup detects dinit via /proc/1/comm and writes service files to ~/.config/dinit.d/ instead of calling systemctl. All service management calls in the GUI (Sonar EQ restarts, autostart toggle, systray shutdown) are branched: systemd systems are completely unaffected, dinit systems get the correct dinitctl start/stop/enable calls. _ensure_dinit_boot_target() — on Artix dinit-userservd there is no default user boot service, so dinitctl enable silently failed ("service 'boot' has no waits-for.d directory"). asm-setup now creates a minimal ~/.config/dinit.d/boot + boot.d/ when absent (never overwrites an existing one), matching the upstream dinit getting-started guide. asm-diag-dinit diagnostic script — reports init system, service file presence, running/enabled state (via waits-for.d symlink inspection), filter-chain, virtual sinks, udev rules and D-Bus in a single read-only pass. Useful for triage on any non-systemd distro.</p>
+      </description>
+    </release>
+    <release version="1.0.95" date="2026-05-04">
+      <description>
+        <p>OLED horizontal marquee for EQ preset name — when the EQ preset name overflows the 128 px display width, the text now scrolls left pixel-by-pixel. It pauses 2 s at the start (readability), scrolls to the end, pauses 2 s, then snaps back. Speed is controlled by the new Scroll Speed (Horizontal) slider (0 = disabled, 1–5 = slow to fast). OLED horizontal marquee for Profile name — same marquee behaviour applied to the active profile name line. DAC tab — Scroll Speed (Horizontal) slider — new oled_eq_scroll_speed setting controls the horizontal marquee speed for both EQ preset and profile name lines. The existing scroll slider is renamed to Scroll Speed (Vertical).</p>
+      </description>
+    </release>
     <release version="1.0.94" date="2026-05-04">
       <description>
         <p>Arctis 7 2019 (0x12ad) failed to initialize — no battery, no chatmix (issue #28) — arctis_7.yaml was missing command_transport: ctrl_output, the field that tells the HID layer to use SET_REPORT on the control endpoint. All four product IDs sharing that YAML (0x1260, 0x12ad, 0x1252, 0x1280) were affected. Adding ctrl_output aligns the Arctis 7 family with every other device YAML in the codebase (Arctis 7+, Arctis 9, Nova 3/5/7). Virtual sinks (Arctis_Game / Arctis_Chat / Arctis_Media) routed to system default instead of Sonar EQ nodes (issue #28) — the bundled 10-arctis-virtual-sinks.conf installed by install.sh / asm-setup had no node.target in its playback.props blocks. PipeWire therefore routed all three loopback outputs to the default sink, bypassing the Sonar EQ filter-chain entirely and breaking chatmix separation. Each sink now points to its Sonar EQ input node (effect_input.sonar-game-eq / effect_input.sonar-chat-eq). Virtual Surround sink silent on fresh install — can't start graph: No such file or directory (issue #28) — sink-virtual-surround-7.1-hesuvi.conf referenced the HRIR WAV as the relative path hrir_hesuvi/hrir.wav. PipeWire instantiates filter-chains without a stable working directory, so the file was never found. The template now uses the placeholder ${HRIR_DIR}, which install.sh, setup-surround.sh, and asm-setup substitute with the absolute path ~/.local/share/pipewire/hrir_hesuvi at deploy time — the same directory the installer downloads the WAV to.</p>
@@ -189,21 +204,6 @@
     <release version="1.0.50" date="2026-04-17">
       <description>
         <p>73 new Sonar presets imported from SteelSeries Sonar v1.91 — game titles, Music and Movie categories (all names sanitized, no special characters).</p>
-      </description>
-    </release>
-    <release version="1.0.49" date="2026-04-17">
-      <description>
-        <p>2 new Sonar presets: Podcast [Game], Podcast [Chat] — imported from SteelSeries Sonar v1.91.</p>
-      </description>
-    </release>
-    <release version="1.0.48" date="2026-04-17">
-      <description>
-        <p>Anonymous telemetry (opt-in): on first launch, ASM asks whether you want to share your Linux distribution, headset model and ASM version once per day. No personal data or IP address is stored. Can be toggled at any time in Settings. Community stats dashboard: aggregated usage data is publicly visible at loteran.github.io/Arctis-Sound-Manager/stats. Auto-updated README: the Supported Devices and Tested Distributions tables in the README are now updated automatically every week from telemetry data. Devices with 5+ user reports are promoted from ⚠️ to ✅ automatically.</p>
-      </description>
-    </release>
-    <release version="1.0.42" date="2026-04-16">
-      <description>
-        <p>Dial interface auto-detection: the daemon now probes USB interfaces at startup to find the dial interface automatically, with a per-device cache to avoid re-probing on reconnect. Arctis Nova 7: moved PID 0x227a to the correct nova_7_discrete_battery device definition. CI: fixed aur-update and copr-build sync jobs rejecting push to develop when the branch advanced since checkout — now checkout develop directly before applying changes.</p>
       </description>
     </release>
   </releases>
