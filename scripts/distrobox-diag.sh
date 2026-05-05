@@ -84,6 +84,23 @@ report_cmd() {
     } >> "$REPORT_FILE"
 }
 
+# Like report_cmd but redacts serials, MACs, IPs, and hostnames from output
+report_cmd_redacted() {
+    local header="$1"
+    shift
+    {
+        printf "\n--- %s ---\n" "$header"
+        "$@" 2>&1 | sed \
+            -e 's/\b([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b/<mac-redacted>/g' \
+            -e 's/\bserial[= ][^ ]*/serial=<redacted>/gi' \
+            -e 's/\bSN[= ][^ ]*/SN=<redacted>/gi' \
+            -e 's/\b([0-9]{1,3}\.){3}[0-9]{1,3}\b/<ip-redacted>/g' \
+            -e "s/$(uname -n | sed 's/[.[\*^$()+?{}|]/\\&/g')/<hostname-redacted>/g" \
+            || true
+        printf "\n"
+    } >> "$REPORT_FILE"
+}
+
 # ---------------------------------------------------------------------------
 # Begin report file
 # ---------------------------------------------------------------------------
@@ -91,7 +108,9 @@ report_cmd() {
     printf "ASM Distrobox Diagnostic Report\n"
     printf "Generated: %s\n" "$(date)"
     printf "Container: %s\n" "$CONTAINER_NAME"
-    printf "Host: %s\n" "$(uname -n)"
+    HOST_HASH="$(uname -n | sha256sum | cut -c1-12)"
+    printf "Host (hashed): %s\n" "$HOST_HASH"
+    printf "Kernel: %s\n" "$(uname -r)"
     printf "\n"
 } > "$REPORT_FILE"
 
@@ -235,17 +254,17 @@ report_cmd "systemctl --user status arctis-manager.service (last 50 lines)" \
 report_cmd "systemctl --user status arctis-gui.service (last 50 lines)" \
     systemctl --user status arctis-gui.service --no-pager -l --lines=50
 
-report_cmd "journalctl --user arctis-manager.service (last 1 hour)" \
+report_cmd_redacted "journalctl --user arctis-manager.service (last 1 hour)" \
     journalctl --user -u arctis-manager.service --since "1 hour ago" --no-pager
 
-report_cmd "journalctl --user arctis-gui.service (last 1 hour)" \
+report_cmd_redacted "journalctl --user arctis-gui.service (last 1 hour)" \
     journalctl --user -u arctis-gui.service --since "1 hour ago" --no-pager
 
-report_cmd "distrobox list" \
-    distrobox list
+report_cmd "distrobox list (ASM container only)" \
+    bash -c "if distrobox list 2>/dev/null | grep -q \"$CONTAINER_NAME\"; then printf '%s: present\n' \"$CONTAINER_NAME\"; else printf '%s: absent\n' \"$CONTAINER_NAME\"; fi"
 
-report_cmd "pactl list short sinks" \
-    pactl list short sinks
+report_cmd "pactl list short sinks (ASM sinks only, others redacted)" \
+    bash -c "pactl list short sinks 2>/dev/null | awk '{ if (\$2 ~ /(asm|Game|Chat|Media|Micro)/i) { print; next } printf \"%s\t<redacted>\t%s\t%s\t%s\n\", \$1, \$3, \$4, \$5 }' || true"
 
 report_cmd "ls -la /dev/hidraw*" \
     bash -c 'ls -la /dev/hidraw* 2>/dev/null || echo "(no hidraw devices)"'
@@ -256,11 +275,11 @@ report_cmd "udev rules (first 20 lines)" \
 report_cmd "asm-cli version (inside container)" \
     bash -c "distrobox enter \"$CONTAINER_NAME\" -- bash -c 'asm-cli version 2>/dev/null' 2>/dev/null || echo '(unavailable)'"
 
-report_cmd "journalctl inside container — arctis-manager (last 1 hour)" \
+report_cmd_redacted "journalctl inside container — arctis-manager (last 1 hour)" \
     bash -c "distrobox enter \"$CONTAINER_NAME\" -- bash -c 'journalctl --user -u arctis-manager --since \"1 hour ago\" --no-pager 2>/dev/null' 2>/dev/null || echo '(unavailable)'"
 
-report_cmd "uname -a" \
-    uname -a
+report_cmd "uname -r (kernel version)" \
+    uname -r
 
 report_cmd "OS release" \
     bash -c 'cat /etc/os-release 2>/dev/null || echo "(no /etc/os-release)"'
@@ -277,8 +296,9 @@ if [ "$CHECKS_FAILED" -eq 0 ]; then
 else
     printf "%s%s✗ %d check(s) failed.%s Report saved to %s\n" \
         "$RED" "$BOLD" "$CHECKS_FAILED" "$RESET" "$REPORT_FILE"
-    printf "   Please attach it to your GitHub issue:\n"
-    printf "   https://github.com/loteran/Arctis-Sound-Manager/issues/new\n"
+    printf "   IMPORTANT: review the report before sharing — it may contain device names or paths.\n"
+    printf "   Open it with:  less %s\n" "$REPORT_FILE"
+    printf "   Then file at:  https://github.com/loteran/Arctis-Sound-Manager/issues/new\n"
     log_report ""
     log_report "VERDICT: $CHECKS_FAILED of $CHECKS_TOTAL check(s) failed."
 fi

@@ -1,0 +1,23 @@
+# Arctis Sound Manager — hot-plug hidraw symlink rule
+#
+# Maintains /run/asm-hidraw/ as a stable directory of symlinks pointing to
+# /dev/hidrawN nodes belonging to SteelSeries Arctis headsets (vendor 1038).
+#
+# The Distrobox container mounts /run/asm-hidraw with rslave propagation, so
+# symlinks appear and disappear inside the container as the headset is plugged
+# or unplugged — without recreating the container.
+#
+# SteelSeries vendor ID: 1038 (0x0416)
+
+ACTION!="add|change|remove", GOTO="asm_hidraw_end"
+SUBSYSTEM!="hidraw",          GOTO="asm_hidraw_end"
+
+# On add/change: create symlink in /run/asm-hidraw/
+ACTION=="add|change", ATTRS{idVendor}=="1038", \
+    RUN+="/bin/sh -c 'mkdir -p /run/asm-hidraw && ln -sf /dev/$kernel /run/asm-hidraw/$kernel'"
+
+# On remove: clean up the symlink
+ACTION=="remove", SUBSYSTEM=="hidraw", \
+    RUN+="/bin/sh -c 'rm -f /run/asm-hidraw/$kernel'"
+
+LABEL="asm_hidraw_end"

@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.98] - 05 May 2026
+
+### Added
+
+- **Distrobox hot-plug (issue #26)** — the headset can now be plugged in *after* the container is created without requiring `--reinstall`. A new udev rule (`90-asm-hidraw-symlink.rules`) maintains `/run/asm-hidraw/` as a stable directory of symlinks to SteelSeries hidraw nodes; the container mounts this directory with `rslave` propagation so additions and removals on the host are immediately visible inside.
+- **libusb / PyUSB access from container** — `/dev/bus/usb` is now bind-mounted into the container (`rslave`), giving PyUSB full access to the USB device tree. Previously only `/dev/hidraw*` was passed, which blocked the libusb backend entirely.
+- **Fedora Silverblue/Kinoite variants auto-detected** — `distrobox-install.sh` now correctly routes Bluefin, Aurora, Sericea, Onyx, and Cosmic Atomic to `silverblue.sh` (Fedora COPR container) instead of incorrectly using the Arch/AUR container.
+- **Container health check** — a 30-second readiness probe runs after container creation; if the container fails to respond, the script aborts with a clear error and recovery instructions before attempting the install.
+- **PipeWire management socket mounted** — `pipewire-0-manager` is now forwarded into the container alongside `pipewire-0` and `pulse/`, enabling `pw-cli` management operations from inside the container.
+- **PipeWire host restart after install** — the installer now restarts `pipewire`, `pipewire-pulse`, and `wireplumber` on the host so that filter-chain configs written by `asm-setup` are picked up immediately. Can be suppressed with `ASM_RESTART_PIPEWIRE=0`.
+
+### Fixed
+
+- **`pacman-key --init` idempotent** — the keyring initialisation now checks for an existing `pubring.gpg` before running; re-running the installer no longer risks corrupting a healthy keyring on SteamOS or Arch containers.
+- **`gamescope-session.target` conditional** — systemd units no longer unconditionally declare `WantedBy=gamescope-session.target` on desktop distros where that target does not exist. Bazzite and Silverblue get `graphical-session.target` only; SteamOS/Steam Deck gets both.
+- **`udevadm trigger` scope narrowed** — the post-install trigger now targets only devices with `idVendor=1038` (SteelSeries) instead of re-triggering every USB device on the system.
+- **`steamos-readonly` always re-enabled** — a `trap RETURN` guarantees `steamos-readonly enable` is called on exit from `asm_install_udev_rules`, even if an intermediate command fails, preventing the filesystem from being left in read-write mode.
+- **paru build directory cleaned on failure** — the temporary directory used to clone and build `paru-bin` is now removed via `trap EXIT` even when `makepkg` fails.
+- **Uninstall removes hot-plug udev rule** — `uninstall.sh --remove-udev` now also deletes `90-asm-hidraw-symlink.rules` in addition to the device-specific rules file.
+
 ## [1.0.97] - 05 May 2026
 
 ### Added
