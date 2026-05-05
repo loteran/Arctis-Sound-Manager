@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.97] - 05 May 2026
+
+### Added
+
+- **Sonar Media tab (issue #29)** — new **Media** EQ tab placed between Game and Chat in the Sonar page. The channel runs through the HeSuVi 7.1 surround pipeline (same routing as Game), giving music and video apps the full spatial-audio treatment. The complete 300+ preset library (`[Game]` tag — games, music genres, movies, podcasts) is available from day one. Boost Volume and Smart Volume cards are wired up identically to Game and Chat.
+- **`Arctis_Media` → `sonar-media-eq`** — the Media virtual sink now routes through its own dedicated EQ filter-chain node instead of bypassing Sonar entirely. Stream restore after filter-chain restart remaps `effect_input.sonar-media-eq ↔ Arctis_Media` correctly.
+
 ## [1.0.96] - 05 May 2026
 
 ### Added
