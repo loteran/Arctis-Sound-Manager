@@ -84,6 +84,18 @@ install -Dm644 systemd/arctis-video-router.service \
 install -Dm644 systemd/arctis-gui.service \
     "${PKGDIR}/usr/lib/systemd/user/arctis-gui.service"
 
+# ── dinit user service templates ────────────────────────────
+install -Dm644 dinit/arctis-manager \
+    "${PKGDIR}/usr/share/arctis-sound-manager/dinit/arctis-manager"
+install -Dm644 dinit/arctis-video-router \
+    "${PKGDIR}/usr/share/arctis-sound-manager/dinit/arctis-video-router"
+install -Dm644 dinit/arctis-gui \
+    "${PKGDIR}/usr/share/arctis-sound-manager/dinit/arctis-gui"
+install -Dm644 dinit/pipewire-filter-chain \
+    "${PKGDIR}/usr/share/arctis-sound-manager/dinit/pipewire-filter-chain"
+install -Dm755 scripts/asm-diag-dinit.py \
+    "${PKGDIR}/usr/bin/asm-diag-dinit"
+
 # ── Desktop entry ───────────────────────────────────────────
 install -Dm644 src/arctis_sound_manager/desktop/ArctisManager.desktop \
     "${PKGDIR}/usr/share/applications/ArctisManager.desktop"

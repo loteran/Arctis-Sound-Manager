@@ -17,6 +17,7 @@ DBUS_CONFIG_OBJECT_PATH = f'{DBUS_OBJECT_BASE_PATH}/Config'
 # Systemd
 SYSTEMD_SERVICE_NAME = 'arctis-manager.service'
 HOME_SYSTEMD_SERVICE_FOLDER = Path.home() / '.config' / 'systemd' / 'user'
+HOME_DINIT_SERVICE_FOLDER = Path.home() / '.config' / 'dinit.d'
 # ./Systemd
 
 PULSE_MEDIA_NODE_NAME = 'Arctis_Game'

@@ -46,6 +46,9 @@ _GUI_SERVICE = "arctis-gui.service"
 
 
 def _autostart_enabled() -> bool:
+    from arctis_sound_manager.init_system import detect_init, is_dinit_service_enabled
+    if detect_init() == "dinit":
+        return is_dinit_service_enabled("arctis-manager")
     result = subprocess.run(
         ["systemctl", "--user", "is-enabled", _SERVICE],
         capture_output=True, text=True,
@@ -85,6 +88,12 @@ def _ensure_gui_service() -> Path | None:
 
 
 def _set_autostart(enabled: bool) -> None:
+    from arctis_sound_manager.init_system import detect_init
+    if detect_init() == "dinit":
+        verb = "enable" if enabled else "disable"
+        subprocess.run(["dinitctl", verb, "arctis-manager"], check=False)
+        subprocess.run(["dinitctl", verb, "arctis-gui"], check=False)
+        return
     action = "enable" if enabled else "disable"
     subprocess.run(
         ["systemctl", "--user", action, _SERVICE],
@@ -543,7 +552,11 @@ class DevicePage(QWidget):
             (Path.home() / ".config" / "arctis_manager" / ".setup_done").unlink(missing_ok=True)
             from arctis_sound_manager.gui.first_run_dialog import FirstRunDialog
             FirstRunDialog(self).exec()
-            subprocess.Popen(["systemctl", "--user", "restart", "arctis-manager"])
+            from arctis_sound_manager.init_system import detect_init
+            if detect_init() == "dinit":
+                subprocess.Popen(["dinitctl", "restart", "arctis-manager"])
+            else:
+                subprocess.Popen(["systemctl", "--user", "restart", "arctis-manager"])
             os.execv(sys.executable, [sys.executable, "-m", "arctis_sound_manager.scripts.gui"])
         else:
             self._update_status_lbl.setStyleSheet(

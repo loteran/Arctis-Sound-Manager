@@ -1,0 +1,5 @@
+type = process
+command = /usr/bin/asm-gui --systray
+restart = false
+depends-on = arctis-manager
+logfile = /tmp/arctis-gui.log

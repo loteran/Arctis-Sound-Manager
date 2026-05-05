@@ -17,7 +17,8 @@ def is_systemd_unit_enabled() -> bool:
     return False
 
 def ensure_systemd_unit(enable: bool = False) -> None:
-    if not shutil.which('systemctl'):
+    from arctis_sound_manager.init_system import detect_init
+    if detect_init() != "systemd" and not shutil.which("systemctl"):
         return
     path = HOME_SYSTEMD_SERVICE_FOLDER / SYSTEMD_SERVICE_NAME
     path.parent.mkdir(parents=True, exist_ok=True)

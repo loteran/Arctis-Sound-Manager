@@ -826,13 +826,17 @@ def apply_sonar_channel(
     WirePlumber deadlock caused by the separate filter-chain service.
     """
     import subprocess
+    from arctis_sound_manager.init_system import detect_init
 
     if channel == "micro":
         generate_sonar_micro_conf(bands, basses_db, voix_db, aigus_db)
     else:
         generate_sonar_eq_conf(channel, bands, basses_db, voix_db, aigus_db)
 
-    subprocess.run(["systemctl", "--user", "restart", "pipewire"], check=False, timeout=15)
+    if detect_init() == "dinit":
+        subprocess.run(["dinitctl", "restart", "pipewire"], check=False, timeout=15)
+    else:
+        subprocess.run(["systemctl", "--user", "restart", "pipewire"], check=False, timeout=15)
 
 
 def check_and_fix_stale_configs() -> tuple[bool, bool]:

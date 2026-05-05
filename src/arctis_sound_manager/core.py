@@ -328,17 +328,28 @@ class CoreEngine:
             fixed, needs_pw_restart = check_and_fix_stale_configs()
             if fixed:
                 import subprocess
+                from arctis_sound_manager.init_system import detect_init
                 if needs_pw_restart:
                     self.logger.info("Stale PipeWire configs migrated — restarting PipeWire")
-                    subprocess.run(
-                        ["systemctl", "--user", "restart",
-                         "pipewire", "wireplumber", "pipewire-pulse", "filter-chain"],
-                        check=False, timeout=20,
-                    )
+                    if detect_init() == "dinit":
+                        for svc in ["pipewire", "wireplumber", "pipewire-pulse"]:
+                            subprocess.run(["dinitctl", "restart", svc], check=False)
+                        subprocess.run(["dinitctl", "start", "pipewire-filter-chain"],
+                                       check=False, timeout=20)
+                    else:
+                        subprocess.run(
+                            ["systemctl", "--user", "restart",
+                             "pipewire", "wireplumber", "pipewire-pulse", "filter-chain"],
+                            check=False, timeout=20,
+                        )
                 else:
                     self.logger.info("Stale Sonar configs fixed — restarting filter-chain")
-                    subprocess.run(["systemctl", "--user", "restart", "filter-chain"],
-                                   check=False, timeout=15)
+                    if detect_init() == "dinit":
+                        subprocess.run(["dinitctl", "start", "pipewire-filter-chain"],
+                                       check=False, timeout=15)
+                    else:
+                        subprocess.run(["systemctl", "--user", "restart", "filter-chain"],
+                                       check=False, timeout=15)
         except Exception as exc:
             # Never let a config-repair failure block device init.
             self.logger.warning(f"check_and_fix_stale_configs failed: {exc!r}")

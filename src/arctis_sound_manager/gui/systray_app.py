@@ -128,10 +128,14 @@ class QSystrayApp(QBaseDesktopApp):
         self.logger.info('Starting Systray app.')
         self.tray_icon.show()
 
-        subprocess.run(
-            ["systemctl", "--user", "start", "filter-chain"],
-            capture_output=True,
-        )
+        from arctis_sound_manager.init_system import detect_init
+        if detect_init() == "dinit":
+            subprocess.run(["dinitctl", "start", "pipewire-filter-chain"], check=False)
+        else:
+            subprocess.run(
+                ["systemctl", "--user", "start", "filter-chain"],
+                capture_output=True,
+            )
 
         # Save the current default sink, then claim it for ASM so apps that
         # open after ASM starts route to Arctis_Game instead of EasyEffects
@@ -247,26 +251,40 @@ class QSystrayApp(QBaseDesktopApp):
 
         # Stop all ASM services and schedule a pipewire restart
         # so the system behaves as if ASM was not installed.
-        try:
-            subprocess.run(
-                ["systemctl", "--user", "stop",
-                 "arctis-manager.service", "arctis-video-router.service", "filter-chain"],
-                capture_output=True, timeout=10,
-            )
-        except subprocess.TimeoutExpired:
-            self.logger.warning("systemctl stop timed out — killing services")
-            subprocess.run(
-                ["systemctl", "--user", "kill",
-                 "arctis-manager.service", "arctis-video-router.service", "filter-chain"],
-                capture_output=True,
-            )
+        from arctis_sound_manager.init_system import detect_init
+        if detect_init() == "dinit":
+            for svc in ["arctis-manager", "arctis-video-router", "pipewire-filter-chain"]:
+                subprocess.run(["dinitctl", "stop", svc], check=False)
+        else:
+            try:
+                subprocess.run(
+                    ["systemctl", "--user", "stop",
+                     "arctis-manager.service", "arctis-video-router.service", "filter-chain"],
+                    capture_output=True, timeout=10,
+                )
+            except subprocess.TimeoutExpired:
+                self.logger.warning("systemctl stop timed out — killing services")
+                subprocess.run(
+                    ["systemctl", "--user", "kill",
+                     "arctis-manager.service", "arctis-video-router.service", "filter-chain"],
+                    capture_output=True,
+                )
         # Deferred restart: the app exits first, then pipewire restarts
         # without ASM configs (filter-chain is already stopped).
-        subprocess.Popen(
-            ["bash", "-c",
-             "sleep 1 && systemctl --user restart pipewire wireplumber pipewire-pulse"],
-            start_new_session=True,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
+        if detect_init() == "dinit":
+            subprocess.Popen(["bash", "-c",
+                "sleep 1 && dinitctl restart pipewire "
+                "&& dinitctl restart wireplumber "
+                "&& dinitctl restart pipewire-pulse"],
+                start_new_session=True,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        else:
+            subprocess.Popen(
+                ["bash", "-c",
+                 "sleep 1 && systemctl --user restart pipewire wireplumber pipewire-pulse"],
+                start_new_session=True,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
 
         self.app.quit()
