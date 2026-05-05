@@ -13,7 +13,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from arctis_sound_manager.init_system import detect_init, HOME_DINIT_SERVICE_FOLDER, filter_chain_conf_path, is_dinit_service_enabled
+from arctis_sound_manager.init_system import (
+    detect_init, HOME_DINIT_SERVICE_FOLDER, filter_chain_conf_path,
+    is_dinit_service_enabled, write_xdg_autostart, remove_xdg_autostart,
+)
 
 _SHARE_DIR = Path("/usr/share/arctis-sound-manager")
 _PW_CONF_DIR = Path.home() / ".config" / "pipewire" / "pipewire.conf.d"
@@ -48,14 +51,6 @@ depends-on = arctis-manager
 logfile = /tmp/arctis-video-router.log
 """
 
-_DINIT_ARCTIS_GUI = """\
-type = process
-command = {asm_gui} --systray
-restart = false
-depends-on = arctis-manager
-logfile = /tmp/arctis-gui.log
-"""
-
 # Written to ~/.config/dinit.d/boot only when no boot service exists at all.
 # Without a `boot` service that has `waits-for.d`, `dinitctl enable` fails with
 # "service 'boot' has no waits-for.d directory specified" and services won't
@@ -88,14 +83,11 @@ def _setup_dinit_services() -> None:
 
     asm_daemon = shutil.which("asm-daemon") or "/usr/bin/asm-daemon"
     asm_router = shutil.which("asm-router") or "/usr/bin/asm-router"
-    asm_gui = shutil.which("asm-gui") or "/usr/bin/asm-gui"
 
     (HOME_DINIT_SERVICE_FOLDER / "arctis-manager").write_text(
         _DINIT_ARCTIS_MANAGER.format(asm_daemon=asm_daemon))
     (HOME_DINIT_SERVICE_FOLDER / "arctis-video-router").write_text(
         _DINIT_ARCTIS_VIDEO_ROUTER.format(asm_router=asm_router))
-    (HOME_DINIT_SERVICE_FOLDER / "arctis-gui").write_text(
-        _DINIT_ARCTIS_GUI.format(asm_gui=asm_gui))
 
     # filter-chain uses absolute path to filter-chain.conf (no WorkingDirectory in dinit)
     fc_conf = filter_chain_conf_path()
@@ -104,6 +96,14 @@ def _setup_dinit_services() -> None:
 
     print("  [dinit] service files written to", HOME_DINIT_SERVICE_FOLDER)
 
+    # Remove stale arctis-gui dinit service — replaced by XDG autostart
+    old_gui_svc = HOME_DINIT_SERVICE_FOLDER / "arctis-gui"
+    if old_gui_svc.exists():
+        subprocess.run(["dinitctl", "disable", "arctis-gui"], check=False, capture_output=True)
+        subprocess.run(["dinitctl", "stop", "arctis-gui"], check=False, capture_output=True)
+        old_gui_svc.unlink()
+        print("  [dinit] removed stale arctis-gui service (replaced by XDG autostart)")
+
     # Ensure a user `boot` service + boot.d/ exist so `dinitctl enable` can succeed
     _ensure_dinit_boot_target()
 
@@ -111,24 +111,30 @@ def _setup_dinit_services() -> None:
     subprocess.run(["dinitctl", "restart", "pipewire"], check=False,
                    capture_output=True)
 
+    # Guard: check if arctis-manager is already running to avoid starting a second daemon
+    am_status = subprocess.run(
+        ["dinitctl", "status", "arctis-manager"],
+        capture_output=True, text=True
+    )
+    am_already_running = am_status.returncode == 0 and "started" in am_status.stdout.lower()
+
     # Enable and start each service (use 'start' not 'restart' — idempotent if not yet running)
     for svc in ["arctis-manager", "arctis-video-router", "pipewire-filter-chain"]:
         en = subprocess.run(["dinitctl", "enable", svc], check=False,
                             capture_output=True, text=True)
         if en.returncode != 0:
             print(f"  [dinit] {svc}: enable failed ({en.stderr.strip() or 'unknown error'})")
+        if svc == "arctis-manager" and am_already_running:
+            print("  [dinit] arctis-manager: already running — skipping start")
+            continue
         st = subprocess.run(["dinitctl", "start", svc], check=False,
                             capture_output=True, text=True)
         status = "ok" if st.returncode == 0 else f"start failed ({st.stderr.strip() or 'unknown error'})"
         print(f"  [dinit] {svc}: {status}")
 
-    # Enable arctis-gui but do NOT start it (same as systemd path: enable only)
-    en_gui = subprocess.run(["dinitctl", "enable", "arctis-gui"], check=False,
-                            capture_output=True, text=True)
-    if en_gui.returncode == 0:
-        print("  [dinit] arctis-gui: enabled (will start on next login)")
-    else:
-        print(f"  [dinit] arctis-gui: enable failed ({en_gui.stderr.strip() or 'unknown error'})")
+    # GUI: use XDG autostart instead of a dinit service (dinit has no $DISPLAY/$WAYLAND_DISPLAY)
+    write_xdg_autostart()
+    print("  [dinit] arctis-gui: XDG autostart entry written (will launch on next login)")
 
 
 # Minimal filter-chain.service for distros that don't ship one (Fedora, Ubuntu…)
