@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.96] - 05 May 2026
+
+### Added
+
+- **dinit support (Artix Linux / issue #25)** — ASM now works end-to-end on init systems other than systemd. `asm-setup` detects dinit via `/proc/1/comm` and writes service files to `~/.config/dinit.d/` instead of calling `systemctl`. All service management calls in the GUI (Sonar EQ restarts, autostart toggle, systray shutdown) are branched: systemd systems are completely unaffected, dinit systems get the correct `dinitctl start/stop/enable` calls.
+- **`_ensure_dinit_boot_target()`** — on Artix dinit-userservd there is no default user `boot` service, so `dinitctl enable` silently failed ("service 'boot' has no waits-for.d directory"). `asm-setup` now creates a minimal `~/.config/dinit.d/boot` + `boot.d/` when absent (never overwrites an existing one), matching the upstream dinit getting-started guide.
+- **`asm-diag-dinit` diagnostic script** — reports init system, service file presence, running/enabled state (via `waits-for.d` symlink inspection), filter-chain, virtual sinks, udev rules and D-Bus in a single read-only pass. Useful for triage on any non-systemd distro.
+- **`init_system.py` — `is_dinit_service_enabled(svc)`** — replaces the non-existent `dinitctl is-enabled` subcommand (dinit only has `is-started`/`is-failed`). Enabled state is determined by walking `*.waits-for.d/` and `boot.d/` symlinks across all known service directories.
+
+### Fixed
+
+- **`asm-setup` crashed on non-systemd init** — every service management call was hardwired to `systemctl` without checking for its presence. On Artix/dinit the setup crashed immediately with `FileNotFoundError: [Errno 2] No such file or directory: 'systemctl'`. A `_has_systemctl()` guard now skips all systemd-specific steps cleanly on non-systemd systems.
+- **Autostart toggle broken on dinit** — the GUI checked autostart state using `dinitctl is-enabled` which doesn't exist as a subcommand. The toggle always showed "disabled". Now uses `is_dinit_service_enabled()` (symlink inspection) for correct detection, and `dinitctl enable/disable` for mutation.
+
 ## [1.0.95] - 04 May 2026
 
 ### Added

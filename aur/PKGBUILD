@@ -74,6 +74,20 @@ package() {
     install -Dm644 systemd/arctis-gui.service \
         "$pkgdir/usr/lib/systemd/user/arctis-gui.service"
 
+    # dinit user service templates (Artix Linux / dinit init systems)
+    install -Dm644 dinit/arctis-manager \
+        "$pkgdir/usr/share/$pkgname/dinit/arctis-manager"
+    install -Dm644 dinit/arctis-video-router \
+        "$pkgdir/usr/share/$pkgname/dinit/arctis-video-router"
+    install -Dm644 dinit/arctis-gui \
+        "$pkgdir/usr/share/$pkgname/dinit/arctis-gui"
+    install -Dm644 dinit/pipewire-filter-chain \
+        "$pkgdir/usr/share/$pkgname/dinit/pipewire-filter-chain"
+
+    # dinit diagnostic script
+    install -Dm755 scripts/asm-diag-dinit.py \
+        "$pkgdir/usr/bin/asm-diag-dinit"
+
     # PipeWire configs (shared, copied to user dir on first run by asm-setup)
     install -Dm644 scripts/pipewire/10-arctis-virtual-sinks.conf \
         "$pkgdir/usr/share/$pkgname/pipewire/10-arctis-virtual-sinks.conf"

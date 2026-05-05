@@ -226,6 +226,9 @@ def _hrir_present() -> bool:
 def _filter_chain_unit_available() -> bool:
     """Either the system ships filter-chain.service (Arch via pipewire-audio)
     or ASM bundled its fallback to `~/.config/systemd/user/`."""
+    from arctis_sound_manager.init_system import detect_init, HOME_DINIT_SERVICE_FOLDER
+    if detect_init() == "dinit":
+        return (HOME_DINIT_SERVICE_FOLDER / "pipewire-filter-chain").exists()
     try:
         r = subprocess.run(
             ["systemctl", "--user", "list-unit-files", "filter-chain.service",

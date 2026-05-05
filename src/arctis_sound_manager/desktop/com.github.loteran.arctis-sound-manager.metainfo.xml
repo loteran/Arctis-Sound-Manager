@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.0.94" date="2026-05-04">
+      <description>
+        <p>Arctis 7 2019 (0x12ad) failed to initialize — no battery, no chatmix (issue #28) — arctis_7.yaml was missing command_transport: ctrl_output, the field that tells the HID layer to use SET_REPORT on the control endpoint. All four product IDs sharing that YAML (0x1260, 0x12ad, 0x1252, 0x1280) were affected. Adding ctrl_output aligns the Arctis 7 family with every other device YAML in the codebase (Arctis 7+, Arctis 9, Nova 3/5/7). Virtual sinks (Arctis_Game / Arctis_Chat / Arctis_Media) routed to system default instead of Sonar EQ nodes (issue #28) — the bundled 10-arctis-virtual-sinks.conf installed by install.sh / asm-setup had no node.target in its playback.props blocks. PipeWire therefore routed all three loopback outputs to the default sink, bypassing the Sonar EQ filter-chain entirely and breaking chatmix separation. Each sink now points to its Sonar EQ input node (effect_input.sonar-game-eq / effect_input.sonar-chat-eq). Virtual Surround sink silent on fresh install — can't start graph: No such file or directory (issue #28) — sink-virtual-surround-7.1-hesuvi.conf referenced the HRIR WAV as the relative path hrir_hesuvi/hrir.wav. PipeWire instantiates filter-chains without a stable working directory, so the file was never found. The template now uses the placeholder ${HRIR_DIR}, which install.sh, setup-surround.sh, and asm-setup substitute with the absolute path ~/.local/share/pipewire/hrir_hesuvi at deploy time — the same directory the installer downloads the WAV to.</p>
+      </description>
+    </release>
     <release version="1.0.86" date="2026-04-30">
       <description>
         <p>System Deps dialog at GUI startup — a runtime self-healing dialog that detects every missing system component ASM relies on (LADSPA plate_1423 + librnnoise, HRIR file, filter-chain.service, PipeWire ≥ 1.0, wpctl, pkexec, pyudev/pulsectl/PySide6/pyusb/PIL/ruamel.yaml/dbus-next, dbus-send, pw-metadata, curl, D-Bus session, udev rules, gh CLI). Each missing dep shows a severity badge (BLOCKING / DEGRADED / OPTIONAL), what feature breaks if it stays missing, and an Install/Run button that runs the right pkexec dnf|apt-get|pacman install … for the detected distro. Install all missing groups by package manager so a single polkit prompt fixes the whole list. Don't show again until ASM is upgraded writes a version-aware skip marker that auto-resets on the next ASM upgrade. Copy cmd falls back to clipboard mode for unsupported distros. Triggered after the existing udev / telemetry dialogs at T+2.5 s on first launch — no nag. asm-daemon --verify-setup runs the same dep registry — headless preflight now logs each missing component with its severity tier and per-distro install command, plus the detected distro on the summary line. Exit 1 on BLOCKING/DEGRADED, 0 if only OPTIONAL — safe to wire into systemd ExecStartPre. scripts/check-deps-drift.py CI guard — AST-walks src/, fails the wheel-install-test matrix on every supported distro if a new third-party import or subprocess.run([…]) is added without a matching DepCheck entry. Closes the silent-failure trap class issue #23 was about: any new external dep is forced through the runtime checker too, so the GUI dialog never goes blind.</p>
@@ -199,11 +204,6 @@
     <release version="1.0.42" date="2026-04-16">
       <description>
         <p>Dial interface auto-detection: the daemon now probes USB interfaces at startup to find the dial interface automatically, with a per-device cache to avoid re-probing on reconnect. Arctis Nova 7: moved PID 0x227a to the correct nova_7_discrete_battery device definition. CI: fixed aur-update and copr-build sync jobs rejecting push to develop when the branch advanced since checkout — now checkout develop directly before applying changes.</p>
-      </description>
-    </release>
-    <release version="1.0.41" date="2026-04-16">
-      <description>
-        <p>Arctis Pro Wireless: added alternate USB PID 0x1294 to device definition and introduced HID-aware device detection — the daemon now automatically selects the USB interface that exposes an HID class (bInterfaceClass == 3), fixing [Errno 13] Access denied on systems where the control interface is exposed under a different PID.</p>
       </description>
     </release>
   </releases>

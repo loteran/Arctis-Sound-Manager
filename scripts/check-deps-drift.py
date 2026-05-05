@@ -73,6 +73,8 @@ _ALWAYS_PRESENT_BINARIES = {
     "grep", "awk", "sed", "sort", "uniq", "find", "xargs", "tr", "which",
     # systemd-bundled (assumed present — required by all systemd distros)
     "udevadm", "systemctl", "loginctl", "journalctl", "machinectl",
+    # dinit init-system tool (equivalent of systemctl on Artix Linux / dinit)
+    "dinitctl",
     # always-present POSIX shell utilities
     "sh", "bash",
     # Diagnostic-only callsites: try-wrapped, never on a hot path.
