@@ -6,6 +6,7 @@ device:
     - 0x2206 # Arctis Nova 7X
     - 0x223a # Arctis Nova 7 Diablo IV Edition
     - 0x227a # Arctis Nova 7 WoW Edition
+    - 0x22ab # Arctis Nova 7 WoW Edition (HID variant)
     - 0x22a4 # Arctis Nova 7X (variant)
   command_padding:
     length: 64
