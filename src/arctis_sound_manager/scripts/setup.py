@@ -432,7 +432,8 @@ def main() -> None:
         _run_systemctl(["enable", "--now", "arctis-manager.service"])
         _run_systemctl(["enable", "--now", "arctis-video-router.service"])
         _run_systemctl(["enable", "--now", fc_service])
-        _run_systemctl(["enable", "arctis-gui.service"])
+        from arctis_sound_manager.autostart import set_autostart
+        set_autostart(True)
 
     # ── Validate device YAML overrides ──
     # asm-setup keeps copying YAMLs into ~/.config/arctis_manager/devices/ on

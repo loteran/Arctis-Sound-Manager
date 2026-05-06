@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.0.99" date="2026-05-06">
+      <description>
+        <p>Adaptive multi-DE autostart — Hyprland, Sway, XDG, systemd, dinit — the "Launch at startup" toggle now automatically selects the right method for the detected desktop environment / init system. On Hyprland it writes exec-once = asm-gui --systray into ~/.config/hypr/hyprland.conf (using a comment marker for clean enable/disable). On Sway it writes exec asm-gui --systray into ~/.config/sway/config. On dinit systems the existing dinitctl enable calls are used. On systemd-based DEs (GNOME, KDE, XFCE, …) the arctis-gui.service approach is kept. Any other setup (i3, unknown, non-systemd distros) falls back to an XDG .desktop file in ~/.config/autostart/. Switching DEs cleans up stale entries from the previous method. Fixes the issue reported by users running Hyprland/CachyOS where the toggle had no effect (closes #30).</p>
+      </description>
+    </release>
     <release version="1.0.98" date="2026-05-05">
       <description>
         <p>Distrobox hot-plug (issue #26) — the headset can now be plugged in *after* the container is created without requiring --reinstall. A new udev rule (90-asm-hidraw-symlink.rules) maintains /run/asm-hidraw/ as a stable directory of symlinks to SteelSeries hidraw nodes; the container mounts this directory with rslave propagation so additions and removals on the host are immediately visible inside. libusb / PyUSB access from container — /dev/bus/usb is now bind-mounted into the container (rslave), giving PyUSB full access to the USB device tree. Previously only /dev/hidraw* was passed, which blocked the libusb backend entirely. Fedora Silverblue/Kinoite variants auto-detected — distrobox-install.sh now correctly routes Bluefin, Aurora, Sericea, Onyx, and Cosmic Atomic to silverblue.sh (Fedora COPR container) instead of incorrectly using the Arch/AUR container.</p>
@@ -199,11 +204,6 @@
     <release version="1.0.53" date="2026-04-18">
       <description>
         <p>Telemetry: added User-Agent header to outgoing requests — Cloudflare was silently returning 403 to Python-urllib, so no data was ever reaching the stats endpoint.</p>
-      </description>
-    </release>
-    <release version="1.0.52" date="2026-04-18">
-      <description>
-        <p>udev rules: clicking "Install rules" in the GUI now triggers a single password prompt instead of three — the file write, udevadm control --reload-rules and udevadm trigger are now bundled into one elevated shell script.</p>
       </description>
     </release>
   </releases>

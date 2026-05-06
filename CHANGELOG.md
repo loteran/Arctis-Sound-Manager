@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.99] - 6 May 2026
+
+### Added
+
+- **Adaptive multi-DE autostart — Hyprland, Sway, XDG, systemd, dinit** — the "Launch at startup" toggle now automatically selects the right method for the detected desktop environment / init system. On Hyprland it writes `exec-once = asm-gui --systray` into `~/.config/hypr/hyprland.conf` (using a comment marker for clean enable/disable). On Sway it writes `exec asm-gui --systray` into `~/.config/sway/config`. On dinit systems the existing `dinitctl enable` calls are used. On systemd-based DEs (GNOME, KDE, XFCE, …) the `arctis-gui.service` approach is kept. Any other setup (i3, unknown, non-systemd distros) falls back to an XDG `.desktop` file in `~/.config/autostart/`. Switching DEs cleans up stale entries from the previous method. Fixes the issue reported by users running Hyprland/CachyOS where the toggle had no effect (closes #30).
+
 ## [1.0.98] - 05 May 2026
 
 ### Added

@@ -1,3 +1,20 @@
+arctis-sound-manager (1.0.99-1) noble; urgency=medium
+
+  * Adaptive multi-DE autostart — Hyprland, Sway, XDG, systemd, dinit — the
+    "Launch at startup" toggle now automatically selects the right method
+    for the detected desktop environment / init system. On Hyprland it
+    writes exec-once = asm-gui --systray into ~/.config/hypr/hyprland.conf
+    (using a comment marker for clean enable/disable). On Sway it writes
+    exec asm-gui --systray into ~/.config/sway/config. On dinit systems the
+    existing dinitctl enable calls are used. On systemd-based DEs (GNOME,
+    KDE, XFCE, …) the arctis-gui.service approach is kept. Any other setup
+    (i3, unknown, non-systemd distros) falls back to an XDG .desktop file in
+    ~/.config/autostart/. Switching DEs cleans up stale entries from the
+    previous method. Fixes the issue reported by users running
+    Hyprland/CachyOS where the toggle had no effect (closes #30).
+
+ -- loteran <axel.valadon@gmail.com>  Wed, 06 May 2026 00:00:00 +0000
+
 arctis-sound-manager (1.0.98-1) noble; urgency=medium
 
   * Distrobox hot-plug (issue #26) — the headset can now be plugged in

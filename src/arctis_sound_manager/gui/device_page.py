@@ -3,7 +3,6 @@ Device / Settings page — ArctisSonar GUI visual style.
 Matches the ref_settingsPage.png design.
 """
 import os
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -30,6 +29,7 @@ from arctis_sound_manager.gui.components import (
     SectionTitle,
 )
 from arctis_sound_manager.gui.settings_widget import QSettingsWidget
+from arctis_sound_manager.autostart import active_backend_name, autostart_enabled, set_autostart
 from arctis_sound_manager.gui.theme import (
     ACCENT,
     BG_CARD,
@@ -41,72 +41,6 @@ from arctis_sound_manager.gui.theme import (
     TEXT_SECONDARY,
 )
 
-_SERVICE = "arctis-manager.service"
-_GUI_SERVICE = "arctis-gui.service"
-
-
-def _autostart_enabled() -> bool:
-    from arctis_sound_manager.init_system import detect_init, is_dinit_service_enabled
-    if detect_init() == "dinit":
-        return is_dinit_service_enabled("arctis-manager")
-    result = subprocess.run(
-        ["systemctl", "--user", "is-enabled", _SERVICE],
-        capture_output=True, text=True,
-    )
-    return result.stdout.strip() == "enabled"
-
-
-_GUI_SERVICE_TEMPLATE = """\
-[Unit]
-Description=Arctis Sound Manager — System Tray
-After=graphical-session.target arctis-manager.service
-Wants=arctis-manager.service
-
-[Service]
-Type=simple
-ExecStart={asm_gui} --systray
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=graphical-session.target
-"""
-
-
-def _ensure_gui_service() -> Path | None:
-    """Create ~/.config/systemd/user/arctis-gui.service if missing. Returns path or None."""
-    gui_service_path = Path.home() / ".config" / "systemd" / "user" / _GUI_SERVICE
-    if gui_service_path.exists():
-        return gui_service_path
-    asm_gui = shutil.which("asm-gui")
-    if not asm_gui:
-        return None
-    gui_service_path.parent.mkdir(parents=True, exist_ok=True)
-    gui_service_path.write_text(_GUI_SERVICE_TEMPLATE.format(asm_gui=asm_gui))
-    subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True)
-    return gui_service_path
-
-
-def _set_autostart(enabled: bool) -> None:
-    from arctis_sound_manager.init_system import detect_init
-    if detect_init() == "dinit":
-        verb = "enable" if enabled else "disable"
-        subprocess.run(["dinitctl", verb, "arctis-manager"], check=False)
-        subprocess.run(["dinitctl", verb, "arctis-gui"], check=False)
-        return
-    action = "enable" if enabled else "disable"
-    subprocess.run(
-        ["systemctl", "--user", action, _SERVICE],
-        capture_output=True,
-    )
-    gui_service_path = _ensure_gui_service() if enabled else (
-        Path.home() / ".config" / "systemd" / "user" / _GUI_SERVICE
-    )
-    if gui_service_path and gui_service_path.exists():
-        subprocess.run(
-            ["systemctl", "--user", action, _GUI_SERVICE],
-            capture_output=True,
-        )
 
 
 def _styled_button(text: str) -> QPushButton:
@@ -273,8 +207,9 @@ class DevicePage(QWidget):
         self._startup_toggle = QDualState(
             off_text=I18n.translate("settings_values", "off"),
             on_text=I18n.translate("settings_values", "on"),
-            init_state="right" if _autostart_enabled() else "left",
+            init_state="right" if autostart_enabled() else "left",
         )
+        self._startup_toggle.setToolTip(f"Autostart via: {active_backend_name()}")
         self._startup_toggle.checkStateChanged.connect(self._on_autostart_toggled)
         startup_row.addWidget(self._startup_toggle)
         startup_row.addStretch(1)
@@ -379,7 +314,7 @@ class DevicePage(QWidget):
                 """)
 
     def _on_autostart_toggled(self, state: Qt.CheckState) -> None:
-        _set_autostart(state == Qt.CheckState.Checked)
+        set_autostart(state == Qt.CheckState.Checked)
 
     def _on_lang(self, code: str):
         if code == I18n.current_lang():
