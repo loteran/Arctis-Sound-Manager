@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 from PIL import Image, ImageDraw, ImageFont
@@ -101,12 +102,12 @@ class OledRenderer:
     def measure_eq_text(self, eq_preset: str, sz_eq: int) -> int:
         """Return pixel width of 'EQ: <eq_preset>' at the given font size."""
         font = ImageFont.load_default(size=max(7, min(30, sz_eq)))
-        return int(font.getlength(f"EQ: {eq_preset}"))
+        return math.ceil(font.getlength(f"EQ: {eq_preset}"))
 
     def measure_profile_text(self, active_profile: str, sz_profile: int) -> int:
         """Return pixel width of 'Profile: <active_profile>' at the given font size."""
         font = ImageFont.load_default(size=max(7, min(30, sz_profile)))
-        return int(font.getlength(f"Profile: {active_profile}"))
+        return math.ceil(font.getlength(f"Profile: {active_profile}"))
 
     def render_status_image(
         self,
