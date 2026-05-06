@@ -11,10 +11,13 @@ PYLIB = $(DEST)/usr/lib/python3/dist-packages
 	dh $@
 
 override_dh_auto_build:
-	# Regenerate debian/changelog from CHANGELOG.md so the .deb is always
-	# in sync with the project changelog (it had previously drifted by
-	# 39 versions because the file was hand-maintained).
-	python3 scripts/generate_debian_changelog.py --in-place
+	# Regenerate debian/changelog from CHANGELOG.md only when the first line
+	# has not already been patched for a target distro series (PPA/CI workflows
+	# inject ~noble1 etc. before dpkg-buildpackage; regenerating would strip it
+	# and cause a version mismatch between the .deb and the .changes file).
+	if ! head -1 debian/changelog | grep -q '~'; then \
+	    python3 scripts/generate_debian_changelog.py --in-place; \
+	fi
 
 	# If pre-built wheels exist (PPA / CI), use them; otherwise build
 	if [ -d debian/wheels ]; then \
