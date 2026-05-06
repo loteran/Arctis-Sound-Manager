@@ -75,17 +75,17 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 | Device | Working | Users | Product ID(s) |
 |---|---|---|---|
 | Arctis 1 / 7X / 7P Wireless |  |  | 12b3, 12b6, 12d5, 12d7 |
-| Arctis 7 / 7 2019 / Pro 2019 / Pro GameDAC | ✅ |  | 1260, $\color{royalblue}{\textbf{12ad}}$, 1252, 1280 |
+| Arctis 7 / 7 2019 / Pro 2019 / Pro GameDAC | ✅ | 1 | 1260, $\color{royalblue}{\textbf{12ad}}$, 1252, 1280 |
 | Arctis 7+ / PS5 / Xbox / Destiny |  |  | 220e, 2212, 2216, 2236 |
 | Arctis 9 Wireless | ✅ | 2 | $\color{royalblue}{\textbf{12c2}}$ |
 | Arctis Pro Wireless | ✅ |  | 1290, $\color{royalblue}{\textbf{1294}}$ |
-| Arctis Nova Pro Wireless / X | ✅ | 5 | $\color{royalblue}{\textbf{12e0}}$, 12e5 |
+| Arctis Nova Pro Wireless / X | ✅ | 7 | $\color{royalblue}{\textbf{12e0}}$, 12e5 |
 | Arctis Nova Pro Wired / Xbox Wired | ✅ |  | $\color{royalblue}{\textbf{12cb}}$, 12cd |
 | Arctis Nova 3 |  |  | 12ec |
 | Arctis Nova 3P / 3X Wireless |  |  | 2269, 226d |
 | Arctis Nova 5 / 5X |  |  | 2232, 2253 |
 | Arctis Nova 7 Gen 1 | ✅ | 1 | $\color{royalblue}{\textbf{2202}}$, 2206, 223a, 227a, 22a4 |
-| Arctis Nova 7 Gen 2 | ✅ | 1 | $\color{royalblue}{\textbf{22a1}}$, $\color{royalblue}{\textbf{227e}}$, 2258, 229e, 22a9, 22a5 |
+| Arctis Nova 7 Gen 2 | ✅ | 2 | $\color{royalblue}{\textbf{22a1}}$, $\color{royalblue}{\textbf{227e}}$, 2258, 229e, 22a9, 22a5 |
 | Arctis Nova 7P | ✅ |  | $\color{royalblue}{\textbf{220a}}$, $\color{royalblue}{\textbf{22a7}}$ |
 | Arctis Nova Elite |  |  | 2244, 2249 |
 <!-- STATS:DEVICES:END -->
@@ -97,11 +97,12 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 <!-- STATS:TESTED_DISTROS:START -->
 | Distribution | Install method | Users |
 |---|---|---|
-| CachyOS | 🎯 AUR | 👥 5 |
+| CachyOS | 🎯 AUR | 👥 7 |
+| Fedora Linux 44 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 2 |
 | Ubuntu 26.04 LTS | 🎯 PPA | 👥 1 |
 | Ubuntu 24.04.4 LTS | 🎯 PPA | 👥 1 |
 | Nobara Linux 43 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 1 |
-| Fedora Linux 44 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 1 |
+| Fedora Linux 43 (Workstation Edition) | 🎯 COPR | 👥 1 |
 <!-- STATS:TESTED_DISTROS:END -->
 
 ---
@@ -112,7 +113,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 > [View interactive dashboard →](https://loteran.github.io/Arctis-Sound-Manager/stats)
 
 <!-- STATS:META:START -->
-_Based on **9** unique users (**97** anonymous data points) — last updated 2026-05-05_
+_Based on **13** unique users (**109** anonymous data points) — last updated 2026-05-06_
 <!-- STATS:META:END -->
 
 ### Most used headsets
@@ -120,10 +121,11 @@ _Based on **9** unique users (**97** anonymous data points) — last updated 202
 <!-- STATS:HEADSETS:START -->
 | Headset | Installs |
 |---|---|
-| Arctis Nova Pro Wireless | 5 |
+| Arctis Nova Pro Wireless | 7 |
 | Arctis 9 Wireless | 2 |
+| Arctis Nova 7 (Gen 2) | 2 |
+| Arctis 7/Pro Gaming | 1 |
 | Arctis Nova 7 (Gen 1) | 1 |
-| Arctis Nova 7 (Gen 2) | 1 |
 <!-- STATS:HEADSETS:END -->
 
 ### Most used Linux distributions
@@ -131,11 +133,12 @@ _Based on **9** unique users (**97** anonymous data points) — last updated 202
 <!-- STATS:DISTROS:START -->
 | Distribution | Installs |
 |---|---|
-| CachyOS | 5 |
+| CachyOS | 7 |
+| Fedora Linux 44 (KDE Plasma Desktop Edition) | 2 |
 | Ubuntu 26.04 LTS | 1 |
 | Ubuntu 24.04.4 LTS | 1 |
 | Nobara Linux 43 (KDE Plasma Desktop Edition) | 1 |
-| Fedora Linux 44 (KDE Plasma Desktop Edition) | 1 |
+| Fedora Linux 43 (Workstation Edition) | 1 |
 <!-- STATS:DISTROS:END -->
 
 ---
