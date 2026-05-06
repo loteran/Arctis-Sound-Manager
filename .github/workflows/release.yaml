@@ -150,13 +150,13 @@ jobs:
           git commit -m "Update to v${{ needs.release.outputs.version }}"
           git push
 
-      - name: Sync aur/ template + generated files back to develop
+      - name: Sync aur/ template + generated files back to main
         run: |
           VERSION="${{ needs.release.outputs.version }}"
           git config user.name "loteran"
           git config user.email "axel.valadon@gmail.com"
-          git fetch origin develop
-          git checkout -B develop-aur-sync origin/develop
+          git fetch origin main
+          git checkout -B main-aur-sync origin/main
 
           # AUR packaging
           sed -i "s/pkgver=.*/pkgver=${VERSION}/" aur/PKGBUILD
@@ -167,15 +167,11 @@ jobs:
           sed -i "s/sha256sums = [^ ]*/sha256sums = SKIP/" aur/.SRCINFO
           sed -i "s/^version = \"[^\"]*\"/version = \"${VERSION}\"/" pyproject.toml
 
-          # Bring generated files from main so develop stays drift-free
-          git checkout origin/main -- debian/changelog \
-            src/arctis_sound_manager/desktop/com.github.loteran.arctis-sound-manager.metainfo.xml
-
           git add aur/PKGBUILD aur/.SRCINFO pyproject.toml debian/changelog \
             src/arctis_sound_manager/desktop/com.github.loteran.arctis-sound-manager.metainfo.xml
           git diff --cached --quiet && echo "No changes to sync" && exit 0
           git commit -m "chore: sync packaging + generated files to v${VERSION} [skip ci]"
-          git push origin HEAD:develop
+          git push origin HEAD:main
 
   copr-build:
     runs-on: ubuntu-latest
@@ -201,12 +197,12 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           git config user.name "loteran"
           git config user.email "axel.valadon@gmail.com"
-          git fetch origin develop
-          git checkout -B develop-spec-sync origin/develop
+          git fetch origin main
+          git checkout -B main-spec-sync origin/main
           sed -i "s/^Version:.*/Version:        ${VERSION}/" arctis-sound-manager.spec
           git add arctis-sound-manager.spec
           git diff --cached --quiet || git commit -m "chore: bump spec to ${VERSION}"
-          git push origin HEAD:develop || true
+          git push origin HEAD:main || true
 
       - name: Trigger COPR build
         run: |
