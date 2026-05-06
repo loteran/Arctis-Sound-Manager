@@ -102,12 +102,16 @@ class OledRenderer:
     def measure_eq_text(self, eq_preset: str, sz_eq: int) -> int:
         """Return pixel width of 'EQ: <eq_preset>' at the given font size."""
         font = ImageFont.load_default(size=max(7, min(30, sz_eq)))
-        return math.ceil(font.getlength(f"EQ: {eq_preset}"))
+        text = f"EQ: {eq_preset}"
+        bbox = font.getbbox(text)
+        return bbox[2] if bbox else math.ceil(font.getlength(text))
 
     def measure_profile_text(self, active_profile: str, sz_profile: int) -> int:
         """Return pixel width of 'Profile: <active_profile>' at the given font size."""
         font = ImageFont.load_default(size=max(7, min(30, sz_profile)))
-        return math.ceil(font.getlength(f"Profile: {active_profile}"))
+        text = f"Profile: {active_profile}"
+        bbox = font.getbbox(text)
+        return bbox[2] if bbox else math.ceil(font.getlength(text))
 
     def render_status_image(
         self,
