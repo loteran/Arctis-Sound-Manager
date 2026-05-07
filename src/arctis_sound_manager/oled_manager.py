@@ -292,6 +292,10 @@ class OledManager:
                 if not self._screen_off:
                     if not gs.oled_custom_display:
                         self._send_oled_packet(self._protocol.build_return_to_ui_packet())
+                        # timeout=0 means "never sleep": re-assert brightness every cycle
+                        # to prevent the DAC firmware's own ~60s screen-off from firing.
+                        if timeout == 0:
+                            self.set_brightness(gs.oled_brightness)
                     else:
                         self.update_display(activity=False)
                         self.set_brightness(gs.oled_brightness)
