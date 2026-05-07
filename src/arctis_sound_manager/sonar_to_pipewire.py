@@ -30,9 +30,22 @@ _SURROUND = "effect_input.virtual-surround-7.1-hesuvi"
 
 
 def _get_physical_out() -> str:
-    """Return the ALSA output node name for the currently connected device, or ''."""
+    """Return the ALSA output node name for the currently connected device, or ''.
+    Back-compat: returns the game output (stereo PCM) or falls back to chat."""
     from arctis_sound_manager import device_state as _ds
     return _ds.get_physical_out()
+
+
+def _get_physical_out_game() -> str:
+    """Stereo PCM used by game, media and HeSuVi (pro-output-1 on dual-PCM devices)."""
+    from arctis_sound_manager import device_state as _ds
+    return _ds.get_physical_out_game()
+
+
+def _get_physical_out_chat() -> str:
+    """Mono PCM used by chat and sidetone (pro-output-0 on dual-PCM devices)."""
+    from arctis_sound_manager import device_state as _ds
+    return _ds.get_physical_out_chat()
 
 
 def _get_physical_in() -> str:
@@ -175,21 +188,24 @@ def generate_sonar_eq_conf(
         raise ValueError(f"channel must be 'game', 'chat', 'media' or 'output', got {channel!r}")
 
     # Channels that depend on the physical Arctis output need a connected device.
+    # Instead of skipping generation entirely when the device is transiently absent
+    # (e.g. during the PipeWire restart that _ApplyWorker itself triggers), write
+    # the conf with an empty target — PipeWire will bind on device arrival.
     needs_physical = channel == "chat" or (channel == "game" and not spatial_audio)
     if needs_physical and not _device_attached():
-        _log.warning(
-            "Skipping %s EQ config generation: no Arctis device attached.",
+        _log.info(
+            "%s EQ config: device not attached, writing with empty target — "
+            "PipeWire will bind on device arrival.",
             channel,
         )
-        return ""
 
     # Spatial audio OFF → game routes directly to physical stereo output (2ch)
     if channel == "game" and not spatial_audio:
-        target = _get_physical_out()
+        target = _get_physical_out_game() if _device_attached() else ""
         channels = 2
         position = "FL FR"
     elif channel == "chat":
-        target = target_override or _get_physical_out()
+        target = target_override or (_get_physical_out_chat() if _device_attached() else "")
         channels = _CHANNEL_CHANNELS[channel]
         position = _CHANNEL_POSITION[channel]
     else:
@@ -438,8 +454,10 @@ def generate_sonar_micro_conf(
     media.class = Audio/Source (faces applications).
     """
     if not _device_attached():
-        _log.warning("Skipping micro EQ config generation: no Arctis device attached.")
-        return ""
+        _log.info(
+            "micro EQ config: device not attached, writing with empty target — "
+            "PipeWire will bind on device arrival."
+        )
 
     if output_path is None:
         output_path = _CONF_DIR / "sonar-micro-eq.conf"
@@ -749,11 +767,11 @@ _SINKS_CONF_DIR = Path.home() / ".config" / "pipewire" / "pipewire.conf.d"
 
 _VIRTUAL_SINKS = [
     {"desc": "Game",  "capture": "Arctis_Game",  "playback": "Arctis_Game_sink_out",
-     "sonar_target": "effect_input.sonar-game-eq"},
+     "sonar_target": "effect_input.sonar-game-eq",  "role": "game"},
     {"desc": "Chat",  "capture": "Arctis_Chat",  "playback": "Arctis_Chat_sink_out",
-     "sonar_target": "effect_input.sonar-chat-eq"},
+     "sonar_target": "effect_input.sonar-chat-eq",  "role": "chat"},
     {"desc": "Media", "capture": "Arctis_Media", "playback": "Arctis_Media_sink_out",
-     "sonar_target": "effect_input.sonar-media-eq"},
+     "sonar_target": "effect_input.sonar-media-eq", "role": "game"},
 ]
 
 
@@ -769,8 +787,12 @@ def generate_virtual_sinks_conf(sonar: bool) -> str:
 
     modules: list[str] = []
     for sink in _VIRTUAL_SINKS:
-        target = (sink["sonar_target"] if sonar and sink["sonar_target"]
-                  else _get_physical_out())
+        if sonar and sink["sonar_target"]:
+            target = sink["sonar_target"]
+        elif sink["role"] == "chat":
+            target = _get_physical_out_chat()
+        else:
+            target = _get_physical_out_game()
         # When routing to an 8ch Sonar EQ sink, allow PipeWire to remix 2ch→8ch
         dont_remix = "false" if (sonar and sink["sonar_target"]) else "true"
         modules.append(f"""\
@@ -923,7 +945,11 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
             if needs_regen:
                 channel = name.replace("sonar-", "").replace("-eq.conf", "")
                 sink_name = f"effect_input.sonar-{channel}-eq"
-                target = {"game": _SURROUND, "chat": _get_physical_out(), "output": ""}.get(channel, _get_physical_out())
+                target = {
+                    "game":   _SURROUND,
+                    "chat":   _get_physical_out_chat(),
+                    "output": "",
+                }.get(channel, _get_physical_out_game())
                 channels = _CHANNEL_CHANNELS.get(channel, 2)
                 position = _CHANNEL_POSITION.get(channel, "FL FR")
                 _write_conf(path, _bypass_conf(sink_name, target, channels, position))
@@ -956,7 +982,8 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
     state_file = Path.home() / ".config" / "arctis_manager" / ".eq_mode"
     sonar = state_file.exists() and state_file.read_text().strip() == "sonar"
     sinks_path = _SINKS_CONF_DIR / "10-arctis-virtual-sinks.conf"
-    expected_target = ("effect_input.sonar-game-eq" if sonar else _get_physical_out())
+    # In non-sonar mode check that the game sink target is correct (chat may differ on dual-PCM)
+    expected_target = ("effect_input.sonar-game-eq" if sonar else _get_physical_out_game())
     if sinks_path.exists():
         content = sinks_path.read_text()
         if f'node.target        = "{expected_target}"' not in content:
@@ -985,7 +1012,7 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
             hesuvi_path = _CONF_DIR / "sink-virtual-surround-7.1-hesuvi.conf"
             if hesuvi_path.exists():
                 hesuvi_content = hesuvi_path.read_text()
-                if f'node.target        = "{_get_physical_out()}"' not in hesuvi_content:
+                if f'node.target        = "{_get_physical_out_game()}"' not in hesuvi_content:
                     log.warning("HeSuVi config has stale node.target, regenerating")
                     generate_hesuvi_conf(
                         immersion_pct=_spatial.get("immersion", 50),
@@ -1027,12 +1054,12 @@ def ensure_sonar_eq_configs() -> bool:
         "game": {
             "channels": 8 if spatial_on else 2,
             "position": _CHANNEL_POSITION["game"] if spatial_on else "FL FR",
-            "target":   _SURROUND if spatial_on else _get_physical_out(),
+            "target":   _SURROUND if spatial_on else _get_physical_out_game(),
         },
         "chat": {
             "channels": _CHANNEL_CHANNELS["chat"],
             "position": _CHANNEL_POSITION["chat"],
-            "target":   _get_physical_out(),
+            "target":   _get_physical_out_chat(),
         },
     }
 
@@ -1277,7 +1304,7 @@ context.modules = [
       }}
       playback.props = {{
         node.name          = "effect_output.virtual-surround-7.1-hesuvi"
-        node.target        = "{_get_physical_out()}"
+        node.target        = "{_get_physical_out_game()}"
         node.dont-fallback = true
         node.linger        = true
         audio.channels     = 2
