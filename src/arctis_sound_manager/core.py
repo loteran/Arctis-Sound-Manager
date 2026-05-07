@@ -289,12 +289,12 @@ class CoreEngine:
                 return
 
         # Discover ALSA nodes for this device and update shared device state
-        physical_out, physical_in = self._discover_physical_nodes(
+        physical_out_game, physical_out_chat, physical_in = self._discover_physical_nodes(
             device_config.vendor_id,
             self.usb_device.idProduct if self.usb_device else None,
         )
 
-        if physical_out is None:
+        if physical_out_game is None and physical_out_chat is None:
             self.logger.error(
                 "No physical ALSA sink found for %s (0x%04x:0x%04x) after retries. "
                 "Virtual sinks will NOT be configured — audio routing skipped. "
@@ -307,9 +307,11 @@ class CoreEngine:
             )
             return
 
+        fallback = physical_out_game or physical_out_chat or ""
         device_state.set_current_device(
-            physical_out=physical_out,
-            physical_in=physical_in or physical_out,
+            physical_out_game=physical_out_game or fallback,
+            physical_out_chat=physical_out_chat or fallback,
+            physical_in=physical_in or fallback,
             spatial_engine=device_config.spatial_engine,
             device_name=device_config.name,
         )
@@ -376,7 +378,7 @@ class CoreEngine:
         product_id: int | None,
         attempts: int = 8,
         delay: float = 0.5,
-    ) -> tuple[str | None, str | None]:
+    ) -> tuple[str | None, str | None, str | None]:
         """Resolve the physical ALSA sink/source names for the attached device.
 
         PipeWire can take a couple of seconds to enumerate a freshly-attached USB
@@ -384,38 +386,53 @@ class CoreEngine:
         proxy nodes don't expose `device.product.id`; in that case we fall back
         to matching on vendor_id alone (any Arctis sink).
 
-        Returns (sink_name, source_name) — either can be None if not found.
+        Devices with two ALSA PCMs (e.g. Arctis 7 Pro Audio firmware) expose
+        pro-output-0 (mono, chat/sidetone) and pro-output-1 (stereo, game).
+        `get_arctis_sinks_classified()` separates them; single-output devices
+        return the same sink for both roles.
+
+        Returns (game_sink_name, chat_sink_name, source_name) — any can be None.
         """
         for attempt in range(attempts):
-            sinks = self.pa_audio_manager.get_arctis_sinks(
-                ONLY_PHYSICAL, vendor_id=vendor_id, product_id=product_id,
+            game_sink, chat_sink = self.pa_audio_manager.get_arctis_sinks_classified(
+                vendor_id=vendor_id, product_id=product_id,
             )
             source = self.pa_audio_manager.get_physical_source(
                 vendor_id=vendor_id, product_id=product_id,
             )
-            if sinks:
-                return sinks[0].name, source.name if source else None
+            if game_sink or chat_sink:
+                return (
+                    game_sink.name if game_sink else None,
+                    chat_sink.name if chat_sink else None,
+                    source.name if source else None,
+                )
             if attempt < attempts - 1:
                 time.sleep(delay)
 
         # Vendor-only fallback: some PipeWire builds don't populate device.product.id
         # on ALSA proxy nodes. Matching any SteelSeries sink is better than a
         # hardcoded wrong default.
-        sinks = self.pa_audio_manager.get_arctis_sinks(
-            ONLY_PHYSICAL, vendor_id=vendor_id, product_id=None,
+        game_sink, chat_sink = self.pa_audio_manager.get_arctis_sinks_classified(
+            vendor_id=vendor_id, product_id=None,
         )
-        if sinks:
+        if game_sink or chat_sink:
             self.logger.warning(
                 "No sink matched PID 0x%04x exactly — falling back to "
-                "vendor-only match: %s",
-                product_id or 0, sinks[0].name,
+                "vendor-only match: game=%s chat=%s",
+                product_id or 0,
+                game_sink.name if game_sink else None,
+                chat_sink.name if chat_sink else None,
             )
             source = self.pa_audio_manager.get_physical_source(
                 vendor_id=vendor_id, product_id=None,
             )
-            return sinks[0].name, source.name if source else None
+            return (
+                game_sink.name if game_sink else None,
+                chat_sink.name if chat_sink else None,
+                source.name if source else None,
+            )
 
-        return None, None
+        return None, None, None
 
     def init_device(self):
         self.logger.info("Initializing device...")

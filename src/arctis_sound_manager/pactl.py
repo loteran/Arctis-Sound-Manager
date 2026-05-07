@@ -105,6 +105,54 @@ class PulseAudioManager:
 
         return sinks
     
+    def get_arctis_sinks_classified(
+        self,
+        vendor_id: int = STEELSERIES_VENDOR_ID,
+        product_id: int | list[int] | None = None,
+    ) -> tuple['TypedPulseSinkInfo | None', 'TypedPulseSinkInfo | None']:
+        """Return (game_sink, chat_sink) for devices with two ALSA PCMs.
+
+        Distinguishes by node.name suffix (pro-output-1 / pro-output-0) and
+        channel count (2ch stereo = game, 1ch mono = chat).  For single-output
+        devices both elements point to the same sink.
+        """
+        def vendor_matches(s) -> bool:
+            try:
+                return int(s.proplist.get('device.vendor.id', ''), 16) == vendor_id
+            except ValueError:
+                return False
+
+        sinks = [
+            s for s in self.sink_list_wrapper()
+            if vendor_matches(s) and _pid_matches(s.proplist.get('device.product.id', ''), product_id)
+        ]
+
+        if not sinks:
+            return None, None
+
+        # Prefer explicit node.name suffix, fall back to channel count
+        game = next(
+            (s for s in sinks if s.proplist.get('node.name', '').endswith('pro-output-1')),
+            None,
+        ) or next((s for s in sinks if getattr(s, 'channel_count', 0) == 2), None)
+
+        chat = next(
+            (s for s in sinks if s.proplist.get('node.name', '').endswith('pro-output-0')),
+            None,
+        ) or next((s for s in sinks if getattr(s, 'channel_count', 0) == 1), None)
+
+        # Fallbacks for single-output devices or when properties are absent
+        if game is None and len(sinks) >= 2:
+            game = sinks[1]
+        if chat is None and sinks:
+            chat = sinks[0]
+        if game is None:
+            game = chat
+        if chat is None:
+            chat = game
+
+        return game, chat
+
     def get_arctis_sinks(self, mode: int = ALL_SINKS, vendor_id: int = STEELSERIES_VENDOR_ID, product_id: int|list[int]|None = None) -> list[TypedPulseSinkInfo]:
         sinks = self.sink_list_wrapper()
 

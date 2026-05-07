@@ -334,9 +334,17 @@ class _ApplyWorker(QThread):
         import logging
         log = logging.getLogger(__name__)
         try:
-            boost_state = _load_boost()
-            boost_db = boost_state["db"] if boost_state["enabled"] else 0.0
-            smart_state = _load_smart_volume()
+            try:
+                boost_state = _load_boost()
+                boost_db = boost_state.get("db", 0.0) if boost_state.get("enabled") else 0.0
+            except Exception as e:
+                log.warning("boost load failed: %s — using default", e)
+                boost_db = 0.0
+            try:
+                smart_state = _load_smart_volume()
+            except Exception as e:
+                log.warning("smart_volume load failed: %s — using default", e)
+                smart_state = {"enabled": False, "level": 0.0, "loudness": "balanced"}
             # Snapshot old Game EQ channel count before overwriting config,
             # so we can detect spatial audio toggle (2ch↔8ch) later.
             _old_game_ch = None
@@ -520,9 +528,17 @@ class _ApplyAllWorker(QThread):
         import logging
         log = logging.getLogger(__name__)
         try:
-            boost_state = _load_boost()
-            boost_db = boost_state["db"] if boost_state["enabled"] else 0.0
-            smart_state = _load_smart_volume()
+            try:
+                boost_state = _load_boost()
+                boost_db = boost_state.get("db", 0.0) if boost_state.get("enabled") else 0.0
+            except Exception as e:
+                log.warning("boost load failed: %s — using default", e)
+                boost_db = 0.0
+            try:
+                smart_state = _load_smart_volume()
+            except Exception as e:
+                log.warning("smart_volume load failed: %s — using default", e)
+                smart_state = {"enabled": False, "level": 0.0, "loudness": "balanced"}
             spatial = _load_spatial_audio()
 
             # Generate conf for each channel
@@ -1983,6 +1999,11 @@ class SonarMicroWidget(SonarChannelWidget):
 
         root.addWidget(micro_settings)
         root.addStretch(1)
+
+        # Generate sonar-micro-eq.conf if it doesn't exist yet (first run)
+        _micro_conf = Path.home() / ".config" / "pipewire" / "filter-chain.conf.d" / "sonar-micro-eq.conf"
+        if not _micro_conf.exists():
+            self._schedule_apply()
 
     def _on_micro_changed(self):
         _save_micro_proc(self._micro_state)
