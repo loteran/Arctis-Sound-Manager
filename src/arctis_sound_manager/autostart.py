@@ -160,12 +160,23 @@ class XdgAutostartBackend:
             self._desktop_path.write_text(content)
         except OSError as e:
             logger.warning("autostart: could not write XDG desktop file: %s", e)
+            return
+        # Issue #25: bare WMs (i3/openbox/XLibre) without a DE ignore the .desktop.
+        # Add a ~/.xprofile fallback so X11 sessions still launch asm-gui at login.
+        from arctis_sound_manager.init_system import (
+            _has_xdg_autostart_consumer, write_xprofile_fallback,
+        )
+        if not _has_xdg_autostart_consumer():
+            write_xprofile_fallback()
 
     def disable(self) -> None:
         try:
             self._desktop_path.unlink(missing_ok=True)
         except OSError as e:
             logger.warning("autostart: could not remove XDG desktop file: %s", e)
+        # Mirror cleanup of the .xprofile fallback we may have added in enable().
+        from arctis_sound_manager.init_system import remove_xprofile_fallback
+        remove_xprofile_fallback()
 
     def display_name(self) -> str:
         return "XDG autostart (.desktop)"

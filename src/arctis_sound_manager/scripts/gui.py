@@ -11,14 +11,27 @@ def _check_display_or_exit() -> None:
 
     Without DISPLAY or WAYLAND_DISPLAY, Qt aborts with an opaque XCB error
     and a giant traceback. We pre-check and emit a focused message instead,
-    so users running the GUI from SSH or a TTY know exactly what's wrong.
+    so users running the GUI from SSH, a TTY, or a too-early autostart hook
+    know exactly what's wrong and how to fix it.
     """
     if os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY'):
         return
     sys.stderr.write(
-        "asm-gui: no graphical session detected (DISPLAY and WAYLAND_DISPLAY are unset).\n"
-        "  - Run from a desktop session, or set QT_QPA_PLATFORM=offscreen for headless tests.\n"
-        "  - On a remote host, enable X11 forwarding (ssh -X) or use Wayland forwarding.\n"
+        "asm-gui: cannot start — no graphical session is active.\n"
+        "\n"
+        "Neither $DISPLAY (X11 / XLibre / Xorg) nor $WAYLAND_DISPLAY (Wayland)\n"
+        "is set in this shell. asm-gui needs a running desktop session.\n"
+        "\n"
+        "Common causes:\n"
+        "  1. Launched from a TTY or SSH without display forwarding.\n"
+        "     Open a terminal inside your desktop session, or use ssh -X.\n"
+        "  2. Autostart fired before the compositor was ready (typical on\n"
+        "     minimal WMs like i3/openbox/XLibre on Artix + dinit).\n"
+        "     Re-login, or run `asm-gui --systray &` once the WM is up.\n"
+        "  3. asm-setup has not been run yet — run it from your desktop\n"
+        "     session to configure autostart and PipeWire configs.\n"
+        "\n"
+        "Headless/CI only: set QT_QPA_PLATFORM=offscreen.\n"
     )
     sys.exit(2)
 

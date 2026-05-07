@@ -16,6 +16,7 @@ from pathlib import Path
 from arctis_sound_manager.init_system import (
     detect_init, HOME_DINIT_SERVICE_FOLDER, filter_chain_conf_path,
     is_dinit_service_enabled, write_xdg_autostart, remove_xdg_autostart,
+    _has_xdg_autostart_consumer, write_xprofile_fallback,
 )
 
 _SHARE_DIR = Path("/usr/share/arctis-sound-manager")
@@ -135,6 +136,17 @@ def _setup_dinit_services() -> None:
     # GUI: use XDG autostart instead of a dinit service (dinit has no $DISPLAY/$WAYLAND_DISPLAY)
     write_xdg_autostart()
     print("  [dinit] arctis-gui: XDG autostart entry written (will launch on next login)")
+
+    # Issue #25: bare WMs (i3, openbox, XLibre) on Artix do not run any XDG autostart
+    # consumer, so the .desktop file above is inert. Fall back to ~/.xprofile, which is
+    # sourced by xinit/startx and all major display managers before the WM starts.
+    if not _has_xdg_autostart_consumer():
+        if write_xprofile_fallback():
+            print("  [dinit] no XDG autostart consumer detected — added asm-gui to ~/.xprofile")
+            print("         (re-login or run `asm-gui --systray &` manually for this session)")
+        else:
+            print("  [!] no XDG autostart consumer AND could not write ~/.xprofile —"
+                  " run `asm-gui --systray &` manually after login")
 
 
 # Minimal filter-chain.service for distros that don't ship one (Fedora, Ubuntu…)
@@ -466,6 +478,15 @@ def main() -> None:
     if bad_yamls:
         print("\n==> Setup complete with warnings (see above).")
         sys.exit(1)
+
+    # A stale crash report from a pre-setup launch (broken install, old version) is
+    # no longer relevant once setup finishes — clear it so the GUI does not nag.
+    try:
+        from arctis_sound_manager.bug_reporter import clear_crash_report
+        clear_crash_report()
+    except Exception:
+        pass
+
     print("\n==> Setup complete!")
 
 

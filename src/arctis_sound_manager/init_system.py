@@ -1,4 +1,5 @@
 import functools
+import os
 import shutil
 from pathlib import Path
 from typing import Literal
@@ -81,6 +82,93 @@ def remove_xdg_autostart() -> None:
 def is_xdg_autostart_enabled() -> bool:
     """Return True if the XDG autostart entry for asm-gui exists."""
     return _XDG_GUI_AUTOSTART.exists()
+
+
+_XPROFILE_MARKER = "# arctis-sound-manager-autostart"
+_XPROFILE_PATH = Path.home() / ".xprofile"
+
+
+def _has_xdg_autostart_consumer() -> bool:
+    """Return True if the current environment will actually launch XDG autostart entries.
+
+    Full DEs (KDE, GNOME, XFCE, MATE, LXDE, LXQt, …) run an XDG autostart launcher
+    as part of their session startup. Standalone tools like `dex` also qualify.
+    Bare WMs (i3, openbox, XLibre, raw xinit) return False — the .desktop file
+    written by write_xdg_autostart() would be ignored without an extra fallback.
+    """
+    xdg = (os.environ.get("XDG_CURRENT_DESKTOP") or "").lower()
+    known_des = {
+        "kde", "plasma", "gnome", "unity", "pantheon", "xfce",
+        "mate", "lxde", "lxqt", "cinnamon", "budgie", "deepin",
+    }
+    for token in xdg.split(":"):
+        if token.strip() in known_des:
+            return True
+    for tool in ("dex", "xdg-launch", "fyi"):
+        if shutil.which(tool):
+            return True
+    return False
+
+
+def write_xprofile_fallback() -> bool:
+    """Append an `asm-gui --systray` launch line to ~/.xprofile when no XDG autostart
+    consumer is present. Idempotent (guarded by _XPROFILE_MARKER).
+
+    ~/.xprofile is sourced by xinit/startx and all major display managers
+    (xdm, lightdm, sddm, gdm) before the WM starts, regardless of WM choice.
+    This is the most portable fallback for bare X11 setups (i3/openbox/XLibre)
+    on dinit-based distros like Artix. Returns True on success.
+    """
+    asm_gui = shutil.which("asm-gui") or "/usr/bin/asm-gui"
+    line = f'{_XPROFILE_MARKER}\n[ -x "{asm_gui}" ] && "{asm_gui}" --systray &\n'
+    try:
+        if _XPROFILE_PATH.exists():
+            text = _XPROFILE_PATH.read_text(errors="replace")
+            if _XPROFILE_MARKER in text:
+                return True  # idempotent
+            sep = "" if text.endswith("\n") else "\n"
+            _XPROFILE_PATH.write_text(text + sep + line)
+        else:
+            _XPROFILE_PATH.write_text("#!/bin/sh\n" + line)
+        try:
+            _XPROFILE_PATH.chmod(0o755)
+        except OSError:
+            pass
+        return True
+    except OSError:
+        return False
+
+
+def remove_xprofile_fallback() -> bool:
+    """Remove our asm-gui block from ~/.xprofile. Idempotent. Returns True on success."""
+    if not _XPROFILE_PATH.exists():
+        return True
+    try:
+        lines = _XPROFILE_PATH.read_text(errors="replace").splitlines(keepends=True)
+        out: list[str] = []
+        skip_next = False
+        for raw in lines:
+            if skip_next:
+                skip_next = False
+                continue
+            if raw.rstrip("\n") == _XPROFILE_MARKER:
+                skip_next = True
+                continue
+            out.append(raw)
+        _XPROFILE_PATH.write_text("".join(out))
+        return True
+    except OSError:
+        return False
+
+
+def is_xprofile_fallback_active() -> bool:
+    """Return True if our marker is present in ~/.xprofile."""
+    if not _XPROFILE_PATH.exists():
+        return False
+    try:
+        return _XPROFILE_MARKER in _XPROFILE_PATH.read_text(errors="replace")
+    except OSError:
+        return False
 
 
 def is_dinit_service_enabled(svc: str) -> bool:
