@@ -20,6 +20,7 @@ asm-cli = "arctis_sound_manager.scripts.cli:main"
 asm-gui = "arctis_sound_manager.scripts.gui:main"
 asm-router = "arctis_sound_manager.scripts.video_router:main"
 asm-setup = "arctis_sound_manager.scripts.setup:main"
+asm-diag-dinit = "arctis_sound_manager.scripts.diag_dinit:main"
 
 [build-system]
 requires = ["uv_build>=0.9.17,<0.12"]

@@ -269,19 +269,19 @@ def write_desktop_entries() -> int:
     if DESKTOP_SYSTRAY_PATH.exists():
         DESKTOP_SYSTRAY_PATH.unlink()
 
-    # 3. write the service files (systemd or dinit depending on init system)
-    from arctis_sound_manager.init_system import detect_init, HOME_DINIT_SERVICE_FOLDER
+    # 3. write the service files / autostart (systemd or dinit depending on init system)
+    from arctis_sound_manager.init_system import (
+        detect_init, HOME_DINIT_SERVICE_FOLDER, write_xdg_autostart,
+    )
     if detect_init() == "dinit":
         HOME_DINIT_SERVICE_FOLDER.mkdir(parents=True, exist_ok=True)
         asm_daemon = shutil.which("asm-daemon") or "/usr/bin/asm-daemon"
-        asm_gui = shutil.which("asm-gui") or "/usr/bin/asm-gui"
         (HOME_DINIT_SERVICE_FOLDER / "arctis-manager").write_text(
             f"type = process\ncommand = {asm_daemon}\nrestart = true\n"
             "depends-on = pipewire\nlogfile = /tmp/arctis-manager.log\n")
-        (HOME_DINIT_SERVICE_FOLDER / "arctis-gui").write_text(
-            f"type = process\ncommand = {asm_gui} --systray\nrestart = false\n"
-            "depends-on = arctis-manager\nlogfile = /tmp/arctis-gui.log\n")
-        print(f'    [ok] Dinit service files written to {HOME_DINIT_SERVICE_FOLDER}')
+        write_xdg_autostart()
+        print(f'    [ok] Dinit service file written to {HOME_DINIT_SERVICE_FOLDER}')
+        print('    [ok] XDG autostart entry written for arctis-gui')
     else:
         SYSTEMD_USER_DIR.mkdir(parents=True, exist_ok=True)
         asm_daemon = shutil.which('asm-daemon')
@@ -314,12 +314,14 @@ def remove_desktop_entries() -> int:
     if GUI_SERVICE_PATH.exists():
         GUI_SERVICE_PATH.unlink()
 
-    from arctis_sound_manager.init_system import detect_init, HOME_DINIT_SERVICE_FOLDER
+    from arctis_sound_manager.init_system import (
+        detect_init, HOME_DINIT_SERVICE_FOLDER, remove_xdg_autostart,
+    )
     if detect_init() == "dinit":
-        for svc in ("arctis-manager", "arctis-gui"):
-            svc_path = HOME_DINIT_SERVICE_FOLDER / svc
-            if svc_path.exists():
-                svc_path.unlink()
+        svc_path = HOME_DINIT_SERVICE_FOLDER / "arctis-manager"
+        if svc_path.exists():
+            svc_path.unlink()
+        remove_xdg_autostart()
 
     return 0
 

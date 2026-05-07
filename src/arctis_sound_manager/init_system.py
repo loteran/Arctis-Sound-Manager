@@ -3,6 +3,9 @@ import shutil
 from pathlib import Path
 from typing import Literal
 
+XDG_AUTOSTART_DIR = Path.home() / ".config" / "autostart"
+_XDG_GUI_AUTOSTART = XDG_AUTOSTART_DIR / "arctis-gui-autostart.desktop"
+
 
 @functools.lru_cache(maxsize=None)
 def detect_init() -> Literal["systemd", "dinit", "unknown"]:
@@ -32,10 +35,16 @@ FILTER_CHAIN_SERVICE_NAME: dict[str, str] = {
 
 def filter_chain_conf_path() -> str:
     """Return absolute path to filter-chain.conf for dinit service (no WorkingDirectory on dinit)."""
-    user_conf = Path.home() / ".config" / "pipewire" / "filter-chain.conf"
-    if user_conf.exists():
-        return str(user_conf)
-    return "/usr/share/pipewire/filter-chain.conf"
+    candidates = [
+        Path.home() / ".config" / "pipewire" / "filter-chain.conf",
+        Path("/usr/share/pipewire/filter-chain.conf"),
+        Path("/etc/pipewire/filter-chain.conf"),
+    ]
+    for c in candidates:
+        if c.exists():
+            return str(c)
+    # Default to user conf even if absent — asm-setup will create it
+    return str(candidates[0])
 
 
 _DINIT_SERVICE_DIRS = [
@@ -43,6 +52,35 @@ _DINIT_SERVICE_DIRS = [
     Path("/etc/dinit.d"),
     Path("/usr/lib/dinit.d"),
 ]
+
+
+def write_xdg_autostart() -> None:
+    """Write XDG autostart desktop file for asm-gui.
+
+    dinit services run without $DISPLAY/$WAYLAND_DISPLAY; XDG autostart
+    is the correct mechanism to launch GUI apps after login on any compositor.
+    """
+    asm_gui = shutil.which("asm-gui") or "/usr/bin/asm-gui"
+    XDG_AUTOSTART_DIR.mkdir(parents=True, exist_ok=True)
+    _XDG_GUI_AUTOSTART.write_text(
+        "[Desktop Entry]\n"
+        "Type=Application\n"
+        "Name=Arctis Sound Manager\n"
+        f"Exec={asm_gui} --systray\n"
+        "Hidden=false\n"
+        "NoDisplay=false\n"
+        "X-GNOME-Autostart-enabled=true\n"
+    )
+
+
+def remove_xdg_autostart() -> None:
+    """Remove XDG autostart desktop file for asm-gui."""
+    _XDG_GUI_AUTOSTART.unlink(missing_ok=True)
+
+
+def is_xdg_autostart_enabled() -> bool:
+    """Return True if the XDG autostart entry for asm-gui exists."""
+    return _XDG_GUI_AUTOSTART.exists()
 
 
 def is_dinit_service_enabled(svc: str) -> bool:

@@ -345,11 +345,16 @@ class DbusManager:
             ) from e
 
         if reply not in (RequestNameReply.PRIMARY_OWNER, RequestNameReply.ALREADY_OWNER):
+            from arctis_sound_manager.init_system import detect_init
+            stop_cmd = (
+                "dinitctl stop arctis-manager"
+                if detect_init() == "dinit"
+                else "systemctl --user stop arctis-manager.service"
+            )
             raise RuntimeError(
                 f"D-Bus name {DBUS_BUS_NAME!r} is already taken (reply={reply.name}). "
                 "Another asm-daemon is probably running — stop it with "
-                "`systemctl --user stop arctis-manager.service` or `pkill -f asm-daemon` "
-                "and retry."
+                f"`{stop_cmd}` or `pkill -f asm-daemon` and retry."
             )
         self.log.info(f"D-Bus name {DBUS_BUS_NAME!r} acquired ({reply.name}).")
 
