@@ -131,10 +131,10 @@ def test_configure_virtual_sinks_selects_correct_config(cfg: DeviceConfiguration
     engine.device_configurations = all_configs
     # MagicMock auto-attributes shadow patch.object on the class — bind methods
     # whose result types matter (kernel_detach must be truthy, _discover_physical_nodes
-    # must return a 2-tuple) directly on the stub.
+    # must return a 3-tuple: game_sink, chat_sink, source) directly on the stub.
     engine._find_hid_device = lambda *a: CoreEngine._find_hid_device(engine, *a)
     engine.kernel_detach = lambda *a, **k: True
-    engine._discover_physical_nodes = lambda *a, **k: (None, None)
+    engine._discover_physical_nodes = lambda *a, **k: (None, None, None)
 
     with patch("usb.core.find", side_effect=fake_find), \
          patch.object(CoreEngine, "init_device",      lambda *a, **k: None), \
