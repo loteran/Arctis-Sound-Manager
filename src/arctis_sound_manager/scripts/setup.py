@@ -80,6 +80,8 @@ def _ensure_dinit_boot_target() -> None:
 
 def _setup_dinit_services() -> None:
     """Install dinit user service files and start ASM services. Called on dinit systems only."""
+    import time
+
     HOME_DINIT_SERVICE_FOLDER.mkdir(parents=True, exist_ok=True)
 
     asm_daemon = shutil.which("asm-daemon") or "/usr/bin/asm-daemon"
@@ -108,16 +110,25 @@ def _setup_dinit_services() -> None:
     # Ensure a user `boot` service + boot.d/ exist so `dinitctl enable` can succeed
     _ensure_dinit_boot_target()
 
-    # Restart PipeWire best-effort (may fail if not a dinit service)
-    subprocess.run(["dinitctl", "restart", "pipewire"], check=False,
-                   capture_output=True)
+    # Reload stopped service definitions so dinit picks up restart=true from updated files.
+    # Running services cannot be reloaded — skip them; they already have the right behaviour.
+    for svc in ["arctis-video-router", "pipewire-filter-chain"]:
+        st = subprocess.run(["dinitctl", "status", svc], capture_output=True, text=True)
+        if "started" not in st.stdout.lower():
+            subprocess.run(["dinitctl", "reload", svc], check=False, capture_output=True)
 
-    # Guard: check if arctis-manager is already running to avoid starting a second daemon
-    am_status = subprocess.run(
-        ["dinitctl", "status", "arctis-manager"],
-        capture_output=True, text=True
-    )
-    am_already_running = am_status.returncode == 0 and "started" in am_status.stdout.lower()
+    # Restart PipeWire best-effort (may fail if not a dinit service).
+    # Sleep briefly after so the socket is ready before we start dependants.
+    pw_restart = subprocess.run(["dinitctl", "restart", "pipewire"], check=False,
+                                capture_output=True, text=True)
+    if pw_restart.returncode == 0:
+        time.sleep(0.5)
+
+    # Guard: use pgrep against the actual process instead of dinitctl status to avoid a
+    # timing race where the boot-sequence auto-start and this setup run overlap.
+    am_already_running = subprocess.run(
+        ["pgrep", "-f", "asm-daemon"], capture_output=True
+    ).returncode == 0
 
     # Enable and start each service (use 'start' not 'restart' — idempotent if not yet running)
     for svc in ["arctis-manager", "arctis-video-router", "pipewire-filter-chain"]:
