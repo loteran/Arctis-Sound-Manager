@@ -86,7 +86,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 | Arctis Nova 5 / 5X |  |  | 2232, 2253 |
 | Arctis Nova 7 Gen 1 | ✅ | 2 | $\color{royalblue}{\textbf{2202}}$, 2206, 223a, 227a, 22ab, 22a4 |
 | Arctis Nova 7 Gen 2 | ✅ | 2 | $\color{royalblue}{\textbf{22a1}}$, $\color{royalblue}{\textbf{227e}}$, 2258, 229e, 22a9, 22a5 |
-| Arctis Nova 7P | ✅ |  | $\color{royalblue}{\textbf{220a}}$, $\color{royalblue}{\textbf{22a7}}$ |
+| Arctis Nova 7P | ✅ | 1 | 220a, $\color{royalblue}{\textbf{22a7}}$ |
 | Arctis Nova Elite |  |  | 2244, 2249 |
 <!-- STATS:DEVICES:END -->
 
@@ -104,6 +104,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 | Manjaro Linux | 🎯 AUR | 👥 1 |
 | Fedora Linux 44 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 1 |
 | Fedora Linux 43 (Workstation Edition) | 🎯 COPR | 👥 1 |
+| Artix Linux | 🎯 AUR | 👥 1 |
 <!-- STATS:TESTED_DISTROS:END -->
 
 ---
@@ -114,7 +115,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 > [View interactive dashboard →](https://loteran.github.io/Arctis-Sound-Manager/stats)
 
 <!-- STATS:META:START -->
-_Based on **15** unique users (**116** anonymous data points) — last updated 2026-05-07_
+_Based on **16** unique users (**124** anonymous data points) — last updated 2026-05-08_
 <!-- STATS:META:END -->
 
 ### Most used headsets
@@ -127,6 +128,7 @@ _Based on **15** unique users (**116** anonymous data points) — last updated 2
 | Arctis Nova 7 (Gen 1) | 2 |
 | Arctis Nova 7 (Gen 2) | 2 |
 | Arctis 7/Pro Gaming | 1 |
+| Arctis Nova 7P (Gen 2) | 1 |
 | Arctis Pro Wireless | 1 |
 <!-- STATS:HEADSETS:END -->
 
@@ -142,6 +144,7 @@ _Based on **15** unique users (**116** anonymous data points) — last updated 2
 | Manjaro Linux | 1 |
 | Fedora Linux 44 (KDE Plasma Desktop Edition) | 1 |
 | Fedora Linux 43 (Workstation Edition) | 1 |
+| Artix Linux | 1 |
 <!-- STATS:DISTROS:END -->
 
 ---
