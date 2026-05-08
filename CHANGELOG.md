@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.4] - 8 May 2026
+
+### Fixed
+
+- **dinit: filter-chain and video-router stuck stopped after asm-setup** — when `asm-setup` rewrites service files on disk, dinit keeps the old in-memory definition (without `restart = true`) until explicitly reloaded. Added `dinitctl reload` for stopped services before starting them so dinit always picks up the current file (issue #25).
+- **dinit: D-Bus collision on re-login** — the guard preventing a second `asm-daemon` from starting used `dinitctl status`, which could miss the race window between dinit's boot-sequence auto-start and `asm-setup`'s explicit start. Replaced with `pgrep -f asm-daemon` against the actual running process.
+- **dinit: filter-chain start race after pipewire restart** — `asm-setup` now waits 0.5 s after a successful `dinitctl restart pipewire` before starting dependants, giving the PipeWire socket time to come up.
+
 ## [1.0.99] - 6 May 2026
 
 ### Added
