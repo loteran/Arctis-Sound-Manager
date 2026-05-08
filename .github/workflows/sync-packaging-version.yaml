@@ -1,0 +1,52 @@
+name: Sync packaging version
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - pyproject.toml
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from pyproject.toml
+        id: ver
+        run: |
+          VERSION=$(grep '^version' pyproject.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Sync aur/PKGBUILD
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          sed -i "s/pkgver=.*/pkgver=${VERSION}/" aur/PKGBUILD
+
+      - name: Sync aur/.SRCINFO
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          sed -i "s/pkgver = .*/pkgver = ${VERSION}/" aur/.SRCINFO
+          sed -i "s/arctis-sound-manager-[0-9][0-9.]*\.tar\.gz/arctis-sound-manager-${VERSION}.tar.gz/g" aur/.SRCINFO
+          sed -i "s|releases/download/v[0-9][0-9.]*/|releases/download/v${VERSION}/|g" aur/.SRCINFO
+
+      - name: Sync RPM spec
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          sed -i "s/^Version:.*/Version:        ${VERSION}/" arctis-sound-manager.spec
+
+      - name: Commit if anything changed
+        run: |
+          git config user.name "loteran"
+          git config user.email "axel.valadon@gmail.com"
+          git add aur/PKGBUILD aur/.SRCINFO arctis-sound-manager.spec
+          git diff --cached --quiet && echo "Already in sync — nothing to commit" && exit 0
+          git commit -m "chore: sync packaging to v${{ steps.ver.outputs.version }} [skip ci]"
+          git push origin main
