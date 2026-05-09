@@ -1,0 +1,58 @@
+﻿atmos;Dolby Atmos 7.1 virtual surround sound for headphones
+atmos-;Dolby Atmos 7.1 virtual surround sound for headphones without reverb
+cmss_ent;CMSS-3D in Entertainment Mode on X-Fi Titanium recorded by Sossaman
+cmss_ent-;CMSS-3D in Entertainment Mode without reverb on X-Fi Titanium recorded by Sossaman
+cmss_game;CMSS-3D in Game Mode on X-Fi Titanium recorded by Sossaman
+cmss_game-;CMSS-3D in Game Mode without reverb on X-Fi Titanium recorded by Sossaman
+cmss_rx;CMSS-3D HRTF with speaker angles of 30°, 90°, 135° and 0° on Audigy 5/Rx recorded by Tony (flyingsaucer75)
+cmss_rx+;CMSS-3D HRTF + EAX Reverb "Room" with speaker angles of 30°, 90°, 135° and 0° on Audigy 5/Rx recorded by Tony (flyingsaucer75)
+dh-;Dolby Headphone without reverb
+dh+;Dolby Headphone DH-1 Studio
+dh++;Dolby Headphone DH-2 Cinema
+dht;Dolby Home Theater v4 Headphone Surround Virtualizer
+dht-;Dolby Home Theater v4 Headphone Surround Virtualizer without reverb
+ds3d;DirectSound3D HRTF with speaker angles of 30°, 90°, 135° and 0°
+ds3d+;DirectSound3D HRTF + EAX Reverb "Livingroom" with speaker angles of 30°, 90°, 135° and 0°
+ds3d++;DirectSound3D HRTF + EAX Reverb "Room" with speaker angles of 30°, 90°, 135° and 0°
+ds3d+++;DirectSound3D HRTF + EAX Reverb "Generic" with speaker angles of 30°, 90°, 135° and 0°
+dtshx;DTS Headphone:X by StinkyToilet forum.xda-developers.com/ showthread.php?t=52976760
+dtshx-;DTS Headphone:X without reverb by StinkyToilet forum.xda-developers.com/ showthread.php?t=52976760
+dvs;Dolby Virtual Speaker Reference/n/nCAUTION: Do not use it with headphones, it is made for stereo speakers!
+dvs+;Dolby Virtual Speaker Wide/n/nCAUTION: Do not use it with headphones, it is made for stereo speakers!
+gsx-;Sennheiser GSX 7.1 Binaural Rendering Engine without reverb recorded by Filodream
+gsx;Sennheiser GSX 7.1 Binaural Rendering Engine recorded by Filodream
+gsx+;Sennheiser GSX 7.1 Binaural Rendering Engine + Reverb+ recorded by Filodream
+gsx++;Sennheiser GSX 7.1 Binaural Rendering Engine + Reverb++ recorded by Filodream
+hear;Flux HEar V3 recorded by Tony (flyingsaucer75)
+nahimic;Nahimic 3 Surround Sound
+nahimic-;Nahimic 3 Surround Sound without reverb
+none;No virtualization! Position and volume adjustments are still possible though but you should rather use "Stereo Mix" in the Connection tab.
+oal_cia0;OpenAL Soft CIAIR HRTF with speaker angles of 30°, 90°, 135° and 0°
+oal_cia1;OpenAL Soft CIAIR HRTF with speaker angles of 45°, 110°, 150° and 0°
+oal_dflt;OpenAL Soft default HRTF with speaker angles of 30°, 90°, 135° and 0°
+oal+;OpenAL Soft CIAIR HRTF + custom EAX Reverb "Room" with speaker angles of 30°, 90°, 135° and 0°
+oal++;OpenAL Soft CIAIR HRTF + custom EAX Reverb "Livingroom" with speaker angles of 30°, 90°, 135° and 0°
+oal+++;OpenAL Soft CIAIR HRTF + custom EAX Reverb "Generic" with speaker angles of 30°, 90°, 135° and 0°
+ooyh0;Out Of Your Head Genelec Studio Recording
+ooyh1;Out Of Your Head AIX Studio Recording
+razer;Razer Surround
+razer_fix;Razer Surround with "fixed" upper bass
+sbx33;SBX Pro Studio (also known as BlasterX Acoustic Engine or THX TruStudio Pro) Surround 33
+sbx67;SBX Pro Studio (also known as BlasterX Acoustic Engine or THX TruStudio Pro) Surround 67
+sbx100;SBX Pro Studio (also known as BlasterX Acoustic Engine or THX TruStudio Pro) Surround 100
+sbx33-;SBX Pro Studio (also known as BlasterX Acoustic Engine or THX TruStudio Pro) Surround 33 without reverb
+sbx67-;SBX Pro Studio (also known as BlasterX Acoustic Engine or THX TruStudio Pro) Surround 67 without reverb
+sbx100-;SBX Pro Studio (also known as BlasterX Acoustic Engine or THX TruStudio Pro) Surround 100 without reverb
+sonic;Windows Sonic 7.1 virtual surround sound for headphones (from Creators and April Update)
+sonic-;Windows Sonic 7.1 virtual surround sound for headphones without reverb
+sonic+;Windows Sonic 7.1 virtual surround sound for headphones (from Fall Creators Update, more reverb)
+ssc_dub;Spatial Sound Card with Dubai location and short room envelope/n/nCAUTION: Do not use any upmix!
+ssc_hù;Spatial Sound Card with Shanghai location and short room envelope/n/nCAUTION: Do not use any upmix!
+ssc_hù+;Spatial Sound Card with Shanghai location and medium room envelope/n/nCAUTION: Do not use any upmix!
+ssc_ny;Spatial Sound Card with New York location and short room envelope/n/nCAUTION: Do not use any upmix!
+ssc_ny+;Spatial Sound Card with New York location and medium room envelope/n/nCAUTION: Do not use any upmix!
+ssc_syd;Spatial Sound Card with Sydney location and short room envelope/n/nCAUTION: Do not use any upmix!
+ssc_syd+;Spatial Sound Card with Sydney location and medium room envelope/n/nCAUTION: Do not use any upmix!
+waves;Waves NX
+waves-;Waves NX without reverb
+*;Unknown file! This file is probably a leftover from an older version of HeSuVi and has simply been renamed or replaced, you can manually delete it.
