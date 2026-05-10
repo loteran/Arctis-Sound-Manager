@@ -422,17 +422,28 @@ class _ApplyWorker(QThread):
                 need_full_restart = _old_game_ch != new_ch
 
             # Restart audio services.
-            # Full restart (pipewire + wireplumber + filter-chain) is only needed
-            # when the channel count changes (spatial audio toggle, need_full_restart=True).
-            # For EQ-only preset changes, wireplumber + filter-chain is enough:
-            # - Arctis_* virtual sinks survive (they live in PipeWire, not filter-chain)
-            # - wireplumber restart is required so it re-evaluates node.target on the
-            #   Arctis_*_sink_out loopback nodes and reconnects them to the fresh
-            #   effect_input.sonar-*-eq nodes. Without it, the loopback link stays
-            #   broken silently after filter-chain restart. (issue #34)
+            # Output channel: filter-chain only — no stream interruption (issue #22).
+            # All other channels: full restart (pipewire + wireplumber + filter-chain).
+            # A full restart is required so WirePlumber starts fresh and correctly
+            # re-evaluates node.target on the Arctis_*_sink_out loopback nodes,
+            # relinking them to the new effect_input.sonar-*-eq nodes.
+            # Without restarting PipeWire, WirePlumber does not fire its linking
+            # scripts for pre-existing loopback nodes, leaving the chain silently broken.
             from arctis_sound_manager.init_system import detect_init
-            if need_full_restart:
-                generate_virtual_sinks_conf(sonar=True)
+            if self._channel == "output":
+                if detect_init() == "dinit":
+                    result = subprocess.run(
+                        ["dinitctl", "restart", "pipewire-filter-chain"],
+                        capture_output=True, text=True, timeout=15,
+                    )
+                else:
+                    result = subprocess.run(
+                        ["systemctl", "--user", "restart", "filter-chain"],
+                        capture_output=True, text=True, timeout=15,
+                    )
+            else:
+                if need_full_restart:
+                    generate_virtual_sinks_conf(sonar=True)
                 if detect_init() == "dinit":
                     for svc in ["pipewire", "wireplumber", "pipewire-pulse"]:
                         subprocess.run(["dinitctl", "restart", svc], check=False)
@@ -444,17 +455,6 @@ class _ApplyWorker(QThread):
                     result = subprocess.run(
                         ["systemctl", "--user", "restart",
                          "pipewire", "wireplumber", "pipewire-pulse", "filter-chain"],
-                        capture_output=True, text=True, timeout=15,
-                    )
-            else:
-                if detect_init() == "dinit":
-                    result = subprocess.run(
-                        ["dinitctl", "restart", "wireplumber", "pipewire-filter-chain"],
-                        capture_output=True, text=True, timeout=15,
-                    )
-                else:
-                    result = subprocess.run(
-                        ["systemctl", "--user", "restart", "wireplumber", "filter-chain"],
                         capture_output=True, text=True, timeout=15,
                     )
             if result.returncode != 0:
