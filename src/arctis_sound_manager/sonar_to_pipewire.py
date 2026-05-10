@@ -490,7 +490,7 @@ def generate_sonar_micro_conf(
 
     Creates a virtual Audio/Source node backed by the physical mic input.
     Pattern: capture side is passive (faces hardware), playback side has
-    media.class = Audio/Source/Internal (hidden; apps use the stable Arctis_Mic wrapper).
+    media.class = Audio/Source (faces applications).
     """
     if not _device_attached():
         _log.info(
@@ -683,7 +683,7 @@ context.modules = [
       }}
       playback.props = {{
         node.name      = "effect_output.sonar-micro-eq"
-        media.class    = Audio/Source/Internal
+        media.class    = Audio/Source
         audio.channels = 1
         audio.position = [ MONO ]
       }}
@@ -790,7 +790,7 @@ context.modules = [
       }}
       playback.props = {{
         node.name      = "effect_output.sonar-micro-eq"
-        media.class    = Audio/Source/Internal
+        media.class    = Audio/Source
         audio.channels = 1
         audio.position = [ MONO ]
       }}

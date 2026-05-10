@@ -460,10 +460,9 @@ class _ApplyWorker(QThread):
                 self.done.emit(False)
                 return
 
-            # Wait for the sink/source to actually appear in PipeWire.
-            # For micro, wait for the stable Arctis_Mic wrapper (not the internal EQ node).
+            # Wait for the sink/source to actually appear in PipeWire
             if self._channel == "micro":
-                target_node = "Arctis_Mic"
+                target_node = "effect_output.sonar-micro-eq"
             else:
                 target_node = f"effect_input.sonar-{self._channel}-eq"
 
@@ -491,7 +490,7 @@ class _ApplyWorker(QThread):
             # asm-router re-applies overrides automatically.
             # Only the micro default source needs explicit restore.
             if self._channel == "micro":
-                source = "Arctis_Mic"
+                source = "effect_output.sonar-micro-eq"
                 source_json = _json.dumps({"name": source})
                 subprocess.run(
                     ["pw-metadata", "0", "default.configured.audio.source", source_json],
