@@ -117,12 +117,12 @@ class DinitBackend:
 
     def enable(self) -> None:
         subprocess.run(["dinitctl", "enable", "arctis-manager"], check=False)
-        # arctis-gui has no dinit service — XDG autostart launches it after the
-        # graphical session is ready (dinit has no graphical-session.target equivalent).
+        # arctis-gui has no dinit service — XDG autostart is the right mechanism
+        # (dinit services have no $DISPLAY/$WAYLAND_DISPLAY).
         from arctis_sound_manager.init_system import (
             write_xdg_autostart, _has_xdg_autostart_consumer, write_xprofile_fallback,
         )
-        write_xdg_autostart()
+        write_xdg_autostart()  # also cleans up stale xprofile on DE systems
         if not _has_xdg_autostart_consumer():
             write_xprofile_fallback()
 

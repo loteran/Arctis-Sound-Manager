@@ -105,9 +105,12 @@ def main():
     sys.excepthook = _gui_crash_handler
 
     # ── Single-instance guard ──────────────────────────────────────────────────
+    # Use a longer timeout (1500 ms) so that a second instance launched almost
+    # simultaneously by both XDG autostart and ~/.xprofile on XFCE/X11 (issue #25)
+    # is reliably detected before the first one finishes initialising Qt.
     socket = QLocalSocket()
     socket.connectToServer(_SERVER_NAME)
-    if socket.waitForConnected(300):
+    if socket.waitForConnected(1500):
         # Send the command and wait for "ok" to confirm the instance is alive.
         msg = b"show" if not args.systray else b"alive"
         socket.write(msg)

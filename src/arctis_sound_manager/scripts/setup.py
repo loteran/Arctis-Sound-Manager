@@ -130,7 +130,8 @@ def _setup_dinit_services() -> None:
         ["pgrep", "-f", "asm-daemon"], capture_output=True
     ).returncode == 0
 
-    # Enable and start each service (use 'start' not 'restart' — idempotent if not yet running)
+    # Enable and start each service (use 'start' not 'restart' — idempotent if not yet running).
+    # Guard every service individually to avoid double-launch (issue #25).
     for svc in ["arctis-manager", "arctis-video-router", "pipewire-filter-chain"]:
         en = subprocess.run(["dinitctl", "enable", svc], check=False,
                             capture_output=True, text=True)
@@ -138,6 +139,10 @@ def _setup_dinit_services() -> None:
             print(f"  [dinit] {svc}: enable failed ({en.stderr.strip() or 'unknown error'})")
         if svc == "arctis-manager" and am_already_running:
             print("  [dinit] arctis-manager: already running — skipping start")
+            continue
+        svc_st = subprocess.run(["dinitctl", "status", svc], capture_output=True, text=True)
+        if svc_st.returncode == 0 and "started" in svc_st.stdout.lower():
+            print(f"  [dinit] {svc}: already running — skipping start")
             continue
         st = subprocess.run(["dinitctl", "start", svc], check=False,
                             capture_output=True, text=True)

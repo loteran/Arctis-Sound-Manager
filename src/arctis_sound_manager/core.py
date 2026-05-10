@@ -155,10 +155,12 @@ class CoreEngine:
 
             await asyncio.sleep(0.1)
         except usb.core.USBError as e:
-            if e.errno not in [16, 110]: # 16 (busy), 110 (timeout)
+            if e.errno in (16, 110):  # EBUSY / ETIMEDOUT — back off to avoid spam
+                await asyncio.sleep(1.0)
+            else:
                 self.logger.warning('USB error: %s', e)
-        except AttributeError as e:
-            # If the device disconnects, self.usb_device might be None and generate the error
+        except AttributeError:
+            # self.usb_device can be None mid-disconnect
             pass
         
     
@@ -336,7 +338,7 @@ class CoreEngine:
                     if detect_init() == "dinit":
                         for svc in ["pipewire", "wireplumber", "pipewire-pulse"]:
                             subprocess.run(["dinitctl", "restart", svc], check=False)
-                        subprocess.run(["dinitctl", "start", "pipewire-filter-chain"],
+                        subprocess.run(["dinitctl", "restart", "pipewire-filter-chain"],
                                        check=False, timeout=20)
                     else:
                         subprocess.run(
@@ -347,7 +349,7 @@ class CoreEngine:
                 else:
                     self.logger.info("Stale Sonar configs fixed — restarting filter-chain")
                     if detect_init() == "dinit":
-                        subprocess.run(["dinitctl", "start", "pipewire-filter-chain"],
+                        subprocess.run(["dinitctl", "restart", "pipewire-filter-chain"],
                                        check=False, timeout=15)
                     else:
                         subprocess.run(["systemctl", "--user", "restart", "filter-chain"],
@@ -621,7 +623,14 @@ class CoreEngine:
                     wIndex = self.device_config.command_interface_index[0]
                     self.usb_device.ctrl_transfer(bmRequestType, 0x09, wValue, wIndex, command_lst)
         except usb.core.USBError as e:
-            self.logger.warning(f"Error sending command: {e}")
+            if getattr(e, "errno", None) == 16:  # EBUSY — throttle log
+                self._usb_busy_count = getattr(self, "_usb_busy_count", 0) + 1
+                if self._usb_busy_count == 1 or self._usb_busy_count % 10 == 0:
+                    self.logger.warning("Error sending command (EBUSY ×%d): %s",
+                                        self._usb_busy_count, e)
+            else:
+                self._usb_busy_count = 0
+                self.logger.warning(f"Error sending command: {e}")
 
     def _find_hid_device(self, vendor_id: int, product_ids: list[int]) -> 'TypedDevice | None':
         """Find the first USB device matching vendor_id/product_ids that exposes an HID interface."""

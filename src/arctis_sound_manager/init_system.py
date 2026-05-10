@@ -60,6 +60,8 @@ def write_xdg_autostart() -> None:
 
     dinit services run without $DISPLAY/$WAYLAND_DISPLAY; XDG autostart
     is the correct mechanism to launch GUI apps after login on any compositor.
+    Also removes any stale ~/.xprofile fallback when an XDG consumer is present
+    (avoids double-launch on XFCE/KDE/GNOME after upgrades — issue #25).
     """
     asm_gui = shutil.which("asm-gui") or "/usr/bin/asm-gui"
     XDG_AUTOSTART_DIR.mkdir(parents=True, exist_ok=True)
@@ -72,6 +74,10 @@ def write_xdg_autostart() -> None:
         "NoDisplay=false\n"
         "X-GNOME-Autostart-enabled=true\n"
     )
+    # Clean up stale xprofile entry: if a DE manages autostart via .desktop,
+    # the xprofile fallback causes a second instance on XFCE/X11.
+    if _has_xdg_autostart_consumer():
+        remove_xprofile_fallback()
 
 
 def remove_xdg_autostart() -> None:
@@ -89,20 +95,28 @@ _XPROFILE_PATH = Path.home() / ".xprofile"
 
 
 def _has_xdg_autostart_consumer() -> bool:
-    """Return True if the current environment will actually launch XDG autostart entries.
+    """Return True if the running (or installed) DE launches XDG autostart entries.
 
-    Full DEs (KDE, GNOME, XFCE, MATE, LXDE, LXQt, …) run an XDG autostart launcher
-    as part of their session startup. Standalone tools like `dex` also qualify.
-    Bare WMs (i3, openbox, XLibre, raw xinit) return False — the .desktop file
-    written by write_xdg_autostart() would be ignored without an extra fallback.
+    Checks both the active session (XDG_CURRENT_DESKTOP) and installed DE session
+    binaries, so this works correctly when called from asm-setup outside a
+    graphical session (e.g. post-install scriptlets on Artix/dinit).
+    Bare WMs (i3, openbox, XLibre, raw xinit) without dex return False.
     """
     xdg = (os.environ.get("XDG_CURRENT_DESKTOP") or "").lower()
-    known_des = {
+    _known_des = {
         "kde", "plasma", "gnome", "unity", "pantheon", "xfce",
         "mate", "lxde", "lxqt", "cinnamon", "budgie", "deepin",
     }
     for token in xdg.split(":"):
-        if token.strip() in known_des:
+        if token.strip() in _known_des:
+            return True
+    # Probe installed DE session managers — reliable even without a running session
+    _de_binaries = (
+        "xfce4-session", "gnome-session", "ksmserver", "plasma-workspace",
+        "mate-session", "cinnamon-session", "lxsession", "lxqt-session", "budgie-wm",
+    )
+    for binary in _de_binaries:
+        if shutil.which(binary):
             return True
     for tool in ("dex", "xdg-launch", "fyi"):
         if shutil.which(tool):

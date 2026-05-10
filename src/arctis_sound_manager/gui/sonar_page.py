@@ -428,7 +428,7 @@ class _ApplyWorker(QThread):
             if self._channel == "output":
                 if detect_init() == "dinit":
                     result = subprocess.run(
-                        ["dinitctl", "start", "pipewire-filter-chain"],
+                        ["dinitctl", "restart", "pipewire-filter-chain"],
                         capture_output=True, text=True, timeout=15,
                     )
                 else:
