@@ -3,6 +3,7 @@ Device / Settings page — ArctisSonar GUI visual style.
 Matches the ref_settingsPage.png design.
 """
 import os
+import shutil
 import subprocess
 from pathlib import Path
 

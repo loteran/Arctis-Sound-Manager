@@ -110,16 +110,29 @@ class DinitBackend:
         return shutil.which("dinitctl") is not None
 
     def is_enabled(self) -> bool:
-        from arctis_sound_manager.init_system import is_dinit_service_enabled
-        return is_dinit_service_enabled("arctis-manager")
+        from arctis_sound_manager.init_system import (
+            is_dinit_service_enabled, is_xdg_autostart_enabled,
+        )
+        return is_dinit_service_enabled("arctis-manager") and is_xdg_autostart_enabled()
 
     def enable(self) -> None:
         subprocess.run(["dinitctl", "enable", "arctis-manager"], check=False)
-        subprocess.run(["dinitctl", "enable", "arctis-gui"], check=False)
+        # arctis-gui has no dinit service — XDG autostart launches it after the
+        # graphical session is ready (dinit has no graphical-session.target equivalent).
+        from arctis_sound_manager.init_system import (
+            write_xdg_autostart, _has_xdg_autostart_consumer, write_xprofile_fallback,
+        )
+        write_xdg_autostart()
+        if not _has_xdg_autostart_consumer():
+            write_xprofile_fallback()
 
     def disable(self) -> None:
         subprocess.run(["dinitctl", "disable", "arctis-manager"], check=False)
-        subprocess.run(["dinitctl", "disable", "arctis-gui"], check=False)
+        from arctis_sound_manager.init_system import (
+            remove_xdg_autostart, remove_xprofile_fallback,
+        )
+        remove_xdg_autostart()
+        remove_xprofile_fallback()
 
     def display_name(self) -> str:
         return "dinit user service"
