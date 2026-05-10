@@ -6,6 +6,8 @@ Detects manual moves done in KDE and saves them as persistent overrides.
 """
 import json
 import logging
+import os
+import sys
 import time
 from pathlib import Path
 
@@ -90,7 +92,44 @@ def _subscribe(pulse: pulsectl.Pulse) -> None:
     pulse.event_callback_set(lambda _e: pulse.event_listen_stop())
 
 
+_PID_FILE = Path.home() / ".config" / "arctis_manager" / "video_router.pid"
+
+
+def _acquire_singleton() -> bool:
+    """Return True if we are the sole running instance, False otherwise."""
+    if _PID_FILE.exists():
+        try:
+            old_pid = int(_PID_FILE.read_text().strip())
+            # Check if that PID is still alive
+            os.kill(old_pid, 0)
+            log.warning(
+                "Another asm-router instance (PID %d) is already running — exiting.", old_pid
+            )
+            return False
+        except (ValueError, ProcessLookupError, PermissionError):
+            pass  # stale PID file — take over
+    _PID_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _PID_FILE.write_text(str(os.getpid()))
+    return True
+
+
+def _release_singleton() -> None:
+    try:
+        _PID_FILE.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def main():
+    if not _acquire_singleton():
+        sys.exit(0)
+    try:
+        _main_loop()
+    finally:
+        _release_singleton()
+
+
+def _main_loop():
     log.info("Starting routing override daemon")
     pulse = pulsectl.Pulse("arctis-video-router")
     _subscribe(pulse)

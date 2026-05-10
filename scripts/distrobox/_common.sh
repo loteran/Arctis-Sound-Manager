@@ -76,7 +76,7 @@ asm_list_hidraw_flags() {
 # ---------------------------------------------------------------------------
 asm_hidraw_volume_flag() {
     sudo mkdir -p "$ASM_HIDRAW_RUN_DIR"
-    echo "--additional-flags=--volume=$ASM_HIDRAW_RUN_DIR:$ASM_HIDRAW_RUN_DIR:rslave"
+    echo "--volume=$ASM_HIDRAW_RUN_DIR:$ASM_HIDRAW_RUN_DIR:rslave"
 }
 
 # ---------------------------------------------------------------------------
@@ -85,19 +85,19 @@ asm_hidraw_volume_flag() {
 # ---------------------------------------------------------------------------
 asm_usb_bus_volume_flag() {
     if [[ -d /dev/bus/usb ]]; then
-        echo "--additional-flags=--volume=/dev/bus/usb:/dev/bus/usb:rslave"
+        echo "--volume=/dev/bus/usb:/dev/bus/usb:rslave"
     fi
 }
 
 # ---------------------------------------------------------------------------
 # asm_pipewire_volume_flags  (fix B3 + P2-B: PipeWire sockets for container)
-# Outputs one --additional-flags=--volume=... per line for each PW socket
+# Outputs one --volume=... per line for each PW socket
 # ---------------------------------------------------------------------------
 asm_pipewire_volume_flags() {
     local rt="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-    [[ -S "$rt/pipewire-0" ]]         && echo "--additional-flags=--volume=$rt/pipewire-0:$rt/pipewire-0"
-    [[ -S "$rt/pipewire-0-manager" ]] && echo "--additional-flags=--volume=$rt/pipewire-0-manager:$rt/pipewire-0-manager"
-    [[ -d "$rt/pulse" ]]              && echo "--additional-flags=--volume=$rt/pulse:$rt/pulse"
+    [[ -S "$rt/pipewire-0" ]]         && echo "--volume=$rt/pipewire-0:$rt/pipewire-0"
+    [[ -S "$rt/pipewire-0-manager" ]] && echo "--volume=$rt/pipewire-0-manager:$rt/pipewire-0-manager"
+    [[ -d "$rt/pulse" ]]              && echo "--volume=$rt/pulse:$rt/pulse"
 }
 
 # ---------------------------------------------------------------------------
