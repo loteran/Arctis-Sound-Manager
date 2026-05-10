@@ -166,6 +166,17 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
             gs.write_to_file()
             return True
 
+        # Special case: HRIR profile selection (no ConfigSetting — GUI uses its own QComboBox)
+        if setting == 'hrir_id':
+            gs = self.core_engine.general_settings
+            if value is not None and not isinstance(value, str):
+                return False
+            gs.hrir_id = value
+            gs.write_to_file()
+            from arctis_sound_manager.sonar_to_pipewire import apply_hrir_choice
+            apply_hrir_choice(value)
+            return True
+
         general_settings_keys = self.core_engine.general_settings.to_dict().keys()
         if setting in general_settings_keys:
             gs = self.core_engine.general_settings
@@ -273,6 +284,9 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
 
                 if id and name:
                     result.append({ 'id': id, 'name': name })
+        elif list_name == 'hrir_files':
+            from arctis_sound_manager.hrir_catalog import list_hrir_options
+            result = list_hrir_options()
 
         return json.dumps(result)
 
