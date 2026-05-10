@@ -90,6 +90,9 @@ class GeneralSettings(JsonSerializable):
     # External output device (HDMI, sound card, etc.) shown on home page
     external_output_device: str|None = None
 
+    # HRIR profile for HeSuVi spatial audio
+    hrir_id: str | None = None
+
     # OLED display brightness (0–10)
     oled_brightness: int = 8
 

@@ -161,6 +161,37 @@ def _link_ladspa(out: str, inp: str) -> str:
     return f'                    {{ output = "{out}:Output"  input = "{inp}:Input" }}'
 
 
+# ── HRIR choice ───────────────────────────────────────────────────────────────
+
+def _restart_filter_chain() -> None:
+    """Restart filter-chain service (systemd or dinit)."""
+    import subprocess
+    from arctis_sound_manager.init_system import detect_init, FILTER_CHAIN_SERVICE_NAME
+    init = detect_init()
+    svc = FILTER_CHAIN_SERVICE_NAME.get(init, "filter-chain")
+    if init == "dinit":
+        subprocess.run(["dinitctl", "restart", svc], check=False, timeout=15)
+    else:
+        subprocess.run(["systemctl", "--user", "restart", svc], check=False, timeout=15)
+
+
+def apply_hrir_choice(hrir_id: str | None) -> None:
+    """Copy the chosen HRIR WAV to ~/.local/share/pipewire/hrir_hesuvi/hrir.wav
+    and restart filter-chain so PipeWire picks up the new file."""
+    import shutil
+    dest = Path.home() / ".local" / "share" / "pipewire" / "hrir_hesuvi" / "hrir.wav"
+    if hrir_id:
+        from arctis_sound_manager.hrir_catalog import package_hrir_path
+        src = package_hrir_path(hrir_id)
+        if src is None:
+            _log.warning("HRIR WAV not found for id: %s", hrir_id)
+            return
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+        _log.info("HRIR changed → %s", src.name)
+    _restart_filter_chain()
+
+
 # ── Config generator — game / chat ────────────────────────────────────────────
 
 def generate_sonar_eq_conf(
