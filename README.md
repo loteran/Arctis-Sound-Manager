@@ -283,21 +283,31 @@ asm-setup
 On immutable distros where the host filesystem is read-only, ASM runs inside a
 [Distrobox](https://distrobox.it/) container and is exported transparently to the host.
 Binaries, the desktop entry, systemd user services, and udev rules are all installed
-on the host side — the container is invisible during normal use.
+on the host — the container is invisible during normal use.
 
+Pick the script for your distro and run it directly — no need to clone the repo:
+
+**Bazzite** (Arch / AUR, full deps including noise-suppression-for-voice):
 ```bash
-# Default: Arch-based container (full deps, including noise-suppression-for-voice)
-bash <(curl -fsSL https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/scripts/distrobox-install.sh)
-
-# Fedora-based container (COPR, no noise-suppression)
-bash <(curl -fsSL https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/scripts/distrobox-install.sh) --base fedora
+bash <(curl -fsSL https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/scripts/distrobox/bazzite.sh)
 ```
 
-The script is idempotent — re-run it at any time to upgrade ASM inside the container.
-Use `--uninstall` to fully remove the container, services, and exported binaries.
+**SteamOS / Steam Deck** (Arch / AUR):
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/scripts/distrobox/steamos.sh)
+```
 
-> **Note:** Ubuntu is not supported as a base image because PySide6 >= 6.10.1 is required
-> and is not packaged in Ubuntu repos.
+> SteamOS note: udev rules are stored in `/etc/udev/rules.d/` which is reset on major SteamOS updates.
+> Re-run the script after each SteamOS version upgrade.
+
+**Fedora Silverblue / Kinoite** (COPR, no noise-suppression):
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/scripts/distrobox/silverblue.sh)
+```
+
+Each script is idempotent — re-run it at any time to upgrade ASM inside the container.
+To recreate the container from scratch: add `--reinstall`.
+To skip enabling systemd services: add `--no-services`.
 
 ---
 
