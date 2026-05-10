@@ -443,7 +443,7 @@ class _ApplyWorker(QThread):
                     for svc in ["pipewire", "wireplumber", "pipewire-pulse"]:
                         subprocess.run(["dinitctl", "restart", svc], check=False)
                     result = subprocess.run(
-                        ["dinitctl", "start", "pipewire-filter-chain"],
+                        ["dinitctl", "restart", "pipewire-filter-chain"],
                         capture_output=True, text=True, timeout=15,
                     )
                 else:
@@ -623,7 +623,7 @@ class _ApplyAllWorker(QThread):
                 for svc in ["pipewire", "wireplumber", "pipewire-pulse"]:
                     subprocess.run(["dinitctl", "restart", svc], check=False)
                 result = subprocess.run(
-                    ["dinitctl", "start", "pipewire-filter-chain"],
+                    ["dinitctl", "restart", "pipewire-filter-chain"],
                     capture_output=True, text=True, timeout=15,
                 )
             else:
@@ -2073,7 +2073,7 @@ class SonarPage(QWidget):
                 if detect_init() == "dinit":
                     for svc in ["pipewire", "wireplumber", "pipewire-pulse"]:
                         subprocess.run(["dinitctl", "restart", svc], check=False)
-                    subprocess.run(["dinitctl", "start", "pipewire-filter-chain"],
+                    subprocess.run(["dinitctl", "restart", "pipewire-filter-chain"],
                                    check=False, timeout=20)
                 else:
                     subprocess.run(
@@ -2085,7 +2085,7 @@ class SonarPage(QWidget):
                 logging.getLogger(__name__).info("Stale Sonar configs fixed, restarting filter-chain")
                 from arctis_sound_manager.init_system import detect_init
                 if detect_init() == "dinit":
-                    subprocess.run(["dinitctl", "start", "pipewire-filter-chain"],
+                    subprocess.run(["dinitctl", "restart", "pipewire-filter-chain"],
                                    check=False, timeout=15)
                 else:
                     subprocess.run(["systemctl", "--user", "restart", "filter-chain"],
