@@ -422,23 +422,14 @@ class _ApplyWorker(QThread):
                 need_full_restart = _old_game_ch != new_ch
 
             # Restart audio services.
-            # For the "output" channel we only restart filter-chain so
-            # active streams on pipewire/wireplumber are not killed.
+            # Full restart (pipewire + wireplumber + filter-chain) is only needed
+            # when the channel count changes (spatial audio toggle, need_full_restart=True).
+            # For EQ-only preset changes, restarting filter-chain alone is enough:
+            # the Arctis_* virtual sinks remain alive so active streams (Spotify, etc.)
+            # are not interrupted. (issue #34)
             from arctis_sound_manager.init_system import detect_init
-            if self._channel == "output":
-                if detect_init() == "dinit":
-                    result = subprocess.run(
-                        ["dinitctl", "restart", "pipewire-filter-chain"],
-                        capture_output=True, text=True, timeout=15,
-                    )
-                else:
-                    result = subprocess.run(
-                        ["systemctl", "--user", "restart", "filter-chain"],
-                        capture_output=True, text=True, timeout=15,
-                    )
-            else:
-                if need_full_restart:
-                    generate_virtual_sinks_conf(sonar=True)
+            if need_full_restart:
+                generate_virtual_sinks_conf(sonar=True)
                 if detect_init() == "dinit":
                     for svc in ["pipewire", "wireplumber", "pipewire-pulse"]:
                         subprocess.run(["dinitctl", "restart", svc], check=False)
@@ -450,6 +441,17 @@ class _ApplyWorker(QThread):
                     result = subprocess.run(
                         ["systemctl", "--user", "restart",
                          "pipewire", "wireplumber", "pipewire-pulse", "filter-chain"],
+                        capture_output=True, text=True, timeout=15,
+                    )
+            else:
+                if detect_init() == "dinit":
+                    result = subprocess.run(
+                        ["dinitctl", "restart", "pipewire-filter-chain"],
+                        capture_output=True, text=True, timeout=15,
+                    )
+                else:
+                    result = subprocess.run(
+                        ["systemctl", "--user", "restart", "filter-chain"],
                         capture_output=True, text=True, timeout=15,
                     )
             if result.returncode != 0:
