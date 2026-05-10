@@ -92,7 +92,7 @@ asm_usb_bus_volume_flag() {
 
 # ---------------------------------------------------------------------------
 # asm_pipewire_volume_flags  (fix B3 + P2-B: PipeWire sockets for container)
-# Outputs one bare --volume=... per line (no --additional-flags= prefix).
+# Outputs one --volume=... per line for each PW socket
 # ---------------------------------------------------------------------------
 asm_pipewire_volume_flags() {
     local rt="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
