@@ -305,18 +305,13 @@ def main() -> None:
                 dst = _FC_CONF_DIR / conf.name
             else:
                 dst = _PW_CONF_DIR / conf.name
-            if not dst.exists():
-                text = conf.read_text()
-                if "${HRIR_DIR}" in text:
-                    # Substitute placeholder with the absolute HRIR path so PipeWire
-                    # can find the WAV regardless of its working directory.
-                    text = text.replace("${HRIR_DIR}", str(_HRIR_DIR))
-                    dst.write_text(text)
-                else:
-                    shutil.copy2(conf, dst)
-                print(f"  [ok] {conf.name} → {dst}")
+            text = conf.read_text()
+            if "${HRIR_DIR}" in text:
+                text = text.replace("${HRIR_DIR}", str(_HRIR_DIR))
+                dst.write_text(text)
             else:
-                print(f"  [skip] {dst} already exists")
+                shutil.copy2(conf, dst)
+            print(f"  [ok] {conf.name} → {dst}")
         # Remove any stale copy of the surround config from pipewire.conf.d
         stale = _PW_CONF_DIR / "sink-virtual-surround-7.1-hesuvi.conf"
         if stale.exists():
