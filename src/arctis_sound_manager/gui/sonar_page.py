@@ -471,11 +471,24 @@ class _ApplyWorker(QThread):
                 self.done.emit(False)
                 return
 
-            # Filter-chain restart also tears down the Arctis_* virtual sinks
-            # (Game/Chat/Media). On the Output channel only filter-chain is
-            # restarted, but those sinks still flap — wait for any saved
-            # target sinks to come back before attempting move-sink-input,
-            # otherwise streams stay orphaned on the system default (issue #22).
+            # After a filter-chain-only restart, the loopback link
+            # Arctis_*_sink_out → effect_input.sonar-*-eq may not reconnect
+            # automatically. effect_input nodes are Audio/Sink/Internal and
+            # invisible to pactl — only pw-link can rebuild the link.
+            _loopback_relink = {
+                "game":  ("Arctis_Game_sink_out",  "effect_input.sonar-game-eq"),
+                "chat":  ("Arctis_Chat_sink_out",  "effect_input.sonar-chat-eq"),
+                "media": ("Arctis_Media_sink_out", "effect_input.sonar-media-eq"),
+            }
+            if self._channel in _loopback_relink:
+                lo_out, eq_in = _loopback_relink[self._channel]
+                subprocess.run(
+                    ["pw-link", lo_out, eq_in],
+                    capture_output=True, check=False, timeout=5,
+                )
+
+            # Wait for any saved Arctis_* target sinks to come back before
+            # attempting move-sink-input (issue #22).
             _restore_remap = {
                 "effect_input.sonar-game-eq":  "Arctis_Game",
                 "effect_input.sonar-chat-eq":  "Arctis_Chat",
@@ -509,19 +522,12 @@ class _ApplyWorker(QThread):
                     log.warning("Sonar micro source not found in pactl, "
                                 "cannot restore mic streams")
             else:
-                # After a filter-chain-only restart (issue #34), the loopback link
-                # Arctis_*_sink_out → effect_input.sonar-*-eq may be broken because
-                # the effect node was torn down while node.dont-fallback=true prevents
-                # any fallback. Moving streams directly to the fresh effect_input node
-                # bypasses the broken loopback and guarantees audio is restored
-                # without requiring a Firefox or ASM restart.
+                # Remap streams that were on effect_input nodes back to their
+                # Arctis_* virtual sink (the correct user-facing destination).
                 _effect_remap = {
-                    "Arctis_Game":                 "effect_input.sonar-game-eq",
-                    "Arctis_Chat":                 "effect_input.sonar-chat-eq",
-                    "Arctis_Media":                "effect_input.sonar-media-eq",
-                    "effect_input.sonar-game-eq":  "effect_input.sonar-game-eq",
-                    "effect_input.sonar-chat-eq":  "effect_input.sonar-chat-eq",
-                    "effect_input.sonar-media-eq": "effect_input.sonar-media-eq",
+                    "effect_input.sonar-game-eq":  "Arctis_Game",
+                    "effect_input.sonar-chat-eq":  "Arctis_Chat",
+                    "effect_input.sonar-media-eq": "Arctis_Media",
                 }
                 if self._channel == "output":
                     _effect_remap["effect_input.sonar-output-eq"] = "effect_input.sonar-output-eq"
