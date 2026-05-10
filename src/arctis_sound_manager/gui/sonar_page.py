@@ -18,7 +18,7 @@ from pathlib import Path
 from arctis_sound_manager.i18n import I18n
 
 from PySide6.QtCore import QThread, Qt, QTimer, Signal, Slot
-from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, QStandardItem, QStandardItemModel
+from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -1264,16 +1264,6 @@ def _save_smart_volume(state: dict) -> None:
 # ── Spatial Audio widget ─────────────────────────────────────────────────────
 
 
-class _HrirApplyWorker(QThread):
-    def __init__(self, hrir_id: str, parent=None):
-        super().__init__(parent)
-        self._hrir_id = hrir_id
-
-    def run(self):
-        from arctis_sound_manager.sonar_to_pipewire import apply_hrir_choice
-        apply_hrir_choice(self._hrir_id)
-
-
 class SpatialAudioWidget(QWidget):
     """
     Global spatial audio controls (affects Game channel routing only).
@@ -1290,7 +1280,6 @@ class SpatialAudioWidget(QWidget):
         self._channel = channel
         self._state = _load_spatial_audio(channel)
         self._updating = False
-        self._hrir_worker: _HrirApplyWorker | None = None
 
         self.setStyleSheet(f"""
             QLabel {{ background: transparent; border: none; }}
@@ -1341,10 +1330,6 @@ class SpatialAudioWidget(QWidget):
         # Distance slider
         detail_layout.addWidget(self._slider_row("Distance", "distance"))
 
-        # HRIR profile selector — only for game channel (global setting)
-        if channel == "game":
-            detail_layout.addWidget(self._build_hrir_row())
-
         root.addWidget(self._detail)
         self._detail.setVisible(self._state["enabled"])
 
@@ -1383,67 +1368,6 @@ class SpatialAudioWidget(QWidget):
 
         return w
 
-    def _build_hrir_row(self) -> QWidget:
-        from arctis_sound_manager.hrir_catalog import list_hrir_options_grouped
-        from arctis_sound_manager.settings import GeneralSettings
-
-        w = QWidget()
-        w.setStyleSheet("background: transparent;")
-        row = QHBoxLayout(w)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(12)
-
-        lbl = QLabel("HRIR Profile")
-        lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10pt; min-width: 180px;")
-        row.addWidget(lbl)
-
-        self._hrir_combo = QComboBox()
-        self._hrir_combo.setMinimumWidth(280)
-        self._hrir_combo.setMaximumWidth(420)
-        self._hrir_combo.setStyleSheet(f"""
-            QComboBox {{
-                background: {BG_BUTTON}; color: {TEXT_PRIMARY};
-                border: 1px solid {BG_BUTTON}; border-radius: 6px;
-                padding: 4px 8px; font-size: 9pt;
-            }}
-            QComboBox::drop-down {{ border: none; }}
-            QComboBox QAbstractItemView {{
-                background: {BG_BUTTON}; color: {TEXT_PRIMARY};
-                selection-background-color: {ACCENT};
-            }}
-        """)
-
-        model = QStandardItemModel(self._hrir_combo)
-        current_id = GeneralSettings.read_from_file().hrir_id
-        select_index = 0
-        flat_idx = 0
-        current_group: str | None = None
-
-        for opt in list_hrir_options_grouped():
-            if opt["group"] != current_group:
-                current_group = opt["group"]
-                sep = QStandardItem(f"── {current_group} ──")
-                sep.setFlags(Qt.ItemFlag.NoItemFlags)
-                sep.setForeground(QColor(TEXT_SECONDARY))
-                model.appendRow(sep)
-                flat_idx += 1
-
-            item = QStandardItem(opt["name"])
-            item.setData(opt["id"], Qt.ItemDataRole.UserRole)
-            model.appendRow(item)
-            if opt["id"] == current_id:
-                select_index = flat_idx
-            flat_idx += 1
-
-        self._hrir_combo.setModel(model)
-        if current_id:
-            self._hrir_combo.setCurrentIndex(select_index)
-
-        self._hrir_combo.currentIndexChanged.connect(self._on_hrir_changed)
-        row.addWidget(self._hrir_combo)
-        row.addStretch(1)
-        return w
-
     # ── Slots ─────────────────────────────────────────────────────────────────
 
     def _on_toggle(self, checked):
@@ -1460,27 +1384,6 @@ class SpatialAudioWidget(QWidget):
         if lbl:
             lbl.setText(str(value))
         self.state_changed.emit()
-
-    @Slot(int)
-    def _on_hrir_changed(self, index: int) -> None:
-        if self._updating:
-            return
-        item = self._hrir_combo.model().item(index)
-        if item is None:
-            return
-        hrir_id = item.data(Qt.ItemDataRole.UserRole)
-        if not hrir_id:
-            return  # separator row
-
-        from arctis_sound_manager.settings import GeneralSettings
-        gs = GeneralSettings.read_from_file()
-        gs.hrir_id = hrir_id
-        gs.write_to_file()
-
-        if self._hrir_worker and self._hrir_worker.isRunning():
-            self._hrir_worker.wait(500)
-        self._hrir_worker = _HrirApplyWorker(hrir_id, parent=self)
-        self._hrir_worker.start()
 
 
 # ── Boost de Volume widget ────────────────────────────────────────────────────

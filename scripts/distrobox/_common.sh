@@ -73,31 +73,32 @@ asm_list_hidraw_flags() {
 
 # ---------------------------------------------------------------------------
 # asm_hidraw_volume_flag  (P0-B: stable hot-plug hidraw via udev symlink dir)
+# Outputs a bare --volume=... flag (no --additional-flags= prefix).
 # ---------------------------------------------------------------------------
 asm_hidraw_volume_flag() {
     sudo mkdir -p "$ASM_HIDRAW_RUN_DIR"
-    echo "--additional-flags=--volume=$ASM_HIDRAW_RUN_DIR:$ASM_HIDRAW_RUN_DIR:rslave"
+    echo "--volume=$ASM_HIDRAW_RUN_DIR:$ASM_HIDRAW_RUN_DIR:rslave"
 }
 
 # ---------------------------------------------------------------------------
 # asm_usb_bus_volume_flag  (P0-A: expose /dev/bus/usb so libusb/PyUSB works)
-# Uses rslave: host udev events propagate in, nothing leaks out.
+# Outputs a bare --volume=... flag (no --additional-flags= prefix).
 # ---------------------------------------------------------------------------
 asm_usb_bus_volume_flag() {
     if [[ -d /dev/bus/usb ]]; then
-        echo "--additional-flags=--volume=/dev/bus/usb:/dev/bus/usb:rslave"
+        echo "--volume=/dev/bus/usb:/dev/bus/usb:rslave"
     fi
 }
 
 # ---------------------------------------------------------------------------
 # asm_pipewire_volume_flags  (fix B3 + P2-B: PipeWire sockets for container)
-# Outputs one --additional-flags=--volume=... per line for each PW socket
+# Outputs one bare --volume=... per line (no --additional-flags= prefix).
 # ---------------------------------------------------------------------------
 asm_pipewire_volume_flags() {
     local rt="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-    [[ -S "$rt/pipewire-0" ]]         && echo "--additional-flags=--volume=$rt/pipewire-0:$rt/pipewire-0"
-    [[ -S "$rt/pipewire-0-manager" ]] && echo "--additional-flags=--volume=$rt/pipewire-0-manager:$rt/pipewire-0-manager"
-    [[ -d "$rt/pulse" ]]              && echo "--additional-flags=--volume=$rt/pulse:$rt/pulse"
+    [[ -S "$rt/pipewire-0" ]]         && echo "--volume=$rt/pipewire-0:$rt/pipewire-0"
+    [[ -S "$rt/pipewire-0-manager" ]] && echo "--volume=$rt/pipewire-0-manager:$rt/pipewire-0-manager"
+    [[ -d "$rt/pulse" ]]              && echo "--volume=$rt/pulse:$rt/pulse"
 }
 
 # ---------------------------------------------------------------------------
@@ -125,20 +126,22 @@ asm_create_container() {
         --yes
     )
 
-    # P0-B: stable hidraw directory (hot-plug works without --reinstall)
-    local hidraw_flag
+    # Collect all extra volume flags into one space-separated string, then pass
+    # as a single --additional-flags "..." argument (distrobox requires two
+    # separate argv elements; --additional-flags=VALUE is not accepted).
+    local extra_flags=""
+    local hidraw_flag usb_flag pw_flag
     hidraw_flag="$(asm_hidraw_volume_flag)"
-    [[ -n "$hidraw_flag" ]] && create_cmd+=("$hidraw_flag")
+    [[ -n "$hidraw_flag" ]] && extra_flags+=" $hidraw_flag"
 
-    # P0-A: USB bus for libusb / PyUSB
-    local usb_flag
     usb_flag="$(asm_usb_bus_volume_flag)"
-    [[ -n "$usb_flag" ]] && create_cmd+=("$usb_flag")
+    [[ -n "$usb_flag" ]] && extra_flags+=" $usb_flag"
 
-    # PipeWire sockets (B3 + P2-B)
-    while IFS= read -r flag; do
-        [[ -n "$flag" ]] && create_cmd+=("$flag")
+    while IFS= read -r pw_flag; do
+        [[ -n "$pw_flag" ]] && extra_flags+=" $pw_flag"
     done < <(asm_pipewire_volume_flags)
+
+    [[ -n "$extra_flags" ]] && create_cmd+=(--additional-flags "${extra_flags# }")
 
     log_info "Running: ${create_cmd[*]}"
     "${create_cmd[@]}"

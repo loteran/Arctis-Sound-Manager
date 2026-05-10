@@ -24,8 +24,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
   - Interactive EQ curve with up to 10 bands per channel (Game / Chat / Micro)
   - 312 Game presets, 8 Chat, 14 Mic bundled — searchable, with 9 favorite slots
   - Macro sliders: Basses / Voix / Aigus (±12 dB)
-  - **Spatial Audio** — routes Game channel through HeSuVi virtual 7.1 surround, with **Immersion** (0–12 dB gain) and **Distance** (plate reverb) sliders
-  - **HRIR Profile selector** — 57 built-in HRIR profiles (Dolby Atmos, CMSS-3D, SBX Pro Studio, Sennheiser GSX, DTS Headphone:X, Windows Sonic, Razer Surround, Out Of Your Head, Waves NX, Flux HEar, OpenAL/DS3D, Nahimic, Spatial Sound Card…) grouped by brand in a drop-down — selecting one applies instantly and persists across sessions
+  - **Spatial Audio** — routes Game or Media channel through HeSuVi virtual 7.1 surround, with **Immersion** (0–12 dB gain) and **Distance** (plate reverb) sliders
   - **Volume Boost** — up to +12 dB gain node at the end of the filter chain
   - **Smart Volume** — dynamic compressor (Quiet / Balanced / Loud) to even out volume differences
   - All changes applied live via PipeWire filter-chain (biquad nodes)
@@ -49,7 +48,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 - **One-click bug reports** — when filing an issue, the dialog auto-uploads the full diagnostic as a secret GitHub gist and opens a pre-filled issue linking to it (requires authenticated `gh` CLI). Falls back to a manual drag-and-drop attachment otherwise.
 - **`ARCTIS_LOG_LEVEL` env var** — bump verbosity for support tickets without rebuilding: `ARCTIS_LOG_LEVEL=debug systemctl --user restart arctis-manager`. Honored by daemon, GUI and video-router.
 - **Help page** — built-in user manual in English, French and Spanish
-- **Virtual surround 7.1** — HeSuVi filter-chain included automatically with the install; 57 HRIR profiles bundled and selectable from the Sonar tab
+- **Virtual surround 7.1** — HeSuVi filter-chain included automatically with the install; 57 HRIR profiles bundled and selectable from the **Settings** tab
 
 ## Screenshots
 
@@ -208,7 +207,7 @@ The setup script will:
 
 After setup, a new audio sink called **"Virtual Surround Sink"** appears in your system. Route it to your headset output from your desktop audio settings.
 
-> **HRIR Profile selector**: 57 profiles are bundled and selectable from the **HRIR Profile** drop-down in the Sonar tab → Spatial Audio section. Selecting one applies instantly — no manual file copy or service restart needed. Advanced users can still replace `~/.local/share/pipewire/hrir_hesuvi/hrir.wav` with any 14-channel HeSuVi-compatible WAV and restart filter-chain manually.
+> **HRIR Profile selector**: 57 profiles are bundled and selectable from the **HRIR Profile** drop-down in the **Settings** tab. Selecting one applies instantly — no manual file copy or service restart needed. Advanced users can still replace `~/.local/share/pipewire/hrir_hesuvi/hrir.wav` with any 14-channel HeSuVi-compatible WAV and restart filter-chain manually.
 
 ---
 

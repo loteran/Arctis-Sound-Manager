@@ -53,7 +53,7 @@ class ConfigStatusResponseMapping:
 
 class ConfigSetting(JsonSerializable):
     name: str
-    type: SettingType
+    type: SettingType | None
     default_value: int|str|None
     update_sequence: list[int|Literal['value']]
 
@@ -61,7 +61,16 @@ class ConfigSetting(JsonSerializable):
 
     def __init__(self, name: str, type: SettingType|str, default_value: int|str|None, update_sequence: list[int|Literal['value']] | None = None, **kwargs: Any):
         self.name = name
-        self.type = type if isinstance(type, SettingType) else SettingType(type)
+        if isinstance(type, SettingType):
+            self.type = type
+        else:
+            try:
+                self.type = SettingType(type)
+            except ValueError:
+                logging.getLogger(__name__).warning(
+                    f"ConfigSetting '{name}': unknown type '{type}', setting will be hidden."
+                )
+                self.type = None  # type: ignore
         self.default_value = default_value
         self.update_sequence = update_sequence if update_sequence is not None else []
 
@@ -202,12 +211,20 @@ class DeviceConfiguration:
         raw_audio = raw_config.get('audio', {})
         self.spatial_engine: str = raw_audio.get('spatial_engine', 'hesuvi')
 
+        _cfg_logger = logging.getLogger(__name__)
         raw_settings: dict[str, dict[str, Any]] = raw_config.get('settings', {})
         self.settings = {}
         for setting_section, settings in raw_settings.items():
             self.settings[setting_section] = []
             for setting_name, setting_values in settings.items():
-                setting_type = SettingType(setting_values.get('type', ''))
+                raw_type = setting_values.get('type', '')
+                try:
+                    setting_type = SettingType(raw_type)
+                except ValueError:
+                    _cfg_logger.warning(
+                        f"Device YAML: setting '{setting_name}' has unknown type '{raw_type}', skipping."
+                    )
+                    continue
                 setting_default_value = setting_values.get('default', None)
 
                 self.settings[setting_section].append(ConfigSetting(

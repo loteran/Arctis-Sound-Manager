@@ -71,7 +71,7 @@ class QSettingsWidget(QWidget):
             for name, value in self.settings.items():
                 if not name in self._settings_widgets:
                     config = self.settings_config.get(name)
-                    if config is None or getattr(config, 'hidden', False):
+                    if config is None or getattr(config, 'hidden', False) or config.type is None:
                         continue
                     widget = self.get_widget(config, value, self.on_settings_updated)
 
