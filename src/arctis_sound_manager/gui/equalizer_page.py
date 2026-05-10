@@ -134,7 +134,7 @@ class _ToggleWorker(QThread):
     _MODE_NODES = {
         "sonar": {
             "sinks":   ["effect_input.sonar-game-eq", "effect_input.sonar-chat-eq"],
-            "sources": ["effect_output.sonar-micro-eq"],
+            "sources": ["Arctis_Mic"],
         },
         "custom": {
             "sinks":   ["Arctis_Game", "Arctis_Chat"],
