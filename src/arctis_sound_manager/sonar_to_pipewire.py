@@ -202,6 +202,7 @@ def generate_sonar_eq_conf(
     aigus_db: float,
     output_path: Path | None = None,
     spatial_audio: bool = True,
+    media_spatial_audio: bool = True,
     boost_db: float = 0.0,
     smart_volume: dict | None = None,
     target_override: str | None = None,
@@ -222,7 +223,11 @@ def generate_sonar_eq_conf(
     # Instead of skipping generation entirely when the device is transiently absent
     # (e.g. during the PipeWire restart that _ApplyWorker itself triggers), write
     # the conf with an empty target — PipeWire will bind on device arrival.
-    needs_physical = channel == "chat" or (channel == "game" and not spatial_audio)
+    needs_physical = (
+        channel == "chat"
+        or (channel == "game" and not spatial_audio)
+        or (channel == "media" and not media_spatial_audio)
+    )
     if needs_physical and not _device_attached():
         _log.info(
             "%s EQ config: device not attached, writing with empty target — "
@@ -230,8 +235,11 @@ def generate_sonar_eq_conf(
             channel,
         )
 
-    # Spatial audio OFF → game routes directly to physical stereo output (2ch)
     if channel == "game" and not spatial_audio:
+        target = _get_physical_out_game() if _device_attached() else ""
+        channels = 2
+        position = "FL FR"
+    elif channel == "media" and not media_spatial_audio:
         target = _get_physical_out_game() if _device_attached() else ""
         channels = 2
         position = "FL FR"
@@ -240,7 +248,7 @@ def generate_sonar_eq_conf(
         channels = _CHANNEL_CHANNELS[channel]
         position = _CHANNEL_POSITION[channel]
     else:
-        # game (spatial on), media, output → static targets
+        # game (spatial on), media (spatial on), output → HeSuVi or static target
         target = target_override or _CHANNEL_TARGET.get(channel, "")
         channels = _CHANNEL_CHANNELS[channel]
         position = _CHANNEL_POSITION[channel]
@@ -973,11 +981,24 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
                     log.warning("Stale config (%s uses 2ch, should be 8ch), regenerating", name)
                     needs_regen = True
 
+            if name == "sonar-media-eq.conf" and "audio.channels = 2" in content:
+                try:
+                    import json as _json
+                    _media_sp_file = Path.home() / ".config" / "arctis_manager" / "sonar_spatial_audio_media.json"
+                    _media_sp = _json.loads(_media_sp_file.read_text()) if _media_sp_file.exists() else {}
+                    _media_sp_on = _media_sp.get("enabled", True)
+                except Exception:
+                    _media_sp_on = True
+                if _media_sp_on:
+                    log.warning("Stale config (%s uses 2ch, should be 8ch), regenerating", name)
+                    needs_regen = True
+
             if needs_regen:
                 channel = name.replace("sonar-", "").replace("-eq.conf", "")
                 sink_name = f"effect_input.sonar-{channel}-eq"
                 target = {
                     "game":   _SURROUND,
+                    "media":  _SURROUND,
                     "chat":   _get_physical_out_chat(),
                     "output": "",
                 }.get(channel, _get_physical_out_game())
@@ -1081,11 +1102,25 @@ def ensure_sonar_eq_configs() -> bool:
     except Exception:
         spatial_on = True
 
+    # Read media spatial state
+    try:
+        import json as _json
+        _media_spatial_file = Path.home() / ".config" / "arctis_manager" / "sonar_spatial_audio_media.json"
+        _media_spatial = _json.loads(_media_spatial_file.read_text()) if _media_spatial_file.exists() else {}
+        media_spatial_on = _media_spatial.get("enabled", True)
+    except Exception:
+        media_spatial_on = True
+
     expected: dict[str, dict] = {
         "game": {
             "channels": 8 if spatial_on else 2,
             "position": _CHANNEL_POSITION["game"] if spatial_on else "FL FR",
             "target":   _SURROUND if spatial_on else _get_physical_out_game(),
+        },
+        "media": {
+            "channels": 8 if media_spatial_on else 2,
+            "position": _CHANNEL_POSITION["media"] if media_spatial_on else "FL FR",
+            "target":   _SURROUND if media_spatial_on else _get_physical_out_game(),
         },
         "chat": {
             "channels": _CHANNEL_CHANNELS["chat"],
@@ -1094,7 +1129,7 @@ def ensure_sonar_eq_configs() -> bool:
         },
     }
 
-    for channel in ("game", "chat"):
+    for channel in ("game", "media", "chat"):
         conf_path = _CONF_DIR / f"sonar-{channel}-eq.conf"
         sink_name = f"effect_input.sonar-{channel}-eq"
         exp = expected[channel]
