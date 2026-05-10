@@ -1034,11 +1034,21 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
     state_file = Path.home() / ".config" / "arctis_manager" / ".eq_mode"
     sonar = state_file.exists() and state_file.read_text().strip() == "sonar"
     sinks_path = _SINKS_CONF_DIR / "10-arctis-virtual-sinks.conf"
-    # In non-sonar mode check that the game sink target is correct (chat may differ on dual-PCM)
-    expected_target = ("effect_input.sonar-game-eq" if sonar else _get_physical_out_game())
+    # Validate that all three Arctis_* sinks point to their own EQ nodes.
+    # Checking only the game target (old behaviour) missed the case where
+    # Arctis_Media or Arctis_Chat had a stale/wrong node.target (e.g. both
+    # Game and Media targeting sonar-game-eq after a manual conf edit).
+    if sonar:
+        expected_targets = [
+            "effect_input.sonar-game-eq",
+            "effect_input.sonar-chat-eq",
+            "effect_input.sonar-media-eq",
+        ]
+    else:
+        expected_targets = [_get_physical_out_game()]
     if sinks_path.exists():
         content = sinks_path.read_text()
-        if f'node.target        = "{expected_target}"' not in content:
+        if any(t and t not in content for t in expected_targets):
             log.warning("Virtual sink targets out of sync with EQ mode, regenerating")
             generate_virtual_sinks_conf(sonar=sonar)
             fixed = True

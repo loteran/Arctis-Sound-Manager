@@ -509,12 +509,19 @@ class _ApplyWorker(QThread):
                     log.warning("Sonar micro source not found in pactl, "
                                 "cannot restore mic streams")
             else:
-                # Game/Chat: restore each stream to its original Arctis sink.
-                # Remap effect_input sinks to their Arctis equivalents.
+                # After a filter-chain-only restart (issue #34), the loopback link
+                # Arctis_*_sink_out → effect_input.sonar-*-eq may be broken because
+                # the effect node was torn down while node.dont-fallback=true prevents
+                # any fallback. Moving streams directly to the fresh effect_input node
+                # bypasses the broken loopback and guarantees audio is restored
+                # without requiring a Firefox or ASM restart.
                 _effect_remap = {
-                    "effect_input.sonar-game-eq":  "Arctis_Game",
-                    "effect_input.sonar-chat-eq":  "Arctis_Chat",
-                    "effect_input.sonar-media-eq": "Arctis_Media",
+                    "Arctis_Game":                 "effect_input.sonar-game-eq",
+                    "Arctis_Chat":                 "effect_input.sonar-chat-eq",
+                    "Arctis_Media":                "effect_input.sonar-media-eq",
+                    "effect_input.sonar-game-eq":  "effect_input.sonar-game-eq",
+                    "effect_input.sonar-chat-eq":  "effect_input.sonar-chat-eq",
+                    "effect_input.sonar-media-eq": "effect_input.sonar-media-eq",
                 }
                 if self._channel == "output":
                     _effect_remap["effect_input.sonar-output-eq"] = "effect_input.sonar-output-eq"
