@@ -172,19 +172,25 @@ _SPATIAL_DEFAULTS: dict = {
 }
 
 
-def _load_spatial_audio() -> dict:
-    if _SPATIAL_FILE.exists():
+def _spatial_file_for_channel(channel: str = "game") -> Path:
+    suffix = "" if channel == "game" else f"_{channel}"
+    return Path.home() / ".config" / "arctis_manager" / f"sonar_spatial_audio{suffix}.json"
+
+
+def _load_spatial_audio(channel: str = "game") -> dict:
+    f = _spatial_file_for_channel(channel)
+    if f.exists():
         try:
-            d = json.loads(_SPATIAL_FILE.read_text())
+            d = json.loads(f.read_text())
             return {**_SPATIAL_DEFAULTS, **d}
         except Exception:
             pass
     return dict(_SPATIAL_DEFAULTS)
 
 
-def _save_spatial_audio(state: dict) -> None:
+def _save_spatial_audio(state: dict, channel: str = "game") -> None:
     _CFG.mkdir(parents=True, exist_ok=True)
-    _SPATIAL_FILE.write_text(json.dumps(state, indent=2))
+    _spatial_file_for_channel(channel).write_text(json.dumps(state, indent=2))
 
 
 def _load_macro(channel: str) -> dict[str, float]:
@@ -346,12 +352,13 @@ class _ApplyWorker(QThread):
             except Exception as e:
                 log.warning("smart_volume load failed: %s — using default", e)
                 smart_state = {"enabled": False, "level": 0.0, "loudness": "balanced"}
-            # Snapshot old Game EQ channel count before overwriting config,
+            # Snapshot old EQ channel count before overwriting config,
             # so we can detect spatial audio toggle (2ch↔8ch) later.
             _old_game_ch = None
-            if self._channel == "game":
+            if self._channel in ("game", "media"):
                 import re as _re
-                _eq_path = Path.home() / ".config" / "pipewire" / "filter-chain.conf.d" / "sonar-game-eq.conf"
+                _conf_name = f"sonar-{self._channel}-eq.conf"
+                _eq_path = Path.home() / ".config" / "pipewire" / "filter-chain.conf.d" / _conf_name
                 try:
                     _m = _re.search(r"audio\.channels\s*=\s*(\d+)", _eq_path.read_text())
                     if _m:
@@ -366,16 +373,23 @@ class _ApplyWorker(QThread):
                                           noise_canceling=micro_proc.get("noiseCanceling"),
                                           noise_reduction=micro_proc)
             else:
-                spatial = _load_spatial_audio()["enabled"] if self._channel == "game" else True
+                if self._channel == "game":
+                    spatial = _load_spatial_audio("game")["enabled"]
+                elif self._channel == "media":
+                    spatial = _load_spatial_audio("media")["enabled"]
+                else:
+                    spatial = True
                 generate_sonar_eq_conf(self._channel, self._bands,
                                        self._basses, self._voix, self._aigus,
-                                       spatial_audio=spatial, boost_db=boost_db,
+                                       spatial_audio=spatial if self._channel == "game" else True,
+                                       media_spatial_audio=spatial if self._channel == "media" else True,
+                                       boost_db=boost_db,
                                        smart_volume=smart_state,
                                        target_override=self._target_override)
 
             # ── Regenerate HeSuVi config with current Spatial Audio parameters ──
-            if self._channel == "game":
-                spatial_state = _load_spatial_audio()
+            if self._channel in ("game", "media"):
+                spatial_state = _load_spatial_audio(self._channel)
                 if spatial_state["enabled"]:
                     from arctis_sound_manager.sonar_to_pipewire import generate_hesuvi_conf
                     generate_hesuvi_conf(
@@ -395,12 +409,15 @@ class _ApplyWorker(QThread):
                 log.debug("Throttling filter-chain restart (%.1fs)", wait)
                 self.msleep(int(wait * 1000))
 
-            # Check whether the Game EQ channel count changed (spatial toggle).
+            # Check whether the EQ channel count changed (spatial toggle).
             # A full pipewire restart is needed so the loopback reconnects
             # to the new sink with the correct channel count.
             _ApplyWorker._last_restart = time.monotonic()
             need_full_restart = False
             if self._channel == "game" and _old_game_ch is not None:
+                new_ch = 8 if spatial else 2
+                need_full_restart = _old_game_ch != new_ch
+            elif self._channel == "media" and _old_game_ch is not None:
                 new_ch = 8 if spatial else 2
                 need_full_restart = _old_game_ch != new_ch
 
@@ -540,11 +557,13 @@ class _ApplyAllWorker(QThread):
             except Exception as e:
                 log.warning("smart_volume load failed: %s — using default", e)
                 smart_state = {"enabled": False, "level": 0.0, "loudness": "balanced"}
-            spatial = _load_spatial_audio()
+            game_spatial = _load_spatial_audio("game")
+            media_spatial = _load_spatial_audio("media")
 
             # Generate conf for each channel
             for channel in ("game", "media", "chat"):
-                spatial_on = spatial["enabled"] if channel == "game" else True
+                game_sp_on = game_spatial["enabled"]
+                media_sp_on = media_spatial["enabled"]
                 try:
                     bands = _parse_preset(
                         _list_presets(channel).get(_active_preset_name(channel),
@@ -558,7 +577,8 @@ class _ApplyAllWorker(QThread):
                     macro.get("basses", 0.0),
                     macro.get("voix", 0.0),
                     macro.get("aigus", 0.0),
-                    spatial_audio=spatial_on,
+                    spatial_audio=game_sp_on if channel == "game" else True,
+                    media_spatial_audio=media_sp_on if channel == "media" else True,
                     boost_db=boost_db,
                     smart_volume=smart_state,
                 )
@@ -583,12 +603,18 @@ class _ApplyAllWorker(QThread):
                 noise_reduction=micro_proc,
             )
 
-            # Regenerate HeSuVi if spatial on
-            if spatial["enabled"]:
+            # Regenerate HeSuVi: game spatial takes precedence; fall back to media
+            if game_spatial["enabled"]:
                 from arctis_sound_manager.sonar_to_pipewire import generate_hesuvi_conf
                 generate_hesuvi_conf(
-                    immersion_pct=spatial.get("immersion", 50),
-                    distance_pct=spatial.get("distance", 50),
+                    immersion_pct=game_spatial.get("immersion", 50),
+                    distance_pct=game_spatial.get("distance", 50),
+                )
+            elif media_spatial["enabled"]:
+                from arctis_sound_manager.sonar_to_pipewire import generate_hesuvi_conf
+                generate_hesuvi_conf(
+                    immersion_pct=media_spatial.get("immersion", 50),
+                    distance_pct=media_spatial.get("distance", 50),
                 )
 
             # Single restart
@@ -1076,7 +1102,18 @@ class SonarChannelWidget(QWidget):
             if channel == "game":
                 from arctis_sound_manager import device_state as _ds
                 _has_spatial = _ds.get_spatial_engine() != "none"
-                self._spatial = SpatialAudioWidget()
+                self._spatial = SpatialAudioWidget(channel="game")
+                self._spatial.setVisible(_has_spatial)
+                scl.addWidget(self._spatial)
+                sep = QFrame()
+                sep.setFrameShape(QFrame.Shape.HLine)
+                sep.setStyleSheet(f"background: {BORDER}; border: none; max-height: 1px;")
+                sep.setVisible(_has_spatial)
+                scl.addWidget(sep)
+            elif channel == "media":
+                from arctis_sound_manager import device_state as _ds
+                _has_spatial = _ds.get_spatial_engine() != "none"
+                self._spatial = SpatialAudioWidget(channel="media")
                 self._spatial.setVisible(_has_spatial)
                 scl.addWidget(self._spatial)
                 sep = QFrame()
@@ -1248,9 +1285,10 @@ class SpatialAudioWidget(QWidget):
     """
     state_changed = Signal()
 
-    def __init__(self, parent: QWidget | None = None):
+    def __init__(self, channel: str = "game", parent: QWidget | None = None):
         super().__init__(parent)
-        self._state = _load_spatial_audio()
+        self._channel = channel
+        self._state = _load_spatial_audio(channel)
         self._updating = False
         self._hrir_worker: _HrirApplyWorker | None = None
 
@@ -1284,7 +1322,8 @@ class SpatialAudioWidget(QWidget):
         row1.addWidget(title)
         row1.addStretch(1)
 
-        note = QLabel(_t("game_channel"))
+        note_key = "game_channel" if channel == "game" else "media_channel"
+        note = QLabel(_t(note_key))
         note.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt;")
         row1.addWidget(note)
         root.addLayout(row1)
@@ -1302,8 +1341,9 @@ class SpatialAudioWidget(QWidget):
         # Distance slider
         detail_layout.addWidget(self._slider_row("Distance", "distance"))
 
-        # HRIR profile selector
-        detail_layout.addWidget(self._build_hrir_row())
+        # HRIR profile selector — only for game channel (global setting)
+        if channel == "game":
+            detail_layout.addWidget(self._build_hrir_row())
 
         root.addWidget(self._detail)
         self._detail.setVisible(self._state["enabled"])
@@ -1409,13 +1449,13 @@ class SpatialAudioWidget(QWidget):
     def _on_toggle(self, checked):
         enabled = bool(checked)
         self._state["enabled"] = enabled
-        _save_spatial_audio(self._state)
+        _save_spatial_audio(self._state, self._channel)
         self._detail.setVisible(enabled)
         self.state_changed.emit()
 
     def _on_slider(self, key: str, value: int):
         self._state[key] = value
-        _save_spatial_audio(self._state)
+        _save_spatial_audio(self._state, self._channel)
         lbl = self.__dict__.get(f"_val_lbl_{key}")
         if lbl:
             lbl.setText(str(value))
@@ -2215,6 +2255,7 @@ class SonarPage(QWidget):
         self._game_widget._spatial.state_changed.connect(self._on_spatial_changed)
         self._game_widget._boost.state_changed.connect(self._on_boost_changed)
         self._game_widget._smart.state_changed.connect(self._on_smart_changed)
+        self._media_widget._spatial.state_changed.connect(self._on_media_spatial_changed)
         self._media_widget._boost.state_changed.connect(self._on_boost_changed)
         self._media_widget._smart.state_changed.connect(self._on_smart_changed)
         self._chat_widget._boost.state_changed.connect(self._on_boost_changed)
@@ -2256,6 +2297,10 @@ class SonarPage(QWidget):
     def _on_spatial_changed(self):
         """Spatial audio toggle changed — re-apply game channel conf."""
         self._game_widget._schedule_apply()
+
+    def _on_media_spatial_changed(self):
+        """Media spatial audio toggle changed — re-apply media channel conf."""
+        self._media_widget._schedule_apply()
 
     def _on_boost_changed(self):
         """Boost changed — re-apply all EQ channels."""
