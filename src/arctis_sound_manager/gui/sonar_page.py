@@ -424,9 +424,12 @@ class _ApplyWorker(QThread):
             # Restart audio services.
             # Full restart (pipewire + wireplumber + filter-chain) is only needed
             # when the channel count changes (spatial audio toggle, need_full_restart=True).
-            # For EQ-only preset changes, restarting filter-chain alone is enough:
-            # the Arctis_* virtual sinks remain alive so active streams (Spotify, etc.)
-            # are not interrupted. (issue #34)
+            # For EQ-only preset changes, wireplumber + filter-chain is enough:
+            # - Arctis_* virtual sinks survive (they live in PipeWire, not filter-chain)
+            # - wireplumber restart is required so it re-evaluates node.target on the
+            #   Arctis_*_sink_out loopback nodes and reconnects them to the fresh
+            #   effect_input.sonar-*-eq nodes. Without it, the loopback link stays
+            #   broken silently after filter-chain restart. (issue #34)
             from arctis_sound_manager.init_system import detect_init
             if need_full_restart:
                 generate_virtual_sinks_conf(sonar=True)
@@ -446,12 +449,12 @@ class _ApplyWorker(QThread):
             else:
                 if detect_init() == "dinit":
                     result = subprocess.run(
-                        ["dinitctl", "restart", "pipewire-filter-chain"],
+                        ["dinitctl", "restart", "wireplumber", "pipewire-filter-chain"],
                         capture_output=True, text=True, timeout=15,
                     )
                 else:
                     result = subprocess.run(
-                        ["systemctl", "--user", "restart", "filter-chain"],
+                        ["systemctl", "--user", "restart", "wireplumber", "filter-chain"],
                         capture_output=True, text=True, timeout=15,
                     )
             if result.returncode != 0:
@@ -470,22 +473,6 @@ class _ApplyWorker(QThread):
                 log.warning("Sonar node %s did not appear within timeout", target_node)
                 self.done.emit(False)
                 return
-
-            # After a filter-chain-only restart, the loopback link
-            # Arctis_*_sink_out → effect_input.sonar-*-eq may not reconnect
-            # automatically. effect_input nodes are Audio/Sink/Internal and
-            # invisible to pactl — only pw-link can rebuild the link.
-            _loopback_relink = {
-                "game":  ("Arctis_Game_sink_out",  "effect_input.sonar-game-eq"),
-                "chat":  ("Arctis_Chat_sink_out",  "effect_input.sonar-chat-eq"),
-                "media": ("Arctis_Media_sink_out", "effect_input.sonar-media-eq"),
-            }
-            if self._channel in _loopback_relink:
-                lo_out, eq_in = _loopback_relink[self._channel]
-                subprocess.run(
-                    ["pw-link", lo_out, eq_in],
-                    capture_output=True, check=False, timeout=5,
-                )
 
             # Wait for any saved Arctis_* target sinks to come back before
             # attempting move-sink-input (issue #22).
