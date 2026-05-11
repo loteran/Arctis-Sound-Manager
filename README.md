@@ -84,9 +84,9 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 | Arctis Nova 3 |  |  | 12ec |
 | Arctis Nova 3P / 3X Wireless |  |  | 2269, 226d |
 | Arctis Nova 5 / 5X | ✅ | 1 | $\color{royalblue}{\textbf{2232}}$, 2253 |
-| Arctis Nova 7 Gen 1 | ✅ | 2 | $\color{royalblue}{\textbf{2202}}$, 2206, 223a, 227a, 22ab, 22a4 |
-| Arctis Nova 7 Gen 2 | ✅ | 4 | $\color{royalblue}{\textbf{22a1}}$, $\color{royalblue}{\textbf{227e}}$, 2258, 229e, 22a9, 22a5 |
-| Arctis Nova 7P | ✅ | 2 | 220a, $\color{royalblue}{\textbf{22a7}}$ |
+| Arctis Nova 7 Gen 1 | ✅ | 1 | $\color{royalblue}{\textbf{2202}}$, 2206, 223a, 227a, 22ab, 22a4 |
+| Arctis Nova 7 Gen 2 | ✅ | 5 | $\color{royalblue}{\textbf{22a1}}$, $\color{royalblue}{\textbf{227e}}$, 2258, 229e, 22a9, 22a5 |
+| Arctis Nova 7P | ✅ | 3 | 220a, $\color{royalblue}{\textbf{22a7}}$ |
 | Arctis Nova Elite |  |  | 2244, 2249 |
 <!-- STATS:DEVICES:END -->
 
@@ -98,9 +98,9 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 | Distribution | Install method | Users |
 |---|---|---|
 | CachyOS | 🎯 AUR | 👥 10 |
+| Artix Linux | 🎯 AUR | 👥 3 |
 | Nobara Linux 43 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 2 |
 | Fedora Linux 44 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 2 |
-| Artix Linux | 🎯 AUR | 👥 2 |
 | Ubuntu 26.04 LTS | 🎯 PPA | 👥 1 |
 | Ubuntu 24.04.4 LTS | 🎯 PPA | 👥 1 |
 | Manjaro Linux | 🎯 AUR | 👥 1 |
@@ -117,7 +117,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 > [View interactive dashboard →](https://loteran.github.io/Arctis-Sound-Manager/stats)
 
 <!-- STATS:META:START -->
-_Based on **22** unique users (**150** anonymous data points) — last updated 2026-05-10_
+_Based on **23** unique users (**161** anonymous data points) — last updated 2026-05-11_
 <!-- STATS:META:END -->
 
 ### Most used headsets
@@ -126,12 +126,12 @@ _Based on **22** unique users (**150** anonymous data points) — last updated 2
 | Headset | Installs |
 |---|---|
 | Arctis Nova Pro Wireless | 8 |
-| Arctis Nova 7 (Gen 2) | 4 |
+| Arctis Nova 7 (Gen 2) | 5 |
 | Arctis 9 Wireless | 3 |
-| Arctis Nova 7 (Gen 1) | 2 |
-| Arctis Nova 7P (Gen 2) | 2 |
+| Arctis Nova 7P (Gen 2) | 3 |
 | Arctis 7/Pro Gaming | 1 |
 | Arctis Nova 5 Wireless | 1 |
+| Arctis Nova 7 (Gen 1) | 1 |
 | Arctis Pro Wireless | 1 |
 <!-- STATS:HEADSETS:END -->
 
@@ -141,9 +141,9 @@ _Based on **22** unique users (**150** anonymous data points) — last updated 2
 | Distribution | Installs |
 |---|---|
 | CachyOS | 10 |
+| Artix Linux | 3 |
 | Nobara Linux 43 (KDE Plasma Desktop Edition) | 2 |
 | Fedora Linux 44 (KDE Plasma Desktop Edition) | 2 |
-| Artix Linux | 2 |
 | Ubuntu 26.04 LTS | 1 |
 | Ubuntu 24.04.4 LTS | 1 |
 | Manjaro Linux | 1 |
