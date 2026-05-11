@@ -99,13 +99,13 @@ create_container() {
     local cmd=(distrobox create --name "$_CONTAINER" --image "$_IMAGE" --home "$HOME" --pull --yes)
 
     sudo mkdir -p "$_HIDRAW_RUN_DIR"
-    cmd+=("--volume=$_HIDRAW_RUN_DIR:$_HIDRAW_RUN_DIR:rslave")
-    [[ -d /dev/bus/usb ]] && cmd+=("--volume=/dev/bus/usb:/dev/bus/usb:rslave")
+    cmd+=("--volume" "$_HIDRAW_RUN_DIR:$_HIDRAW_RUN_DIR:rslave")
+    [[ -d /dev/bus/usb ]] && cmd+=("--volume" "/dev/bus/usb:/dev/bus/usb:rslave")
 
     local rt="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-    [[ -S "$rt/pipewire-0" ]]         && cmd+=("--volume=$rt/pipewire-0:$rt/pipewire-0")
-    [[ -S "$rt/pipewire-0-manager" ]] && cmd+=("--volume=$rt/pipewire-0-manager:$rt/pipewire-0-manager")
-    [[ -d "$rt/pulse" ]]              && cmd+=("--volume=$rt/pulse:$rt/pulse")
+    [[ -S "$rt/pipewire-0" ]]         && cmd+=("--volume" "$rt/pipewire-0:$rt/pipewire-0")
+    [[ -S "$rt/pipewire-0-manager" ]] && cmd+=("--volume" "$rt/pipewire-0-manager:$rt/pipewire-0-manager")
+    [[ -d "$rt/pulse" ]]              && cmd+=("--volume" "$rt/pulse:$rt/pulse")
 
     log_info "Running: ${cmd[*]}"
     "${cmd[@]}"
@@ -155,7 +155,7 @@ export_binaries() {
             --bin "/usr/bin/$bin" --export-path "$HOME/.local/bin" 2>>"$_LOG" \
             || log_warn "Could not export $bin"
     done
-    distrobox enter "$_CONTAINER" -- distrobox-export --app arctis-sound-manager 2>>"$_LOG" \
+    distrobox enter "$_CONTAINER" -- distrobox-export --app /usr/share/applications/ArctisManager.desktop 2>>"$_LOG" \
         || log_warn "Could not export desktop entry"
     log_ok "Binaries at $HOME/.local/bin/"
 }

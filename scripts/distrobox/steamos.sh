@@ -16,7 +16,7 @@ _SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 _UDEV_RULES="/etc/udev/rules.d/91-steelseries-arctis.rules"
 _HIDRAW_SYMLINK_RULES="/etc/udev/rules.d/90-asm-hidraw-symlink.rules"
 _HIDRAW_RUN_DIR="/run/asm-hidraw"
-_IMAGE="quay.io/toolbx-images/archlinux-toolbox:latest"
+_IMAGE="docker.io/library/archlinux:latest"
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -99,13 +99,13 @@ create_container() {
     local cmd=(distrobox create --name "$_CONTAINER" --image "$_IMAGE" --home "$HOME" --pull --yes)
 
     sudo mkdir -p "$_HIDRAW_RUN_DIR"
-    cmd+=("--volume=$_HIDRAW_RUN_DIR:$_HIDRAW_RUN_DIR:rslave")
-    [[ -d /dev/bus/usb ]] && cmd+=("--volume=/dev/bus/usb:/dev/bus/usb:rslave")
+    cmd+=("--volume" "$_HIDRAW_RUN_DIR:$_HIDRAW_RUN_DIR:rslave")
+    [[ -d /dev/bus/usb ]] && cmd+=("--volume" "/dev/bus/usb:/dev/bus/usb:rslave")
 
     local rt="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-    [[ -S "$rt/pipewire-0" ]]         && cmd+=("--volume=$rt/pipewire-0:$rt/pipewire-0")
-    [[ -S "$rt/pipewire-0-manager" ]] && cmd+=("--volume=$rt/pipewire-0-manager:$rt/pipewire-0-manager")
-    [[ -d "$rt/pulse" ]]              && cmd+=("--volume=$rt/pulse:$rt/pulse")
+    [[ -S "$rt/pipewire-0" ]]         && cmd+=("--volume" "$rt/pipewire-0:$rt/pipewire-0")
+    [[ -S "$rt/pipewire-0-manager" ]] && cmd+=("--volume" "$rt/pipewire-0-manager:$rt/pipewire-0-manager")
+    [[ -d "$rt/pulse" ]]              && cmd+=("--volume" "$rt/pulse:$rt/pulse")
 
     log_info "Running: ${cmd[*]}"
     "${cmd[@]}"
@@ -142,10 +142,10 @@ install_asm() {
         sudo pacman -Syu --noconfirm
         if ! command -v paru &>/dev/null; then
             echo "[arch-install] Installing paru..."
-            sudo pacman -S --needed --noconfirm base-devel git libusb hidapi
+            sudo pacman -S --needed --noconfirm base-devel git libusb hidapi polkit libnotify
             tmpdir=$(mktemp -d)
             trap "rm -rf \"$tmpdir\"" EXIT
-            git clone https://aur.archlinux.org/paru-bin.git "$tmpdir/paru"
+            git clone https://aur.archlinux.org/paru.git "$tmpdir/paru"
             (cd "$tmpdir/paru" && makepkg -si --noconfirm)
         fi
         echo "[arch-install] Installing arctis-sound-manager from AUR..."
@@ -164,7 +164,7 @@ export_binaries() {
             --bin "/usr/bin/$bin" --export-path "$HOME/.local/bin" 2>>"$_LOG" \
             || log_warn "Could not export $bin"
     done
-    distrobox enter "$_CONTAINER" -- distrobox-export --app arctis-sound-manager 2>>"$_LOG" \
+    distrobox enter "$_CONTAINER" -- distrobox-export --app /usr/share/applications/ArctisManager.desktop 2>>"$_LOG" \
         || log_warn "Could not export desktop entry"
     log_ok "Binaries at $HOME/.local/bin/"
 }

@@ -105,11 +105,14 @@ class _ToggleWorker(QThread):
 
         STATE_FILE.write_text(self._new_mode)
         _update_routing_overrides(self._new_mode)
-        subprocess.run(
-            ['notify-send', '-a', 'Arctis EQ', 'Arctis EQ',
-             f'{"Sonar" if self._new_mode == "sonar" else "Custom EQ"} mode enabled'],
-            check=False,
-        )
+        try:
+            subprocess.run(
+                ['notify-send', '-a', 'Arctis EQ', 'Arctis EQ',
+                 f'{"Sonar" if self._new_mode == "sonar" else "Custom EQ"} mode enabled'],
+                check=False,
+            )
+        except FileNotFoundError:
+            pass
         self.done.emit(True, self._new_mode)
 
 
