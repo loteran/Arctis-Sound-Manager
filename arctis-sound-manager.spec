@@ -51,12 +51,13 @@ Requires:       curl
 # initial install, so existing users would otherwise stay broken until
 # they ran `dnf reinstall arctis-sound-manager` manually.
 Requires:       ladspa-swh-plugins
-# rnnoise LADSPA plugin used by the ClearCast / mic noise-suppression
-# feature exposed in the Settings page. Promoted from Recommends: to
-# Requires: per the "no soft deps" mandate — without it the toggle in
-# the GUI is a no-op and the user has no way to know why. Same Fedora
-# package name as Debian/Arch.
-Requires:       noise-suppression-for-voice
+# rnnoise LADSPA plugin for ClearCast mic noise suppression. Kept as
+# Recommends: because it is absent from some Fedora-derived repos (e.g.
+# Nobara) and blocking on it prevents DNF from installing ASM at all
+# (issue #41). The GUI now detects its absence at runtime and disables
+# the ClearCast toggle with a clear install hint, so omitting it is no
+# longer a silent no-op for the user.
+Recommends:     noise-suppression-for-voice
 
 %description
 Arctis Sound Manager is a Linux application for configuring SteelSeries Arctis

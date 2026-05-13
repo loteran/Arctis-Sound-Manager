@@ -66,6 +66,7 @@ class _NoWheelSlider(QSlider):
     def wheelEvent(self, event):
         event.ignore()
 from arctis_sound_manager.gui.qt_widgets.q_toggle import QToggle
+from arctis_sound_manager.system_deps_checker import _find_ladspa_plugin
 from arctis_sound_manager.gui.theme import (
     ACCENT,
     BG_BUTTON,
@@ -206,6 +207,28 @@ def _load_macro(channel: str) -> dict[str, float]:
 def _save_macro(channel: str, values: dict[str, float]) -> None:
     _CFG.mkdir(parents=True, exist_ok=True)
     (_CFG / f"sonar_macro_{channel}.json").write_text(json.dumps(values))
+
+
+def _save_custom_preset(channel: str, name: str, bands: list) -> Path:
+    """Save current EQ bands as a custom preset JSON in _PRESETS_DIR."""
+    import json as _json
+    tag = _CHANNEL_TAG.get(channel, "[Game]")
+    _PRESETS_DIR.mkdir(parents=True, exist_ok=True)
+    preset_data = {
+        "parametricEQ": {
+            f"filter{i+1}": {
+                "enabled": b.enabled,
+                "qFactor": round(b.q, 4),
+                "frequency": round(b.freq, 2),
+                "gain": round(b.gain, 4),
+                "type": b.type,
+            }
+            for i, b in enumerate(bands)
+        }
+    }
+    path = _PRESETS_DIR / f"{name} {tag}.json"
+    path.write_text(_json.dumps(preset_data, indent=2, ensure_ascii=False))
+    return path
 
 
 # ── Apply worker ──────────────────────────────────────────────────────────────
@@ -721,7 +744,9 @@ class _FavoriteSlot(QPushButton):
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self.setFixedSize(52, 42)
+        self.setFixedHeight(42)
+        self.setMinimumWidth(52)
+        self.setMaximumWidth(160)
         self._name: str | None = None
         self._refresh()
 
@@ -750,7 +775,7 @@ class _FavoriteSlot(QPushButton):
 
     def _refresh(self):
         if self._name:
-            label = self._name[:6] + "…" if len(self._name) > 7 else self._name
+            label = self._name[:15] + "…" if len(self._name) > 16 else self._name
             self.setText(label)
             self.setToolTip(self._name)
             self.setStyleSheet(f"""
@@ -759,7 +784,7 @@ class _FavoriteSlot(QPushButton):
                     border: 1px solid {ACCENT}44;
                     border-radius: 6px;
                     color: {TEXT_PRIMARY};
-                    font-size: 8pt;
+                    font-size: 9pt;
                     padding: 2px;
                 }}
                 QPushButton:hover {{ border-color: {ACCENT}; background: {BG_BUTTON_HOVER}; }}
@@ -767,6 +792,7 @@ class _FavoriteSlot(QPushButton):
         else:
             self.setText("")
             self.setToolTip(_t("empty_slot"))
+            self.setFixedWidth(52)
             self.setStyleSheet(f"""
                 QPushButton {{
                     background: {BG_CARD};
@@ -776,6 +802,51 @@ class _FavoriteSlot(QPushButton):
                 }}
                 QPushButton:hover {{ border-color: {ACCENT}55; }}
             """)
+
+
+# ── Save preset dialog ────────────────────────────────────────────────────────
+
+class _SavePresetDialog(QDialog):
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setWindowTitle(_t("save_preset"))
+        self.setMinimumWidth(340)
+        from arctis_sound_manager.gui.theme import BG_MAIN
+        self.setStyleSheet(f"background-color: {BG_MAIN}; color: {TEXT_PRIMARY};")
+        self.name: str = ""
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(12)
+
+        layout.addWidget(QLabel(
+            _t("save_preset_label"),
+            styleSheet=f"color: {TEXT_PRIMARY}; font-size: 11pt; background: transparent;"
+        ))
+
+        self._edit = QLineEdit()
+        self._edit.setPlaceholderText(_t("preset_name_placeholder"))
+        self._edit.setStyleSheet(
+            f"QLineEdit {{ background: {BG_BUTTON}; border: 1px solid {BORDER}; "
+            f"border-radius: 6px; color: {TEXT_PRIMARY}; padding: 6px 10px; font-size: 11pt; }}"
+            f"QLineEdit:focus {{ border-color: {ACCENT}; }}"
+        )
+        layout.addWidget(self._edit)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self._on_save)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _on_save(self) -> None:
+        name = self._edit.text().strip()
+        if not name:
+            self._edit.setFocus()
+            return
+        self.name = name
+        self.accept()
 
 
 # ── Preset bar ────────────────────────────────────────────────────────────────
@@ -806,6 +877,19 @@ class _PresetBar(QWidget):
         )
         row1.addWidget(self._name_label)
         row1.addStretch(1)
+
+        save_btn = QPushButton()
+        save_btn.setFixedSize(32, 32)
+        save_btn.setToolTip(_t("save_custom_preset"))
+        save_btn.setStyleSheet(self._icon_btn_ss())
+        _save_icon_path = _IMAGES_DIR / "save_icon.svg"
+        if _save_icon_path.exists():
+            save_btn.setIcon(_svg_icon("save_icon.svg", TEXT_PRIMARY))
+            save_btn.setIconSize(save_btn.size() * 0.55)
+        else:
+            save_btn.setText("💾")
+        save_btn.clicked.connect(self._on_save_custom)
+        row1.addWidget(save_btn)
 
         star_btn = QPushButton()
         star_btn.setFixedSize(32, 32)
@@ -913,6 +997,15 @@ class _PresetBar(QWidget):
             _save_favorites(self._channel, self._favs)
             self._refresh_display()
 
+    def _on_save_custom(self):
+        dlg = _SavePresetDialog(self)
+        if dlg.exec() != QDialog.DialogCode.Accepted or not dlg.name:
+            return
+        _save_custom_preset(self._channel, dlg.name, self._cur_bands)
+        self._presets = _list_presets(self._channel)
+        _set_active_preset(self._channel, dlg.name)
+        self._active = dlg.name
+        self._refresh_display()
 
     def _on_fav_remove(self, idx: int):
         if idx < len(self._favs):
@@ -1177,6 +1270,7 @@ class SonarChannelWidget(QWidget):
 
     def _on_bands_changed(self, bands: list):
         self._cur_bands = bands
+        self._preset_bar._cur_bands = bands
         self._schedule_apply()
 
     def _on_macros_changed(self, basses: float, voix: float, aigus: float):
@@ -1741,6 +1835,15 @@ def _make_header_row(title: str, toggle) -> QHBoxLayout:
 class _NoiseCancelingCard(QWidget):
     state_changed = Signal()
 
+    # Cached at class level so we only hit the filesystem once per session.
+    _rnnoise_available: bool | None = None
+
+    @classmethod
+    def _check_rnnoise(cls) -> bool:
+        if cls._rnnoise_available is None:
+            cls._rnnoise_available = _find_ladspa_plugin("librnnoise*.so") is not None
+        return cls._rnnoise_available
+
     def __init__(self, state: dict, parent=None):
         super().__init__(parent)
         self._state = state
@@ -1752,9 +1855,39 @@ class _NoiseCancelingCard(QWidget):
         root.setSpacing(8)
 
         self._toggle = QToggle(is_checkbox=True)
-        self._toggle.setChecked(state["noiseCanceling"]["enabled"])
         self._toggle.checkStateChanged.connect(self._on_toggle)
+
+        rnnoise_ok = self._check_rnnoise()
+        if rnnoise_ok:
+            self._toggle.setChecked(state["noiseCanceling"]["enabled"])
+        else:
+            # Plugin missing: force toggle off and lock it so the user gets
+            # a clear error message instead of a silent no-op.
+            self._toggle.setChecked(False)
+            self._toggle.setEnabled(False)
+            _tip = (
+                "noise-suppression-for-voice is not installed.\n"
+                "ClearCast AI Noise Cancellation requires the rnnoise LADSPA plugin.\n\n"
+                "Install it with:\n"
+                "  Fedora/Nobara:  sudo dnf install noise-suppression-for-voice\n"
+                "  Debian/Ubuntu:  sudo apt install noise-suppression-for-voice\n"
+                "  Arch/CachyOS:   paru -S noise-suppression-for-voice"
+            )
+            self._toggle.setToolTip(_tip)
+
         root.addLayout(_make_header_row("CLEARCAST AI NOISE CANCELLATION", self._toggle))
+
+        if not rnnoise_ok:
+            missing_lbl = QLabel(
+                "⚠️  noise-suppression-for-voice not installed — "
+                "ClearCast unavailable"
+            )
+            missing_lbl.setStyleSheet(
+                "color: #e8a000; font-size: 9pt; font-style: italic;"
+            )
+            missing_lbl.setWordWrap(True)
+            missing_lbl.setToolTip(self._toggle.toolTip())
+            root.addWidget(missing_lbl)
 
         self._waveform = _WaveformWidget(self)
         root.addWidget(self._waveform)
@@ -1775,7 +1908,7 @@ class _NoiseCancelingCard(QWidget):
         slider_row.addWidget(lbl_max)
         root.addLayout(slider_row)
 
-        self._set_enabled(state["noiseCanceling"]["enabled"])
+        self._set_enabled(rnnoise_ok and state["noiseCanceling"]["enabled"])
 
     def _set_enabled(self, enabled: bool):
         self._slider.setEnabled(enabled)
