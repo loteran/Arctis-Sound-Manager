@@ -92,26 +92,32 @@ _PRESETS_DIR  = _CFG / "sonar_presets"
 _RAW_DIR      = Path(__file__).parent / "presets"
 
 _CHANNEL_TAG  = {"game": "[Game]", "media": "[Game]", "chat": "[Chat]", "micro": "[Mic]", "output": "[Game]"}
-_MAX_FAV      = 9
+_FAV_ROW_SIZE = 9   # slots per row before wrapping to a new row
 _APPLY_DELAY  = 600   # ms debounce before restarting filter-chain
 
 # ── Preset I/O ────────────────────────────────────────────────────────────────
 
-def _parse_preset(path: Path) -> list[EqBand]:
-    data = json.loads(path.read_text())
+def _parse_preset_data(data: dict) -> list[EqBand]:
     eq = data.get("parametricEQ", {})
+    indexed = sorted(
+        ((int(k[6:]), v) for k, v in eq.items()
+         if k.startswith("filter") and k[6:].isdigit()),
+        key=lambda x: x[0],
+    )
     bands: list[EqBand] = []
-    for i in range(1, 11):
-        f = eq.get(f"filter{i}")
-        if f:
-            bands.append(EqBand(
-                freq=float(f.get("frequency", 1000)),
-                gain=float(f.get("gain", 0)),
-                q=float(f.get("qFactor", 0.707)),
-                type=f.get("type", "peakingEQ"),
-                enabled=bool(f.get("enabled", True)),
-            ))
+    for _, f in indexed:
+        bands.append(EqBand(
+            freq=float(f.get("frequency", 1000)),
+            gain=float(f.get("gain", 0)),
+            q=float(f.get("qFactor", 0.707)),
+            type=f.get("type", "peakingEQ"),
+            enabled=bool(f.get("enabled", True)),
+        ))
     return bands
+
+
+def _parse_preset(path: Path) -> list[EqBand]:
+    return _parse_preset_data(json.loads(path.read_text()))
 
 
 def _list_presets(channel: str) -> dict[str, Path]:
@@ -209,12 +215,13 @@ def _save_macro(channel: str, values: dict[str, float]) -> None:
     (_CFG / f"sonar_macro_{channel}.json").write_text(json.dumps(values))
 
 
-def _save_custom_preset(channel: str, name: str, bands: list) -> Path:
-    """Save current EQ bands as a custom preset JSON in _PRESETS_DIR."""
-    import json as _json
+def _save_custom_preset(channel: str, name: str, bands: list,
+                        macros: dict | None = None,
+                        settings: dict | None = None) -> Path:
+    """Save current EQ bands (and optionally macro values) as a custom preset JSON."""
     tag = _CHANNEL_TAG.get(channel, "[Game]")
     _PRESETS_DIR.mkdir(parents=True, exist_ok=True)
-    preset_data = {
+    preset_data: dict = {
         "parametricEQ": {
             f"filter{i+1}": {
                 "enabled": b.enabled,
@@ -226,9 +233,35 @@ def _save_custom_preset(channel: str, name: str, bands: list) -> Path:
             for i, b in enumerate(bands)
         }
     }
+    if macros:
+        preset_data["macros"] = {k: round(float(v), 2) for k, v in macros.items()}
+    if settings:
+        preset_data["settings"] = settings
     path = _PRESETS_DIR / f"{name} {tag}.json"
-    path.write_text(_json.dumps(preset_data, indent=2, ensure_ascii=False))
+    path.write_text(json.dumps(preset_data, indent=2, ensure_ascii=False))
     return path
+
+
+def _read_preset_macros(path: Path) -> dict[str, float] | None:
+    """Return the macros dict from a preset JSON, or None if absent."""
+    try:
+        return json.loads(path.read_text()).get("macros") or None
+    except Exception:
+        return None
+
+
+def _is_custom_preset(channel: str, name: str) -> bool:
+    tag = _CHANNEL_TAG.get(channel, "[Game]")
+    return (_PRESETS_DIR / f"{name} {tag}.json").exists()
+
+
+def _delete_custom_preset(channel: str, name: str) -> bool:
+    tag = _CHANNEL_TAG.get(channel, "[Game]")
+    path = _PRESETS_DIR / f"{name} {tag}.json"
+    if path.exists():
+        path.unlink()
+        return True
+    return False
 
 
 # ── Apply worker ──────────────────────────────────────────────────────────────
@@ -679,7 +712,14 @@ class _PresetSearchDialog(QDialog):
         self.setWindowTitle(_t("search_preset"))
         self.setMinimumSize(340, 480)
         self.selected_name: str | None = None
-        self._all = list(presets.keys())
+        self._presets = presets
+        self._custom_names: set[str] = {
+            n for n, p in presets.items() if p.parent == _PRESETS_DIR
+        }
+        # Custom presets first, then built-in (alphabetical within each group)
+        self._all = sorted(self._custom_names) + [
+            n for n in presets.keys() if n not in self._custom_names
+        ]
 
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
@@ -712,6 +752,8 @@ class _PresetSearchDialog(QDialog):
             QListWidget::item:hover    {{ background: {BG_BUTTON_HOVER}; }}
         """)
         self._list.itemDoubleClicked.connect(self.accept)
+        self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._list.customContextMenuRequested.connect(self._on_context_menu)
         layout.addWidget(self._list)
 
         buttons = QDialogButtonBox(
@@ -728,7 +770,31 @@ class _PresetSearchDialog(QDialog):
         q = text.lower()
         for name in self._all:
             if q in name.lower():
-                self._list.addItem(QListWidgetItem(name))
+                item = QListWidgetItem(name)
+                if name in self._custom_names:
+                    item.setForeground(QColor(ACCENT))
+                self._list.addItem(item)
+
+    def _on_context_menu(self, pos) -> None:
+        item = self._list.itemAt(pos)
+        if not item:
+            return
+        name = item.text()
+        if name not in self._custom_names:
+            return
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            f"QMenu {{ background: {BG_CARD}; border: 1px solid {BORDER}; color: {TEXT_PRIMARY}; }}"
+            f"QMenu::item:selected {{ background: {ACCENT}; color: #fff; }}"
+        )
+        act_delete = menu.addAction(_t("delete_custom_preset"))
+        if menu.exec(self._list.mapToGlobal(pos)) == act_delete:
+            path = self._presets[name]
+            path.unlink(missing_ok=True)
+            self._custom_names.discard(name)
+            self._all.remove(name)
+            del self._presets[name]
+            self._filter(self._search.text())
 
     def accept(self):
         item = self._list.currentItem()
@@ -741,6 +807,7 @@ class _PresetSearchDialog(QDialog):
 
 class _FavoriteSlot(QPushButton):
     remove_requested = Signal()
+    delete_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -748,11 +815,15 @@ class _FavoriteSlot(QPushButton):
         self.setMinimumWidth(52)
         self.setMaximumWidth(160)
         self._name: str | None = None
+        self._is_custom: bool = False
         self._refresh()
 
     def set_preset(self, name: str | None):
         self._name = name
         self._refresh()
+
+    def set_custom(self, is_custom: bool) -> None:
+        self._is_custom = is_custom
 
     def get_preset(self) -> str | None:
         return self._name
@@ -770,14 +841,20 @@ class _FavoriteSlot(QPushButton):
             QMenu::item:selected {{ background: {ACCENT}; }}
         """)
         act_remove = menu.addAction(f"Remove \"{self._name}\"")
-        if menu.exec(event.globalPos()) == act_remove:
+        act_delete = menu.addAction(_t("delete_custom_preset")) if self._is_custom else None
+        chosen = menu.exec(event.globalPos())
+        if chosen == act_remove:
             self.remove_requested.emit()
+        elif act_delete and chosen == act_delete:
+            self.delete_requested.emit()
 
     def _refresh(self):
         if self._name:
             label = self._name[:15] + "…" if len(self._name) > 16 else self._name
             self.setText(label)
             self.setToolTip(self._name)
+            self.setMinimumWidth(52)
+            self.setMaximumWidth(160)
             self.setStyleSheet(f"""
                 QPushButton {{
                     background: {BG_BUTTON};
@@ -785,7 +862,7 @@ class _FavoriteSlot(QPushButton):
                     border-radius: 6px;
                     color: {TEXT_PRIMARY};
                     font-size: 9pt;
-                    padding: 2px;
+                    padding: 2px 6px;
                 }}
                 QPushButton:hover {{ border-color: {ACCENT}; background: {BG_BUTTON_HOVER}; }}
             """)
@@ -852,7 +929,10 @@ class _SavePresetDialog(QDialog):
 # ── Preset bar ────────────────────────────────────────────────────────────────
 
 class _PresetBar(QWidget):
-    preset_selected = Signal(str, list)   # name, list[EqBand]
+    preset_selected = Signal(str, list)         # name, list[EqBand]
+    save_requested  = Signal()
+    macros_loaded   = Signal(float, float, float)  # basses, voix, aigus
+    settings_loaded = Signal(dict)
 
     def __init__(self, channel: str, parent: QWidget | None = None):
         super().__init__(parent)
@@ -881,13 +961,9 @@ class _PresetBar(QWidget):
         save_btn = QPushButton()
         save_btn.setFixedSize(32, 32)
         save_btn.setToolTip(_t("save_custom_preset"))
+        save_btn.setIcon(_svg_icon("save_icon.svg", TEXT_PRIMARY))
+        save_btn.setIconSize(save_btn.size() * 0.55)
         save_btn.setStyleSheet(self._icon_btn_ss())
-        _save_icon_path = _IMAGES_DIR / "save_icon.svg"
-        if _save_icon_path.exists():
-            save_btn.setIcon(_svg_icon("save_icon.svg", TEXT_PRIMARY))
-            save_btn.setIconSize(save_btn.size() * 0.55)
-        else:
-            save_btn.setText("💾")
         save_btn.clicked.connect(self._on_save_custom)
         row1.addWidget(save_btn)
 
@@ -937,18 +1013,14 @@ class _PresetBar(QWidget):
 
         root.addLayout(row2)
 
-        # ── Row 3: 9 favorite slots ──────────────────────────────────────────
-        row3 = QHBoxLayout()
-        row3.setSpacing(4)
+        # ── Favorite slots (unlimited, wrapped in rows of _FAV_ROW_SIZE) ────────
+        self._slots_container = QWidget()
+        self._slots_container.setStyleSheet("background: transparent;")
+        self._slots_layout = QVBoxLayout(self._slots_container)
+        self._slots_layout.setContentsMargins(0, 0, 0, 0)
+        self._slots_layout.setSpacing(4)
         self._slots: list[_FavoriteSlot] = []
-        for i in range(_MAX_FAV):
-            slot = _FavoriteSlot()
-            slot.clicked.connect(lambda checked, idx=i: self._on_fav_slot(idx))
-            slot.remove_requested.connect(lambda idx=i: self._on_fav_remove(idx))
-            row3.addWidget(slot)
-            self._slots.append(slot)
-        row3.addStretch(1)
-        root.addLayout(row3)
+        root.addWidget(self._slots_container)
 
         self._refresh_display()
 
@@ -968,43 +1040,105 @@ class _PresetBar(QWidget):
 
     def _refresh_display(self):
         self._name_label.setText(self._active)
-        self._fav_count.setText(f"{_t('favorites')} ({len(self._favs)}/{_MAX_FAV})")
-        for i, slot in enumerate(self._slots):
-            slot.set_preset(self._favs[i] if i < len(self._favs) else None)
+        n = len(self._favs)
+        self._fav_count.setText(f"{_t('favorites')} ({n})")
+
+        # Remove old rows
+        while self._slots_layout.count():
+            item = self._slots_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self._slots.clear()
+
+        # Rebuild rows
+        for row_start in range(0, max(n, 1), _FAV_ROW_SIZE):
+            row_w = QWidget()
+            row_w.setStyleSheet("background: transparent;")
+            row_layout = QHBoxLayout(row_w)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(4)
+            for i in range(row_start, min(row_start + _FAV_ROW_SIZE, n)):
+                name = self._favs[i]
+                slot = _FavoriteSlot()
+                slot.set_preset(name)
+                slot.set_custom(_is_custom_preset(self._channel, name))
+                slot.clicked.connect(lambda checked, idx=i: self._on_fav_slot(idx))
+                slot.remove_requested.connect(lambda idx=i: self._on_fav_remove(idx))
+                slot.delete_requested.connect(lambda idx=i: self._on_delete_custom(idx))
+                row_layout.addWidget(slot)
+                self._slots.append(slot)
+            row_layout.addStretch(1)
+            self._slots_layout.addWidget(row_w)
+            if n == 0:
+                break
 
     def _load_and_emit(self, name: str):
         presets = _list_presets(self._channel)
         if name not in presets:
             return
-        bands = _parse_preset(presets[name])
+        path = presets[name]
+        try:
+            data = json.loads(path.read_text())
+        except Exception:
+            return
+        bands = _parse_preset_data(data)
         self._cur_bands = bands
         self._active = name
         _set_active_preset(self._channel, name)
         self._refresh_display()
         self.preset_selected.emit(name, bands)
+        macros = data.get("macros") or None
+        if macros is not None:
+            self.macros_loaded.emit(
+                macros.get("basses", 0.0),
+                macros.get("voix", 0.0),
+                macros.get("aigus", 0.0),
+            )
+        else:
+            self.macros_loaded.emit(0.0, 0.0, 0.0)
+        settings = data.get("settings") or None
+        if settings is not None:
+            self.settings_loaded.emit(settings)
 
     # ── Slots ─────────────────────────────────────────────────────────────────
 
     def _on_search(self):
         presets = _list_presets(self._channel)
         dlg = _PresetSearchDialog(presets, self)
-        if dlg.exec() == QDialog.DialogCode.Accepted and dlg.selected_name:
+        dlg.exec()
+        self._presets = _list_presets(self._channel)
+        if dlg.result() == QDialog.DialogCode.Accepted and dlg.selected_name:
             self._load_and_emit(dlg.selected_name)
+        else:
+            self._refresh_display()
 
     def _on_star(self):
-        if self._active and self._active not in self._favs and len(self._favs) < _MAX_FAV:
+        if self._active and self._active not in self._favs:
             self._favs.append(self._active)
             _save_favorites(self._channel, self._favs)
             self._refresh_display()
 
     def _on_save_custom(self):
-        dlg = _SavePresetDialog(self)
-        if dlg.exec() != QDialog.DialogCode.Accepted or not dlg.name:
-            return
-        _save_custom_preset(self._channel, dlg.name, self._cur_bands)
+        self.save_requested.emit()
+
+    def notify_saved(self, name: str) -> None:
+        """Called by SonarChannelWidget after the preset file has been written."""
         self._presets = _list_presets(self._channel)
-        _set_active_preset(self._channel, dlg.name)
-        self._active = dlg.name
+        _set_active_preset(self._channel, name)
+        self._active = name
+        self._refresh_display()
+
+    def _on_delete_custom(self, idx: int) -> None:
+        name = self._favs[idx] if idx < len(self._favs) else None
+        if not name:
+            return
+        _delete_custom_preset(self._channel, name)
+        self._presets = _list_presets(self._channel)
+        self._favs = [f for f in self._favs if f != name]
+        _save_favorites(self._channel, self._favs)
+        if self._active == name:
+            self._active = "Flat"
+            _set_active_preset(self._channel, "Flat")
         self._refresh_display()
 
     def _on_fav_remove(self, idx: int):
@@ -1103,6 +1237,15 @@ class _MacroSliders(QWidget):
             self._sliders["aigus"].value() / 10.0,
         )
 
+    def set_values(self, basses: float, voix: float, aigus: float) -> None:
+        for key, val in (("basses", basses), ("voix", voix), ("aigus", aigus)):
+            self._sliders[key].blockSignals(True)
+            self._sliders[key].setValue(int(val * 10))
+            self._labels[key].setText(self._fmt(val))
+            self._sliders[key].blockSignals(False)
+        _save_macro(self._channel, {"basses": basses, "voix": voix, "aigus": aigus})
+        self.macros_changed.emit(basses, voix, aigus)
+
 
 # ── Channel widget ────────────────────────────────────────────────────────────
 
@@ -1113,6 +1256,8 @@ class SonarChannelWidget(QWidget):
         self._target_override: str | None = None
         self._worker: _ApplyWorker | None = None
         self._pending_apply = False
+        self._cur_bands: list = []
+        self._committed_bands: list = []
         self._apply_timer = QTimer(self)
         self._apply_timer.setSingleShot(True)
         self._apply_timer.setInterval(_APPLY_DELAY)
@@ -1131,6 +1276,11 @@ class SonarChannelWidget(QWidget):
         pcl.setContentsMargins(20, 16, 20, 16)
         self._preset_bar = _PresetBar(channel, preset_card)
         self._preset_bar.preset_selected.connect(self._on_preset_selected)
+        self._preset_bar.save_requested.connect(self._on_save_custom_preset)
+        self._preset_bar.macros_loaded.connect(
+            lambda b, v, a: self._macros.set_values(b, v, a)
+        )
+        self._preset_bar.settings_loaded.connect(self._on_settings_loaded)
         pcl.addWidget(self._preset_bar)
         root.addWidget(preset_card)
 
@@ -1143,6 +1293,24 @@ class SonarChannelWidget(QWidget):
         eq_header = QHBoxLayout()
         eq_header.addWidget(QLabel(_t("equalizer")))
         eq_header.addStretch(1)
+
+        self._apply_btn = QPushButton(_t("apply_eq"))
+        self._apply_btn.setVisible(False)
+        self._apply_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {ACCENT};
+                color: #fff;
+                border: none;
+                border-radius: 6px;
+                padding: 4px 14px;
+                font-size: 10pt;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{ background: #7a5af8; }}
+        """)
+        self._apply_btn.clicked.connect(self._on_apply_eq)
+        eq_header.addWidget(self._apply_btn)
+
         self._status_lbl = QLabel()
         self._status_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt;")
         eq_header.addWidget(self._status_lbl)
@@ -1256,6 +1424,7 @@ class SonarChannelWidget(QWidget):
         else:
             bands = []
         self._cur_bands = bands
+        self._committed_bands = list(bands)
         self._eq_widget.set_bands(bands)
         self._update_macro_curve()
 
@@ -1264,14 +1433,53 @@ class SonarChannelWidget(QWidget):
     @Slot(str, list)
     def _on_preset_selected(self, name: str, bands: list):
         self._cur_bands = bands
+        self._committed_bands = list(bands)
         self._eq_widget.set_bands(bands)
         self._update_macro_curve()
+        self._apply_btn.setVisible(False)
         self._schedule_apply()
 
     def _on_bands_changed(self, bands: list):
         self._cur_bands = bands
-        self._preset_bar._cur_bands = bands
-        self._schedule_apply()
+        self._apply_btn.setVisible(True)
+        self._status_lbl.setText(_t("eq_pending"))
+
+    def _on_apply_eq(self):
+        self._committed_bands = list(self._cur_bands)
+        self._apply_btn.setVisible(False)
+        self._do_apply()
+
+    def _on_save_custom_preset(self) -> None:
+        dlg = _SavePresetDialog(self)
+        if dlg.exec() != QDialog.DialogCode.Accepted or not dlg.name:
+            return
+        bands = self._eq_widget.get_bands()
+        basses, voix, aigus = self._macros.get_values()
+        settings: dict = {}
+        if hasattr(self, "_spatial"):
+            settings["spatial"] = self._spatial.get_state()
+        if hasattr(self, "_boost"):
+            settings["boost"] = self._boost.get_state()
+        if hasattr(self, "_smart"):
+            settings["smart_volume"] = self._smart.get_state()
+        _save_custom_preset(
+            self._channel, dlg.name, bands,
+            macros={"basses": basses, "voix": voix, "aigus": aigus},
+            settings=settings or None,
+        )
+        self._committed_bands = list(bands)
+        self._apply_btn.setVisible(False)
+        self._preset_bar.notify_saved(dlg.name)
+
+    def _on_settings_loaded(self, settings: dict) -> None:
+        if not settings:
+            return
+        if hasattr(self, "_spatial") and "spatial" in settings:
+            self._spatial.set_state(settings["spatial"])
+        if hasattr(self, "_boost") and "boost" in settings:
+            self._boost.set_state(settings["boost"])
+        if hasattr(self, "_smart") and "smart_volume" in settings:
+            self._smart.set_state(settings["smart_volume"])
 
     def _on_macros_changed(self, basses: float, voix: float, aigus: float):
         self._update_macro_curve()
@@ -1303,7 +1511,7 @@ class SonarChannelWidget(QWidget):
         self._pending_apply = False
         basses, voix, aigus = self._macros.get_values()
         self._worker = _ApplyWorker(
-            self._channel, list(self._cur_bands), basses, voix, aigus,
+            self._channel, list(self._committed_bands), basses, voix, aigus,
             target_override=self._target_override,
         )
         self._worker.done.connect(self._on_apply_done)
@@ -1461,6 +1669,7 @@ class SpatialAudioWidget(QWidget):
         # Store val_lbl ref on slider for update
         slider.setProperty("val_lbl_ptr", id(val_lbl))
         self.__dict__[f"_val_lbl_{key}"] = val_lbl
+        self.__dict__[f"_slider_{key}"] = slider
 
         return w
 
@@ -1479,6 +1688,30 @@ class SpatialAudioWidget(QWidget):
         lbl = self.__dict__.get(f"_val_lbl_{key}")
         if lbl:
             lbl.setText(str(value))
+        self.state_changed.emit()
+
+    def get_state(self) -> dict:
+        return dict(self._state)
+
+    def set_state(self, state: dict) -> None:
+        if not state:
+            return
+        self._state.update(state)
+        _save_spatial_audio(self._state, self._channel)
+        self._toggle.blockSignals(True)
+        self._toggle.setChecked(self._state.get("enabled", False))
+        self._toggle.blockSignals(False)
+        self._detail.setVisible(self._state.get("enabled", False))
+        for key in ("immersion", "distance"):
+            slider = self.__dict__.get(f"_slider_{key}")
+            lbl = self.__dict__.get(f"_val_lbl_{key}")
+            val = self._state.get(key, 50)
+            if slider:
+                slider.blockSignals(True)
+                slider.setValue(int(val))
+                slider.blockSignals(False)
+            if lbl:
+                lbl.setText(str(val))
         self.state_changed.emit()
 
 
@@ -1569,6 +1802,24 @@ class BoostVolumeWidget(QWidget):
         self._state["db"] = db
         _save_boost(self._state)
         self._db_label.setText(self._fmt(db))
+        self.state_changed.emit()
+
+    def get_state(self) -> dict:
+        return dict(self._state)
+
+    def set_state(self, state: dict) -> None:
+        if not state:
+            return
+        self._state.update(state)
+        _save_boost(self._state)
+        self._toggle.blockSignals(True)
+        self._toggle.setChecked(self._state.get("enabled", False))
+        self._toggle.blockSignals(False)
+        self._slider.blockSignals(True)
+        self._slider.setValue(int(self._state.get("db", 0.0) * 10))
+        self._slider.blockSignals(False)
+        self._db_label.setText(self._fmt(self._state.get("db", 0.0)))
+        self._detail.setVisible(self._state.get("enabled", False))
         self.state_changed.emit()
 
 
@@ -1692,6 +1943,25 @@ class SmartVolumeWidget(QWidget):
         self._state["level"] = float(value)
         _save_smart_volume(self._state)
         self._level_val.setText(str(value))
+        self.state_changed.emit()
+
+    def get_state(self) -> dict:
+        return dict(self._state)
+
+    def set_state(self, state: dict) -> None:
+        if not state:
+            return
+        self._state.update(state)
+        _save_smart_volume(self._state)
+        self._toggle.blockSignals(True)
+        self._toggle.setChecked(self._state.get("enabled", False))
+        self._toggle.blockSignals(False)
+        self._level_slider.blockSignals(True)
+        self._level_slider.setValue(int(self._state.get("level", 50)))
+        self._level_slider.blockSignals(False)
+        self._level_val.setText(str(int(self._state.get("level", 50))))
+        self._detail.setVisible(self._state.get("enabled", False))
+        self._refresh_loudness()
         self.state_changed.emit()
 
 
