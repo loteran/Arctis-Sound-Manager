@@ -336,15 +336,18 @@ def _build_checks() -> list[DepCheck]:
             feature="ClearCast mic noise suppression",
             detect=lambda: _find_ladspa_plugin("librnnoise*.so") is not None,
             install_commands={
-                "fedora": ["dnf", "install", "-y", "noise-suppression-for-voice"],
+                # noise-suppression-for-voice is NOT in official Fedora repos;
+                # it requires the uriesk/noise-suppression-for-voice COPR.
+                # The %post scriptlet already enables the COPR + triggers a
+                # background install for RPM users. This command is the
+                # fallback shown in the GUI for manual / pipx installs.
+                "fedora": ["bash", "-c",
+                           "dnf copr enable -y uriesk/noise-suppression-for-voice"
+                           " && dnf install -y noise-suppression-for-voice"],
                 "debian": ["apt-get", "install", "-y", "noise-suppression-for-voice"],
-                # rnnoise is AUR-only on Arch — the user needs an AUR helper.
-                # We don't try to invoke yay/paru from here (they're not in
-                # /usr/bin and require interactive build prompts); we just
-                # surface the command and the GUI shows it as copy-only.
-                "arch":   ["paru", "-S", "--noconfirm", "noise-suppression-for-voice"],
+                # rnnoise is in the Arch official repos (extra/).
+                "arch":   ["pacman", "-S", "--noconfirm", "noise-suppression-for-voice"],
             },
-            user_action="On Arch/CachyOS this lives in the AUR — install it with your AUR helper (paru/yay).",
         ),
         DepCheck(
             name="HRIR file (EAC_Default.wav)",

@@ -172,8 +172,10 @@ If something later goes missing (manual `dnf remove`, immutable distro that didn
 # Debian / Ubuntu
 sudo apt install pipx libusb-1.0-0 libpulse0 libudev1 swh-plugins noise-suppression-for-voice curl
 
-# Fedora
-sudo dnf install pipx libusb1 pulseaudio-libs systemd-libs ladspa-swh-plugins noise-suppression-for-voice curl
+# Fedora / Nobara — noise-suppression-for-voice is in a COPR, not the official repos
+sudo dnf install pipx libusb1 pulseaudio-libs systemd-libs ladspa-swh-plugins curl
+sudo dnf copr enable uriesk/noise-suppression-for-voice
+sudo dnf install noise-suppression-for-voice
 ```
 
 ---

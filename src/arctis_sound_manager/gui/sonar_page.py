@@ -2139,9 +2139,10 @@ class _NoiseCancelingCard(QWidget):
                 "noise-suppression-for-voice is not installed.\n"
                 "ClearCast AI Noise Cancellation requires the rnnoise LADSPA plugin.\n\n"
                 "Install it with:\n"
-                "  Fedora/Nobara:  sudo dnf install noise-suppression-for-voice\n"
+                "  Fedora/Nobara:  sudo dnf copr enable uriesk/noise-suppression-for-voice\n"
+                "                  sudo dnf install noise-suppression-for-voice\n"
                 "  Debian/Ubuntu:  sudo apt install noise-suppression-for-voice\n"
-                "  Arch/CachyOS:   paru -S noise-suppression-for-voice"
+                "  Arch/CachyOS:   sudo pacman -S noise-suppression-for-voice"
             )
             self._toggle.setToolTip(_tip)
 

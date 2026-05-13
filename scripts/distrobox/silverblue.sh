@@ -43,8 +43,8 @@ Options:
   --no-services  Skip enabling systemd services after install
   -h, --help     Show this help message
 
-Note: uses Fedora 41 + COPR. noise-suppression-for-voice is not available
-via COPR on Fedora (Arch/AUR only).
+Note: uses Fedora 41 + ASM COPR. The rnnoise plugin (ClearCast) is installed
+automatically via uriesk/noise-suppression-for-voice COPR during ASM setup.
 
 Log: ~/.cache/asm-distrobox-install.log
 EOF

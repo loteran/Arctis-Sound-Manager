@@ -349,6 +349,10 @@ class SystemDepsDialog(QDialog):
                 # paru must run as the user (not via pkexec) — fall back to
                 # individual sudo run; the user will get its own prompt.
                 internals.append(argv)
+            elif head == "bash":
+                # Multi-step command (e.g. COPR enable + package install) —
+                # cannot be batched with other packages; pass through as-is.
+                batches.append(argv)
             else:
                 # unknown pkgmgr — run as-is
                 groups.setdefault(head, []).append(argv[-1])

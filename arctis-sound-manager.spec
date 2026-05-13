@@ -1,5 +1,5 @@
 Name:           arctis-sound-manager
-Version:        1.1.21
+Version:        1.1.22
 Release:        1%{?dist}
 Summary:        Linux GUI for SteelSeries Arctis headsets
 
@@ -51,13 +51,10 @@ Requires:       curl
 # initial install, so existing users would otherwise stay broken until
 # they ran `dnf reinstall arctis-sound-manager` manually.
 Requires:       ladspa-swh-plugins
-# rnnoise LADSPA plugin for ClearCast mic noise suppression. Kept as
-# Recommends: because it is absent from some Fedora-derived repos (e.g.
-# Nobara) and blocking on it prevents DNF from installing ASM at all
-# (issue #41). The GUI now detects its absence at runtime and disables
-# the ClearCast toggle with a clear install hint, so omitting it is no
-# longer a silent no-op for the user.
-Recommends:     noise-suppression-for-voice
+# rnnoise LADSPA plugin for ClearCast mic noise suppression.
+# noise-suppression-for-voice is NOT in the official Fedora repos — it lives in
+# the uriesk/noise-suppression-for-voice COPR. The repo file is written and the
+# plugin is installed in the background by the %post scriptlet (issue #41).
 
 %description
 Arctis Sound Manager is a Linux application for configuring SteelSeries Arctis
@@ -134,6 +131,30 @@ install -Dm644 debian/asm-first-run.desktop \
 udevadm control --reload-rules || :
 udevadm trigger --action=add --subsystem-match=usb || :
 
+# ── ClearCast / rnnoise COPR (Fedora/Nobara) ─────────────────────────────────
+# noise-suppression-for-voice lives in the uriesk/noise-suppression-for-voice
+# COPR, not in the official Fedora repos. Write the .repo file directly (no
+# dnf lock contention) then schedule the plugin install in the background so
+# the current transaction is not blocked (issue #41).
+_ASM_RNNOISE_REPO="/etc/yum.repos.d/_asm-noise-suppression-for-voice.repo"
+if [ ! -f "$_ASM_RNNOISE_REPO" ]; then
+    cat > "$_ASM_RNNOISE_REPO" << 'REPOEOF'
+[copr:copr.fedoraproject.org:uriesk:noise-suppression-for-voice]
+name=Copr repo for noise-suppression-for-voice owned by uriesk (added by arctis-sound-manager)
+baseurl=https://download.copr.fedorainfracloud.org/results/uriesk/noise-suppression-for-voice/fedora-$releasever-$basearch/
+type=rpm-md
+skip_if_unavailable=True
+gpgcheck=1
+gpgkey=https://download.copr.fedorainfracloud.org/results/uriesk/noise-suppression-for-voice/pubkey.gpg
+repo_gpgcheck=0
+enabled=1
+enabled_metadata=1
+REPOEOF
+    systemd-run --no-block --unit=asm-rnnoise-install \
+        /bin/bash -c "dnf install -y noise-suppression-for-voice 2>/dev/null" \
+        2>/dev/null || :
+fi
+
 # Run asm-setup immediately if the installing user has an active D-Bus session.
 # Falls back to /etc/xdg/autostart/asm-first-run.desktop on next login otherwise.
 REAL_USER="${SUDO_USER:-}"
@@ -152,6 +173,10 @@ if [ -n "$REAL_USER" ]; then
 fi
 
 %preun
+# Remove the rnnoise COPR repo file only on real uninstall (not upgrade).
+if [ $1 -eq 0 ]; then
+    rm -f /etc/yum.repos.d/_asm-noise-suppression-for-voice.repo || :
+fi
 %systemd_user_preun arctis-manager.service arctis-video-router.service arctis-gui.service
 
 %postun
