@@ -2662,3 +2662,5 @@ class SonarPage(QWidget):
         widget._update_macro_curve()
         widget._preset_bar._active = name
         widget._preset_bar._refresh_display()
+        widget._preset_bar.updateGeometry()
+        widget._preset_bar.update()
