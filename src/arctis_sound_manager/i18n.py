@@ -5,6 +5,8 @@ from pathlib import Path
 
 from arctis_sound_manager.constants import HOME_LANG_FOLDER
 
+_BUILTIN_LANG_DIR = Path(__file__).parent / 'lang'
+
 
 _LANG_FILE = Path.home() / ".config" / "arctis_manager" / ".language"
 _logger = logging.getLogger('I18n')
@@ -79,6 +81,21 @@ class I18n:
                 cb()
             except Exception:
                 pass
+
+    @staticmethod
+    def available_languages() -> list[tuple[str, str]]:
+        """Return (code, display_name) for every .ini in the built-in lang dir."""
+        result: list[tuple[str, str]] = []
+        for path in sorted(_BUILTIN_LANG_DIR.glob("*.ini")):
+            code = path.stem
+            cp = ConfigParser()
+            try:
+                cp.read(path)
+            except Exception:
+                continue
+            display = cp.get("meta", "language_name", fallback=code.upper())
+            result.append((code, display))
+        return result
 
     @staticmethod
     def current_lang() -> str:
