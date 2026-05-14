@@ -1,76 +1,96 @@
 # Arctis Sound Manager
 
-> 💬 **Tried ASM? [Share your experience in GitHub Discussions](https://github.com/loteran/Arctis-Sound-Manager/discussions)** — feedback helps improve compatibility for everyone!
+[![Latest release](https://img.shields.io/github/v/release/loteran/Arctis-Sound-Manager)](https://github.com/loteran/Arctis-Sound-Manager/releases/latest)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)](https://github.com/loteran/Arctis-Sound-Manager)
+[![Crowdin](https://badges.crowdin.net/arctis-sound-manager/localized.svg)](https://crowdin.com/project/arctis-sound-manager)
 
-> ☕ [Buy me a coffee](https://ko-fi.com/loteran) if you find it useful!
-
-A Linux GUI for SteelSeries Arctis headsets — manages device settings and provides a 4-channel audio mixer (Game / Chat / Media / Output) with automatic media routing, and a full **Sonar EQ** system powered by PipeWire filter-chain.
+A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio mixer (Game / Chat / Media / Output), automatic media routing, and a full **Sonar EQ** system powered by PipeWire filter-chain.
 
 > Based on [Arctis Sound Manager](https://github.com/elegos/Linux-Arctis-Manager) by elegos.
+
+> 💬 **[Share your experience in Discussions](https://github.com/loteran/Arctis-Sound-Manager/discussions)** — feedback helps improve compatibility for everyone!
+> ☕ [Buy me a coffee](https://ko-fi.com/loteran) if you find it useful!
+
+---
+
+## Table of contents
+
+- [Features](#features)
+- [Screenshots](#screenshots)
+- [Supported devices](#supported-devices)
+- [Installation](#installation)
+- [Upgrading](#upgrading)
+- [How the mixer works](#how-the-mixer-works)
+- [Virtual surround 7.1](#virtual-surround-71)
+- [Translations](#translations)
+- [Community stats](#community-stats)
+- [Uninstall](#uninstall)
+- [Reporting a bug](#reporting-a-bug)
+- [Development](#development)
 
 ---
 
 ## Features
 
-- **4-channel audio mixer** — separate Game, Chat, Media and Output virtual sinks (Output targets any external device: HDMI, USB speakers, sound card…)
-- **True multichannel external output** — route any app directly to an HDMI or other external output (5.1 / 7.1 native passthrough)
-- **Automatic media routing** — browsers (Firefox, Chromium…) and video players (VLC, mpv, Haruna…) are automatically routed to the Media sink
-- **Smart stream adoption** — apps already running when ASM starts are pulled into the headset (`Arctis_Media`) instead of staying glued to a non-Arctis sink. Manual placements you make in your system mixer are remembered as persistent overrides.
-- **Manual stream control** — move any audio stream between channels on the fly via the G / C / M / O buttons
-- **Persistent routing** — manual moves are remembered across app restarts
-- **Native PipeWire support** — detects apps that bypass PulseAudio (mpv, Haruna…)
+### 🎚️ Audio mixer
+
+- **4-channel mixer** — separate Game, Chat, Media and Output virtual sinks
+- **Automatic media routing** — browsers and video players (Firefox, VLC, mpv…) are automatically routed to the Media sink
+- **Smart stream adoption** — apps running when ASM starts are pulled into `Arctis_Media` instead of staying on a non-Arctis sink
+- **Manual stream control** — move any audio stream between channels via G / C / M / O buttons; choices persist across restarts
+- **True multichannel output** — route apps directly to HDMI or external output (5.1 / 7.1 native passthrough)
 - **Volume sliders** per channel with live percentage display
-- **Sonar EQ** — full SteelSeries Sonar-style parametric EQ system (v2.0):
-  - Interactive EQ curve with up to 10 bands per channel (Game / Chat / Micro)
-  - 312 Game presets, 8 Chat, 14 Mic bundled — searchable, with 9 favorite slots
-  - Macro sliders: Basses / Voix / Aigus (±12 dB)
-  - **Spatial Audio** — routes Game or Media channel through HeSuVi virtual 7.1 surround, with **Immersion** (0–12 dB gain) and **Distance** (plate reverb) sliders
-  - **Volume Boost** — up to +12 dB gain node at the end of the filter chain
-  - **Smart Volume** — dynamic compressor (Quiet / Balanced / Loud) to even out volume differences
-  - All changes applied live via PipeWire filter-chain (biquad nodes)
-- **10-band equalizer** — Custom mode: per-band gain (31 Hz to 16 kHz), save/load presets
-- **ANC / Transparent mode indicator** — reflects the physical button state (Off / Transparent / ANC) in real time
-- **Device status page** — battery, mic mute, sidetone, and more depending on your device
-- **Audio Profiles** — save and restore your complete audio configuration in one click:
-  - Stores EQ mode (Sonar / Custom), active preset per channel, macro slider values, Spatial Audio state and channel volumes
-  - Profile bar on the Home page for instant switching; also accessible from the system tray
-  - Right-click a profile chip to delete it
-- **Launch at startup** — toggle in Settings to enable/disable the daemon and system tray autostart via systemd (`arctis-gui.service`)
-- **Check for updates** — button in Settings forces an immediate GitHub check (bypasses the 24 h cache); clicking the result opens the update dialog — opens a terminal for package manager installs (pacman / dnf / apt) or installs the wheel in-app for pipx/pip
-- **DAC OLED display** _(Arctis Nova Pro Wireless / X)_ — dedicated DAC page with full OLED screen control:
-  - Toggle between original and custom display mode
-  - Brightness, screen timeout and scroll speed sliders
-  - Choose and reorder display elements: Time, Battery, active Profile, EQ Preset, Weather temperature
-  - Per-element font size control (7–30 pt)
-  - Built-in weather integration: city lookup, °C / °F selector, auto-refresh
-- **Self-healing system deps** _(v1.0.86)_ — at startup ASM checks every system component it relies on (LADSPA plugins, HRIR file, PipeWire ≥ 1.0, `wpctl`, `pkexec`, `pyudev`/`pulsectl`/`PySide6`/…, `dbus-send`, `pw-metadata`, `curl`, D-Bus session, udev rules). If anything is missing, a one-click dialog runs the right `pkexec dnf|apt-get|pacman install …` for your distro — single password prompt fixes the whole batch. **Install all missing**, **Re-check**, **Copy cmd** for unsupported distros, and a version-aware skip option that auto-resets on the next ASM upgrade.
-- **Built-in diagnostics** — `asm-daemon --verify-setup` runs the same registry headless and exits 0/1 with a per-distro install hint per missing dep. `asm-cli diagnose -o file.txt` writes a full local-only diagnostic dump for bug reports.
-- **One-click bug reports** — when filing an issue, the dialog auto-uploads the full diagnostic as a secret GitHub gist and opens a pre-filled issue linking to it (requires authenticated `gh` CLI). Falls back to a manual drag-and-drop attachment otherwise.
-- **`ARCTIS_LOG_LEVEL` env var** — bump verbosity for support tickets without rebuilding: `ARCTIS_LOG_LEVEL=debug systemctl --user restart arctis-manager`. Honored by daemon, GUI and video-router.
-- **Help page** — built-in user manual in English, French and Spanish
-- **Virtual surround 7.1** — HeSuVi filter-chain included automatically with the install; 57 HRIR profiles bundled and selectable from the **Settings** tab
-- **Community translations** — language files are updated silently in the background each time ASM starts; new languages contributed on [Crowdin](https://crowdin.com/project/arctis-sound-manager) appear in Settings without needing a new release
+- **Native PipeWire support** — detects apps that bypass PulseAudio (mpv, Haruna…)
 
-## Screenshots
+### 🎛️ EQ & audio processing
 
-### Home — 4-channel audio mixer (Game / Chat / Media / Output)
-![Home](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_home.png)
+- **Sonar EQ** — full SteelSeries Sonar-style parametric EQ (Game / Chat / Micro channels):
+  - Interactive EQ curve, up to 10 bands per channel
+  - 312 Game presets, 8 Chat, 14 Mic — searchable, 9 favorite slots
+  - Macro sliders: Bass / Voice / Treble (±12 dB)
+  - **Spatial Audio** — HeSuVi virtual 7.1 surround with Immersion (0–12 dB) and Distance (reverb) sliders
+  - **Volume Boost** — up to +12 dB gain at the end of the filter chain
+  - **Smart Volume** — dynamic compressor (Quiet / Balanced / Loud)
+  - All changes applied live via PipeWire biquad nodes
+- **Custom 10-band EQ** — per-band gain (31 Hz – 16 kHz), save/load presets
+- **Audio Profiles** — save and restore your complete configuration in one click (EQ mode, presets, macro values, Spatial Audio, volumes); instant switching from the Home page or system tray
 
-### Sonar — Parametric EQ (Game / Chat / Micro) with presets, Spatial Audio and Boost
-![Sonar](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_sonar.png)
+### 🎧 Device control
 
-### Equalizer — Custom mode 10-band EQ with presets
-![Equalizer](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_equalizer.png)
+- **ANC / Transparent mode** — reflects the physical button state in real time
+- **Device status** — battery, mic mute, sidetone, and more
+- **DAC OLED display** _(Arctis Nova Pro Wireless / X)_:
+  - Toggle original vs custom display mode
+  - Brightness, screen timeout, scroll speed
+  - Choose and reorder elements: Time, Battery, Profile, EQ Preset, Weather
+  - Per-element font size (7–30 pt) · Built-in weather with °C / °F selector
 
-### Headset / DAC — Device info and live status
-![Headset](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_headset.png)
+### ⚙️ App & system
 
-### Settings — Device configuration
-![Settings](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_settings.png)
+- **Self-healing deps** — at startup ASM checks every system component (LADSPA plugins, HRIR, PipeWire, wpctl, udev rules…); a one-click dialog installs anything missing with a single `pkexec` prompt
+- **Check for updates** — in-app button forces an immediate GitHub check; installs via terminal (pacman / dnf / apt) or in-app wheel (pipx)
+- **One-click bug reports** — auto-uploads a full diagnostic as a GitHub gist and opens a pre-filled issue
+- **Built-in diagnostics** — `asm-daemon --verify-setup` and `asm-cli diagnose -o file.txt`
+- **Community translations** — new languages from [Crowdin](https://crowdin.com/project/arctis-sound-manager) download automatically on startup, no release needed
+- **Help page** — built-in manual in English, French and Spanish
+- **`ARCTIS_LOG_LEVEL` env var** — `debug` / `info` / `warning`, honored by daemon, GUI and router
 
 ---
 
-## Supported Devices
+## Screenshots
+
+| Home — mixer | Sonar EQ |
+|---|---|
+| ![Home](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_home.png) | ![Sonar](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_sonar.png) |
+
+| Custom EQ | Settings |
+|---|---|
+| ![Equalizer](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_equalizer.png) | ![Settings](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_settings.png) |
+
+---
+
+## Supported devices
 
 <!-- STATS:DEVICES:START -->
 | Device | Working | Users | Product ID(s) |
@@ -91,9 +111,218 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 | Arctis Nova Elite |  |  | 2244, 2249 |
 <!-- STATS:DEVICES:END -->
 
-> ✅ Working = confirmed by at least one opted-in user · PIDs in blue confirmed by telemetry
+> ✅ Confirmed by at least one opted-in user · PIDs in blue confirmed by telemetry
 
-## Tested Distributions
+---
+
+## Installation
+
+All native packages (AUR / COPR / PPA) pull in every dependency automatically. After installing, run `asm-setup` once — it configures udev rules, systemd services, PipeWire and downloads the HRIR file.
+
+<details>
+<summary><strong>Arch Linux / CachyOS / Manjaro (AUR)</strong></summary>
+
+```bash
+paru -S arctis-sound-manager
+asm-setup
+```
+</details>
+
+<details>
+<summary><strong>Fedora / Nobara (COPR)</strong></summary>
+
+```bash
+sudo dnf copr enable loteran/arctis-sound-manager
+sudo dnf install arctis-sound-manager
+asm-setup
+```
+</details>
+
+<details>
+<summary><strong>Debian / Ubuntu (PPA)</strong></summary>
+
+```bash
+sudo add-apt-repository ppa:loteran/arctis-sound-manager
+sudo apt update && sudo apt install arctis-sound-manager
+asm-setup
+```
+
+> Ubuntu 24.04 (Noble) is the currently supported series. Other series may work via the `.deb` in each [GitHub release](https://github.com/loteran/Arctis-Sound-Manager/releases).
+</details>
+
+<details>
+<summary><strong>Immutable distros (Bazzite, SteamOS, Silverblue)</strong></summary>
+
+ASM runs inside a [Distrobox](https://distrobox.it/) container and is exported transparently to the host. Run the script for your distro directly — no need to clone:
+
+**Bazzite** (full deps including noise-suppression-for-voice):
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/scripts/distrobox/bazzite.sh)
+```
+
+**SteamOS / Steam Deck:**
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/scripts/distrobox/steamos.sh)
+```
+> udev rules in `/etc/udev/rules.d/` are reset on major SteamOS updates — re-run the script after each upgrade.
+
+**Fedora Silverblue / Kinoite:**
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/scripts/distrobox/silverblue.sh)
+```
+
+Each script is idempotent. Flags: `--reinstall` (rebuild container), `--no-services` (skip systemd).
+</details>
+
+<details>
+<summary><strong>Other distros (from source)</strong></summary>
+
+Install system deps first:
+```bash
+# Debian / Ubuntu
+sudo apt install pipx libusb-1.0-0 libpulse0 libudev1 swh-plugins noise-suppression-for-voice curl
+
+# Fedora / Nobara
+sudo dnf install pipx libusb1 pulseaudio-libs systemd-libs ladspa-swh-plugins curl
+sudo dnf copr enable uriesk/noise-suppression-for-voice
+sudo dnf install noise-suppression-for-voice
+```
+
+Then install ASM:
+```bash
+git clone --branch main https://github.com/loteran/Arctis-Sound-Manager.git
+cd Arctis-Sound-Manager
+bash scripts/install.sh
+```
+
+> **PATH tip:** if `asm-cli` or `asm-daemon` are not found after install, run:
+> `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc`
+
+> **USB permissions:** if the headset isn't detected, ASM shows a one-click **Install rules** dialog at startup. Manual fallback: `sudo asm-cli udev write-rules --force --reload`
+</details>
+
+---
+
+## Upgrading
+
+<details>
+<summary><strong>Arch / CachyOS / Manjaro</strong></summary>
+
+```bash
+paru -Syu arctis-sound-manager && asm-setup
+```
+</details>
+
+<details>
+<summary><strong>Fedora (COPR)</strong></summary>
+
+```bash
+sudo dnf upgrade arctis-sound-manager && asm-setup
+```
+</details>
+
+<details>
+<summary><strong>Debian / Ubuntu (PPA)</strong></summary>
+
+```bash
+sudo apt update && sudo apt upgrade arctis-sound-manager && asm-setup
+```
+</details>
+
+<details>
+<summary><strong>From source</strong></summary>
+
+```bash
+cd Arctis-Sound-Manager && git pull
+pipx install --force .
+asm-cli desktop write
+asm-cli udev write-rules --force --reload
+systemctl --user daemon-reload && systemctl --user restart arctis-manager.service
+```
+
+> `pipx upgrade` may fail on wheel installs — use `pipx install --force .` instead.
+</details>
+
+---
+
+## How the mixer works
+
+ASM creates 3 virtual sinks on top of your Arctis device plus one external output:
+
+| Sink | Default use | Button |
+|---|---|---|
+| **Arctis_Game** | Games, general audio | G |
+| **Arctis_Chat** | Voice apps (Discord, TeamSpeak…) | C |
+| **Arctis_Media** | Browsers, video players | M |
+| **External Output** | HDMI, USB speakers, sound card… (5.1 / 7.1 native) | O |
+
+The **media router** (`asm-router`) automatically moves browsers and video players to `Arctis_Media`. Manual placements via G / C / M / O buttons are saved as persistent overrides.
+
+The External Output card routes audio **directly** to the physical sink, bypassing virtual stereo sinks — this preserves true 5.1 / 7.1 passthrough. Configure it in **Settings → Audio → External Output Device**.
+
+---
+
+## Virtual surround 7.1
+
+Virtual 7.1 surround is included automatically with the install — it deploys a PipeWire HeSuVi filter-chain and downloads the HRIR file. **57 HRIR profiles** are bundled and selectable from the **Settings** tab with instant apply.
+
+```
+                  ┌──────────────────────────┐
+ 7.1 audio source │  Virtual Surround Sink   │
+ (game, movie…) ──►  (PipeWire filter-chain) ├──► Headset (stereo)
+                  └──────────────────────────┘
+```
+
+> Also available as a **standalone repo**: [arctis-virtual-surround](https://github.com/loteran/arctis-virtual-surround) — install virtual surround independently with a single `bash install.sh`.
+
+<details>
+<summary>Manual setup (alternative)</summary>
+
+```bash
+bash scripts/setup-surround.sh
+```
+
+This installs the filter-chain config in `~/.config/pipewire/filter-chain.conf.d/`, downloads the HRIR file, and enables the `filter-chain` systemd user service.
+
+Advanced: replace `~/.local/share/pipewire/hrir_hesuvi/hrir.wav` with any 14-channel HeSuVi-compatible WAV and restart filter-chain manually.
+</details>
+
+---
+
+## Translations
+
+[![Crowdin](https://badges.crowdin.net/arctis-sound-manager/localized.svg)](https://crowdin.com/project/arctis-sound-manager)
+
+ASM supports community translations via [Crowdin](https://crowdin.com/project/arctis-sound-manager). No release is needed — the app checks GitHub on every startup and silently downloads any updated `.ini` files.
+
+| Language | Status |
+|---|---|
+| English | Source (always complete) |
+| Français | Bundled |
+| Español | Bundled |
+| _Your language?_ | [Contribute on Crowdin ↗](https://crowdin.com/project/arctis-sound-manager) |
+
+**How it works:**
+- Every day at 06:00 UTC, a GitHub Action pulls approved translations from Crowdin and opens a PR
+- On each startup, ASM fetches updated files and saves them to `~/.config/arctis_manager/lang/`
+- The language selector in Settings updates immediately — no restart needed
+- Languages below **80% coverage** fall back string-by-string to English
+
+To request a new language, open a [GitHub issue](https://github.com/loteran/Arctis-Sound-Manager/issues). See [CONTRIBUTING.md](CONTRIBUTING.md) for full details.
+
+---
+
+## Community stats
+
+<!-- STATS:META:START -->
+_Based on **29** unique users (**182** anonymous data points) — last updated 2026-05-13_
+<!-- STATS:META:END -->
+
+> Anonymous usage data shared voluntarily by opted-in users.
+> [View interactive dashboard →](https://loteran.github.io/Arctis-Sound-Manager/stats)
+
+<details>
+<summary>Tested distributions</summary>
 
 <!-- STATS:TESTED_DISTROS:START -->
 | Distribution | Install method | Users |
@@ -110,19 +339,10 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 | Fedora Linux 43 (Workstation Edition) | 🎯 COPR | 👥 1 |
 | EndeavourOS | 🎯 AUR | 👥 1 |
 <!-- STATS:TESTED_DISTROS:END -->
+</details>
 
----
-
-## Community Stats
-
-> Anonymous usage data shared voluntarily by users who opted in.
-> [View interactive dashboard →](https://loteran.github.io/Arctis-Sound-Manager/stats)
-
-<!-- STATS:META:START -->
-_Based on **29** unique users (**182** anonymous data points) — last updated 2026-05-13_
-<!-- STATS:META:END -->
-
-### Most used headsets
+<details>
+<summary>Most used headsets & distros</summary>
 
 <!-- STATS:HEADSETS:START -->
 | Headset | Installs |
@@ -137,8 +357,6 @@ _Based on **29** unique users (**182** anonymous data points) — last updated 2
 | Arctis Nova 7 (Gen 1) | 1 |
 | Arctis Pro Wireless | 1 |
 <!-- STATS:HEADSETS:END -->
-
-### Most used Linux distributions
 
 <!-- STATS:DISTROS:START -->
 | Distribution | Installs |
@@ -155,382 +373,68 @@ _Based on **29** unique users (**182** anonymous data points) — last updated 2
 | Fedora Linux 43 (Workstation Edition) | 1 |
 | EndeavourOS | 1 |
 <!-- STATS:DISTROS:END -->
-
----
-
-## Requirements
-
-- Linux with **PipeWire ≥ 1.0** (+ `pipewire-pulse`, `wireplumber`)
-- **Python 3.10+**
-- System libraries: `libusb`, `libpulse`, `libudev`
-
-The native packages on **Arch / CachyOS / Fedora / Debian / Ubuntu** declare every dep as a hard requirement — `paru -S` / `dnf install` / `apt install` pulls in everything ASM features rely on (LADSPA plugins for Spatial Audio + ClearCast mic noise suppression, `curl` for HRIR download, `wireplumber`, etc.) automatically. No optional follow-up `pacman -S` step.
-
-If something later goes missing (manual `dnf remove`, immutable distro that didn't replay an upgrade, …), the **System Deps dialog** at GUI startup detects it and offers a one-click pkexec install — see [Features](#features).
-
-**Other distros (source install)** — install `pipx` + system libraries:
-```bash
-# Debian / Ubuntu
-sudo apt install pipx libusb-1.0-0 libpulse0 libudev1 swh-plugins noise-suppression-for-voice curl
-
-# Fedora / Nobara — noise-suppression-for-voice is in a COPR, not the official repos
-sudo dnf install pipx libusb1 pulseaudio-libs systemd-libs ladspa-swh-plugins curl
-sudo dnf copr enable uriesk/noise-suppression-for-voice
-sudo dnf install noise-suppression-for-voice
-```
-
----
-
-## Virtual Surround 7.1
-
-> The virtual surround setup is also available as a **standalone repo**: [arctis-virtual-surround](https://github.com/loteran/arctis-virtual-surround).
-> Use it if you want to install virtual surround independently of Arctis Sound Manager, or on a fresh OS with a single command (`bash install.sh`).
-> It also includes WirePlumber priority rules to ensure the Arctis is always preferred over HDMI as the default sink.
-
-Virtual 7.1 surround is now **included automatically** with `install.sh` — it downloads the HRIR file and deploys the PipeWire filter-chain config. No separate setup needed.
-
-It works by creating a PipeWire filter-chain sink that applies HRTF convolution (HeSuVi) to any 7.1 source and outputs stereo to your headset.
-
-```
-                  ┌──────────────────────────┐
- 7.1 audio source │  Virtual Surround Sink   │
- (game, movie…) ──►  (PipeWire filter-chain) ├──► Headset (stereo)
-                  └──────────────────────────┘
-```
-
-### Manual setup (alternative)
-
-If you prefer to set up surround separately, or if you only want the standalone surround without the full Arctis Sound Manager:
-
-```bash
-bash scripts/setup-surround.sh
-```
-
-The setup script will:
-- Install the PipeWire filter-chain config in `~/.config/pipewire/filter-chain.conf.d/`
-- Download a default HRIR file (KEMAR Gardner 1995) into `~/.local/share/pipewire/hrir_hesuvi/`
-- Enable and start the `filter-chain` systemd user service
-
-After setup, a new audio sink called **"Virtual Surround Sink"** appears in your system. Route it to your headset output from your desktop audio settings.
-
-> **HRIR Profile selector**: 57 profiles are bundled and selectable from the **HRIR Profile** drop-down in the **Settings** tab. Selecting one applies instantly — no manual file copy or service restart needed. Advanced users can still replace `~/.local/share/pipewire/hrir_hesuvi/hrir.wav` with any 14-channel HeSuVi-compatible WAV and restart filter-chain manually.
-
----
-
-## Installation
-
-### Arch Linux / CachyOS / Manjaro (AUR)
-
-```bash
-paru -S arctis-sound-manager
-```
-
-Then run the post-install setup — this handles everything automatically:
-
-```bash
-asm-setup
-```
-
-`asm-setup` will:
-- Write the desktop entry and systemd service file
-- Install udev rules for USB device access (polkit popup for sudo)
-- Download the HRIR file for virtual surround
-- Install `filter-chain.service` automatically if not already provided by the system
-- Enable and start all required systemd user services (`arctis-manager`, `arctis-video-router`, `filter-chain`)
-- Restart PipeWire
-
-### Fedora (COPR)
-
-```bash
-sudo dnf copr enable loteran/arctis-sound-manager
-sudo dnf install arctis-sound-manager
-```
-
-Then run the post-install setup:
-
-```bash
-asm-setup
-```
-
-`asm-setup` will:
-- Write the desktop entry and systemd service file
-- Install udev rules for USB device access (polkit popup for sudo)
-- Download the HRIR file for virtual surround
-- Install `filter-chain.service` automatically (not shipped by default on Fedora)
-- Enable and start all required systemd user services (`arctis-manager`, `arctis-video-router`, `filter-chain`)
-- Restart PipeWire
-
-### Debian / Ubuntu (PPA)
-
-```bash
-sudo add-apt-repository ppa:loteran/arctis-sound-manager
-sudo apt update
-sudo apt install arctis-sound-manager
-```
-
-Then run the post-install setup:
-
-```bash
-asm-setup
-```
-
-`asm-setup` will:
-- Write the desktop entry and systemd service file
-- Install udev rules for USB device access (polkit popup for sudo)
-- Download the HRIR file for virtual surround
-- Install `filter-chain.service` automatically (not shipped by default on Ubuntu)
-- Enable and start all required systemd user services (`arctis-manager`, `arctis-video-router`, `filter-chain`)
-- Restart PipeWire
-
-> **Ubuntu 24.04 (Noble)** is the currently supported series. Other series may work via the `.deb` attached to each [GitHub release](https://github.com/loteran/Arctis-Sound-Manager/releases).
-
-### Immutable distros (Bazzite, SteamOS, Silverblue)
-
-On immutable distros where the host filesystem is read-only, ASM runs inside a
-[Distrobox](https://distrobox.it/) container and is exported transparently to the host.
-Binaries, the desktop entry, systemd user services, and udev rules are all installed
-on the host — the container is invisible during normal use.
-
-Pick the script for your distro and run it directly — no need to clone the repo:
-
-**Bazzite** (Arch / AUR, full deps including noise-suppression-for-voice):
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/scripts/distrobox/bazzite.sh)
-```
-
-**SteamOS / Steam Deck** (Arch / AUR):
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/scripts/distrobox/steamos.sh)
-```
-
-> SteamOS note: udev rules are stored in `/etc/udev/rules.d/` which is reset on major SteamOS updates.
-> Re-run the script after each SteamOS version upgrade.
-
-**Fedora Silverblue / Kinoite** (COPR, no noise-suppression):
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/scripts/distrobox/silverblue.sh)
-```
-
-Each script is idempotent — re-run it at any time to upgrade ASM inside the container.
-To recreate the container from scratch: add `--reinstall`.
-To skip enabling systemd services: add `--no-services`.
-
----
-
-### Other distros (from source)
-
-```bash
-# 1. Clone the repository
-git clone --branch main https://github.com/loteran/Arctis-Sound-Manager.git
-cd Arctis-Sound-Manager
-
-# 2. Run the installer
-bash scripts/install.sh
-```
-
-The installer will:
-- Build and install the package via `pipx`
-- Install udev rules for USB device access (requires sudo)
-- Create desktop entries and the `arctis-manager.service` systemd user service file
-- Enable the `arctis-manager` systemd user service (device daemon)
-- Enable the `arctis-video-router` systemd user service (media auto-routing)
-- Copy device configs to `~/.config/arctis_manager/devices/` (required for Sonar EQ mode switch)
-- Download the default HRIR file for virtual surround (HeSuVi)
-- Enable the `filter-chain` systemd user service (required for Sonar EQ and virtual surround)
-
-After installation, launch the GUI from your application menu or run:
-```bash
-asm-gui
-```
-
-> **USB permissions**: ASM has two automatic recovery paths for udev:
-> - If the rules file is missing or doesn't cover every PID, the GUI shows an **Install rules** dialog at startup → one click runs `asm-cli udev write-rules --force --reload` with a single pkexec prompt.
-> - If the rules are correct but you plugged the headset in **before** they took effect (typical right after `paru -Syu` or `dnf upgrade`), the daemon detects the EACCES and the GUI offers an **Apply now** dialog → one click runs `asm-cli udev reload-rules`. No replug needed.
->
-> Manual fallback if you want to do it from a terminal:
-> ```bash
-> sudo asm-cli udev write-rules --force --reload
-> ```
-
----
-
-## How the mixer works
-
-The app creates 3 virtual audio sinks on top of your physical Arctis device, plus direct access to one external output of your choice:
-
-| Sink | Default use | Button |
-|---|---|---|
-| **Arctis_Game** | Games, general audio | G |
-| **Arctis_Chat** | Voice apps (Discord, TeamSpeak…) | C |
-| **Arctis_Media** | Browsers, video players | M |
-| **External Output** | Any non-Arctis sink — HDMI, USB speakers, sound card… (5.1 / 7.1 native) | O |
-
-The **media router** (`asm-router`) runs as a background service and automatically moves browsers, video players and any orphan stream onto `Arctis_Media` when Arctis is the default sink. Manual placements you make in your system mixer (KDE / GNOME / pavucontrol) are detected and saved as persistent overrides — they take priority over the auto-routing.
-
-To **manually move** an app stream, click the **G / C / M / O** buttons on its tag in the GUI. The choice is saved and respected even after the app restarts.
-
-> **External Output note**: The Output card routes audio **directly** to the physical sink you pick, bypassing the virtual stereo sinks. This preserves true 5.1 / 7.1 channel output for games and movies on a TV, AV receiver, or external surround speakers.
-
-### Configuring the external output
-
-The Output card (O button) targets the device selected in **Settings → Audio → External Output Device**. ASM auto-detects every non-SteelSeries ALSA sink on your system and lists them in the dropdown — pick HDMI, your USB speakers (Logitech, etc.), or any sound card. No config file editing needed.
-
-### Upgrading
-
-**Arch / CachyOS / Manjaro (AUR):**
-```bash
-paru -Syu arctis-sound-manager
-asm-setup
-```
-
-**Fedora (COPR):**
-```bash
-sudo dnf upgrade arctis-sound-manager
-asm-setup
-```
-
-**Debian / Ubuntu (PPA):**
-```bash
-sudo apt update && sudo apt upgrade arctis-sound-manager
-asm-setup
-```
-
-**From source:**
-```bash
-cd Arctis-Sound-Manager
-git pull
-export PATH="$HOME/.local/bin:$PATH"
-pipx install --force .
-asm-cli desktop write                       # refresh service file with the new binary path
-asm-cli udev write-rules --force --reload  # refresh udev rules if devices changed
-systemctl --user daemon-reload
-systemctl --user restart arctis-manager.service
-```
-
-> **Note:** `pipx upgrade arctis-sound-manager` may fail if the package was installed from a temporary wheel (`Unable to parse package spec`). Use `pipx install --force .` from the repo directory instead.
->
-> **PATH tip:** if `asm-cli` or `asm-daemon` are not found, add `~/.local/bin` to your PATH permanently: `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc`
+</details>
 
 ---
 
 ## Uninstall
 
-Native packages (AUR / COPR / PPA) ship a real cleanup hook since v1.0.86 — `paru -R` / `dnf remove` / `apt remove` now removes `~/.config/pipewire/pipewire.conf.d/10-arctis-virtual-sinks.conf` and the chat/media/HeSuVi siblings as your real user, then restarts pipewire so the ghost Arctis sinks vanish immediately. Audio profiles in `~/.config/arctis_manager/profiles/` are **preserved by default** so a future reinstall picks them back up.
+Native packages ship a cleanup hook — `paru -R` / `dnf remove` / `apt remove` removes PipeWire configs and restarts pipewire automatically. Audio profiles in `~/.config/arctis_manager/profiles/` are **preserved** by default.
 
 ```bash
-# Arch / CachyOS / Manjaro
-paru -R arctis-sound-manager
-
-# Fedora
-sudo dnf remove arctis-sound-manager
-
-# Debian / Ubuntu
-sudo apt remove arctis-sound-manager
+paru -R arctis-sound-manager        # Arch / CachyOS / Manjaro
+sudo dnf remove arctis-sound-manager  # Fedora
+sudo apt remove arctis-sound-manager  # Debian / Ubuntu
 ```
 
-For source / pipx installs, or to wipe everything (including profiles + HRIR), use the standalone uninstaller — it auto-detects every install method present (rpm + pacman + apt + pipx + orphan binaries in `$PATH`) and lets you pick which one(s) to remove:
+For source/pipx installs or a full wipe, use the standalone uninstaller:
 
 ```bash
-# Interactive: detects everything, prompts for each install method
-bash scripts/uninstall.sh
-
-# Or run remote (no clone needed):
+bash scripts/uninstall.sh           # interactive, auto-detects install method
+# or without cloning:
 curl -fsSL https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/scripts/uninstall.sh | bash
 ```
 
-Useful flags:
+<details>
+<summary>Uninstall flags</summary>
 
 ```bash
-bash scripts/uninstall.sh --pipx          # only the pipx install
-bash scripts/uninstall.sh --pkg           # only the distro package (rpm / pacman / apt)
-bash scripts/uninstall.sh --all           # both, when you have duplicate installs
-bash scripts/uninstall.sh --all --purge   # also wipe settings, PipeWire configs, HRIR,
-                                          # user systemd units and the manually-written
-                                          # /etc/udev/rules.d/91-steelseries-arctis.rules
-                                          # — profiles are STILL preserved
-bash scripts/uninstall.sh --yes           # non-interactive (skip confirmations)
+--pipx          # only the pipx install
+--pkg           # only the distro package
+--all           # both (for duplicate installs)
+--all --purge   # also wipe PipeWire configs, HRIR, systemd units, udev rules
+--yes           # non-interactive
 ```
 
-`--purge` keeps `~/.config/arctis_manager/profiles/` and `.active_profile` so a future `pipx install arctis-sound-manager --force` (or AUR/COPR/PPA reinstall) immediately picks them back up. A separate confirm at the end offers to delete the profiles too if you want a true clean slate.
-
----
-
-## Translations
-
-[![Crowdin](https://badges.crowdin.net/arctis-sound-manager/localized.svg)](https://crowdin.com/project/arctis-sound-manager)
-
-ASM supports community translations via [Crowdin](https://crowdin.com/project/arctis-sound-manager). No release is needed to benefit from new or updated translations — the app checks GitHub every time it starts and silently downloads any changes.
-
-### Available languages
-
-| Language | Status |
-|---|---|
-| English | Source (always complete) |
-| Français | Bundled |
-| Español | Bundled |
-| _Your language?_ | [Contribute on Crowdin ↗](https://crowdin.com/project/arctis-sound-manager) |
-
-### How it works
-
-- **Crowdin → GitHub**: every day at 06:00 UTC, a GitHub Action pulls approved translations from Crowdin and opens a pull request on the `develop` branch. Once merged, the updated `.ini` files land on `main`.
-- **GitHub → your install**: on each startup, ASM fetches the file list from the GitHub API and downloads any `.ini` that changed since the last run. Files are saved to `~/.config/arctis_manager/lang/` and the language selector in Settings updates immediately — no restart, no new release.
-- **80 % threshold**: a language must reach 80 % coverage on Crowdin before it is exported. Partial translations fall back string-by-string to English.
-
-### Contributing a translation
-
-1. Go to [crowdin.com/project/arctis-sound-manager](https://crowdin.com/project/arctis-sound-manager)
-2. Create a free account (or sign in with GitHub)
-3. Select your language and start translating
-
-To request a new language that isn't listed yet, open a [GitHub issue](https://github.com/loteran/Arctis-Sound-Manager/issues).
+`--purge` still preserves `~/.config/arctis_manager/profiles/`. A final prompt offers to delete them too for a true clean slate.
+</details>
 
 ---
 
 ## Reporting a bug
 
-Found something broken? Reports are very welcome — they directly drive fixes. Here's how to get the most useful info across quickly:
+### In-app reporter (recommended)
 
-### 1. Use the in-app bug reporter (recommended)
+Open ASM → **Help page** → **Report a Bug**. The dialog collects a full diagnostic (version, libs, distro, PipeWire state, USB devices, udev rules, last 100 log lines) and either:
 
-Open ASM → **Help page** → **Report a Bug**. The dialog has:
+- **Submits automatically** via `gh` CLI — uploads as a secret gist and opens a pre-filled issue
+- **Opens GitHub** manually — saves the report to `~/.cache/arctis-sound-manager/reports/` for drag-and-drop
 
-- A **"Describe what happened"** field at the top — write the steps to reproduce and the expected vs actual behaviour. The text is prepended to both the issue body and the diagnostic file.
-- A live preview of the **full diagnostic** that will be submitted: ASM version, Python lib versions (pulsectl / pyudev / dbus-next…), distro / kernel / desktop / session, install methods detected (catches duplicate rpm + pipx installs), USB HID devices, PipeWire cards / sinks, `wpctl status`, the udev rules content + verdict, the USB monitor backend, and the last 100 lines of `journalctl --user -u arctis-manager.service`.
-
-Then click one of:
-
-- **Submit automatically (gh CLI) ↗** — appears when `gh auth status` is configured. Uploads the full diagnostic as a secret GitHub gist, creates the issue with a link to it, and opens the new issue URL in your browser. Zero copy-paste.
-- **Open GitHub issue ↗** (manual fallback) — saves the diagnostic to `~/.cache/arctis-sound-manager/reports/bug-report-YYYYMMDD-HHMMSS.md` and opens the GitHub editor with a short summary pre-filled. The "Open folder" button highlights the file so you can drag-and-drop it into the issue editor as an attachment.
-
-### 2. Command-line equivalents (if the GUI won't start)
-
-Two commands give you the same data without the dialog:
+### CLI equivalents
 
 ```bash
-# Preflight checks: YAMLs, udev, PulseAudio/PipeWire, D-Bus, USB monitor, every
-# system dep ASM relies on (LADSPA plugins, HRIR, filter-chain, …). Exits 0 if
-# everything is green, 1 otherwise. Each missing dep prints a per-distro
-# `sudo dnf|apt-get|pacman install …` hint. Safe to wire into systemd ExecStartPre.
-asm-daemon --verify-setup
+asm-daemon --verify-setup           # preflight checks, exits 0/1 with per-distro install hints
+asm-cli diagnose -o /tmp/asm.txt    # full local diagnostic dump
 
-# Full local-only diagnostic dump (same content as the GUI's report).
-# Nothing is sent anywhere; review it before pasting / attaching.
-asm-cli diagnose -o /tmp/asm.txt
-cat /tmp/asm.txt
-```
-
-For verbose logs in a specific run, set `ARCTIS_LOG_LEVEL`:
-
-```bash
 ARCTIS_LOG_LEVEL=debug systemctl --user restart arctis-manager
 journalctl --user -u arctis-manager -f
 ```
 
 ### Tips for a good report
 
-- **Describe what you expected vs. what happened** — "Game channel is silent after switching to Sonar EQ" is more useful than "audio broken"
-- **Include steps to reproduce** — even something as simple as "open app → switch to Sonar → game audio disappears"
-- **One issue per report** — if you have two problems, open two issues; it's much easier to track and close them separately
+- Describe **expected vs actual behaviour** — "Game channel silent after switching to Sonar EQ" beats "audio broken"
+- Include **steps to reproduce**
+- One issue per report
 
 → [Open a new issue](https://github.com/loteran/Arctis-Sound-Manager/issues/new)
 
@@ -539,17 +443,13 @@ journalctl --user -u arctis-manager -f
 ## Development
 
 ```bash
-# Run the daemon
-python src/arctis_sound_manager/scripts/daemon.py
-
-# Run the GUI (without enforcing systemd)
-python src/arctis_sound_manager/scripts/gui.py --no-enforce-systemd
-
-# Run the media router
-python src/arctis_sound_manager/scripts/video_router.py
+python src/arctis_sound_manager/scripts/daemon.py          # daemon
+python src/arctis_sound_manager/scripts/gui.py --no-enforce-systemd  # GUI
+python src/arctis_sound_manager/scripts/video_router.py    # media router
 ```
 
-### Project structure
+<details>
+<summary>Project structure</summary>
 
 ```
 src/arctis_sound_manager/
@@ -562,44 +462,39 @@ src/arctis_sound_manager/
 ├── gui/
 │   ├── home_page.py            # Audio mixer (Game/Chat/Media/Output cards)
 │   ├── headset_page.py         # Device info and live status
-│   ├── device_page.py          # General settings (startup toggle, etc.)
+│   ├── device_page.py          # General settings (startup toggle, language)
 │   ├── equalizer_page.py       # EQ mode toggle (Custom / Sonar) + 10-band sliders
 │   ├── sonar_page.py           # Sonar EQ (Game/Chat/Micro tabs, presets, Spatial Audio, Boost)
-│   ├── sonar_toggle_widget.py  # Sonar on/off toggle + YAML patch
 │   ├── eq_curve_widget.py      # Interactive parametric EQ curve (biquad RBJ)
 │   ├── anc_widget.py           # ANC / Transparent mode indicator
 │   ├── settings_widget.py      # Per-device settings panel (D-Bus backed)
-│   ├── profile_bar.py          # Profile chip bar + SaveProfileDialog (Home page)
-│   ├── udev_dialog.py          # Startup dialog when udev rules are missing
+│   ├── profile_bar.py          # Profile chip bar + SaveProfileDialog
 │   ├── help_page.py            # Built-in user manual (EN/FR/ES)
 │   ├── presets/                # 334 bundled Sonar presets (312 Game, 8 Chat, 14 Mic)
-│   ├── components.py           # Reusable widgets
 │   └── theme.py                # Color constants
-├── profile_manager.py     # Audio profile: snapshot, save/load/apply, pulsectl volumes
-├── sonar_to_pipewire.py   # PipeWire filter-chain config generator (Sonar EQ)
-├── pw_utils.py            # Native PipeWire stream detection
-├── pactl.py               # PulseAudio virtual sink management
-├── udev_checker.py        # udev rules validation (used at GUI/daemon startup)
-└── devices/               # Per-device configuration files (one YAML per headset)
+├── lang/                  # Translation files (.ini, one per language)
+├── lang_updater.py        # Background GitHub translation checker
+├── i18n.py                # Translation singleton with EN fallback
+├── profile_manager.py     # Audio profile: snapshot, save/load/apply
+├── sonar_to_pipewire.py   # PipeWire filter-chain config generator
+├── oled_renderer.py       # OLED screen image renderer (PIL)
+├── oled_manager.py        # OLED scroll/animation loop
+└── devices/               # Per-device configuration YAMLs
 
 scripts/
-├── install.sh                              # Main installer (source installs)
-├── distrobox-install.sh                    # Distrobox installer for immutable distros (Bazzite, SteamOS, Silverblue)
-├── setup-surround.sh                       # Standalone virtual surround setup
-├── filter-chain.service                    # Bundled systemd service (auto-installed on distros that don't ship one)
-├── pipewire/
-│   ├── 10-arctis-virtual-sinks.conf           # PipeWire loopback sinks (Game/Chat/Media)
-│   └── sink-virtual-surround-7.1-hesuvi.conf  # HeSuVi 7.1 virtual surround filter-chain
-└── arctis-video-router.service             # Systemd service for asm-router
+├── install.sh             # Main installer (source installs)
+├── distrobox/             # Distrobox installers (Bazzite, SteamOS, Silverblue)
+├── setup-surround.sh      # Standalone virtual surround setup
+└── pipewire/              # PipeWire config templates
 ```
-If you want to buy me a coffee ;) --> https://ko-fi.com/loteran
+</details>
 
 ---
 
 ## 💬 Share your experience
 
-Tried ASM on your headset or distro? Found a bug, have a feature idea, or just want to share how it's working for you?
+Tried ASM on your headset or distro? Found a bug or have a feature idea?
 
-**Join the discussion → [GitHub Discussions](https://github.com/loteran/Arctis-Sound-Manager/discussions)**
+**[Join GitHub Discussions →](https://github.com/loteran/Arctis-Sound-Manager/discussions)**
 
-Your feedback helps improve compatibility for everyone — especially for headsets marked ⚠️ that are waiting for community reports.
+Your feedback helps improve compatibility for everyone — especially for headsets not yet confirmed working.
