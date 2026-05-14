@@ -191,7 +191,7 @@ class DevicePage(QWidget):
         lang_row.addWidget(lang_label)
 
         self._lang_buttons: dict[str, QPushButton] = {}
-        for code, display in [("en", "EN"), ("fr", "FR"), ("es", "ES")]:
+        for code, display in I18n.available_languages():
             btn = QPushButton(display)
             btn.setFixedHeight(30)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -393,14 +393,9 @@ class DevicePage(QWidget):
             return
         I18n.get_instance().set_language(code)
         self._refresh_lang_buttons()
-        _RESTART_MSG = {
-            "en": "Language changed. The change will take effect on the next startup.",
-            "fr": "Langue modifiée. Le changement sera pris en compte au prochain démarrage.",
-            "es": "Idioma cambiado. El cambio se aplicará en el próximo inicio.",
-        }
         msg = QMessageBox(self)
         msg.setWindowTitle("Language / Langue / Idioma")
-        msg.setText(_RESTART_MSG.get(code, _RESTART_MSG["en"]))
+        msg.setText(I18n.translate("ui", "language_changed"))
         msg.setIcon(QMessageBox.Icon.Information)
         msg.exec()
 

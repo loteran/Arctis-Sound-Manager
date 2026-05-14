@@ -1,5 +1,7 @@
 # Arctis Sound Manager
 
+[![Crowdin](https://badges.crowdin.net/arctis-sound-manager/localized.svg)](https://crowdin.com/project/arctis-sound-manager)
+
 > 💬 **Tried ASM? [Share your experience in GitHub Discussions](https://github.com/loteran/Arctis-Sound-Manager/discussions)** — feedback helps improve compatibility for everyone!
 
 > ☕ [Buy me a coffee](https://ko-fi.com/loteran) if you find it useful!
