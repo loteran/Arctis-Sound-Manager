@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPushButton, QSlider,
                                 QVBoxLayout, QWidget)
 
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
+from arctis_sound_manager.i18n import I18n
 from arctis_sound_manager.sonar_to_pipewire import generate_virtual_sinks_conf
 
 
@@ -177,7 +178,7 @@ class QSonarToggleWidget(QWidget):
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.setLayout(layout)
 
-        title = QLabel('Equalizer')
+        title = QLabel(I18n.translate('ui', 'equalizer'))
         font = title.font()
         font.setBold(True)
         font.setPointSize(16)
@@ -225,12 +226,12 @@ class QSonarToggleWidget(QWidget):
     def _refresh(self):
         mode = _current_mode()
         if mode == 'sonar':
-            self._mode_label.setText('Current mode: <b>Sonar</b>')
-            self._button.setText('Passer en Custom EQ')
+            self._mode_label.setText(I18n.translate('ui', 'current_mode') + ' <b>Sonar</b>')
+            self._button.setText(I18n.translate('ui', 'switch_to_custom'))
             self._eq_widget.setVisible(False)
         else:
-            self._mode_label.setText('Current mode: <b>Custom EQ</b>')
-            self._button.setText('Passer en mode Sonar')
+            self._mode_label.setText(I18n.translate('ui', 'current_mode') + ' <b>Custom EQ</b>')
+            self._button.setText(I18n.translate('ui', 'switch_to_sonar'))
             self._eq_widget.setVisible(True)
 
     def _on_eq_bands_received(self, bands: list):
@@ -247,7 +248,7 @@ class QSonarToggleWidget(QWidget):
         new_mode = 'sonar' if old_mode == 'custom' else 'custom'
 
         self._button.setEnabled(False)
-        self._button.setText('Restarting audio...')
+        self._button.setText(I18n.translate('ui', 'restarting_audio'))
 
         self._worker = _ToggleWorker(new_mode, old_mode)
         self._worker.countdown_tick.connect(self._on_countdown)
@@ -255,11 +256,11 @@ class QSonarToggleWidget(QWidget):
         self._worker.start()
 
     def _on_countdown(self, remaining: int):
-        self._button.setText(f'Please wait... {remaining}s')
+        self._button.setText(I18n.translate('ui', 'please_wait') % remaining)
 
     def _on_done(self, success: bool, mode: str):
         if not success:
-            self._mode_label.setText('<b style="color:red;">Failed to switch mode</b>')
+            self._mode_label.setText(f'<b style="color:red;">{I18n.translate("ui", "switch_failed")}</b>')
         self._refresh()
         self._button.setEnabled(True)
         if success and mode == 'custom':

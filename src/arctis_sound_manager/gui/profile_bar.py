@@ -11,6 +11,7 @@ from arctis_sound_manager.gui.theme import (
     ACCENT, BG_BUTTON, BG_BUTTON_HOVER, BG_MAIN,
     BORDER, TEXT_PRIMARY, TEXT_SECONDARY,
 )
+from arctis_sound_manager.i18n import I18n
 from arctis_sound_manager.profile_manager import (
     Profile, active_profile_name, snapshot_current,
 )
@@ -72,7 +73,7 @@ class ProfileBar(QWidget):
         self._chips.clear()
 
         # Section label — same style as "Enable Game/Chat Volume Sliders"
-        lbl = QLabel("Profiles :")
+        lbl = QLabel(I18n.translate('ui', 'profiles_label') + ' :')
         lbl.setStyleSheet(
             f"color: {TEXT_PRIMARY}; font-size: 11pt; background: transparent;"
         )
@@ -82,7 +83,7 @@ class ProfileBar(QWidget):
         active = active_profile_name()
 
         if not profiles:
-            hint = QLabel("No profiles yet")
+            hint = QLabel(I18n.translate('ui', 'no_profiles_yet'))
             hint.setStyleSheet(
                 f"color: {TEXT_PRIMARY}; font-size: 11pt; font-style: italic; background: transparent;"
             )
@@ -93,7 +94,7 @@ class ProfileBar(QWidget):
                 self._layout.addWidget(btn)
                 self._chips[profile.name] = btn
 
-        add_btn = QPushButton("＋  Save current settings")
+        add_btn = QPushButton("＋  " + I18n.translate('ui', 'save_current_settings'))
         add_btn.setStyleSheet(_BTN_ADD)
         add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         add_btn.setFixedHeight(30)
@@ -129,7 +130,7 @@ class ProfileBar(QWidget):
             f"QMenu::item {{ padding: 6px 16px; border-radius: 4px; }}"
             f"QMenu::item:selected {{ background: {ACCENT}; color: #fff; }}"
         )
-        delete_action = menu.addAction("Delete")
+        delete_action = menu.addAction(I18n.translate('ui', 'delete'))
         action = menu.exec(btn.mapToGlobal(pos))
         if action == delete_action:
             profile.delete()
@@ -146,7 +147,7 @@ class ProfileBar(QWidget):
 class SaveProfileDialog(QDialog):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self.setWindowTitle("Save profile")
+        self.setWindowTitle(I18n.translate('ui', 'save_profile'))
         self.setMinimumWidth(360)
         self.setStyleSheet(f"background-color: {BG_MAIN}; color: {TEXT_PRIMARY};")
 
@@ -155,12 +156,12 @@ class SaveProfileDialog(QDialog):
         layout.setSpacing(12)
 
         layout.addWidget(QLabel(
-            "Save current settings as a profile:",
+            I18n.translate('ui', 'save_profile_desc'),
             styleSheet=f"color: {TEXT_PRIMARY}; font-size: 11pt; background: transparent;"
         ))
 
         self._name = QLineEdit()
-        self._name.setPlaceholderText("Profile name…")
+        self._name.setPlaceholderText(I18n.translate('ui', 'profile_name_placeholder'))
         self._name.setStyleSheet(
             f"QLineEdit {{ background: {BG_BUTTON}; border: 1px solid {BORDER}; "
             f"border-radius: 6px; color: {TEXT_PRIMARY}; padding: 6px 10px; font-size: 11pt; }}"
@@ -170,17 +171,17 @@ class SaveProfileDialog(QDialog):
 
         cb_style = f"color: {TEXT_SECONDARY}; background: transparent;"
 
-        self._cb_volumes = QCheckBox("Include volumes")
+        self._cb_volumes = QCheckBox(I18n.translate('ui', 'include_volumes'))
         self._cb_volumes.setChecked(True)
         self._cb_volumes.setStyleSheet(cb_style)
         layout.addWidget(self._cb_volumes)
 
-        self._cb_spatial = QCheckBox("Include spatial audio")
+        self._cb_spatial = QCheckBox(I18n.translate('ui', 'include_spatial_audio'))
         self._cb_spatial.setChecked(True)
         self._cb_spatial.setStyleSheet(cb_style)
         layout.addWidget(self._cb_spatial)
 
-        self._cb_eq_mode = QCheckBox("Include EQ mode (Sonar / Custom)")
+        self._cb_eq_mode = QCheckBox(I18n.translate('ui', 'include_eq_mode'))
         self._cb_eq_mode.setChecked(True)
         self._cb_eq_mode.setStyleSheet(cb_style)
         layout.addWidget(self._cb_eq_mode)

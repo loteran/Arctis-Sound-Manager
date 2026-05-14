@@ -23,6 +23,7 @@ from arctis_sound_manager.gui.theme import (
     TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
+from arctis_sound_manager.i18n import I18n
 
 _BTN = (
     "QPushButton {{ background-color: {bg}; color: {fg}; border: none; "
@@ -30,40 +31,29 @@ _BTN = (
     "QPushButton:hover {{ background-color: {hover}; }}"
 )
 
-# Mode → (title, body, button label, asm-cli udev subcommand args)
-_MODES: dict[str, tuple[str, str, str, list[str]]] = {
-    "write": (
-        "USB device permissions not configured",
-        "The udev rules required to access your Arctis headset without root "
-        "privileges are missing or incomplete.\n\n"
-        "Without them, the daemon cannot open the USB device "
-        "(Error 13: Access denied).\n\n"
-        "Click \"Install rules\" to fix this automatically "
-        "(requires administrator password).",
-        "Install rules",
-        ["udev", "write-rules", "--force", "--reload"],
-    ),
-    "reload": (
-        "USB device permissions not applied",
-        "The udev rules are installed but the currently-attached Arctis "
-        "device was plugged in before they took effect.\n\n"
-        "The daemon cannot open the USB device "
-        "(Error 13: Access denied).\n\n"
-        "Click \"Apply now\" to reload the rules and trigger them on the "
-        "current device (requires administrator password). Alternatively, "
-        "you can simply unplug and replug the dongle.",
-        "Apply now",
-        ["udev", "reload-rules"],
-    ),
+_APP_NAME = "Arctis Sound Manager"
+
+_MODES_ARGS: dict[str, list[str]] = {
+    "write":  ["udev", "write-rules", "--force", "--reload"],
+    "reload": ["udev", "reload-rules"],
 }
 
 
 class UdevRulesDialog(QDialog):
     def __init__(self, parent=None, mode: Literal["write", "reload"] = "write"):
         super().__init__(parent)
-        title, body, btn_label, self._cli_args = _MODES[mode]
+        self._cli_args = _MODES_ARGS[mode]
 
-        self.setWindowTitle("USB permissions — Arctis Sound Manager")
+        if mode == "write":
+            title = I18n.translate('ui', 'udev_write_title')
+            body  = I18n.translate('ui', 'udev_write_body')
+            btn_label = I18n.translate('ui', 'udev_write_btn')
+        else:
+            title = I18n.translate('ui', 'udev_reload_title')
+            body  = I18n.translate('ui', 'udev_reload_body')
+            btn_label = I18n.translate('ui', 'udev_reload_btn')
+
+        self.setWindowTitle(f"USB permissions — {_APP_NAME}")
         self.setMinimumSize(540, 300)
         self.setStyleSheet(f"background-color: {BG_MAIN}; color: {TEXT_PRIMARY};")
 
@@ -95,7 +85,7 @@ class UdevRulesDialog(QDialog):
         btn_row.setSpacing(10)
         btn_row.addStretch()
 
-        ignore_btn = QPushButton("Ignore")
+        ignore_btn = QPushButton(I18n.translate('ui', 'ignore'))
         ignore_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         ignore_btn.setStyleSheet(_BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, hover=BG_BUTTON_HOVER))
         ignore_btn.clicked.connect(self.reject)
@@ -120,7 +110,7 @@ class UdevRulesDialog(QDialog):
 
         original_label = self._action_btn.text()
         self._action_btn.setEnabled(False)
-        self._action_btn.setText("Working…")
+        self._action_btn.setText(I18n.translate('ui', 'working'))
 
         try:
             subprocess.run([cli, *self._cli_args], check=True)

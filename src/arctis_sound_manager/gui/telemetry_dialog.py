@@ -27,6 +27,9 @@ from arctis_sound_manager.gui.theme import (
     TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
+from arctis_sound_manager.i18n import I18n
+
+_APP_NAME = "Arctis Sound Manager"
 
 _BTN = (
     "QPushButton {{ background-color: {bg}; color: {fg}; border: 1px solid {border}; "
@@ -43,7 +46,7 @@ class TelemetryConsentDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Arctis Sound Manager — Anonymous statistics")
+        self.setWindowTitle(f"{_APP_NAME} — Anonymous statistics")
         self.setMinimumSize(500, 300)
         self.setStyleSheet(f"background-color: {BG_MAIN}; color: {TEXT_PRIMARY};")
 
@@ -52,22 +55,14 @@ class TelemetryConsentDialog(QDialog):
         layout.setSpacing(14)
 
         # Title
-        title = QLabel("Help improve ASM")
+        title = QLabel(I18n.translate('ui', 'telemetry_title'))
         title.setStyleSheet(
             f"color: {TEXT_PRIMARY}; font-size: 15pt; font-weight: bold; background: transparent;"
         )
         layout.addWidget(title)
 
         # Body
-        body = QLabel(
-            "Would you like to share anonymous usage data to help improve "
-            "Arctis Sound Manager?\n\n"
-            "The following information would be sent <b>once per day</b>:\n"
-            "  • Your Linux distribution  (e.g. Arch Linux, Ubuntu 24.04)\n"
-            "  • Your headset model  (e.g. Arctis Nova Pro Wired)\n"
-            "  • The ASM version you are running\n\n"
-            "<b>No personal data</b>, no IP address, no unique identifier."
-        )
+        body = QLabel(I18n.translate('ui', 'telemetry_body').format(app_name=_APP_NAME))
         body.setStyleSheet(
             f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
         )
@@ -76,7 +71,7 @@ class TelemetryConsentDialog(QDialog):
         layout.addWidget(body, stretch=1)
 
         # Note about changing preference
-        note = QLabel("You can change this at any time in <b>Settings → Telemetry</b>.")
+        note = QLabel(I18n.translate('ui', 'telemetry_note'))
         note.setStyleSheet(
             f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;"
         )
@@ -88,7 +83,7 @@ class TelemetryConsentDialog(QDialog):
         btn_row.setSpacing(10)
         btn_row.addStretch()
 
-        no_btn = QPushButton("No thanks")
+        no_btn = QPushButton(I18n.translate('ui', 'no_thanks'))
         no_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         no_btn.setStyleSheet(
             _BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, border=BORDER, hover=BG_BUTTON_HOVER)
@@ -96,7 +91,7 @@ class TelemetryConsentDialog(QDialog):
         no_btn.clicked.connect(self.reject)
         btn_row.addWidget(no_btn)
 
-        yes_btn = QPushButton("Yes, share anonymously")
+        yes_btn = QPushButton(I18n.translate('ui', 'yes_share'))
         yes_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         yes_btn.setStyleSheet(
             _BTN.format(bg=ACCENT, fg="#ffffff", border=ACCENT, hover=BG_BUTTON_HOVER)

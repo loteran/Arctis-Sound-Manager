@@ -2630,3 +2630,37 @@ class SonarPage(QWidget):
         worker.done.connect(lambda ok: None)  # fire-and-forget
         worker.start()
         self._apply_all_worker = worker  # prevent GC
+
+    def notify_external_preset_change(self, channel: str, name: str) -> None:
+        """Refresh displayed preset after an external apply (e.g. tray picker).
+
+        Updates the EQ curve, preset label and macro curve without
+        triggering a second filter-chain restart.
+        """
+        widget_map = {
+            "game":   self._game_widget,
+            "media":  self._media_widget,
+            "chat":   self._chat_widget,
+            "output": self._output_widget,
+        }
+        widget = widget_map.get(channel)
+        if widget is None:
+            return
+
+        presets = _list_presets(channel)
+        path = presets.get(name)
+        if path is None:
+            return
+        try:
+            bands = _parse_preset(path)
+        except Exception:
+            return
+
+        widget._cur_bands = bands
+        widget._committed_bands = list(bands)
+        widget._eq_widget.set_bands(bands)
+        widget._update_macro_curve()
+        widget._preset_bar._active = name
+        widget._preset_bar._refresh_display()
+        widget._preset_bar.updateGeometry()
+        widget._preset_bar.update()

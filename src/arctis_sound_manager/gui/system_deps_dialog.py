@@ -44,6 +44,7 @@ from arctis_sound_manager.gui.theme import (
     TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
+from arctis_sound_manager.i18n import I18n
 from arctis_sound_manager.system_deps_checker import (
     CheckResult,
     Severity,
@@ -132,7 +133,7 @@ class _DepRow(QFrame):
         name_lbl.setStyleSheet(
             f"color: {TEXT_PRIMARY}; font-size: 10pt; font-weight: bold; background: transparent;"
         )
-        feature_lbl = QLabel(f"Breaks: {result.check.feature}")
+        feature_lbl = QLabel(I18n.translate('ui', 'dep_breaks').format(feature=result.check.feature))
         feature_lbl.setStyleSheet(
             f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;"
         )
@@ -140,7 +141,7 @@ class _DepRow(QFrame):
         text_col.addWidget(name_lbl)
         text_col.addWidget(feature_lbl)
         if result.check.user_action:
-            note_lbl = QLabel(f"Note: {result.check.user_action}")
+            note_lbl = QLabel(I18n.translate('ui', 'dep_note').format(note=result.check.user_action))
             note_lbl.setStyleSheet(
                 f"color: {ACCENT}; font-size: 8pt; background: transparent; font-style: italic;"
             )
@@ -150,22 +151,23 @@ class _DepRow(QFrame):
 
         argv = install_command_for(result.check)
         if argv:
-            label = "Run" if argv[0] in ("asm-setup", "asm-cli", "systemctl") else "Install"
+            label = I18n.translate('ui', 'run') if argv[0] in ("asm-setup", "asm-cli", "systemctl") else I18n.translate('ui', 'install')
             self.action_btn = QPushButton(label)
             self.action_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             self.action_btn.setStyleSheet(_BTN.format(bg=ACCENT, fg="#ffffff", hover=BG_BUTTON_HOVER))
             self.action_btn.clicked.connect(lambda: self.install_requested.emit(result))
             layout.addWidget(self.action_btn)
         else:
-            no_path_lbl = QLabel("No automatic\ninstall path")
+            no_path_lbl = QLabel(I18n.translate('ui', 'no_install_path'))
             no_path_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            no_path_lbl.setWordWrap(True)
             no_path_lbl.setStyleSheet(
                 f"color: {TEXT_SECONDARY}; font-size: 8pt; background: transparent; font-style: italic;"
             )
             layout.addWidget(no_path_lbl)
             self.action_btn = None
 
-        copy_btn = QPushButton("Copy cmd")
+        copy_btn = QPushButton(I18n.translate('ui', 'copy_cmd'))
         copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         copy_btn.setStyleSheet(_BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, hover=BG_BUTTON_HOVER))
         copy_btn.setEnabled(argv is not None)
@@ -188,7 +190,7 @@ class _DepRow(QFrame):
 class SystemDepsDialog(QDialog):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self.setWindowTitle("System dependencies — Arctis Sound Manager")
+        self.setWindowTitle("System dependencies — Arctis Sound Manager")  # brand name stays fixed
         self.setMinimumSize(720, 520)
         self.setStyleSheet(f"background-color: {BG_MAIN}; color: {TEXT_PRIMARY};")
 
@@ -200,19 +202,13 @@ class SystemDepsDialog(QDialog):
         outer.setContentsMargins(28, 24, 28, 20)
         outer.setSpacing(14)
 
-        header = QLabel("Some required components are missing")
+        header = QLabel(I18n.translate('ui', 'sysdeps_header'))
         header.setStyleSheet(
             f"color: {TEXT_PRIMARY}; font-size: 15pt; font-weight: bold; background: transparent;"
         )
         outer.addWidget(header)
 
-        sub = QLabel(
-            "ASM features that depend on missing system packages will not work "
-            "until they are installed. The detected distribution is "
-            f"<b>{detect_distro()}</b> — install commands below match that "
-            "package manager. Each install will prompt for your administrator "
-            "password (via polkit)."
-        )
+        sub = QLabel(I18n.translate('ui', 'sysdeps_sub').format(distro=detect_distro()))
         sub.setStyleSheet(
             f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
         )
@@ -243,26 +239,26 @@ class SystemDepsDialog(QDialog):
         bottom = QHBoxLayout()
         bottom.setSpacing(10)
 
-        self._skip_checkbox = QCheckBox("Don't show again until ASM is upgraded")
+        self._skip_checkbox = QCheckBox(I18n.translate('ui', 'skip_until_upgrade'))
         self._skip_checkbox.setStyleSheet(
             f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;"
         )
         bottom.addWidget(self._skip_checkbox)
         bottom.addStretch()
 
-        self._refresh_btn = QPushButton("Re-check")
+        self._refresh_btn = QPushButton(I18n.translate('ui', 'recheck'))
         self._refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._refresh_btn.setStyleSheet(_BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, hover=BG_BUTTON_HOVER))
         self._refresh_btn.clicked.connect(self._refresh)
         bottom.addWidget(self._refresh_btn)
 
-        self._install_all_btn = QPushButton("Install all missing")
+        self._install_all_btn = QPushButton(I18n.translate('ui', 'install_all_missing'))
         self._install_all_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._install_all_btn.setStyleSheet(_BTN.format(bg=ACCENT, fg="#ffffff", hover=BG_BUTTON_HOVER))
         self._install_all_btn.clicked.connect(self._install_all)
         bottom.addWidget(self._install_all_btn)
 
-        self._close_btn = QPushButton("Close")
+        self._close_btn = QPushButton(I18n.translate('ui', 'close'))
         self._close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._close_btn.setStyleSheet(_BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, hover=BG_BUTTON_HOVER))
         self._close_btn.clicked.connect(self._on_close)
@@ -286,7 +282,7 @@ class SystemDepsDialog(QDialog):
         bad = failing(self._results, min_severity=Severity.DEGRADED)
 
         if not bad:
-            self._status_lbl.setText("All blocking and degraded checks now pass — you can close this dialog.")
+            self._status_lbl.setText(I18n.translate('ui', 'all_checks_pass'))
             self._install_all_btn.setEnabled(False)
             return
 
