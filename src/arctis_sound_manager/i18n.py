@@ -84,8 +84,12 @@ class I18n:
 
     @staticmethod
     def available_languages() -> list[tuple[str, str]]:
-        """Return (code, display_name) for every .ini in the built-in lang dir."""
-        result: list[tuple[str, str]] = []
+        """Return (code, display_name) sorted by code.
+
+        Scans built-in lang dir first, then HOME_LANG_FOLDER for community
+        translations downloaded by LangUpdateWorker.
+        """
+        seen: dict[str, str] = {}
         for path in sorted(_BUILTIN_LANG_DIR.glob("*.ini")):
             code = path.stem
             cp = ConfigParser()
@@ -93,9 +97,19 @@ class I18n:
                 cp.read(path)
             except Exception:
                 continue
-            display = cp.get("meta", "language_name", fallback=code.upper())
-            result.append((code, display))
-        return result
+            seen[code] = cp.get("meta", "language_name", fallback=code.upper())
+        if HOME_LANG_FOLDER.exists():
+            for path in sorted(HOME_LANG_FOLDER.glob("*.ini")):
+                code = path.stem
+                if code in seen:
+                    continue  # built-in takes priority for display name
+                cp = ConfigParser()
+                try:
+                    cp.read(path)
+                except Exception:
+                    continue
+                seen[code] = cp.get("meta", "language_name", fallback=code.upper())
+        return sorted(seen.items())
 
     @staticmethod
     def current_lang() -> str:
