@@ -99,19 +99,34 @@ class OledRenderer:
 
     _DEFAULT_DISPLAY_ORDER = ['profile', 'eq', 'weather']
 
+    @staticmethod
+    def _measure_text_pixels(font: "ImageFont.FreeTypeFont", text: str) -> int:
+        """Return the actual rightmost lit pixel + 1 by rendering on an oversized canvas.
+
+        PIL's getbbox/getlength can under-report the true glyph extent (e.g. the
+        'trailing-pixel' of characters like 't' at certain sizes).  Rendering to a
+        canvas wider than needed and scanning the result gives the true value.
+        """
+        estimate = math.ceil(font.getlength(text)) + 32   # +32px safety margin
+        h = font.getbbox(text)[3] + 2                     # canvas height = glyph bottom + margin
+        img = Image.new("1", (estimate, h), color=0)
+        ImageDraw.Draw(img).text((0, 0), text, font=font, fill=1)
+        last_x = -1
+        for x in range(estimate - 1, -1, -1):
+            if any(img.getpixel((x, y)) for y in range(h)):
+                last_x = x
+                break
+        return last_x + 1 if last_x >= 0 else estimate
+
     def measure_eq_text(self, eq_preset: str, sz_eq: int) -> int:
         """Return pixel width of 'EQ: <eq_preset>' at the given font size."""
         font = ImageFont.load_default(size=max(7, min(30, sz_eq)))
-        text = f"EQ: {eq_preset}"
-        bbox = font.getbbox(text)
-        return bbox[2] if bbox else math.ceil(font.getlength(text))
+        return self._measure_text_pixels(font, f"EQ: {eq_preset}")
 
     def measure_profile_text(self, active_profile: str, sz_profile: int) -> int:
         """Return pixel width of 'Profile: <active_profile>' at the given font size."""
         font = ImageFont.load_default(size=max(7, min(30, sz_profile)))
-        text = f"Profile: {active_profile}"
-        bbox = font.getbbox(text)
-        return bbox[2] if bbox else math.ceil(font.getlength(text))
+        return self._measure_text_pixels(font, f"Profile: {active_profile}")
 
     def render_status_image(
         self,

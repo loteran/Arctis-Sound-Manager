@@ -345,10 +345,17 @@ class OledManager:
 
                 eq_preset = _active_eq_preset("game")
                 text_w = self._renderer.measure_eq_text(eq_preset, gs.oled_font_eq)
-                # Available width: 128px canvas minus 1px left margin = 127px
+                # Draw origin is x=1; we want the last pixel at x=127 (WIDTH-1).
+                # text_w is the full advance → place advance end at x=127 → offset = text_w - 126.
                 max_offset = text_w - (self._renderer.WIDTH - 1)
+                logger.debug(
+                    "EQ scroll: preset=%r font_sz=%d text_w=%d max_offset=%d show_eq=%s custom=%s speed=%d",
+                    eq_preset, gs.oled_font_eq, text_w, max_offset,
+                    gs.oled_show_eq, gs.oled_custom_display, eq_speed,
+                )
 
                 if max_offset <= 0:
+                    logger.debug("EQ scroll: text fits, no scroll needed")
                     if self._eq_scroll_wait(0.5):
                         continue
                     continue
