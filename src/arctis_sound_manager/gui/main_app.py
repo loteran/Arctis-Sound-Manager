@@ -98,6 +98,12 @@ class QMainApp(QBaseDesktopApp):
         self._update_worker.result.connect(self._home_page.on_update_available)
         self._update_worker.start()
 
+        # Check for new/updated translation files (non-blocking)
+        from arctis_sound_manager.lang_updater import LangUpdateWorker
+        self._lang_worker = LangUpdateWorker()
+        self._lang_worker.langs_updated.connect(self._device_page.rebuild_lang_combo)
+        self._lang_worker.start()
+
         # Wire profile bar
         self._home_page.profile_bar.sig_apply.connect(self._on_apply_profile)
         self._home_page.profile_bar.sig_changed.connect(self._on_profiles_changed)

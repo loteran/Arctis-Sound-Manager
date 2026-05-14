@@ -383,6 +383,18 @@ class DevicePage(QWidget):
             self._lang_combo.setCurrentIndex(self._lang_codes.index(current))
             self._lang_combo.blockSignals(False)
 
+    @Slot()
+    def rebuild_lang_combo(self) -> None:
+        """Repopulate the combo after LangUpdateWorker downloads new files."""
+        self._lang_combo.blockSignals(True)
+        self._lang_combo.clear()
+        self._lang_codes.clear()
+        for code, display in I18n.available_languages():
+            self._lang_combo.addItem(display)
+            self._lang_codes.append(code)
+        self._refresh_lang_combo()
+        self._lang_combo.blockSignals(False)
+
     def _on_autostart_toggled(self, state: Qt.CheckState) -> None:
         set_autostart(state == Qt.CheckState.Checked)
 
