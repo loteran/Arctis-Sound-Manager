@@ -21,6 +21,12 @@ from arctis_sound_manager.constants import (DBUS_BUS_NAME,
 from arctis_sound_manager.gui.base_app import QBaseDesktopApp
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
 from arctis_sound_manager.gui.main_app import QMainApp
+from arctis_sound_manager.gui.tray_eq_presets import (
+    SonarPresetApplier,
+    _get_sonar_active_game_preset,
+    apply_custom_preset,
+    list_tray_presets,
+)
 from arctis_sound_manager.gui.ui_utils import get_icon_pixmap
 from arctis_sound_manager.i18n import I18n
 
@@ -54,6 +60,9 @@ class QSystrayApp(QBaseDesktopApp):
 
         self.last_device_status = {}
         DbusWrapper.show_splash()
+
+        self._sonar_applier = SonarPresetApplier(self)
+        self._sonar_applier.done.connect(self._on_sonar_preset_applied)
 
         self.menu = QMenu()
         # Connect signals once on the persistent menu object
@@ -194,6 +203,23 @@ class QSystrayApp(QBaseDesktopApp):
         except Exception as e:
             self.logger.error('profiles section failed: %s', e, exc_info=True)
 
+        # EQ presets
+        try:
+            mode, presets = list_tray_presets()
+            _sep()
+            if presets:
+                active_sonar = _get_sonar_active_game_preset() if mode == "sonar" else ""
+                for preset_name in presets:
+                    marker = "● " if (mode == "sonar" and preset_name == active_sonar) else "    "
+                    a = _add(QAction(f"{marker}{preset_name}"))
+                    a.triggered.connect(
+                        lambda _=False, n=preset_name, m=mode: self._on_tray_eq_preset(m, n)
+                    )
+            else:
+                _add(QAction(f"— {I18n.translate('ui', 'no_presets_saved')} —"))
+        except Exception as e:
+            self.logger.error('EQ presets section failed: %s', e, exc_info=True)
+
         # Headset status (power only)
         for _, status_obj in self.last_device_status.items():
             if not status_obj:
@@ -218,6 +244,29 @@ class QSystrayApp(QBaseDesktopApp):
         # Rebuild menu to update active marker
         self.menu_setup()
         # Note: EQ re-apply only happens when GUI is open
+
+    def _on_tray_eq_preset(self, mode: str, name: str) -> None:
+        if mode == "custom":
+            ok = apply_custom_preset(name)
+            if not ok:
+                self.logger.warning("Custom preset '%s' not found", name)
+        else:
+            if self._sonar_applier.is_running():
+                return
+            self.tray_icon.setToolTip(
+                f"{I18n.translate('ui', 'applying_preset')} {name}"
+            )
+            self._sonar_applier.apply(name)
+
+    @Slot(bool, str)
+    def _on_sonar_preset_applied(self, ok: bool, name: str) -> None:
+        if ok:
+            self.tray_icon.setToolTip("Arctis Sound Manager")
+            self.menu_setup()
+        else:
+            self.tray_icon.setToolTip(
+                f"{I18n.translate('ui', 'preset_apply_failed')}: {name}"
+            )
 
     def is_stopping(self):
         return hasattr(self, '_stopping') and self._stopping
