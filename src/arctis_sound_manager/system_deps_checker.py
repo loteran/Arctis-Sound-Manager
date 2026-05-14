@@ -588,6 +588,18 @@ def _build_checks() -> list[DepCheck]:
             },
         ),
 
+        DepCheck(
+            name="pgrep (procps)",
+            severity=Severity.DEGRADED,
+            feature="detecting running asm-daemon processes in asm-setup",
+            detect=lambda: _which("pgrep"),
+            install_commands={
+                "fedora": ["dnf", "install", "-y", "procps-ng"],
+                "debian": ["apt-get", "install", "-y", "procps"],
+                "arch":   ["pacman", "-S", "--noconfirm", "procps-ng"],
+            },
+        ),
+
         # Optional QoL
         DepCheck(
             name="gh CLI (authenticated)",
