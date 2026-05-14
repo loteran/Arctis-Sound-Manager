@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from arctis_sound_manager.i18n import I18n
 from arctis_sound_manager.bug_reporter import (
     clear_crash_report,
     format_bug_report,
@@ -63,7 +64,7 @@ class ReportBugDialog(QDialog):
         self._is_crash = is_crash
         self._traceback = traceback_str
         self._report_path = None  # set when the user clicks "Open issue"
-        self.setWindowTitle("Report a bug — Arctis Sound Manager")
+        self.setWindowTitle("Report a bug — Arctis Sound Manager")  # brand name stays fixed
         self.setMinimumSize(720, 580)
         self.setStyleSheet(f"background-color: {BG_MAIN}; color: {TEXT_PRIMARY};")
 
@@ -73,21 +74,11 @@ class ReportBugDialog(QDialog):
 
         # ── Title / subtitle ────────────────────────────────────────────────
         if is_crash:
-            title_text = "A crash occurred in the last session"
-            sub_text = (
-                "ASM encountered an unexpected error. Click \"Open GitHub issue\" "
-                "to file a report — a short summary opens in your browser, and a "
-                "full diagnostic file is saved locally that you can drag-and-drop "
-                "into the issue editor."
-            )
+            title_text = I18n.translate('ui', 'report_crash_title')
+            sub_text = I18n.translate('ui', 'report_crash_sub')
         else:
-            title_text = "Report a bug"
-            sub_text = (
-                "Click \"Open GitHub issue\" to start filing a report. A short "
-                "summary opens in your browser; a full diagnostic file (USB tree, "
-                "udev rules, PA/PW sinks, journalctl, etc.) is saved locally — "
-                "drag-and-drop it into the GitHub editor as an attachment."
-            )
+            title_text = I18n.translate('ui', 'report_bug')
+            sub_text = I18n.translate('ui', 'report_bug_sub')
 
         title_lbl = QLabel(title_text)
         title_lbl.setStyleSheet(
@@ -103,7 +94,7 @@ class ReportBugDialog(QDialog):
         layout.addWidget(sub_lbl)
 
         # ── User description (free-form, prepended to both body + file) ──────
-        desc_hint = QLabel("Describe what happened (steps to reproduce, expected vs actual):")
+        desc_hint = QLabel(I18n.translate('ui', 'report_desc_hint'))
         desc_hint.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;")
         layout.addWidget(desc_hint)
 
@@ -115,16 +106,12 @@ class ReportBugDialog(QDialog):
             f"  font-size: 10pt; padding: 8px;"
             f"}}"
         )
-        self._description.setPlaceholderText(
-            "Example: \"I clicked the Sonar tab, switched to the Bass Boost preset and "
-            "the Game channel went silent until I restarted ASM.\"\n\n"
-            "(Optional but very helpful — leave blank if you have no extra context.)"
-        )
+        self._description.setPlaceholderText(I18n.translate('ui', 'report_desc_placeholder'))
         self._description.setMaximumHeight(140)
         layout.addWidget(self._description)
 
         # ── Preview of the FULL report (read-only, just for review) ─────────
-        hint = QLabel("Preview of the full diagnostic that will be submitted:")
+        hint = QLabel(I18n.translate('ui', 'report_preview_hint'))
         hint.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;")
         layout.addWidget(hint)
 
@@ -152,13 +139,13 @@ class ReportBugDialog(QDialog):
         btn_row = QHBoxLayout()
         btn_row.setSpacing(10)
 
-        self._copy_btn = QPushButton("Copy full report")
+        self._copy_btn = QPushButton(I18n.translate('ui', 'copy_full_report'))
         self._copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._copy_btn.setStyleSheet(_BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, hover=BG_BUTTON_HOVER))
         self._copy_btn.clicked.connect(self._copy)
         btn_row.addWidget(self._copy_btn)
 
-        self._open_folder_btn = QPushButton("Open folder")
+        self._open_folder_btn = QPushButton(I18n.translate('ui', 'open_folder'))
         self._open_folder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._open_folder_btn.setStyleSheet(_BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, hover=BG_BUTTON_HOVER))
         self._open_folder_btn.clicked.connect(self._open_folder)
@@ -167,7 +154,7 @@ class ReportBugDialog(QDialog):
 
         btn_row.addStretch()
 
-        close_btn = QPushButton("Close")
+        close_btn = QPushButton(I18n.translate('ui', 'close'))
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         close_btn.setStyleSheet(_BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, hover=BG_BUTTON_HOVER))
         close_btn.clicked.connect(self.accept)
@@ -180,7 +167,7 @@ class ReportBugDialog(QDialog):
         self._gh_ready = is_gh_cli_ready()
 
         if self._gh_ready:
-            self._auto_btn = QPushButton("Submit automatically (gh CLI) ↗")
+            self._auto_btn = QPushButton(I18n.translate('ui', 'submit_auto_gh'))
             self._auto_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             self._auto_btn.setToolTip(
                 "Creates a secret GitHub gist with the full diagnostic, "
@@ -191,7 +178,7 @@ class ReportBugDialog(QDialog):
             btn_row.addWidget(self._auto_btn)
 
         self._github_btn = QPushButton(
-            "Open GitHub issue ↗" if not self._gh_ready else "Open manually ↗"
+            I18n.translate('ui', 'open_github_issue') if not self._gh_ready else I18n.translate('ui', 'open_manually')
         )
         self._github_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         gh_bg = BG_BUTTON if self._gh_ready else ACCENT
@@ -230,9 +217,9 @@ class ReportBugDialog(QDialog):
     def _copy(self) -> None:
         self.activateWindow()
         QApplication.clipboard().setText(self._editor.toPlainText(), QClipboard.Mode.Clipboard)
-        self._copy_btn.setText("Copied!")
+        self._copy_btn.setText(I18n.translate('ui', 'copied'))
         self._copy_btn.setEnabled(False)
-        QTimer.singleShot(2000, lambda: (self._copy_btn.setText("Copy full report"), self._copy_btn.setEnabled(True)))
+        QTimer.singleShot(2000, lambda: (self._copy_btn.setText(I18n.translate('ui', 'copy_full_report')), self._copy_btn.setEnabled(True)))
 
     def _open_folder(self) -> None:
         if self._report_path is None:
@@ -262,11 +249,11 @@ class ReportBugDialog(QDialog):
             self._status_lbl.setText(f"Could not write diagnostic file: {e!r}")
             return
 
-        title = "Crash report" if self._is_crash else "Bug report"
+        title = I18n.translate('ui', 'crash_report_title') if self._is_crash else I18n.translate('ui', 'bug_report_title')
         short = self._user_description_block() + format_bug_report_short(self._traceback, attachment_path=None)
 
         self._auto_btn.setEnabled(False)
-        self._auto_btn.setText("Uploading…")
+        self._auto_btn.setText(I18n.translate('ui', 'uploading'))
         QApplication.processEvents()
 
         issue_url = submit_via_gh_cli(title, short, self._report_path)
@@ -276,13 +263,13 @@ class ReportBugDialog(QDialog):
                 "Falling back to the manual flow — opening browser now."
             )
             self._auto_btn.setEnabled(True)
-            self._auto_btn.setText("Submit automatically (gh CLI) ↗")
+            self._auto_btn.setText(I18n.translate('ui', 'submit_auto_gh'))
             self._open_github()
             return
 
         self._status_lbl.setText(f"Issue filed: {issue_url}")
         webbrowser.open(issue_url)
-        self._auto_btn.setText("Issue filed ✓")
+        self._auto_btn.setText(I18n.translate('ui', 'issue_filed'))
         self._open_folder_btn.setEnabled(True)
 
     def _open_github(self) -> None:
@@ -296,7 +283,7 @@ class ReportBugDialog(QDialog):
 
         # 2. Build a short URL body that fits in `?body=`, including the user's
         # description at the top.
-        title = "Crash report" if self._is_crash else "Bug report"
+        title = I18n.translate('ui', 'crash_report_title') if self._is_crash else I18n.translate('ui', 'bug_report_title')
         short = self._user_description_block() + format_bug_report_short(
             self._traceback, attachment_path=self._report_path,
         )
@@ -322,9 +309,9 @@ class ReportBugDialog(QDialog):
 
         webbrowser.open(url)
         self._open_folder_btn.setEnabled(True)
-        self._github_btn.setText("Issue opened ↗ — drop the file in")
+        self._github_btn.setText(I18n.translate('ui', 'issue_opened'))
         self._github_btn.setEnabled(False)
         QTimer.singleShot(
             6000,
-            lambda: (self._github_btn.setText("Open GitHub issue ↗"), self._github_btn.setEnabled(True)),
+            lambda: (self._github_btn.setText(I18n.translate('ui', 'open_github_issue')), self._github_btn.setEnabled(True)),
         )

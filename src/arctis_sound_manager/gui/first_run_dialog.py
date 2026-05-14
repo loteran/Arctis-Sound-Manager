@@ -30,6 +30,9 @@ from arctis_sound_manager.gui.theme import (
     TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
+from arctis_sound_manager.i18n import I18n
+
+_APP_NAME = "Arctis Sound Manager"
 
 _BTN = (
     "QPushButton {{ background-color: {bg}; color: {fg}; border: none; "
@@ -42,7 +45,7 @@ _BTN = (
 class FirstRunDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("First-time setup — Arctis Sound Manager")
+        self.setWindowTitle(f"First-time setup — {_APP_NAME}")
         self.setMinimumSize(620, 440)
         self.setStyleSheet(f"background-color: {BG_MAIN}; color: {TEXT_PRIMARY};")
 
@@ -50,19 +53,13 @@ class FirstRunDialog(QDialog):
         layout.setContentsMargins(28, 24, 28, 20)
         layout.setSpacing(12)
 
-        title_lbl = QLabel("Welcome to Arctis Sound Manager")
+        title_lbl = QLabel(I18n.translate('ui', 'first_run_welcome').format(app_name=_APP_NAME))
         title_lbl.setStyleSheet(
             f"color: {TEXT_PRIMARY}; font-size: 15pt; font-weight: bold; background: transparent;"
         )
         layout.addWidget(title_lbl)
 
-        sub_lbl = QLabel(
-            "A one-time setup is required to configure PipeWire virtual sinks, "
-            "install device-access rules, download the virtual-surround impulse "
-            "response and enable the systemd services.\n\n"
-            "You will be prompted for your administrator password to install "
-            "the udev rules."
-        )
+        sub_lbl = QLabel(I18n.translate('ui', 'first_run_desc'))
         sub_lbl.setStyleSheet(
             f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
         )
@@ -84,13 +81,13 @@ class FirstRunDialog(QDialog):
         btn_row.setSpacing(10)
         btn_row.addStretch()
 
-        self._skip_btn = QPushButton("Skip")
+        self._skip_btn = QPushButton(I18n.translate('ui', 'skip'))
         self._skip_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._skip_btn.setStyleSheet(_BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, hover=BG_BUTTON_HOVER))
         self._skip_btn.clicked.connect(self.reject)
         btn_row.addWidget(self._skip_btn)
 
-        self._action_btn = QPushButton("Run setup")
+        self._action_btn = QPushButton(I18n.translate('ui', 'run_setup'))
         self._action_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._action_btn.setStyleSheet(_BTN.format(bg=ACCENT, fg="#ffffff", hover=BG_BUTTON_HOVER))
         self._action_btn.clicked.connect(self._start)
@@ -111,7 +108,7 @@ class FirstRunDialog(QDialog):
             return
 
         self._action_btn.setEnabled(False)
-        self._action_btn.setText("Running…")
+        self._action_btn.setText(I18n.translate('ui', 'running'))
         self._skip_btn.setEnabled(False)
         self._log.setVisible(True)
         self.adjustSize()
@@ -134,7 +131,7 @@ class FirstRunDialog(QDialog):
     def _on_finished(self, exit_code: int, _exit_status) -> None:
         self._skip_btn.setEnabled(True)
         if exit_code == 0:
-            self._action_btn.setText("Close")
+            self._action_btn.setText(I18n.translate('ui', 'close'))
             self._action_btn.setEnabled(True)
             self._action_btn.clicked.disconnect()
             self._action_btn.clicked.connect(self.accept)

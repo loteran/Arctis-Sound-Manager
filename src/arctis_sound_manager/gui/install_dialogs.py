@@ -27,7 +27,10 @@ from arctis_sound_manager.gui.theme import (
     TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
+from arctis_sound_manager.i18n import I18n
 from arctis_sound_manager.update_checker import InstallMethod
+
+_APP_NAME = "Arctis Sound Manager"
 
 _BTN = (
     "QPushButton {{ background-color: {bg}; color: {fg}; border: none; "
@@ -53,7 +56,7 @@ _CLEAN_REINSTALL_CMD = f"curl -fsSL {_CLEAN_REINSTALL_URL} | bash"
 def show_multi_install_warning(parent: QWidget | None, methods: list[InstallMethod]) -> None:
     """Block the update flow with a clear dialog when ASM is installed by more than one method."""
     dlg = QDialog(parent)
-    dlg.setWindowTitle("Multiple ASM installations detected")
+    dlg.setWindowTitle("Multiple ASM installations detected")  # brand name stays fixed
     dlg.setMinimumWidth(560)
     dlg.setStyleSheet(f"background-color: {BG_MAIN}; color: {TEXT_PRIMARY};")
 
@@ -61,22 +64,21 @@ def show_multi_install_warning(parent: QWidget | None, methods: list[InstallMeth
     layout.setContentsMargins(24, 22, 24, 18)
     layout.setSpacing(12)
 
-    title = QLabel("Multiple installations of Arctis Sound Manager were found")
+    title = QLabel(I18n.translate('ui', 'multi_install_title').format(app_name=_APP_NAME))
     title.setStyleSheet(
         f"color: {TEXT_PRIMARY}; font-size: 13pt; font-weight: bold; background: transparent;"
     )
     title.setWordWrap(True)
     layout.addWidget(title)
 
-    body = QLabel(
-        "Updating now would install on top of one of these without removing the others, "
-        "which is the cause of \"no device detected\", wrong-version daemons running in the "
-        "background and stale audio routing.\n\n"
-        "Detected install methods:"
-    )
+    body = QLabel(I18n.translate('ui', 'multi_install_body'))
     body.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;")
     body.setWordWrap(True)
     layout.addWidget(body)
+
+    detected_lbl = QLabel(I18n.translate('ui', 'detected_install_methods'))
+    detected_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;")
+    layout.addWidget(detected_lbl)
 
     methods_text = "\n".join(f"  • {_METHOD_LABELS.get(m, m.name)}" for m in methods)
     methods_lbl = QLabel(methods_text)
@@ -87,10 +89,7 @@ def show_multi_install_warning(parent: QWidget | None, methods: list[InstallMeth
     )
     layout.addWidget(methods_lbl)
 
-    fix_intro = QLabel(
-        "Run the clean-reinstall script to remove every copy and install one "
-        "fresh version via your preferred method:"
-    )
+    fix_intro = QLabel(I18n.translate('ui', 'multi_install_fix_intro'))
     fix_intro.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;")
     fix_intro.setWordWrap(True)
     layout.addWidget(fix_intro)
@@ -108,17 +107,17 @@ def show_multi_install_warning(parent: QWidget | None, methods: list[InstallMeth
     btn_row = QHBoxLayout()
     btn_row.addStretch()
 
-    copy_btn = QPushButton("Copy command")
+    copy_btn = QPushButton(I18n.translate('ui', 'copy_command'))
     copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
     copy_btn.setStyleSheet(_BTN.format(bg=ACCENT, fg="#ffffff", hover=BG_BUTTON_HOVER))
     def _copy():
         QApplication.clipboard().setText(_CLEAN_REINSTALL_CMD, QClipboard.Mode.Clipboard)
-        copy_btn.setText("Copied!")
+        copy_btn.setText(I18n.translate('ui', 'copied'))
         copy_btn.setEnabled(False)
     copy_btn.clicked.connect(_copy)
     btn_row.addWidget(copy_btn)
 
-    close_btn = QPushButton("Close")
+    close_btn = QPushButton(I18n.translate('ui', 'close'))
     close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
     close_btn.setStyleSheet(_BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, hover=BG_BUTTON_HOVER))
     close_btn.clicked.connect(dlg.accept)
