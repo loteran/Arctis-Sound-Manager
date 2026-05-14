@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 from arctis_sound_manager.gui.components import AccentButton
 from arctis_sound_manager.gui.sonar_page import SonarPage
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
+from arctis_sound_manager.i18n import I18n
 from arctis_sound_manager.sonar_to_pipewire import generate_virtual_sinks_conf, ensure_sonar_eq_configs
 from arctis_sound_manager.gui.theme import (
     ACCENT,
@@ -537,7 +538,7 @@ class _EqSlider(QWidget):
 class _LoadPresetDialog(QDialog):
     def __init__(self, presets: dict[str, list[int]], parent: QWidget | None = None):
         super().__init__(parent)
-        self.setWindowTitle("Load preset")
+        self.setWindowTitle(I18n.translate('ui', 'load_preset'))
         self.setMinimumWidth(300)
         self.selected_bands: list[int] | None = None
 
@@ -558,7 +559,7 @@ class _LoadPresetDialog(QDialog):
         self._list.itemDoubleClicked.connect(self.accept)
         layout.addWidget(self._list)
 
-        del_btn = QPushButton("Delete")
+        del_btn = QPushButton(I18n.translate('ui', 'delete'))
         del_btn.setStyleSheet("color: #f44; background: transparent; border: 1px solid #f44; border-radius: 4px; padding: 4px 10px;")
         del_btn.clicked.connect(self._on_delete)
         layout.addWidget(del_btn)
@@ -599,12 +600,12 @@ class EqualizerPage(QWidget):
         root.setContentsMargins(36, 28, 36, 28)
         root.setSpacing(0)
 
-        app_title = QLabel("Arctis Sound Manager")
+        app_title = QLabel(I18n.translate('ui', 'app_name'))
         app_title.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 28pt; font-weight: bold; background: transparent;")
         root.addWidget(app_title)
         root.addSpacing(28)
 
-        self._eq_title = QLabel("Equalizer")
+        self._eq_title = QLabel(I18n.translate('ui', 'equalizer'))
         self._eq_title.setStyleSheet("color: #666666; font-size: 20pt; font-weight: bold; background: transparent;")
         root.addWidget(self._eq_title)
         root.addSpacing(20)
@@ -631,7 +632,7 @@ class EqualizerPage(QWidget):
         mrl.setContentsMargins(0, 0, 0, 0)
         mrl.setSpacing(12)
 
-        ms = QLabel("Current mode:")
+        ms = QLabel(I18n.translate('ui', 'current_mode'))
         ms.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11pt; background: transparent;")
         mrl.addWidget(ms)
 
@@ -669,7 +670,7 @@ class EqualizerPage(QWidget):
         eq_card_layout.setContentsMargins(24, 20, 24, 20)
         eq_card_layout.setSpacing(12)
 
-        eq_card_title = QLabel("Custom EQ")
+        eq_card_title = QLabel(I18n.translate('ui', 'custom_eq'))
         eq_card_title.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 12pt; font-weight: bold; background: transparent;")
         eq_card_layout.addWidget(eq_card_title)
 
@@ -701,7 +702,7 @@ class EqualizerPage(QWidget):
         pl.setContentsMargins(0, 4, 0, 0)
         pl.setSpacing(10)
 
-        save_btn = QPushButton("Save preset")
+        save_btn = QPushButton(I18n.translate('ui', 'save_preset'))
         save_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; color: {ACCENT};
@@ -713,7 +714,7 @@ class EqualizerPage(QWidget):
         save_btn.clicked.connect(self._on_save_preset)
         pl.addWidget(save_btn)
 
-        load_btn = QPushButton("Load preset")
+        load_btn = QPushButton(I18n.translate('ui', 'load_preset'))
         load_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; color: {TEXT_SECONDARY};
@@ -782,7 +783,7 @@ class EqualizerPage(QWidget):
     # ── Presets ──────────────────────────────────────────────────────────────
 
     def _on_save_preset(self):
-        name, ok = QInputDialog.getText(self, "Save preset", "Preset name:")
+        name, ok = QInputDialog.getText(self, I18n.translate('ui', 'save_preset'), I18n.translate('ui', 'preset_name'))
         if not ok or not name.strip():
             return
         presets = _load_presets()
@@ -793,13 +794,13 @@ class EqualizerPage(QWidget):
     def _on_load_preset(self):
         presets = _load_presets()
         if not presets:
-            self._preset_status.setText("No preset saved")
+            self._preset_status.setText(I18n.translate('ui', 'no_preset_saved'))
             return
         dialog = _LoadPresetDialog(presets, self)
         if dialog.exec() == QDialog.DialogCode.Accepted and dialog.selected_bands:
             self._on_eq_bands_received(dialog.selected_bands)
             DbusWrapper.send_eq_command(list(self._band_values))
-            self._preset_status.setText("Preset loaded")
+            self._preset_status.setText(I18n.translate('ui', 'preset_loaded'))
 
     # ── Toggle ───────────────────────────────────────────────────────────────
 
@@ -808,21 +809,21 @@ class EqualizerPage(QWidget):
         root = self.layout()
         stretch_item = root.itemAt(self._custom_stretch)
         if mode == "sonar":
-            self._eq_title.setText("Sonar")
-            self._mode_label.setText("Sonar")
+            self._eq_title.setText(I18n.translate('ui', 'sonar'))
+            self._mode_label.setText(I18n.translate('ui', 'sonar'))
             self._mode_label.setStyleSheet(f"color: {ACCENT}; font-size: 13pt; font-weight: bold; background: transparent;")
-            self._desc_label.setText("SteelSeries Sonar audio processing is active. Click to switch back to your Custom EQ.")
-            self._button.setText("Switch to Custom EQ")
+            self._desc_label.setText(I18n.translate('ui', 'sonar_active_desc'))
+            self._button.setText(I18n.translate('ui', 'switch_to_custom'))
             self._eq_card.setVisible(False)
             self._sonar_scroll.setVisible(True)
             if stretch_item:
                 root.setStretch(self._custom_stretch, 0)
         else:
-            self._eq_title.setText("Equalizer")
-            self._mode_label.setText("Custom EQ")
+            self._eq_title.setText(I18n.translate('ui', 'equalizer'))
+            self._mode_label.setText(I18n.translate('ui', 'custom_eq'))
             self._mode_label.setStyleSheet("color: #04C5A8; font-size: 13pt; font-weight: bold; background: transparent;")
-            self._desc_label.setText("Your Custom EQ is active. Click to enable Sonar processing.")
-            self._button.setText("Switch to Sonar")
+            self._desc_label.setText(I18n.translate('ui', 'custom_active_desc'))
+            self._button.setText(I18n.translate('ui', 'switch_to_sonar'))
             self._eq_card.setVisible(True)
             self._sonar_scroll.setVisible(False)
             if stretch_item:
@@ -833,7 +834,7 @@ class EqualizerPage(QWidget):
         old_mode = _current_mode()
         new_mode = "sonar" if old_mode == "custom" else "custom"
         self._button.setEnabled(False)
-        self._button.setText("Restarting audio...")
+        self._button.setText(I18n.translate('ui', 'restarting_audio'))
         self._worker = _ToggleWorker(new_mode, old_mode)
         self._worker.countdown_tick.connect(self._on_countdown)
         self._worker.done.connect(self._on_toggle_done)
@@ -841,12 +842,12 @@ class EqualizerPage(QWidget):
 
     @Slot(int)
     def _on_countdown(self, remaining: int):
-        self._button.setText(f"Please wait... {remaining}s")
+        self._button.setText(I18n.translate('ui', 'please_wait') % remaining)
 
     @Slot(bool, str)
     def _on_toggle_done(self, success: bool, mode: str):
         if not success:
-            self._desc_label.setText('<span style="color:red;">Failed to switch mode.</span>')
+            self._desc_label.setText(f'<span style="color:red;">{I18n.translate("ui", "switch_failed")}</span>')
         self._refresh()
         self._button.setEnabled(True)
         self._worker = None

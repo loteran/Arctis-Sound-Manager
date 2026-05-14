@@ -202,7 +202,7 @@ class QSystrayApp(QBaseDesktopApp):
                     a = _add(QAction(f"{marker}{profile.name}"))
                     a.triggered.connect(lambda _=False, p=profile: self._on_tray_profile(p))
             else:
-                _add(QAction("— No profiles saved —"))
+                _add(QAction(f"— {I18n.translate('ui', 'no_profiles_saved')} —"))
         except Exception as e:
             self.logger.error('profiles section failed: %s', e, exc_info=True)
 

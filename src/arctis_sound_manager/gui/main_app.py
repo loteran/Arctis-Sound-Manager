@@ -46,6 +46,7 @@ from arctis_sound_manager.gui.theme import (
     TEXT_SECONDARY,
 )
 from arctis_sound_manager.gui.ui_utils import get_icon_pixmap
+from arctis_sound_manager.i18n import I18n
 
 
 # ── Main application window ───────────────────────────────────────────────────
@@ -155,11 +156,11 @@ class QMainApp(QBaseDesktopApp):
 
         # Top navigation buttons: Home, Equalizer, Headset, DAC, Settings
         top_pages_def = [
-            (HOME_ICON,      "Channels",  ACCENT),
-            (EQUALIZER_ICON, "Equalizer", ACCENT),
-            (HEADPHONE_ICON, "Headset",   ACCENT),
-            (GAMEDAC_ICON,   "DAC",       ACCENT),
-            (SETTINGS_ICON,  "Settings",  ACCENT),
+            (HOME_ICON,      I18n.translate('ui', 'channels'),  ACCENT),
+            (EQUALIZER_ICON, I18n.translate('ui', 'equalizer'), ACCENT),
+            (HEADPHONE_ICON, I18n.translate('ui', 'headset'),   ACCENT),
+            (GAMEDAC_ICON,   I18n.translate('ui', 'dac'),       ACCENT),
+            (SETTINGS_ICON,  I18n.translate('ui', 'settings'),  ACCENT),
         ]
 
         self._sidebar_buttons: list[SidebarButton] = []
@@ -181,7 +182,7 @@ class QMainApp(QBaseDesktopApp):
         # Help button at the bottom
         help_btn = SidebarButton(
             svg_path=HELP_ICON,
-            label="Help",
+            label=I18n.translate('ui', 'help'),
             icon_color_inactive=TEXT_SECONDARY,
             icon_color_active=ACCENT,
             parent=sidebar,
@@ -194,7 +195,7 @@ class QMainApp(QBaseDesktopApp):
         sidebar_layout.addSpacing(help_btn.sizeHint().height())
 
         # GitHub link
-        gh_btn = QPushButton("GitHub Repo")
+        gh_btn = QPushButton(I18n.translate('ui', 'github_repo'))
         gh_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; border: none; color: {TEXT_SECONDARY}; "
             f"font-size: 8pt; text-decoration: underline; padding: 4px 0; }}"
