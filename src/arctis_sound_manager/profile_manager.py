@@ -10,7 +10,7 @@ _CFG = Path.home() / ".config" / "arctis_manager"
 _PROFILES_DIR = _CFG / "profiles"
 _ACTIVE_FILE = _CFG / ".active_profile"
 _GENERAL_SETTINGS_FILE = _CFG / "settings" / "general_settings.yaml"
-CHANNELS = ("game", "chat", "micro")
+CHANNELS = ("game", "media", "chat", "micro", "output")
 
 # DAC tab keys that profiles capture & restore (mirror of dac_settings_config
 # in settings.py, plus the few list/font keys that aren't represented as
@@ -41,6 +41,8 @@ DAC_KEYS: tuple[str, ...] = (
 
 
 _EQ_MODE_FILE = _CFG / ".eq_mode"
+_EQ_BANDS_FILE = _CFG / "eq_bands.json"
+_STEELSERIES_VENDOR_ID = "0x1038"
 
 
 def _current_eq_mode() -> str:
@@ -50,15 +52,18 @@ def _current_eq_mode() -> str:
 @dataclass
 class Profile:
     name: str
-    presets: dict[str, str]           # channel → preset name
+    presets: dict[str, str]              # channel → preset name
     macros: dict[str, dict[str, float]]  # channel → {basses, voix, aigus}
-    spatial_audio: dict               # {enabled, mode, immersion, distance}
-    volumes: dict[str, int]           # {game, chat, media} → 0-100
-    eq_mode: str = "custom"           # "sonar" or "custom"
+    spatial_audio: dict                  # {enabled, mode, immersion, distance}
+    volumes: dict[str, int]              # {game, chat, media, output} → 0-100
+    eq_mode: str = "custom"              # "sonar" or "custom"
     # OLED / weather / display-order settings from the DAC tab.
     # Older profile files (pre-v1.0.80) don't have this — Profile.load() defaults
     # it to {} so nothing changes when restoring an old profile.
     dac: dict = field(default_factory=dict)
+    # Custom EQ 10-band raw values (0-40, where 20 = 0 dB).
+    # Older profiles don't have this — defaults to [] (no change on restore).
+    custom_eq_bands: list = field(default_factory=list)
 
     def slug(self) -> str:
         return re.sub(r"[^\w-]", "_", self.name.lower().strip())
@@ -75,8 +80,9 @@ class Profile:
     @staticmethod
     def load(path: Path) -> "Profile":
         data = json.loads(path.read_text())
-        data.setdefault("eq_mode", "")  # backward compat with older profiles
-        data.setdefault("dac", {})       # pre-v1.0.80 profiles have no DAC block
+        data.setdefault("eq_mode", "")       # backward compat
+        data.setdefault("dac", {})           # pre-v1.0.80
+        data.setdefault("custom_eq_bands", [])  # pre-v1.1.25
         return Profile(**data)
 
     @staticmethod
@@ -108,7 +114,7 @@ def set_active_profile(name: str | None) -> None:
 
 
 def snapshot_current() -> Profile:
-    """Snapshot current EQ presets, macros, spatial audio, volumes, EQ mode and DAC settings."""
+    """Snapshot current EQ presets, macros, spatial audio, volumes, EQ mode, custom EQ and DAC settings."""
     from arctis_sound_manager.gui.sonar_page import (
         _active_preset_name, _load_macro, _load_spatial_audio,
     )
@@ -117,10 +123,23 @@ def snapshot_current() -> Profile:
     spatial = _load_spatial_audio()
     volumes = _snapshot_volumes()
     eq_mode = _current_eq_mode()
+    custom_eq_bands = _snapshot_custom_eq()
     dac = _snapshot_dac()
     return Profile(name="", presets=presets, macros=macros,
                    spatial_audio=spatial, volumes=volumes, eq_mode=eq_mode,
-                   dac=dac)
+                   dac=dac, custom_eq_bands=custom_eq_bands)
+
+
+def _snapshot_custom_eq() -> list[int]:
+    """Read the current custom EQ bands from eq_bands.json."""
+    if _EQ_BANDS_FILE.exists():
+        try:
+            bands = json.loads(_EQ_BANDS_FILE.read_text())
+            if isinstance(bands, list) and len(bands) == 10:
+                return [int(b) for b in bands]
+        except Exception:
+            pass
+    return [20] * 10
 
 
 def _snapshot_dac() -> dict:
@@ -152,6 +171,10 @@ def _snapshot_volumes() -> dict[str, int]:
                     result["chat"] = round(sink.volume.value_flat * 100)
                 elif "Arctis_Media" in n:
                     result["media"] = round(sink.volume.value_flat * 100)
+                elif (n.startswith("alsa_output")
+                      and sink.proplist.get("device.vendor.id", "") != _STEELSERIES_VENDOR_ID
+                      and "output" not in result):
+                    result["output"] = round(sink.volume.value_flat * 100)
         return result
     except Exception:
         return {"game": 100, "chat": 100, "media": 100}
@@ -174,6 +197,11 @@ def apply_profile(profile: Profile) -> None:
     _save_spatial_audio(profile.spatial_audio)
     _apply_volumes(profile.volumes)
 
+    # Restore custom EQ bands (old profiles have [] → no-op)
+    custom_eq = getattr(profile, "custom_eq_bands", None) or []
+    if custom_eq:
+        _apply_custom_eq(custom_eq)
+
     # Switch EQ mode if needed (updates YAMLs + virtual sinks conf)
     eq_mode = getattr(profile, "eq_mode", None)
     if eq_mode:
@@ -186,6 +214,18 @@ def apply_profile(profile: Profile) -> None:
         _apply_dac(dac)
 
     set_active_profile(profile.name)
+
+
+def _apply_custom_eq(bands: list[int]) -> None:
+    """Persist and immediately apply custom EQ bands via D-Bus."""
+    if not bands or len(bands) != 10:
+        return
+    try:
+        _EQ_BANDS_FILE.write_text(json.dumps(bands))
+        from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
+        DbusWrapper.send_eq_command(bands)
+    except Exception:
+        pass
 
 
 def _apply_dac(dac: dict) -> None:
@@ -233,5 +273,12 @@ def _apply_volumes(volumes: dict[str, int]) -> None:
                 for sink in sinks:
                     if substr in sink.name:
                         pulse.volume_set_all_chans(sink, val)
+            if "output" in volumes:
+                val = max(0, min(100, volumes["output"])) / 100.0
+                for sink in sinks:
+                    if (sink.name.startswith("alsa_output")
+                            and sink.proplist.get("device.vendor.id", "") != _STEELSERIES_VENDOR_ID):
+                        pulse.volume_set_all_chans(sink, val)
+                        break
     except Exception:
         pass
