@@ -11,6 +11,7 @@ from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -190,16 +191,38 @@ class DevicePage(QWidget):
         )
         lang_row.addWidget(lang_label)
 
-        self._lang_buttons: dict[str, QPushButton] = {}
+        self._lang_combo = QComboBox()
+        self._lang_combo.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._lang_combo.setFixedHeight(30)
+        self._lang_combo.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {BG_BUTTON};
+                color: {TEXT_PRIMARY};
+                border: 1px solid {BORDER};
+                border-radius: 6px;
+                padding: 4px 10px;
+                font-size: 10pt;
+                min-width: 120px;
+            }}
+            QComboBox:hover {{
+                background-color: {BG_BUTTON_HOVER};
+            }}
+            QComboBox::drop-down {{ border: none; }}
+            QComboBox QAbstractItemView {{
+                background-color: {BG_BUTTON};
+                color: {TEXT_PRIMARY};
+                selection-background-color: {ACCENT};
+                selection-color: #ffffff;
+                border: 1px solid {BORDER};
+            }}
+        """)
+        self._lang_codes: list[str] = []
         for code, display in I18n.available_languages():
-            btn = QPushButton(display)
-            btn.setFixedHeight(30)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.clicked.connect(lambda _, c=code: self._on_lang(c))
-            lang_row.addWidget(btn)
-            self._lang_buttons[code] = btn
-
-        self._refresh_lang_buttons()
+            self._lang_combo.addItem(display)
+            self._lang_codes.append(code)
+        self._lang_combo.currentIndexChanged.connect(self._on_lang_combo)
+        self._refresh_lang_combo()
+        lang_row.addWidget(self._lang_combo)
         title_row.addLayout(lang_row)
         content_layout.addLayout(title_row)
         content_layout.addSpacing(8)
@@ -353,46 +376,23 @@ class DevicePage(QWidget):
 
     # ── Language ───────────────────────────────────────────────────────────────
 
-    def _refresh_lang_buttons(self):
+    def _refresh_lang_combo(self):
         current = I18n.current_lang()
-        for code, btn in self._lang_buttons.items():
-            if code == current:
-                btn.setStyleSheet(f"""
-                    QPushButton {{
-                        background-color: {ACCENT};
-                        color: #ffffff;
-                        border: 1px solid {ACCENT};
-                        border-radius: 6px;
-                        padding: 4px 14px;
-                        font-size: 10pt;
-                        font-weight: bold;
-                    }}
-                """)
-            else:
-                btn.setStyleSheet(f"""
-                    QPushButton {{
-                        background-color: {BG_BUTTON};
-                        color: {TEXT_SECONDARY};
-                        border: 1px solid {BORDER};
-                        border-radius: 6px;
-                        padding: 4px 14px;
-                        font-size: 10pt;
-                        font-weight: bold;
-                    }}
-                    QPushButton:hover {{
-                        background-color: {BG_BUTTON_HOVER};
-                        color: {TEXT_PRIMARY};
-                    }}
-                """)
+        if current in self._lang_codes:
+            self._lang_combo.blockSignals(True)
+            self._lang_combo.setCurrentIndex(self._lang_codes.index(current))
+            self._lang_combo.blockSignals(False)
 
     def _on_autostart_toggled(self, state: Qt.CheckState) -> None:
         set_autostart(state == Qt.CheckState.Checked)
 
-    def _on_lang(self, code: str):
+    def _on_lang_combo(self, index: int):
+        if index < 0 or index >= len(self._lang_codes):
+            return
+        code = self._lang_codes[index]
         if code == I18n.current_lang():
             return
         I18n.get_instance().set_language(code)
-        self._refresh_lang_buttons()
         msg = QMessageBox(self)
         msg.setWindowTitle("Language / Langue / Idioma")
         msg.setText(I18n.translate("ui", "language_changed"))
