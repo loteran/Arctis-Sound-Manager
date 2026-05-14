@@ -263,6 +263,13 @@ class QSystrayApp(QBaseDesktopApp):
         if ok:
             self.tray_icon.setToolTip("Arctis Sound Manager")
             self.menu_setup()
+            try:
+                if hasattr(self, '_main_app'):
+                    self._main_app._equalizer_page._sonar_page.notify_external_preset_change(
+                        "game", name
+                    )
+            except Exception as e:
+                self.logger.warning("Could not refresh sonar page after tray apply: %s", e)
         else:
             self.tray_icon.setToolTip(
                 f"{I18n.translate('ui', 'preset_apply_failed')}: {name}"
