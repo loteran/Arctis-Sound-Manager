@@ -80,17 +80,17 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
 
 ## Screenshots
 
-| Home — mixer | Custom EQ |
+| Home — mixer | Sonar EQ |
 |---|---|
-| ![Home](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_home.png) | ![Equalizer](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_equalizer.png) |
+| ![Home](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_home.png) | ![Sonar](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_sonar.png) |
 
-| Headset status | Settings |
+| Custom EQ | Settings |
 |---|---|
-| ![Headset](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_headset.png) | ![Settings](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_settings.png) |
+| ![Equalizer](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_equalizer.png) | ![Settings](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_settings.png) |
 
-| DAC — OLED display control |
-|---|
-| ![DAC](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_dac.png) |
+| Headset status | DAC — OLED display control |
+|---|---|
+| ![Headset](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_headset.png) | ![DAC](https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/screenshot_dac.png) |
 
 ---
 
