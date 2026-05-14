@@ -1,7 +1,5 @@
 # Arctis Sound Manager
 
-[![Crowdin](https://badges.crowdin.net/arctis-sound-manager/localized.svg)](https://crowdin.com/project/arctis-sound-manager)
-
 > 💬 **Tried ASM? [Share your experience in GitHub Discussions](https://github.com/loteran/Arctis-Sound-Manager/discussions)** — feedback helps improve compatibility for everyone!
 
 > ☕ [Buy me a coffee](https://ko-fi.com/loteran) if you find it useful!
@@ -51,6 +49,7 @@ A Linux GUI for SteelSeries Arctis headsets — manages device settings and prov
 - **`ARCTIS_LOG_LEVEL` env var** — bump verbosity for support tickets without rebuilding: `ARCTIS_LOG_LEVEL=debug systemctl --user restart arctis-manager`. Honored by daemon, GUI and video-router.
 - **Help page** — built-in user manual in English, French and Spanish
 - **Virtual surround 7.1** — HeSuVi filter-chain included automatically with the install; 57 HRIR profiles bundled and selectable from the **Settings** tab
+- **Community translations** — language files are updated silently in the background each time ASM starts; new languages contributed on [Crowdin](https://crowdin.com/project/arctis-sound-manager) appear in Settings without needing a new release
 
 ## Screenshots
 
@@ -453,6 +452,37 @@ bash scripts/uninstall.sh --yes           # non-interactive (skip confirmations)
 ```
 
 `--purge` keeps `~/.config/arctis_manager/profiles/` and `.active_profile` so a future `pipx install arctis-sound-manager --force` (or AUR/COPR/PPA reinstall) immediately picks them back up. A separate confirm at the end offers to delete the profiles too if you want a true clean slate.
+
+---
+
+## Translations
+
+[![Crowdin](https://badges.crowdin.net/arctis-sound-manager/localized.svg)](https://crowdin.com/project/arctis-sound-manager)
+
+ASM supports community translations via [Crowdin](https://crowdin.com/project/arctis-sound-manager). No release is needed to benefit from new or updated translations — the app checks GitHub every time it starts and silently downloads any changes.
+
+### Available languages
+
+| Language | Status |
+|---|---|
+| English | Source (always complete) |
+| Français | Bundled |
+| Español | Bundled |
+| _Your language?_ | [Contribute on Crowdin ↗](https://crowdin.com/project/arctis-sound-manager) |
+
+### How it works
+
+- **Crowdin → GitHub**: every day at 06:00 UTC, a GitHub Action pulls approved translations from Crowdin and opens a pull request on the `develop` branch. Once merged, the updated `.ini` files land on `main`.
+- **GitHub → your install**: on each startup, ASM fetches the file list from the GitHub API and downloads any `.ini` that changed since the last run. Files are saved to `~/.config/arctis_manager/lang/` and the language selector in Settings updates immediately — no restart, no new release.
+- **80 % threshold**: a language must reach 80 % coverage on Crowdin before it is exported. Partial translations fall back string-by-string to English.
+
+### Contributing a translation
+
+1. Go to [crowdin.com/project/arctis-sound-manager](https://crowdin.com/project/arctis-sound-manager)
+2. Create a free account (or sign in with GitHub)
+3. Select your language and start translating
+
+To request a new language that isn't listed yet, open a [GitHub issue](https://github.com/loteran/Arctis-Sound-Manager/issues).
 
 ---
 
