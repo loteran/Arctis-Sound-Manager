@@ -6,7 +6,7 @@ on:
     paths:
       - "src/arctis_sound_manager/lang/en.ini"
   schedule:
-    - cron: "0 6 * * 1"   # every Monday 06:00 UTC
+    - cron: "0 6 * * *"   # every day 06:00 UTC
   workflow_dispatch:
 
 jobs:
