@@ -22,10 +22,13 @@ from arctis_sound_manager.gui.base_app import QBaseDesktopApp
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
 from arctis_sound_manager.gui.main_app import QMainApp
 from arctis_sound_manager.gui.tray_eq_presets import (
+    SONAR_CHANNELS,
     SonarPresetApplier,
-    _get_sonar_active_game_preset,
     apply_custom_preset,
-    list_tray_presets,
+    current_eq_mode,
+    get_sonar_active_preset,
+    list_custom_presets,
+    list_sonar_channel_presets,
 )
 from arctis_sound_manager.gui.ui_utils import get_icon_pixmap
 from arctis_sound_manager.i18n import I18n
@@ -203,20 +206,45 @@ class QSystrayApp(QBaseDesktopApp):
         except Exception as e:
             self.logger.error('profiles section failed: %s', e, exc_info=True)
 
-        # EQ presets
+        # EQ presets (nested submenu)
         try:
-            mode, presets = list_tray_presets()
-            _sep()
-            if presets:
-                active_sonar = _get_sonar_active_game_preset() if mode == "sonar" else ""
-                for preset_name in presets:
-                    marker = "● " if (mode == "sonar" and preset_name == active_sonar) else "    "
-                    a = _add(QAction(f"{marker}{preset_name}"))
-                    a.triggered.connect(
-                        lambda _=False, n=preset_name, m=mode: self._on_tray_eq_preset(m, n)
-                    )
+            mode = current_eq_mode()
+            label = I18n.translate('ui', 'eq_presets') + f" ({('Sonar' if mode == 'sonar' else 'Custom EQ')})"
+            eq_menu = QMenu(label)
+            self._menu_action_refs.append(eq_menu)
+
+            if mode == "custom":
+                presets = list_custom_presets()
+                if presets:
+                    for preset_name in presets:
+                        a = eq_menu.addAction(f"    {preset_name}")
+                        self._menu_action_refs.append(a)
+                        a.triggered.connect(
+                            lambda _=False, n=preset_name: self._on_tray_eq_preset("custom", "", n)
+                        )
+                else:
+                    eq_menu.addAction(f"— {I18n.translate('ui', 'no_presets_saved')} —")
             else:
-                _add(QAction(f"— {I18n.translate('ui', 'no_presets_saved')} —"))
+                no_presets_label = f"— {I18n.translate('ui', 'no_presets_saved')} —"
+                for ch_key, ch_label in SONAR_CHANNELS:
+                    ch_menu = QMenu(ch_label)
+                    self._menu_action_refs.append(ch_menu)
+                    favs = list_sonar_channel_presets(ch_key)
+                    if favs:
+                        active = get_sonar_active_preset(ch_key)
+                        for preset_name in favs:
+                            marker = "● " if preset_name == active else "    "
+                            a = ch_menu.addAction(f"{marker}{preset_name}")
+                            self._menu_action_refs.append(a)
+                            a.triggered.connect(
+                                lambda _=False, ch=ch_key, n=preset_name: self._on_tray_eq_preset("sonar", ch, n)
+                            )
+                    else:
+                        ch_menu.addAction(no_presets_label)
+                    eq_menu.addMenu(ch_menu)
+
+            _sep()
+            self.menu.addMenu(eq_menu)
         except Exception as e:
             self.logger.error('EQ presets section failed: %s', e, exc_info=True)
 
@@ -245,7 +273,7 @@ class QSystrayApp(QBaseDesktopApp):
         self.menu_setup()
         # Note: EQ re-apply only happens when GUI is open
 
-    def _on_tray_eq_preset(self, mode: str, name: str) -> None:
+    def _on_tray_eq_preset(self, mode: str, channel: str, name: str) -> None:
         if mode == "custom":
             ok = apply_custom_preset(name)
             if not ok:
@@ -256,17 +284,17 @@ class QSystrayApp(QBaseDesktopApp):
             self.tray_icon.setToolTip(
                 f"{I18n.translate('ui', 'applying_preset')} {name}"
             )
-            self._sonar_applier.apply(name)
+            self._sonar_applier.apply(channel, name)
 
-    @Slot(bool, str)
-    def _on_sonar_preset_applied(self, ok: bool, name: str) -> None:
+    @Slot(bool, str, str)
+    def _on_sonar_preset_applied(self, ok: bool, channel: str, name: str) -> None:
         if ok:
             self.tray_icon.setToolTip("Arctis Sound Manager")
             self.menu_setup()
             try:
                 if hasattr(self, '_main_app'):
                     self._main_app._equalizer_page._sonar_page.notify_external_preset_change(
-                        "game", name
+                        channel, name
                     )
             except Exception as e:
                 self.logger.warning("Could not refresh sonar page after tray apply: %s", e)
