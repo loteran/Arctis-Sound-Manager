@@ -282,7 +282,7 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
                 id = sink.proplist.get('node.nick', '')
                 name = sink.proplist.get('node.description', sink.proplist.get('node.nick', ''))
 
-                if id and name:
+                if id and name and not any(r['id'] == id for r in result):
                     result.append({ 'id': id, 'name': name })
         elif list_name == 'hrir_files':
             from arctis_sound_manager.hrir_catalog import list_hrir_options

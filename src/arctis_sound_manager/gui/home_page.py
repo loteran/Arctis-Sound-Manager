@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt, QTimer, QUrl, Slot
 from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -36,6 +37,24 @@ def _save_overrides(overrides: dict) -> None:
     tmp = OVERRIDES_FILE.with_suffix(".tmp")
     tmp.write_text(json.dumps(overrides))
     tmp.replace(OVERRIDES_FILE)
+
+CHANNEL_OUTPUTS_FILE = Path.home() / ".config" / "arctis_manager" / "channel_output_devices.json"
+
+
+def _load_channel_outputs() -> dict:
+    if CHANNEL_OUTPUTS_FILE.exists():
+        try:
+            return json.loads(CHANNEL_OUTPUTS_FILE.read_text())
+        except Exception:
+            pass
+    return {}
+
+
+def _save_channel_outputs(data: dict) -> None:
+    CHANNEL_OUTPUTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = CHANNEL_OUTPUTS_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data))
+    tmp.replace(CHANNEL_OUTPUTS_FILE)
 
 from arctis_sound_manager.gui.components import (
     CHAT_ICON,
@@ -200,6 +219,33 @@ class AudioCard(QWidget):
         apps_widget.setFixedHeight(100)
         outer.addWidget(apps_widget)
 
+        # Device combo (routing output) — always in layout to keep cards aligned;
+        # contents are hidden until set_device_options() is called.
+        self._device_row = QWidget()
+        self._device_row.setFixedHeight(30)
+        self._device_row.setStyleSheet("background: transparent;")
+        _dr_layout = QHBoxLayout(self._device_row)
+        _dr_layout.setContentsMargins(12, 4, 12, 0)
+        _dr_layout.setSpacing(6)
+        self._dr_lbl = QLabel(I18n.translate("ui", "output_device"))
+        self._dr_lbl.setStyleSheet(
+            f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;"
+        )
+        self._dr_lbl.setVisible(False)
+        _dr_layout.addWidget(self._dr_lbl)
+        self._device_combo = QComboBox()
+        self._device_combo.setStyleSheet(
+            f"QComboBox {{ background: #1e2530; border: 1px solid {BORDER}; "
+            f"border-radius: 4px; color: {TEXT_PRIMARY}; font-size: 9pt; padding: 2px 6px; }}"
+            f"QComboBox::drop-down {{ border: none; width: 16px; }}"
+        )
+        self._device_combo.setVisible(False)
+        self._device_combo.currentIndexChanged.connect(self._on_device_changed)
+        _dr_layout.addWidget(self._device_combo, stretch=1)
+        outer.addWidget(self._device_row)
+
+        self._device_change_cb = None
+
         self._on_change_callback = None
         self._on_drop_callback = None  # fn(si_index, app_name, pid)
         self.setAcceptDrops(False)
@@ -277,6 +323,28 @@ class AudioCard(QWidget):
         self._pct_label.setText(f"{value}%")
         if not self._ignore_change and self._on_change_callback:
             self._on_change_callback(value)
+
+    def set_device_options(self, options: list, current: str = "") -> None:
+        """options: [(sink_name, display_label), ...]"""
+        self._device_combo.blockSignals(True)
+        self._device_combo.clear()
+        for name, label in options:
+            self._device_combo.addItem(label, name)
+        if current:
+            idx = self._device_combo.findData(current)
+            if idx >= 0:
+                self._device_combo.setCurrentIndex(idx)
+        self._device_combo.blockSignals(False)
+        self._dr_lbl.setVisible(True)
+        self._device_combo.setVisible(True)
+
+    def set_on_device_change(self, cb) -> None:
+        self._device_change_cb = cb
+
+    def _on_device_changed(self, _idx: int) -> None:
+        sink_name = self._device_combo.currentData() or ""
+        if self._device_change_cb:
+            self._device_change_cb(sink_name)
 
 
 # ── App tag with inline move buttons ──────────────────────────────────────────
@@ -732,6 +800,21 @@ class HomePage(QWidget):
         self._timer.timeout.connect(self._poll_volumes)
         self._timer.start()
 
+        self._channel_outputs: dict = _load_channel_outputs()
+        self._available_sinks: list = []
+        self._combo_tick = 0
+
+        # Wire device change callbacks
+        self._game_card.set_on_device_change(
+            lambda s: self._on_channel_output_changed("game", s)
+        )
+        self._chat_card.set_on_device_change(
+            lambda s: self._on_channel_output_changed("chat", s)
+        )
+        self._media_card.set_on_device_change(
+            lambda s: self._on_channel_output_changed("media", s)
+        )
+
     # ── Toggle handler ─────────────────────────────────────────────────────────
 
     def _on_toggle_changed(self, enabled: bool):
@@ -996,7 +1079,8 @@ class HomePage(QWidget):
             if sink_ext is not None:
                 pct = round(sink_ext.volume.value_flat * 100)
                 self._ext_card.set_volume(pct)
-                nick = sink_ext.proplist.get("node.nick", "")
+                nick = (sink_ext.proplist.get("node.description")
+                        or sink_ext.proplist.get("node.nick", ""))
                 self._ext_card.set_name(nick or I18n.translate("ui", "output"))
                 self._sink_ext = sink_ext
                 self._ext_card.set_connected()
@@ -1019,6 +1103,11 @@ class HomePage(QWidget):
                 self._update_apps(sink_inputs, ext_sinks, self._ext_card)
             # Also show native PipeWire streams (mpv, haruna…), skip duplicates
             self._update_native_apps(sinks, pulse_app_names)
+
+            # Refresh device combos every 20 ticks (10s)
+            self._combo_tick += 1
+            if self._combo_tick % 20 == 1:
+                self._refresh_device_combos(sinks)
 
         except Exception as exc:
             logger.warning("Error polling PulseAudio: %s", exc)
@@ -1081,6 +1170,62 @@ class HomePage(QWidget):
             self._game_card.set_connected()
             self._chat_card.set_connected()
             self._media_card.set_connected()
+
+    def _refresh_device_combos(self, sinks) -> None:
+        physical = [
+            s for s in sinks
+            if s.name.startswith("alsa_output")
+            and "SteelSeries" not in s.name
+        ]
+        default_label = I18n.translate("ui", "default_output")
+        options = [("", default_label)] + [
+            (s.name, s.proplist.get("node.description") or s.proplist.get("node.nick") or s.name)
+            for s in physical
+        ]
+        if options == self._available_sinks:
+            return
+        self._available_sinks = options
+        ch_outputs = _load_channel_outputs()
+        for key, card in (("game", self._game_card), ("chat", self._chat_card), ("media", self._media_card)):
+            card.set_device_options(options, ch_outputs.get(key, ""))
+
+    def _on_channel_output_changed(self, channel: str, sink_name: str) -> None:
+        ch_outputs = _load_channel_outputs()
+        if sink_name:
+            ch_outputs[channel] = sink_name
+        else:
+            ch_outputs.pop(channel, None)
+        _save_channel_outputs(ch_outputs)
+        self._channel_outputs = ch_outputs
+        self._move_channel_streams_now(channel, sink_name)
+
+    def _move_channel_streams_now(self, channel: str, sink_name: str) -> None:
+        pulse = self._get_pulse()
+        if pulse is None:
+            return
+        virtual_map = {"game": SINK_GAME, "chat": SINK_CHAT, "media": SINK_MEDIA}
+        virtual_frag = virtual_map.get(channel)
+        if not virtual_frag:
+            return
+        try:
+            sinks = pulse.sink_list()
+            sink_inputs = pulse.sink_input_list()
+            if sink_name:
+                target = next((s for s in sinks if s.name == sink_name), None)
+            else:
+                target = next((s for s in sinks if virtual_frag in s.name), None)
+            if target is None:
+                return
+            for si in sink_inputs:
+                app = si.proplist.get("application.name", "")
+                if not app:
+                    continue
+                current_sink = next((s for s in sinks if s.index == si.sink), None)
+                if current_sink and virtual_frag in current_sink.name:
+                    if si.sink != target.index:
+                        pulse.sink_input_move(si.index, target.index)
+        except Exception as e:
+            logger.warning("Failed to move channel streams: %s", e)
 
     # ── Drag & drop stream routing ────────────────────────────────────────────
 

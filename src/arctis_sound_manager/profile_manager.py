@@ -43,6 +43,23 @@ DAC_KEYS: tuple[str, ...] = (
 _EQ_MODE_FILE = _CFG / ".eq_mode"
 _EQ_BANDS_FILE = _CFG / "eq_bands.json"
 _STEELSERIES_VENDOR_ID = "0x1038"
+_OUTPUT_DEVICES_FILE = _CFG / "channel_output_devices.json"
+
+
+def _load_channel_outputs() -> dict:
+    if _OUTPUT_DEVICES_FILE.exists():
+        try:
+            return json.loads(_OUTPUT_DEVICES_FILE.read_text())
+        except Exception:
+            pass
+    return {}
+
+
+def _save_channel_outputs(data: dict) -> None:
+    _OUTPUT_DEVICES_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _OUTPUT_DEVICES_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data))
+    tmp.replace(_OUTPUT_DEVICES_FILE)
 
 
 def _current_eq_mode() -> str:
@@ -64,6 +81,9 @@ class Profile:
     # Custom EQ 10-band raw values (0-40, where 20 = 0 dB).
     # Older profiles don't have this — defaults to [] (no change on restore).
     custom_eq_bands: list = field(default_factory=list)
+    # Per-channel output device mapping. Older profiles don't have this — defaults
+    # to {} (no change on restore).
+    output_devices: dict = field(default_factory=dict)
 
     def slug(self) -> str:
         return re.sub(r"[^\w-]", "_", self.name.lower().strip())
@@ -83,6 +103,7 @@ class Profile:
         data.setdefault("eq_mode", "")       # backward compat
         data.setdefault("dac", {})           # pre-v1.0.80
         data.setdefault("custom_eq_bands", [])  # pre-v1.1.25
+        data.setdefault("output_devices", {})   # pre-v1.1.29
         return Profile(**data)
 
     @staticmethod
@@ -127,7 +148,8 @@ def snapshot_current() -> Profile:
     dac = _snapshot_dac()
     return Profile(name="", presets=presets, macros=macros,
                    spatial_audio=spatial, volumes=volumes, eq_mode=eq_mode,
-                   dac=dac, custom_eq_bands=custom_eq_bands)
+                   dac=dac, custom_eq_bands=custom_eq_bands,
+                   output_devices=_load_channel_outputs())
 
 
 def _snapshot_custom_eq() -> list[int]:
@@ -213,7 +235,39 @@ def apply_profile(profile: Profile) -> None:
     if dac:
         _apply_dac(dac)
 
+    output_devices = getattr(profile, "output_devices", None) or {}
+    if output_devices:
+        _apply_output_devices(output_devices)
+
     set_active_profile(profile.name)
+
+
+def _apply_output_devices(output_devices: dict) -> None:
+    """Write channel output device mapping and move streams immediately."""
+    _save_channel_outputs(output_devices)
+    try:
+        import pulsectl
+        virtual_map = {"game": "Arctis_Game", "chat": "Arctis_Chat", "media": "Arctis_Media"}
+        with pulsectl.Pulse("asm-profile-apply-outputs") as pulse:
+            sinks = pulse.sink_list()
+            sink_inputs = pulse.sink_input_list()
+            for ch, target_name in output_devices.items():
+                virtual_frag = virtual_map.get(ch)
+                if not virtual_frag:
+                    continue
+                target = next((s for s in sinks if s.name == target_name), None)
+                if target is None:
+                    continue
+                for si in sink_inputs:
+                    app = si.proplist.get("application.name", "")
+                    if not app:
+                        continue
+                    current_sink = next((s for s in sinks if s.index == si.sink), None)
+                    if current_sink and virtual_frag in current_sink.name:
+                        if si.sink != target.index:
+                            pulse.sink_input_move(si.index, target.index)
+    except Exception:
+        pass
 
 
 def _apply_custom_eq(bands: list[int]) -> None:
