@@ -62,7 +62,7 @@ class TelemetryConsentDialog(QDialog):
         layout.addWidget(title)
 
         # Body
-        body = QLabel(I18n.translate('ui', 'telemetry_body').format(app_name=_APP_NAME))
+        body = QLabel(I18n.translate('ui', 'telemetry_body'))
         body.setStyleSheet(
             f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
         )

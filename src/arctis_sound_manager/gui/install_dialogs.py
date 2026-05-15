@@ -64,7 +64,7 @@ def show_multi_install_warning(parent: QWidget | None, methods: list[InstallMeth
     layout.setContentsMargins(24, 22, 24, 18)
     layout.setSpacing(12)
 
-    title = QLabel(I18n.translate('ui', 'multi_install_title').format(app_name=_APP_NAME))
+    title = QLabel(I18n.translate('ui', 'multi_install_title'))
     title.setStyleSheet(
         f"color: {TEXT_PRIMARY}; font-size: 13pt; font-weight: bold; background: transparent;"
     )

@@ -600,7 +600,7 @@ class EqualizerPage(QWidget):
         root.setContentsMargins(36, 28, 36, 28)
         root.setSpacing(0)
 
-        app_title = QLabel(I18n.translate('ui', 'app_name'))
+        app_title = QLabel("Arctis Sound Manager")
         app_title.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 28pt; font-weight: bold; background: transparent;")
         root.addWidget(app_title)
         root.addSpacing(28)
