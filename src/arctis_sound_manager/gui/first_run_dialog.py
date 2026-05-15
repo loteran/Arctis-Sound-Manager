@@ -53,7 +53,7 @@ class FirstRunDialog(QDialog):
         layout.setContentsMargins(28, 24, 28, 20)
         layout.setSpacing(12)
 
-        title_lbl = QLabel(I18n.translate('ui', 'first_run_welcome').format(app_name=_APP_NAME))
+        title_lbl = QLabel(I18n.translate('ui', 'first_run_welcome'))
         title_lbl.setStyleSheet(
             f"color: {TEXT_PRIMARY}; font-size: 15pt; font-weight: bold; background: transparent;"
         )
