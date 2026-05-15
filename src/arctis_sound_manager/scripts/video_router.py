@@ -24,7 +24,6 @@ EVENT_TIMEOUT    = 5.0   # seconds to wait for a PA event before forced re-check
 EVENT_DEBOUNCE   = 0.15  # seconds to let rapid event bursts settle
 NATIVE_INTERVAL  = 5.0   # seconds between pw-dump calls (expensive subprocess)
 OVERRIDES_FILE = Path.home() / ".config" / "arctis_manager" / "routing_overrides.json"
-CHANNEL_OUTPUTS_FILE = Path.home() / ".config" / "arctis_manager" / "channel_output_devices.json"
 
 # effect_input sinks are internal filter-chain nodes — apps should never
 # target them directly.  Remap to the corresponding Arctis virtual sink.
@@ -69,15 +68,6 @@ def load_overrides() -> dict:
     if OVERRIDES_FILE.exists():
         try:
             return json.loads(OVERRIDES_FILE.read_text())
-        except Exception:
-            pass
-    return {}
-
-
-def _load_channel_outputs() -> dict:
-    if CHANNEL_OUTPUTS_FILE.exists():
-        try:
-            return json.loads(CHANNEL_OUTPUTS_FILE.read_text())
         except Exception:
             pass
     return {}
@@ -243,42 +233,6 @@ def _main_loop():
                         _pa_placed[app] = wanted_index
                     else:
                         _pa_placed[app] = si.sink
-
-            # ── Per-channel physical output overrides ─────────────────────────
-            # Move all streams on each virtual Arctis sink to the chosen
-            # physical device when a channel output override is configured.
-            channel_outputs = _load_channel_outputs()
-            if channel_outputs:
-                _ch_virtual = {
-                    "game": "Arctis_Game",
-                    "chat": "Arctis_Chat",
-                    "media": "Arctis_Media",
-                }
-                for _ch, _target_name in channel_outputs.items():
-                    if not _target_name:
-                        continue
-                    _virtual = _ch_virtual.get(_ch)
-                    if not _virtual:
-                        continue
-                    _target_sink = next(
-                        (s for s in sinks
-                         if s.name == _target_name
-                         or s.proplist.get("node.nick", "") == _target_name),
-                        None,
-                    )
-                    if _target_sink is None:
-                        continue
-                    _virtual_indices = {s.index for s in sinks if _virtual in s.name}
-                    for _si in sink_inputs:
-                        if _si.sink in _virtual_indices and _si.sink != _target_sink.index:
-                            _app = _si.proplist.get("application.name", "?")
-                            log.info("Channel output: moving '%s' (%s) -> %s",
-                                     _app, _ch, _target_name)
-                            try:
-                                pulse.sink_input_move(_si.index, _target_sink.index)
-                                _pa_placed[_app] = _target_sink.index
-                            except Exception:
-                                pass
 
             # ── Native PipeWire streams (mpv, haruna…) ────────────────────────
             # pw-dump is expensive — only run every NATIVE_INTERVAL seconds

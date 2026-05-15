@@ -42,7 +42,6 @@ DAC_KEYS: tuple[str, ...] = (
 
 _EQ_MODE_FILE = _CFG / ".eq_mode"
 _EQ_BANDS_FILE = _CFG / "eq_bands.json"
-_OUTPUT_DEVICES_FILE = _CFG / "channel_output_devices.json"
 _STEELSERIES_VENDOR_ID = "0x1038"
 
 
@@ -65,10 +64,6 @@ class Profile:
     # Custom EQ 10-band raw values (0-40, where 20 = 0 dB).
     # Older profiles don't have this — defaults to [] (no change on restore).
     custom_eq_bands: list = field(default_factory=list)
-    # Per-channel physical output sink override (node.name → target sink).
-    # Empty dict = default routing (Arctis virtual sinks → Arctis DAC).
-    # Older profiles don't have this — defaults to {} (no override).
-    output_devices: dict = field(default_factory=dict)
 
     def slug(self) -> str:
         return re.sub(r"[^\w-]", "_", self.name.lower().strip())
@@ -88,7 +83,6 @@ class Profile:
         data.setdefault("eq_mode", "")       # backward compat
         data.setdefault("dac", {})           # pre-v1.0.80
         data.setdefault("custom_eq_bands", [])  # pre-v1.1.25
-        data.setdefault("output_devices", {})   # pre-v1.1.27
         return Profile(**data)
 
     @staticmethod
@@ -102,22 +96,6 @@ class Profile:
             except Exception:
                 pass
         return profiles
-
-
-def _load_channel_outputs() -> dict[str, str]:
-    if _OUTPUT_DEVICES_FILE.exists():
-        try:
-            return json.loads(_OUTPUT_DEVICES_FILE.read_text())
-        except Exception:
-            pass
-    return {}
-
-
-def _save_channel_outputs(mapping: dict[str, str]) -> None:
-    _CFG.mkdir(parents=True, exist_ok=True)
-    tmp = _OUTPUT_DEVICES_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(mapping))
-    tmp.replace(_OUTPUT_DEVICES_FILE)
 
 
 def active_profile_name() -> str | None:
@@ -147,11 +125,9 @@ def snapshot_current() -> Profile:
     eq_mode = _current_eq_mode()
     custom_eq_bands = _snapshot_custom_eq()
     dac = _snapshot_dac()
-    output_devices = _load_channel_outputs()
     return Profile(name="", presets=presets, macros=macros,
                    spatial_audio=spatial, volumes=volumes, eq_mode=eq_mode,
-                   dac=dac, custom_eq_bands=custom_eq_bands,
-                   output_devices=output_devices)
+                   dac=dac, custom_eq_bands=custom_eq_bands)
 
 
 def _snapshot_custom_eq() -> list[int]:
@@ -237,56 +213,7 @@ def apply_profile(profile: Profile) -> None:
     if dac:
         _apply_dac(dac)
 
-    output_devices = getattr(profile, "output_devices", None) or {}
-    _apply_output_devices(output_devices)
-
     set_active_profile(profile.name)
-
-
-def _apply_output_devices(mapping: dict[str, str]) -> None:
-    """Persist per-channel sink targets and move currently-active streams.
-
-    The persisted JSON is also consumed by asm-router for new streams.
-    Silently skips channels whose target sink no longer exists.
-    """
-    _save_channel_outputs(mapping)
-    if not mapping:
-        return
-    # "output" channel is handled via external_output_device setting, not stream moves.
-    if "output" in mapping and mapping["output"]:
-        try:
-            from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
-            DbusWrapper.change_setting("external_output_device", mapping["output"])
-        except Exception:
-            pass
-    _channel_to_virtual = {"game": "Arctis_Game", "chat": "Arctis_Chat", "media": "Arctis_Media"}
-    try:
-        import pulsectl
-        with pulsectl.Pulse("asm-output-devices-apply") as pulse:
-            sinks = pulse.sink_list()
-            sink_inputs = pulse.sink_input_list()
-            for ch, target_name in mapping.items():
-                if not target_name or target_name == "default" or ch == "output":
-                    continue
-                virtual_name = _channel_to_virtual.get(ch)
-                if virtual_name is None:
-                    continue
-                virtual_indices = {s.index for s in sinks if virtual_name in s.name}
-                target = next(
-                    (s for s in sinks if s.name == target_name
-                     or s.proplist.get("node.nick", "") == target_name),
-                    None,
-                )
-                if target is None:
-                    continue
-                for si in sink_inputs:
-                    if si.sink in virtual_indices:
-                        try:
-                            pulse.sink_input_move(si.index, target.index)
-                        except Exception:
-                            pass
-    except Exception:
-        pass
 
 
 def _apply_custom_eq(bands: list[int]) -> None:

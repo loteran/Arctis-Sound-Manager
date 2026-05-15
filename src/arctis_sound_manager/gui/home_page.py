@@ -10,7 +10,6 @@ from PySide6.QtCore import Qt, QTimer, QUrl, Slot
 from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
-    QComboBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -151,23 +150,6 @@ class AudioCard(QWidget):
         header_layout.addWidget(self._name_lbl)
         top_layout.addWidget(header_row)
 
-        # Device output combo
-        self._device_combo = QComboBox()
-        self._device_combo.setFixedHeight(24)
-        self._device_combo.setStyleSheet(
-            "QComboBox { background-color: #1e2530; color: #8D96AA; "
-            "border: 1px solid #2D363E; border-radius: 4px; "
-            "padding: 1px 6px; font-size: 8pt; } "
-            "QComboBox:hover { border-color: #2791CE; } "
-            "QComboBox::drop-down { border: none; width: 16px; } "
-            "QComboBox QAbstractItemView { background-color: #1e2530; "
-            "color: #ffffff; border: 1px solid #2D363E; "
-            "selection-background-color: #2791CE; }"
-        )
-        self._device_options: list[tuple[str, str]] = []
-        self._device_change_cb = None
-        self._device_combo.currentIndexChanged.connect(self._on_device_changed)
-        top_layout.addWidget(self._device_combo)
 
         # Volume percentage label
         self._pct_label = QLabel("—")
@@ -290,29 +272,6 @@ class AudioCard(QWidget):
             item = self._apps_area.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-
-    def set_device_options(self, options: list[tuple[str, str]], current: str = "") -> None:
-        """Populate the output-device combo. options = [(label, sink_name), ...]"""
-        self._device_combo.blockSignals(True)
-        self._device_combo.clear()
-        self._device_options = options
-        for label, _ in options:
-            self._device_combo.addItem(label)
-        for i, (_, sink_name) in enumerate(options):
-            if sink_name == current:
-                self._device_combo.setCurrentIndex(i)
-                break
-        self._device_combo.blockSignals(False)
-
-    def set_on_device_change(self, callback) -> None:
-        self._device_change_cb = callback
-
-    def _on_device_changed(self, index: int) -> None:
-        if self._device_change_cb is None:
-            return
-        if 0 <= index < len(self._device_options):
-            _, sink_name = self._device_options[index]
-            self._device_change_cb(sink_name)
 
     def _on_slider_changed(self, value: int):
         self._pct_label.setText(f"{value}%")
@@ -706,7 +665,6 @@ class HomePage(QWidget):
         # External output card (HDMI, sound card, USB speakers, etc.)
         self._ext_card = AudioCard(I18n.translate("ui", "output"), COLOR_HDMI, HDMI_ICON)
         self._ext_card.set_on_change(self._on_ext_volume_changed)
-        self._ext_card._device_combo.hide()  # output card has dedicated device setting
         self._cards_layout.addWidget(self._ext_card, stretch=1)
 
         cards_outer_layout.addWidget(self._cards_widget, stretch=6)
@@ -767,24 +725,6 @@ class HomePage(QWidget):
             ("M", COLOR_AUX,  lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_MEDIA)),
             ("O", COLOR_HDMI, lambda si, app, pid: self._on_stream_drop_ext(si, app, pid)),
         ]
-
-        # ── Per-channel output device state ───────────────────────────────────
-        from arctis_sound_manager.profile_manager import (
-            _load_channel_outputs as _pm_load_outputs,
-        )
-        self._channel_outputs: dict[str, str] = _pm_load_outputs()
-        self._available_sinks: list[str] = []
-        self._combo_tick: int = 0
-
-        self._game_card.set_on_device_change(
-            lambda s: self._on_channel_output_changed("game", s)
-        )
-        self._chat_card.set_on_device_change(
-            lambda s: self._on_channel_output_changed("chat", s)
-        )
-        self._media_card.set_on_device_change(
-            lambda s: self._on_channel_output_changed("media", s)
-        )
 
         # ── Polling timer ─────────────────────────────────────────────────────
         self._timer = QTimer(self)
@@ -1000,11 +940,6 @@ class HomePage(QWidget):
         try:
             sinks = pulse.sink_list()
 
-            # Refresh device combos every 4 ticks (~2 s)
-            self._combo_tick = (self._combo_tick + 1) % 4
-            if self._combo_tick == 0:
-                self._refresh_device_combos(sinks)
-
             def _find_all(fragment) -> list:
                 return [s for s in sinks if fragment in s.name]
 
@@ -1146,73 +1081,6 @@ class HomePage(QWidget):
             self._game_card.set_connected()
             self._chat_card.set_connected()
             self._media_card.set_connected()
-
-    # ── Per-channel output device routing ────────────────────────────────────
-
-    def _refresh_device_combos(self, sinks) -> None:
-        physical = [
-            s for s in sinks
-            if s.name.startswith("alsa_output")
-            and s.proplist.get("device.vendor.id", "") != STEELSERIES_VENDOR_ID
-        ]
-        new_names = [s.name for s in physical]
-        if new_names == self._available_sinks:
-            return
-        self._available_sinks = new_names
-        options: list[tuple[str, str]] = [
-            (I18n.translate("ui", "default_output"), "")
-        ] + [
-            (s.proplist.get("node.nick", "") or s.name, s.name)
-            for s in physical
-        ]
-        for ch, card in (
-            ("game", self._game_card),
-            ("chat", self._chat_card),
-            ("media", self._media_card),
-        ):
-            card.set_device_options(options, self._channel_outputs.get(ch, ""))
-
-    def _on_channel_output_changed(self, channel: str, sink_name: str) -> None:
-        from arctis_sound_manager.profile_manager import (
-            _load_channel_outputs as _pm_load,
-            _save_channel_outputs as _pm_save,
-        )
-        outputs = _pm_load()
-        if sink_name:
-            outputs[channel] = sink_name
-        else:
-            outputs.pop(channel, None)
-        _pm_save(outputs)
-        self._channel_outputs = outputs
-        if sink_name:
-            self._move_channel_streams_now(channel, sink_name)
-
-    def _move_channel_streams_now(self, channel: str, target_sink_name: str) -> None:
-        virtual_map = {
-            "game": SINK_GAME,
-            "chat": SINK_CHAT,
-            "media": SINK_MEDIA,
-        }
-        virtual = virtual_map.get(channel)
-        if not virtual:
-            return
-        pulse = self._get_pulse()
-        if pulse is None:
-            return
-        try:
-            sinks = pulse.sink_list()
-            target = next((s for s in sinks if s.name == target_sink_name), None)
-            if target is None:
-                return
-            virtual_indices = {s.index for s in sinks if virtual in s.name}
-            for si in pulse.sink_input_list():
-                if si.sink in virtual_indices:
-                    try:
-                        pulse.sink_input_move(si.index, target.index)
-                    except Exception:
-                        pass
-        except Exception as exc:
-            logger.warning("Error moving streams for channel %s: %s", channel, exc)
 
     # ── Drag & drop stream routing ────────────────────────────────────────────
 

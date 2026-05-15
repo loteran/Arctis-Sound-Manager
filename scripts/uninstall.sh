@@ -93,19 +93,6 @@ if command -v pipx >/dev/null 2>&1 && pipx list --short 2>/dev/null | grep -q "^
     info "pipx:   arctis-sound-manager $PIPX_VERSION"
 fi
 
-# System pip / uv install (uv pip install --system, pip install --system/--user)
-SYS_PIP_VERSION=""
-for _py in python3 python; do
-    if command -v "$_py" >/dev/null 2>&1; then
-        _v=$("$_py" -c "import importlib.metadata; print(importlib.metadata.version('arctis-sound-manager'))" 2>/dev/null || true)
-        if [ -n "$_v" ]; then
-            SYS_PIP_VERSION="$_v"
-            info "sys-pip: arctis-sound-manager $_v (via $_py)"
-            break
-        fi
-    fi
-done
-
 # Orphan binaries in PATH (catches manual `pip install --user` etc.)
 ORPHAN_BINS=$(command -v -a asm-daemon 2>/dev/null || true)
 if [ -n "$ORPHAN_BINS" ]; then
@@ -113,76 +100,14 @@ if [ -n "$ORPHAN_BINS" ]; then
     while IFS= read -r p; do info "    $p"; done <<<"$ORPHAN_BINS"
 fi
 
-# Orphan data files left by system pip/uv (not tracked by any package manager)
-_ORPHAN_DATA_FILES=(
-    /usr/share/icons/hicolor/scalable/apps/arctis-manager.svg
-    /usr/share/metainfo/com.github.loteran.arctis-sound-manager.metainfo.xml
-    /usr/share/applications/arctis-manager.desktop
-)
-_ORPHAN_FOUND=()
-for _f in "${_ORPHAN_DATA_FILES[@]}"; do
-    if [ -f "$_f" ]; then
-        # Only flag as orphan if NOT owned by any known package manager
-        _owned=0
-        if command -v pacman >/dev/null 2>&1 && pacman -Qo "$_f" >/dev/null 2>&1; then _owned=1; fi
-        if command -v rpm    >/dev/null 2>&1 && rpm -qf "$_f" >/dev/null 2>&1;    then _owned=1; fi
-        if command -v dpkg   >/dev/null 2>&1 && dpkg -S "$_f" >/dev/null 2>&1;    then _owned=1; fi
-        if [ "$_owned" -eq 0 ]; then
-            _ORPHAN_FOUND+=("$_f")
-            warn "Orphan data file (not tracked by any package manager): $_f"
-        fi
-    fi
-done
-
 HAS_PKG=0
 [ "${#PKG_INSTALLS[@]}" -gt 0 ] && HAS_PKG=1
 HAS_PIPX=0
 [ -n "$PIPX_VERSION" ] && HAS_PIPX=1
-HAS_SYS_PIP=0
-[ -n "$SYS_PIP_VERSION" ] && HAS_SYS_PIP=1
-HAS_ORPHANS=0
-[ "${#_ORPHAN_FOUND[@]}" -gt 0 ] && HAS_ORPHANS=1
 
-if [ "$HAS_PKG" -eq 0 ] && [ "$HAS_PIPX" -eq 0 ] && [ "$HAS_SYS_PIP" -eq 0 ] && [ "$HAS_ORPHANS" -eq 0 ]; then
+if [ "$HAS_PKG" -eq 0 ] && [ "$HAS_PIPX" -eq 0 ]; then
     ok "No Arctis Sound Manager installation detected — nothing to do."
     exit 0
-fi
-
-# Always clean up orphan data files (they block pacman installs)
-if [ "$HAS_ORPHANS" -eq 1 ]; then
-    step "Removing orphan data files left by system pip/uv"
-    for _f in "${_ORPHAN_FOUND[@]}"; do
-        if sudo rm -f "$_f" 2>/dev/null; then
-            ok "removed: $_f"
-        else
-            warn "could not remove: $_f (try: sudo rm -f $_f)"
-        fi
-    done
-fi
-
-# Remove system pip install if detected (not tracked by any package manager)
-if [ "$HAS_SYS_PIP" -eq 1 ]; then
-    step "Removing system pip/uv install ($SYS_PIP_VERSION)"
-    if confirm "Run pip/uv uninstall arctis-sound-manager (system)?"; then
-        _pip_ok=0
-        if command -v uv >/dev/null 2>&1; then
-            if sudo uv pip uninstall arctis-sound-manager --system --python /usr/bin/python --break-system-packages 2>/dev/null; then
-                _pip_ok=1
-            elif sudo pip uninstall -y arctis-sound-manager 2>/dev/null; then
-                _pip_ok=1
-            fi
-        elif sudo pip uninstall -y arctis-sound-manager 2>/dev/null; then
-            _pip_ok=1
-        fi
-        if [ "$_pip_ok" -eq 1 ]; then
-            ok "system pip removed"
-        else
-            warn "Automatic uninstall failed. Run manually:"
-            warn "  pkexec uv pip uninstall arctis-sound-manager --system --python /usr/bin/python"
-        fi
-    else
-        warn "skipped system pip removal"
-    fi
 fi
 
 # ── Decide what to remove ────────────────────────────────────────────────────
