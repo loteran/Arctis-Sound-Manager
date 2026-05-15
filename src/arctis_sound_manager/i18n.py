@@ -1,6 +1,6 @@
 import json
 import logging
-from configparser import ConfigParser
+from configparser import ConfigParser, RawConfigParser
 from pathlib import Path
 
 from arctis_sound_manager.constants import HOME_LANG_FOLDER
@@ -24,8 +24,8 @@ _FALLBACK_CATEGORY = 'other'
 
 class I18n:
     _instance: 'I18n'
-    translations: ConfigParser
-    _en_translations: ConfigParser
+    translations: RawConfigParser
+    _en_translations: RawConfigParser
     _lang: str = 'en'
     _callbacks: list = []
     # Avoid logging the same missing key on every translate() call (UI refresh
@@ -40,8 +40,8 @@ class I18n:
         return I18n._instance
 
     def __init__(self):
-        self.translations = ConfigParser()
-        self._en_translations = ConfigParser()
+        self.translations = RawConfigParser()
+        self._en_translations = RawConfigParser()
         self._babel_locale_cache: dict[str, object] = {}
         # Pre-load EN once so we can fall back when the active locale lacks a key.
         en_path = Path(__file__).parent / 'lang' / 'en.ini'
@@ -83,7 +83,7 @@ class I18n:
             return
 
         self._lang = lang_code or default
-        self.translations = ConfigParser()
+        self.translations = RawConfigParser()
         self.translations.read(lang_file)
         self._save_lang(self._lang)
 
@@ -103,7 +103,7 @@ class I18n:
         seen: dict[str, str] = {}
         for path in sorted(_BUILTIN_LANG_DIR.glob("*.ini")):
             code = path.stem
-            cp = ConfigParser()
+            cp = RawConfigParser()
             try:
                 cp.read(path)
             except Exception:
@@ -114,7 +114,7 @@ class I18n:
                 code = path.stem
                 if code in seen:
                     continue  # built-in takes priority for display name
-                cp = ConfigParser()
+                cp = RawConfigParser()
                 try:
                     cp.read(path)
                 except Exception:
@@ -152,7 +152,7 @@ class I18n:
         category = inst._plural_category(count)
         fmt.setdefault('count', count)
 
-        def _lookup(cp: ConfigParser, cat: str) -> str | None:
+        def _lookup(cp: RawConfigParser, cat: str) -> str | None:
             skey = f'{key}_{cat}'
             if cp.has_option(section, skey):
                 return cp.get(section, skey).split('#')[0].strip()
