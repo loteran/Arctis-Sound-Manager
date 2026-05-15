@@ -1,3 +1,24 @@
+arctis-sound-manager (1.1.30-1) noble; urgency=medium
+
+  * Per-channel output device selection — each audio channel card (Game /
+    Chat / Media) now has a dropdown to route that channel to a specific
+    output sink; systray → Output Routing mirrors the same selection (issue
+    #46).
+  * Output device routing saved in profiles — optional checkbox in Save
+    Profile dialog captures the current per-channel routing.
+  * Language filter — only languages with ≥ 80 % translation coverage appear
+    in the language selector; names are now displayed in their native script
+    via babel (Français, Deutsch, Polski…) instead of 2-letter codes.
+  * Sonar EQ channel names displayed in English instead of the active
+    language.
+  * Applications section misaligned on channels without output device
+    selection.
+  * Duplicate HDMI entries in output device lists.
+  * Crowdin sync: excluded English from translation download target to
+    prevent source file overwrite on each sync.
+
+ -- loteran <axel.valadon@gmail.com>  Fri, 15 May 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.4-1) noble; urgency=medium
 
   * dinit: filter-chain and video-router stuck stopped after asm-setup —

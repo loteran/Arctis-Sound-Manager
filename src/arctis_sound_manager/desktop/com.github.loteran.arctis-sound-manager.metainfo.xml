@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.30" date="2026-05-15">
+      <description>
+        <p>Per-channel output device selection — each audio channel card (Game / Chat / Media) now has a dropdown to route that channel to a specific output sink; systray → Output Routing mirrors the same selection (issue #46). Output device routing saved in profiles — optional checkbox in Save Profile dialog captures the current per-channel routing. Language filter — only languages with ≥ 80 % translation coverage appear in the language selector; names are now displayed in their native script via babel (Français, Deutsch, Polski…) instead of 2-letter codes.</p>
+      </description>
+    </release>
     <release version="1.1.4" date="2026-05-08">
       <description>
         <p>dinit: filter-chain and video-router stuck stopped after asm-setup — when asm-setup rewrites service files on disk, dinit keeps the old in-memory definition (without restart = true) until explicitly reloaded. Added dinitctl reload for stopped services before starting them so dinit always picks up the current file (issue #25). dinit: D-Bus collision on re-login — the guard preventing a second asm-daemon from starting used dinitctl status, which could miss the race window between dinit's boot-sequence auto-start and asm-setup's explicit start. Replaced with pgrep -f asm-daemon against the actual running process. dinit: filter-chain start race after pipewire restart — asm-setup now waits 0.5 s after a successful dinitctl restart pipewire before starting dependants, giving the PipeWire socket time to come up.</p>
@@ -199,11 +204,6 @@
     <release version="1.0.60" date="2026-04-21">
       <description>
         <p>udev rules (RPM/DEB): rules are now generated at build time from device YAMLs via scripts/generate_udev_rules.py — no more hardcoded rules that drift out of sync with the device definitions. debian/91-steelseries-arctis.rules removed. asm-cli udev dump-rules: new subcommand that prints the generated udev rules to stdout (used by packaging scripts). generate_udev_rules_content(): extracted as a public function in cli.py for reuse by both write-rules and dump-rules.</p>
-      </description>
-    </release>
-    <release version="1.0.59" date="2026-04-21">
-      <description>
-        <p>udev rules (RPM/DEB): add missing PID 0x1294 for Arctis Pro Wireless — the audio PID was never included in the installed rules file, causing [Errno 13] Access denied on Fedora/Nobara. udev rules (RPM/DEB): remove ENV{DEVTYPE}=="usb_device" condition from all rules — this condition can fail silently on some kernels, preventing rules from matching. udev rules (RPM/DEB): sync all PIDs with device yamls — add missing PIDs for Arctis 1/7X/7P Wireless, Arctis Pro 2019, Nova 3P/3X, Nova 7 Gen 1/Gen 2.</p>
       </description>
     </release>
   </releases>
