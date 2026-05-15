@@ -163,16 +163,23 @@ fi
 # Remove system pip install if detected (not tracked by any package manager)
 if [ "$HAS_SYS_PIP" -eq 1 ]; then
     step "Removing system pip/uv install ($SYS_PIP_VERSION)"
-    if confirm "Run 'sudo pip uninstall -y arctis-sound-manager' (or uv equivalent)?"; then
+    if confirm "Run pip/uv uninstall arctis-sound-manager (system)?"; then
+        _pip_ok=0
         if command -v uv >/dev/null 2>&1; then
-            sudo uv pip uninstall arctis-sound-manager --system 2>/dev/null \
-                || sudo pip uninstall -y arctis-sound-manager 2>/dev/null \
-                || warn "pip/uv uninstall failed — may need manual cleanup"
-        else
-            sudo pip uninstall -y arctis-sound-manager 2>/dev/null \
-                || warn "pip uninstall failed — may need manual cleanup"
+            if sudo uv pip uninstall arctis-sound-manager --system --python /usr/bin/python 2>/dev/null; then
+                _pip_ok=1
+            elif sudo pip uninstall -y arctis-sound-manager 2>/dev/null; then
+                _pip_ok=1
+            fi
+        elif sudo pip uninstall -y arctis-sound-manager 2>/dev/null; then
+            _pip_ok=1
         fi
-        ok "system pip removed"
+        if [ "$_pip_ok" -eq 1 ]; then
+            ok "system pip removed"
+        else
+            warn "Automatic uninstall failed. Run manually:"
+            warn "  pkexec uv pip uninstall arctis-sound-manager --system --python /usr/bin/python"
+        fi
     else
         warn "skipped system pip removal"
     fi
