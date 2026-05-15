@@ -1,7 +1,7 @@
 """Profile bar widget — horizontal chip row for the Home page."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox, QDialog, QDialogButtonBox, QHBoxLayout,
     QLabel, QLineEdit, QMenu, QPushButton, QVBoxLayout, QWidget,
@@ -63,6 +63,7 @@ class ProfileBar(QWidget):
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(8)
         self._chips: dict[str, QPushButton] = {}
+        self._update_btn: QPushButton | None = None
         self.refresh()
 
     def refresh(self) -> None:
@@ -93,6 +94,16 @@ class ProfileBar(QWidget):
                 btn = self._make_chip(profile, active == profile.name)
                 self._layout.addWidget(btn)
                 self._chips[profile.name] = btn
+
+        if active and any(p.name == active for p in profiles):
+            self._update_btn = QPushButton("↺  " + I18n.translate('ui', 'update_profile'))
+            self._update_btn.setStyleSheet(_BTN_ADD)
+            self._update_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self._update_btn.setFixedHeight(30)
+            self._update_btn.clicked.connect(self._on_update)
+            self._layout.addWidget(self._update_btn)
+        else:
+            self._update_btn = None
 
         add_btn = QPushButton("＋  " + I18n.translate('ui', 'save_current_settings'))
         add_btn.setStyleSheet(_BTN_ADD)
@@ -142,6 +153,26 @@ class ProfileBar(QWidget):
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self.refresh()
             self.sig_changed.emit()
+
+    def _on_update(self) -> None:
+        name = active_profile_name()
+        if not name:
+            return
+        snapshot = snapshot_current()
+        snapshot.name = name
+        snapshot.save()
+        if self._update_btn is not None:
+            self._update_btn.setText(I18n.translate('ui', 'profile_updated'))
+            self._update_btn.setEnabled(False)
+            QTimer.singleShot(1500, self._reset_update_btn)
+
+    def _reset_update_btn(self) -> None:
+        try:
+            if self._update_btn is not None:
+                self._update_btn.setText("↺  " + I18n.translate('ui', 'update_profile'))
+                self._update_btn.setEnabled(True)
+        except RuntimeError:
+            pass
 
 
 class SaveProfileDialog(QDialog):
