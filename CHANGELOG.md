@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.30] - 15 May 2026
+
+### Added
+
+- **Per-channel output device selection** — each audio channel card (Game / Chat / Media) now has a dropdown to route that channel to a specific output sink; systray → Output Routing mirrors the same selection (issue #46).
+- **Output device routing saved in profiles** — optional checkbox in Save Profile dialog captures the current per-channel routing.
+- **Language filter** — only languages with ≥ 80 % translation coverage appear in the language selector; names are now displayed in their native script via babel (Français, Deutsch, Polski…) instead of 2-letter codes.
+
+### Fixed
+
+- Sonar EQ channel names displayed in English instead of the active language.
+- Applications section misaligned on channels without output device selection.
+- Duplicate HDMI entries in output device lists.
+- Crowdin sync: excluded English from translation download target to prevent source file overwrite on each sync.
+
 ## [1.1.4] - 8 May 2026
 
 ### Fixed
