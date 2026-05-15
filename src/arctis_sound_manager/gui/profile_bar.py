@@ -217,6 +217,11 @@ class SaveProfileDialog(QDialog):
         self._cb_eq_mode.setStyleSheet(cb_style)
         layout.addWidget(self._cb_eq_mode)
 
+        self._cb_output_devices = QCheckBox(I18n.translate('ui', 'include_output_devices'))
+        self._cb_output_devices.setChecked(True)
+        self._cb_output_devices.setStyleSheet(cb_style)
+        layout.addWidget(self._cb_output_devices)
+
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
@@ -247,6 +252,8 @@ class SaveProfileDialog(QDialog):
             profile.spatial_audio = {}
         if not self._cb_eq_mode.isChecked():
             profile.eq_mode = ""
+        if not self._cb_output_devices.isChecked():
+            profile.output_devices = {}
 
         profile.save()
         self.accept()
