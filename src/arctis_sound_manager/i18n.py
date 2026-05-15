@@ -11,6 +11,16 @@ _BUILTIN_LANG_DIR = Path(__file__).parent / 'lang'
 _LANG_FILE = Path.home() / ".config" / "arctis_manager" / ".language"
 _logger = logging.getLogger('I18n')
 
+try:
+    from babel import Locale as _BabelLocale
+    _BABEL_AVAILABLE = True
+except ImportError:
+    _BabelLocale = None  # type: ignore[assignment,misc]
+    _BABEL_AVAILABLE = False
+    _logger.warning('babel not installed — plural forms will fall back to English one/other rule')
+
+_FALLBACK_CATEGORY = 'other'
+
 
 class I18n:
     _instance: 'I18n'
@@ -32,6 +42,7 @@ class I18n:
     def __init__(self):
         self.translations = ConfigParser()
         self._en_translations = ConfigParser()
+        self._babel_locale_cache: dict[str, object] = {}
         # Pre-load EN once so we can fall back when the active locale lacks a key.
         en_path = Path(__file__).parent / 'lang' / 'en.ini'
         if en_path.is_file():
@@ -118,6 +129,55 @@ class I18n:
     @staticmethod
     def on_language_changed(callback) -> None:
         I18n.get_instance()._callbacks.append(callback)
+
+    def _plural_category(self, count: int) -> str:
+        if not _BABEL_AVAILABLE:
+            return 'one' if count == 1 else 'other'
+        cached = self._babel_locale_cache.get(self._lang)
+        if cached is None:
+            try:
+                cached = _BabelLocale.parse(self._lang)
+            except Exception as e:
+                _logger.warning(f'Babel could not parse locale {self._lang!r}: {e!r} — using en rule')
+                try:
+                    cached = _BabelLocale.parse('en')
+                except Exception:
+                    return 'one' if count == 1 else 'other'
+            self._babel_locale_cache[self._lang] = cached
+        return cached.plural_form(count)
+
+    @staticmethod
+    def translate_plural(section: str, key: str, count: int, **fmt) -> str:
+        inst = I18n.get_instance()
+        category = inst._plural_category(count)
+        fmt.setdefault('count', count)
+
+        def _lookup(cp: ConfigParser, cat: str) -> str | None:
+            skey = f'{key}_{cat}'
+            if cp.has_option(section, skey):
+                return cp.get(section, skey).split('#')[0].strip()
+            return None
+
+        for cp in (inst.translations, inst._en_translations if inst._lang != 'en' else None):
+            if cp is None:
+                continue
+            raw = _lookup(cp, category) or _lookup(cp, _FALLBACK_CATEGORY)
+            if raw is not None:
+                try:
+                    return raw.format(**fmt)
+                except (KeyError, IndexError) as e:
+                    _logger.warning(
+                        f'Plural format error [{inst._lang}] {section}.{key}_{category}: {e!r}'
+                    )
+                    return raw
+
+        sentinel = (section, f'{key}_*')
+        if sentinel not in inst._missing_logged:
+            inst._missing_logged.add(sentinel)
+            _logger.warning(
+                f'Missing plural translation [{inst._lang}] {section}.{key} (count={count})'
+            )
+        return key
 
     @staticmethod
     def translate(section: str, key: str|int) -> str:

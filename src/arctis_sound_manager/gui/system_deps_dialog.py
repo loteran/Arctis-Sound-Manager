@@ -297,8 +297,7 @@ class SystemDepsDialog(QDialog):
 
         self._install_all_btn.setEnabled(any(install_command_for(r.check) for r in bad))
         self._status_lbl.setText(
-            f"{len(bad)} issue(s) detected. Use 'Install all missing' for a single "
-            "polkit prompt, or fix items individually."
+            I18n.translate_plural('ui', 'issue_count', len(bad))
         )
 
     # ── Install actions ─────────────────────────────────────────────────────
