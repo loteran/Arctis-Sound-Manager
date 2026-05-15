@@ -24,6 +24,17 @@ EVENT_TIMEOUT    = 5.0   # seconds to wait for a PA event before forced re-check
 EVENT_DEBOUNCE   = 0.15  # seconds to let rapid event bursts settle
 NATIVE_INTERVAL  = 5.0   # seconds between pw-dump calls (expensive subprocess)
 OVERRIDES_FILE = Path.home() / ".config" / "arctis_manager" / "routing_overrides.json"
+CHANNEL_OUTPUTS_FILE = Path.home() / ".config" / "arctis_manager" / "channel_output_devices.json"
+
+
+def _load_channel_outputs() -> dict:
+    if CHANNEL_OUTPUTS_FILE.exists():
+        try:
+            return json.loads(CHANNEL_OUTPUTS_FILE.read_text())
+        except Exception:
+            pass
+    return {}
+
 
 # effect_input sinks are internal filter-chain nodes — apps should never
 # target them directly.  Remap to the corresponding Arctis virtual sink.
@@ -292,6 +303,29 @@ def _main_loop():
                         _native_placed[app] = s["sink_name"]
                     continue
 
+            # ── Per-channel output device enforcement ─────────────────────────
+            channel_outputs = _load_channel_outputs()
+            if channel_outputs:
+                _ch_virtual = {"game": "Arctis_Game", "chat": "Arctis_Chat", "media": "Arctis_Media"}
+                for _ch, _target_name in channel_outputs.items():
+                    _virtual_frag = _ch_virtual.get(_ch)
+                    if not _virtual_frag:
+                        continue
+                    _target_idx = sink_map.get(_target_name)
+                    if _target_idx is None:
+                        continue
+                    for _si in sink_inputs:
+                        _app = _si.proplist.get("application.name", "")
+                        if not _app:
+                            continue
+                        _current_name = sink_idx_to_name.get(_si.sink, "")
+                        if _virtual_frag in _current_name and _si.sink != _target_idx:
+                            log.info("Channel output: '%s' %s -> %s", _app, _current_name, _target_name)
+                            try:
+                                pulse.sink_input_move(_si.index, _target_idx)
+                                _pa_placed[_app] = _target_idx
+                            except Exception:
+                                pass
 
         except pulsectl.PulseDisconnected:
             log.warning("PulseAudio disconnected, reconnecting...")

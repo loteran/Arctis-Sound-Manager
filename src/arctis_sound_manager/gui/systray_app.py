@@ -226,8 +226,8 @@ class QSystrayApp(QBaseDesktopApp):
                     eq_menu.addAction(f"— {I18n.translate('ui', 'no_presets_saved')} —")
             else:
                 no_presets_label = f"— {I18n.translate('ui', 'no_presets_saved')} —"
-                for ch_key, ch_label in SONAR_CHANNELS:
-                    ch_menu = QMenu(ch_label)
+                for ch_key, _ch_label in SONAR_CHANNELS:
+                    ch_menu = QMenu(I18n.translate('ui', ch_key))
                     self._menu_action_refs.append(ch_menu)
                     favs = list_sonar_channel_presets(ch_key)
                     if favs:
@@ -247,6 +247,62 @@ class QSystrayApp(QBaseDesktopApp):
             self.menu.addMenu(eq_menu)
         except Exception as e:
             self.logger.error('EQ presets section failed: %s', e, exc_info=True)
+
+        # Output Routing (per-channel physical sink selection)
+        try:
+            import pulsectl
+            import json as _json
+            from pathlib import Path as _Path
+            _outputs_file = _Path.home() / ".config" / "arctis_manager" / "channel_output_devices.json"
+            _ch_outputs: dict = {}
+            if _outputs_file.exists():
+                try:
+                    _ch_outputs = _json.loads(_outputs_file.read_text())
+                except Exception:
+                    pass
+
+            with pulsectl.Pulse("asm-tray-routing") as _pulse:
+                _sinks = _pulse.sink_list()
+            _physical_sinks = [
+                s for s in _sinks
+                if s.name.startswith("alsa_output") and "SteelSeries" not in s.name
+            ]
+
+            _routing_menu = QMenu(I18n.translate('ui', 'output_routing'))
+            self._menu_action_refs.append(_routing_menu)
+
+            _ch_labels = [
+                ("game", I18n.translate("ui", "game")),
+                ("chat", I18n.translate("ui", "chat")),
+                ("media", I18n.translate("ui", "media")),
+            ]
+            _default_label = I18n.translate("ui", "default_output")
+            for _ch_key, _ch_label in _ch_labels:
+                _ch_menu = QMenu(_ch_label)
+                self._menu_action_refs.append(_ch_menu)
+                _current_sink = _ch_outputs.get(_ch_key, "")
+
+                _a_def = _ch_menu.addAction(("● " if not _current_sink else "    ") + _default_label)
+                self._menu_action_refs.append(_a_def)
+                _a_def.triggered.connect(
+                    lambda _=False, ch=_ch_key: self._on_tray_channel_output(ch, "")
+                )
+
+                for _snk in _physical_sinks:
+                    _nick = _snk.proplist.get("node.description") or _snk.proplist.get("node.nick") or _snk.name
+                    _marker = "● " if _snk.name == _current_sink else "    "
+                    _a = _ch_menu.addAction(f"{_marker}{_nick}")
+                    self._menu_action_refs.append(_a)
+                    _a.triggered.connect(
+                        lambda _=False, ch=_ch_key, name=_snk.name: self._on_tray_channel_output(ch, name)
+                    )
+
+                _routing_menu.addMenu(_ch_menu)
+
+            _sep()
+            self.menu.addMenu(_routing_menu)
+        except Exception as _e:
+            self.logger.debug('Output routing section failed: %s', _e)
 
         # Headset status (power only)
         for _, status_obj in self.last_device_status.items():
@@ -285,6 +341,29 @@ class QSystrayApp(QBaseDesktopApp):
                 f"{I18n.translate('ui', 'applying_preset')} {name}"
             )
             self._sonar_applier.apply(channel, name)
+
+    def _on_tray_channel_output(self, channel: str, sink_name: str) -> None:
+        try:
+            import json as _json
+            from pathlib import Path as _Path
+            _outputs_file = _Path.home() / ".config" / "arctis_manager" / "channel_output_devices.json"
+            _ch_outputs: dict = {}
+            if _outputs_file.exists():
+                try:
+                    _ch_outputs = _json.loads(_outputs_file.read_text())
+                except Exception:
+                    pass
+            if sink_name:
+                _ch_outputs[channel] = sink_name
+            else:
+                _ch_outputs.pop(channel, None)
+            _outputs_file.parent.mkdir(parents=True, exist_ok=True)
+            _tmp = _outputs_file.with_suffix(".tmp")
+            _tmp.write_text(_json.dumps(_ch_outputs))
+            _tmp.replace(_outputs_file)
+        except Exception as e:
+            self.logger.warning("Failed to save channel output: %s", e)
+        self.menu_setup()
 
     @Slot(bool, str, str)
     def _on_sonar_preset_applied(self, ok: bool, channel: str, name: str) -> None:
