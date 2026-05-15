@@ -166,7 +166,7 @@ if [ "$HAS_SYS_PIP" -eq 1 ]; then
     if confirm "Run pip/uv uninstall arctis-sound-manager (system)?"; then
         _pip_ok=0
         if command -v uv >/dev/null 2>&1; then
-            if sudo uv pip uninstall arctis-sound-manager --system --python /usr/bin/python 2>/dev/null; then
+            if sudo uv pip uninstall arctis-sound-manager --system --python /usr/bin/python --break-system-packages 2>/dev/null; then
                 _pip_ok=1
             elif sudo pip uninstall -y arctis-sound-manager 2>/dev/null; then
                 _pip_ok=1
