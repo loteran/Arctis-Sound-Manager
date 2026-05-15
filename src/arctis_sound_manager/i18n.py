@@ -95,31 +95,56 @@ class I18n:
 
     @staticmethod
     def available_languages() -> list[tuple[str, str]]:
-        """Return (code, display_name) sorted by code.
+        """Return (code, display_name) for languages with >= 80% coverage, sorted by code.
 
-        Scans built-in lang dir first, then HOME_LANG_FOLDER for community
-        translations downloaded by LangUpdateWorker.
+        Display names come from babel (native name). English is always included.
+        Scans built-in lang dir first, then HOME_LANG_FOLDER for community downloads.
         """
+        en_cp = RawConfigParser()
+        en_cp.read(_BUILTIN_LANG_DIR / 'en.ini')
+        en_key_count = sum(len(list(en_cp.items(s))) for s in en_cp.sections())
+        threshold = int(en_key_count * 0.80)
+
+        def _native_name(code: str) -> str:
+            if _BABEL_AVAILABLE and _BabelLocale is not None:
+                try:
+                    name = _BabelLocale.parse(code).get_display_name(code)
+                    if name:
+                        return name[0].upper() + name[1:]
+                except Exception:
+                    pass
+            return code.upper()
+
+        def _key_count(cp: RawConfigParser) -> int:
+            return sum(len(list(cp.items(s))) for s in cp.sections())
+
         seen: dict[str, str] = {}
         for path in sorted(_BUILTIN_LANG_DIR.glob("*.ini")):
             code = path.stem
+            if code == 'en':
+                seen['en'] = 'English'
+                continue
             cp = RawConfigParser()
             try:
                 cp.read(path)
             except Exception:
                 continue
-            seen[code] = cp.get("meta", "language_name", fallback=code.upper())
+            if _key_count(cp) >= threshold:
+                seen[code] = _native_name(code)
+
         if HOME_LANG_FOLDER.exists():
             for path in sorted(HOME_LANG_FOLDER.glob("*.ini")):
                 code = path.stem
                 if code in seen:
-                    continue  # built-in takes priority for display name
+                    continue
                 cp = RawConfigParser()
                 try:
                     cp.read(path)
                 except Exception:
                     continue
-                seen[code] = cp.get("meta", "language_name", fallback=code.upper())
+                if _key_count(cp) >= threshold:
+                    seen[code] = _native_name(code)
+
         return sorted(seen.items())
 
     @staticmethod
