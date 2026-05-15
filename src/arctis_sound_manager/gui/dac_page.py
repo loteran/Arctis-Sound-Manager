@@ -80,7 +80,7 @@ class DacPage(QWidget):
         layout.setContentsMargins(36, 28, 36, 36)
         layout.setSpacing(0)
 
-        app_title = QLabel(I18n.translate("ui", "app_name"))
+        app_title = QLabel("Arctis Sound Manager")
         app_title.setStyleSheet(
             f"color: {TEXT_PRIMARY}; font-size: 28pt; font-weight: bold; background: transparent;"
         )
