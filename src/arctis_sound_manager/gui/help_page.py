@@ -1,5 +1,5 @@
 """
-Help page — user manual with EN / FR / ES language selector.
+Help page — user manual, language follows the app I18n setting.
 """
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 
 from arctis_sound_manager.gui.components import DividerLine
 from arctis_sound_manager.gui.report_dialog import ReportBugDialog
+from arctis_sound_manager.i18n import I18n
 from arctis_sound_manager.gui.theme import (
     ACCENT,
     BG_BUTTON,
@@ -31,7 +32,6 @@ HELP_CONTENT: dict[str, dict] = {
     "en": {
         "title": "Help",
         "subtitle": "Arctis Sound Manager — User Manual",
-        "lang_label": "Language:",
         "sections": [
             {
                 "heading": "Overview",
@@ -346,7 +346,6 @@ HELP_CONTENT: dict[str, dict] = {
     "fr": {
         "title": "Aide",
         "subtitle": "Arctis Sound Manager — Manuel d'utilisation",
-        "lang_label": "Langue :",
         "sections": [
             {
                 "heading": "Présentation",
@@ -665,7 +664,6 @@ HELP_CONTENT: dict[str, dict] = {
     "es": {
         "title": "Ayuda",
         "subtitle": "Arctis Sound Manager — Manual de usuario",
-        "lang_label": "Idioma:",
         "sections": [
             {
                 "heading": "Descripción general",
@@ -988,33 +986,6 @@ HELP_CONTENT: dict[str, dict] = {
 
 # ── Styles ─────────────────────────────────────────────────────────────────────
 
-_LANG_BTN_INACTIVE = f"""
-    QPushButton {{
-        background-color: {BG_BUTTON};
-        color: {TEXT_SECONDARY};
-        border: 1px solid {BORDER};
-        border-radius: 6px;
-        padding: 4px 14px;
-        font-size: 10pt;
-        font-weight: bold;
-    }}
-    QPushButton:hover {{
-        background-color: {BG_BUTTON_HOVER};
-        color: {TEXT_PRIMARY};
-    }}
-"""
-
-_LANG_BTN_ACTIVE = f"""
-    QPushButton {{
-        background-color: {ACCENT};
-        color: #ffffff;
-        border: 1px solid {ACCENT};
-        border-radius: 6px;
-        padding: 4px 14px;
-        font-size: 10pt;
-        font-weight: bold;
-    }}
-"""
 
 _HEADING_STYLE = (
     f"color: {TEXT_PRIMARY}; font-size: 14pt; font-weight: bold; "
@@ -1062,33 +1033,11 @@ class HelpPage(QWidget):
             "border-radius: 6px; padding: 6px 14px; font-size: 9pt; }}"
             "QPushButton:hover {{ background-color: {hover}; }}"
         )
-        report_btn = QPushButton("Report a bug")
+        report_btn = QPushButton(I18n.translate('ui', 'report_bug'))
         report_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         report_btn.setStyleSheet(_BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, hover=BG_BUTTON_HOVER))
         report_btn.clicked.connect(lambda: ReportBugDialog(parent=self).exec())
         title_row.addWidget(report_btn)
-
-        # Language buttons
-        lang_row = QHBoxLayout()
-        lang_row.setSpacing(6)
-        lang_row.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-
-        self._lang_label = QLabel("Language:")
-        self._lang_label.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
-        )
-        lang_row.addWidget(self._lang_label)
-
-        self._lang_buttons: dict[str, QPushButton] = {}
-        for code, display in [("en", "EN"), ("fr", "FR"), ("es", "ES")]:
-            btn = QPushButton(display)
-            btn.setFixedHeight(30)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.clicked.connect(lambda _, c=code: self._set_language(c))
-            lang_row.addWidget(btn)
-            self._lang_buttons[code] = btn
-
-        title_row.addLayout(lang_row)
         header_layout.addLayout(title_row)
 
         self._subtitle_label = QLabel("Arctis Sound Manager — User Manual")
@@ -1121,22 +1070,19 @@ class HelpPage(QWidget):
         scroll.setWidget(self._content_widget)
         outer.addWidget(scroll, stretch=1)
 
-        self._set_language("en")
+        self._set_language(I18n.current_lang())
+        I18n.on_language_changed(lambda: self._set_language(I18n.current_lang()))
 
     # ── Language switching ─────────────────────────────────────────────────
 
     def _set_language(self, lang: str) -> None:
+        lang = lang if lang in HELP_CONTENT else 'en'
         self._current_lang = lang
         data = HELP_CONTENT[lang]
 
         # Update header labels
         self._title_label.setText(data["title"])
         self._subtitle_label.setText(data["subtitle"])
-        self._lang_label.setText(data["lang_label"])
-
-        # Update button styles
-        for code, btn in self._lang_buttons.items():
-            btn.setStyleSheet(_LANG_BTN_ACTIVE if code == lang else _LANG_BTN_INACTIVE)
 
         # Rebuild content
         self._clear_content()
