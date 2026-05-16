@@ -918,6 +918,9 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
     4. 2ch game EQ when spatial audio is ON (must be 8ch for HeSuVi).
     5. Virtual sink targets out of sync with current EQ mode.
     6. HeSuVi config with stale ``node.target`` (wrong physical output).
+    7. Micro config with empty ``target.object`` written before device attach —
+       PipeWire would otherwise bind to the first available source (e.g. a game
+       controller mic) instead of the Arctis headset.
 
     Returns ``(fixed, needs_pipewire_restart)``.  *fixed* is True if any config
     was regenerated or cleaned.  *needs_pipewire_restart* is True when the static
@@ -1022,6 +1025,18 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
             log.warning("Stale micro config (wrong media.class or label=gain), regenerating")
             _write_conf(micro_path, _bypass_micro_conf())
             fixed = True
+        elif 'target.object  = ""' in content:
+            physical_in = _get_physical_in()
+            if physical_in:
+                log.warning(
+                    "Micro config has empty target.object but device is now attached (%s) — patching",
+                    physical_in,
+                )
+                _write_conf(micro_path, content.replace(
+                    'target.object  = ""',
+                    f'target.object  = "{physical_in}"',
+                ))
+                fixed = True
 
     # Ensure virtual sink targets match current EQ mode
     #
