@@ -441,6 +441,17 @@ def _build_checks() -> list[DepCheck]:
         # Python deps that the wheel's own metadata covers but a manual
         # `dnf remove --noautoremove python3-pyudev` can still strip.
         DepCheck(
+            name="babel (python module)",
+            severity=Severity.BLOCKING,
+            feature="UI translations (i18n)",
+            detect=lambda: _can_import("babel"),
+            install_commands={
+                "fedora": ["dnf", "install", "-y", "python3-babel"],
+                "debian": ["apt-get", "install", "-y", "python3-babel"],
+                "arch":   ["pacman", "-S", "--noconfirm", "python-babel"],
+            },
+        ),
+        DepCheck(
             name="pyudev (python module)",
             severity=Severity.DEGRADED,
             feature="USB hotplug (event-driven)",
