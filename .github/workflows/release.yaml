@@ -163,23 +163,52 @@ jobs:
           git commit -m "Update to v${{ needs.release.outputs.version }}"
           git push
 
-      - name: Verify AUR index reflects new version
+      - name: Verify and self-heal AUR
         run: |
           VERSION="${{ needs.release.outputs.version }}"
-          echo "Waiting for AUR index to update to ${VERSION}..."
+          SHA="${{ needs.release.outputs.sha256 }}"
+
+          # 1 — Verify what was actually committed to AUR git (not the RPC index,
+          #     which can lag several minutes). Re-clone to get the latest state.
+          git clone ssh://aur@aur.archlinux.org/arctis-sound-manager.git /tmp/aur-verify
+          ACTUAL_VER=$(grep "^pkgver=" /tmp/aur-verify/PKGBUILD | cut -d= -f2)
+          echo "AUR git pkgver: '${ACTUAL_VER}' (expected '${VERSION}')"
+
+          if [ "${ACTUAL_VER}" != "${VERSION}" ]; then
+            echo "Wrong version in AUR git — re-patching and re-pushing..."
+            sed "s/pkgver=.*/pkgver=${VERSION}/; s/sha256sums=('[^']*')/sha256sums=('${SHA}')/" \
+              aur/PKGBUILD > /tmp/aur-verify/PKGBUILD
+            sed -e "s/pkgver = .*/pkgver = ${VERSION}/" \
+                -e "s/arctis-sound-manager-[0-9][0-9.]*\.tar\.gz/arctis-sound-manager-${VERSION}.tar.gz/g" \
+                -e "s|releases/download/v[0-9][0-9.]*/|releases/download/v${VERSION}/|g" \
+                -e "s/sha256sums = [^ ]*/sha256sums = ${SHA}/" \
+                aur/.SRCINFO > /tmp/aur-verify/.SRCINFO
+            cp aur/arctis-sound-manager.install /tmp/aur-verify/arctis-sound-manager.install
+            cd /tmp/aur-verify
+            git config user.name "loteran"
+            git config user.email "axel.valadon@gmail.com"
+            git add PKGBUILD .SRCINFO arctis-sound-manager.install
+            git diff --cached --quiet && echo "Nothing to fix." || git commit -m "Fix: update to v${VERSION}" && git push
+            cd -
+          fi
+
+          # 2 — Wait for the AUR RPC index to propagate (can take up to ~10 min).
+          aur_version() {
+            curl -fsSL "https://aur.archlinux.org/rpc/?v=5&type=info&arg=arctis-sound-manager" \
+              | python3 -c "import sys,re; raw=sys.stdin.read(); m=re.search(r'\"Version\":\"([^\"]+)\"',raw); print(m.group(1) if m else '')" 2>/dev/null || true
+          }
+          echo "Waiting for AUR RPC index to update..."
           for i in $(seq 1 24); do
-            AUR_VER=$(curl -fsSL "https://aur.archlinux.org/rpc/?v=5&type=info&arg=arctis-sound-manager" \
-              | python3 -c "import sys,re; raw=sys.stdin.read(); m=re.search(r'\"Version\":\"([^\"]+)\"',raw); print(m.group(1) if m else '')" 2>/dev/null || true)
-            echo "  attempt ${i}/24 — AUR version: '${AUR_VER}'"
+            AUR_VER=$(aur_version)
+            echo "  attempt ${i}/24 — RPC version: '${AUR_VER}'"
             if [ "${AUR_VER}" = "${VERSION}-1" ] || [ "${AUR_VER}" = "${VERSION}" ]; then
-              echo "AUR is up to date: ${AUR_VER}"
+              echo "AUR index confirmed: ${AUR_VER}"
               exit 0
             fi
             sleep 30
           done
-          echo "ERROR: AUR did not update to ${VERSION} after 12 minutes."
-          echo "Current AUR version: ${AUR_VER}"
-          exit 1
+          echo "WARNING: AUR RPC index did not update after 12 min (AUR server lag)."
+          echo "The correct PKGBUILD is in AUR git — users will get the right version on next paru sync."
 
       - name: Sync aur/ template + generated files back to main
         run: |
