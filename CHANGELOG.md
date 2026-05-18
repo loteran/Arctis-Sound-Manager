@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.34] - 18 May 2026
+
+### Fixed
+
+- **Wireless headset disconnect/reconnect loop** — when the USB dongle stays plugged in but the RF link drops (headset powered off or out of range), ASM retried USB commands thousands of times per second with no back-off, preventing the dongle firmware from completing RF re-association. Errors with errno 19 (ENODEV) now trigger a 1-second back-off; after ~10 s of consecutive failures ASM voluntarily releases the handle to let the dongle reconnect cleanly. Removed a redundant `request_device_status()` call that was firing on every loop iteration instead of the intended 2-second cadence (issue #49).
+
 ## [1.1.33] - 18 May 2026
 
 ### Fixed
