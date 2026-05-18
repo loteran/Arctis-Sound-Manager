@@ -166,18 +166,25 @@ class CoreEngine:
     
     async def loop(self):
         listen_coroutines: list[asyncio.Task] = []
+        poll_task: asyncio.Task | None = None
         while not self._stopping:
             if not self.usb_device:
                 # Cancel any leftover tasks from a previous connection
                 for task in listen_coroutines:
                     task.cancel()
                 listen_coroutines = []
+                if poll_task is not None:
+                    poll_task.cancel()
+                    poll_task = None
                 await asyncio.sleep(0.1)
                 continue
 
             if self.device_config is not None:
                 all_listen = list(set(self.device_config.listen_interface_indexes + self._active_extra_dial_interfaces))
                 listen_coroutines = [asyncio.create_task(self.listen_endpoint_loop(interface_id)) for interface_id in all_listen]
+
+                if poll_task is None or poll_task.done():
+                    poll_task = asyncio.create_task(self._status_poll_loop())
 
             self.request_device_status()
 
@@ -186,6 +193,8 @@ class CoreEngine:
         # Cleanup on stop
         for task in listen_coroutines:
             task.cancel()
+        if poll_task is not None:
+            poll_task.cancel()
 
     def on_device_connected(self, vendor_id: int, product_id: int) -> None:
         for device_config in self.device_configurations:
@@ -485,13 +494,27 @@ class CoreEngine:
     def is_device_online(self) -> bool:
         if self.device_status is None or self.device_config is None:
             return False
-        
+
         if (online_status_config := self.device_config.online_status) is None:
             return True
-        
-        parsed = parsed_status(self.device_status, self.device_config)
 
-        return online_status_config is None or parsed.get(online_status_config.status_variable) == online_status_config.online_value
+        parsed = parsed_status(self.device_status, self.device_config)
+        actual = parsed.get(online_status_config.status_variable)
+        expected = online_status_config.online_value
+
+        # The `on_off` parser returns 'on'/'off' but 8 device YAMLs declare
+        # online_value: 'online'. Without this aliasing Nova 5, Nova 7,
+        # Arctis 7+, Arctis 9 and Arctis 1 Wireless always report offline.
+        _ON = {'on', 'online'}
+        _OFF = {'off', 'offline'}
+        if isinstance(actual, str) and isinstance(expected, str):
+            al, el = actual.lower(), expected.lower()
+            if el in _ON:
+                return al in _ON
+            if el in _OFF:
+                return al in _OFF
+
+        return actual == expected
     
     def on_device_status_changed(self, key: str, value: int):
         if self.device_config and self.device_config.online_status and key == self.device_config.online_status.status_variable:
@@ -772,6 +795,32 @@ class CoreEngine:
         
         endpoint = self.get_command_endpoint_address()
         self.send_command([self.device_config.status.request], endpoint)
+
+    async def _status_poll_loop(self, period: float = 2.0):
+        # Nova 5 and 7 firmwares only emit a status frame when the radio link
+        # changes. If the user powers off the headset while the dongle stays
+        # plugged in, no packet arrives and on_device_status_changed never
+        # fires. Polling at a fixed cadence detects the power-off within
+        # `period` seconds and triggers redirect_audio_on_disconnect().
+        try:
+            while not self._stopping:
+                await asyncio.sleep(period)
+                with self._device_lock:
+                    have_device = (
+                        self.usb_device is not None
+                        and self.device_config is not None
+                        and self.device_config.status is not None
+                    )
+                if have_device:
+                    try:
+                        self.request_device_status()
+                    except usb.core.USBError as e:
+                        if getattr(e, 'errno', None) not in (16, 19, 110):
+                            self.logger.warning(f"Status poll USB error: {e!r}")
+                    except Exception as e:
+                        self.logger.warning(f"Status poll failed: {e!r}")
+        except asyncio.CancelledError:
+            raise
 
     def teardown(self) -> None:
         if self.usb_device:
