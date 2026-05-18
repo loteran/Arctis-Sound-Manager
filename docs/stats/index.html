@@ -75,9 +75,10 @@
       margin-bottom: 1rem;
     }
 
-    .versions-card { grid-column: 1 / -1; }
+    .full-width { grid-column: 1 / -1; }
 
     canvas { max-height: 280px; }
+    #chart-distros { max-height: 420px; }
 
     footer {
       text-align: center;
@@ -133,7 +134,7 @@
   </div>
 
   <div class="charts-grid">
-    <div class="card">
+    <div class="card full-width">
       <h2>Linux Distributions</h2>
       <canvas id="chart-distros"></canvas>
     </div>
@@ -141,7 +142,7 @@
       <h2>Headsets</h2>
       <canvas id="chart-headsets"></canvas>
     </div>
-    <div class="card versions-card">
+    <div class="card full-width">
       <h2>ASM Versions</h2>
       <canvas id="chart-versions"></canvas>
     </div>
@@ -197,8 +198,9 @@
     return splitAt === -1 ? label : [label.slice(0, splitAt), label.slice(splitAt + 1)];
   }
 
-  function mkChart(id, labels, values, type = "bar") {
+  function mkChart(id, labels, values, type = "bar", extraOpts = {}) {
     const ctx = document.getElementById(id);
+    const isHBar = extraOpts.indexAxis === 'y';
     return new Chart(ctx, {
       type,
       data: {
@@ -212,6 +214,7 @@
       },
       options: {
         responsive: true,
+        ...extraOpts,
         plugins: {
           legend: {
             display: type !== "bar",
@@ -225,8 +228,17 @@
           },
         },
         scales: type === "bar" ? {
-          x: { ticks: { color: "#8D96AA" }, grid: { color: "#2A3038" } },
-          y: { ticks: { color: "#8D96AA", precision: 0 }, grid: { color: "#2A3038" } },
+          x: {
+            ticks: { color: "#8D96AA", precision: 0 },
+            grid: { color: "#2A3038" },
+          },
+          y: {
+            ticks: {
+              color: "#8D96AA",
+              ...(isHBar ? {} : { precision: 0 }),
+            },
+            grid: { color: "#2A3038" },
+          },
         } : {},
       },
     });
@@ -249,7 +261,8 @@
 
       // Charts
       mkChart("chart-distros",
-        data.distros.map(r => wrapLabel(r.label)), data.distros.map(r => r.nb));
+        data.distros.map(r => r.label), data.distros.map(r => r.nb),
+        "bar", { indexAxis: 'y' });
       mkChart("chart-headsets",
         headsets.map(r => r.product_id === "Unknown" ? r.label : r.label + " (0x" + r.product_id + ")"),
         headsets.map(r => r.nb), "doughnut");
