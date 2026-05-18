@@ -15,7 +15,8 @@ from arctis_sound_manager.config import (CommandTransport,
                                          load_device_configurations,
                                          parsed_status)
 from arctis_sound_manager.constants import (PULSE_CHAT_NODE_NAME,
-                                            PULSE_MEDIA_NODE_NAME)
+                                            PULSE_MEDIA_NODE_NAME,
+                                            STEELSERIES_VENDOR_ID)
 from arctis_sound_manager.pactl import ONLY_PHYSICAL, PulseAudioManager
 from arctis_sound_manager.settings import DeviceSettings, GeneralSettings
 from arctis_sound_manager.usb_devices_monitor import USBDevicesMonitor
@@ -545,11 +546,41 @@ class CoreEngine:
 
         self.pa_audio_manager.redirect_audio(PULSE_MEDIA_NODE_NAME)
 
-    def redirect_audio_on_disconnect(self):
-        redirect_device = self.general_settings.redirect_audio_on_disconnect_device if self.general_settings.redirect_audio_on_disconnect else None
-        current_default_device = self.pa_audio_manager.get_default_device()
+    # Sink name fragments that mean "audio is going through the Arctis headset".
+    # Includes all three virtual loopbacks, the full Sonar EQ pipeline and the
+    # raw SteelSeries ALSA node. If the current default matches any fragment
+    # we fall back to the user-configured disconnect device.
+    _ARCTIS_OWNED_SINK_FRAGMENTS = (
+        'Arctis_Game', 'Arctis_Chat', 'Arctis_Media',
+        'effect_input.sonar-game-eq',
+        'effect_input.sonar-chat-eq',
+        'effect_input.sonar-media-eq',
+        'effect_input.sonar-output-eq',
+        'effect_input.virtual-surround-7.1-hesuvi',
+    )
 
-        if current_default_device and redirect_device and current_default_device.name in [PULSE_MEDIA_NODE_NAME, PULSE_CHAT_NODE_NAME]:
+    def redirect_audio_on_disconnect(self):
+        if not self.general_settings.redirect_audio_on_disconnect:
+            return
+        redirect_device = self.general_settings.redirect_audio_on_disconnect_device
+        if not redirect_device:
+            return
+
+        current_default_device = self.pa_audio_manager.get_default_device()
+        if current_default_device is None:
+            self.pa_audio_manager.redirect_audio(redirect_device)
+            return
+
+        current_name = current_default_device.name or ''
+        is_steelseries_alsa = (
+            current_name.startswith('alsa_output')
+            and int(current_default_device.proplist.get('device.vendor.id', '0') or '0', 16) == STEELSERIES_VENDOR_ID
+        )
+        is_arctis_owned = any(
+            frag in current_name for frag in self._ARCTIS_OWNED_SINK_FRAGMENTS
+        )
+
+        if is_steelseries_alsa or is_arctis_owned:
             self.pa_audio_manager.redirect_audio(redirect_device)
     
     def translate_init_bytes(self, data: list[int|str]) -> list[int]:
