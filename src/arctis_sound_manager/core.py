@@ -158,8 +158,20 @@ class CoreEngine:
         except usb.core.USBError as e:
             if e.errno in (16, 110):  # EBUSY / ETIMEDOUT — back off to avoid spam
                 await asyncio.sleep(1.0)
+            elif e.errno in (19, 2):  # ENODEV / ENOENT — dongle present, RF link gone
+                self._enodev_count = getattr(self, '_enodev_count', 0) + 1
+                if self._enodev_count == 1 or self._enodev_count % 50 == 0:
+                    self.logger.warning('USB device unreachable (errno %d ×%d): %s',
+                                        e.errno, self._enodev_count, e)
+                await asyncio.sleep(1.0)
+                if self._enodev_count >= 10:
+                    self.logger.info('Device unreachable for >10 s, releasing handle to allow RF re-association')
+                    self._enodev_count = 0
+                    self.on_device_disconnected(0, 0)
             else:
+                self._enodev_count = 0
                 self.logger.warning('USB error: %s', e)
+                await asyncio.sleep(0.5)
         except AttributeError:
             # self.usb_device can be None mid-disconnect
             pass
@@ -186,8 +198,6 @@ class CoreEngine:
 
                 if poll_task is None or poll_task.done():
                     poll_task = asyncio.create_task(self._status_poll_loop())
-
-            self.request_device_status()
 
             await asyncio.gather(*listen_coroutines, return_exceptions=True)
 
