@@ -2125,7 +2125,6 @@ class _NoiseCancelingCard(QWidget):
         root.setSpacing(8)
 
         self._toggle = QToggle(is_checkbox=True)
-        self._toggle.checkStateChanged.connect(self._on_toggle)
 
         rnnoise_ok = self._check_rnnoise()
         if rnnoise_ok:
@@ -2179,6 +2178,7 @@ class _NoiseCancelingCard(QWidget):
         slider_row.addWidget(lbl_max)
         root.addLayout(slider_row)
 
+        self._toggle.checkStateChanged.connect(self._on_toggle)
         self._set_enabled(rnnoise_ok and state["noiseCanceling"]["enabled"])
 
     def _set_enabled(self, enabled: bool):
