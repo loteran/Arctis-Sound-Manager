@@ -78,7 +78,7 @@
     .full-width { grid-column: 1 / -1; }
 
     canvas { max-height: 280px; }
-    #chart-distros { max-height: 420px; }
+    #chart-distros, #chart-headsets { max-height: 420px; }
 
     footer {
       text-align: center;
@@ -138,7 +138,7 @@
       <h2>Linux Distributions</h2>
       <canvas id="chart-distros"></canvas>
     </div>
-    <div class="card">
+    <div class="card full-width">
       <h2>Headsets</h2>
       <canvas id="chart-headsets"></canvas>
     </div>
@@ -265,7 +265,7 @@
         "bar", { indexAxis: 'y' });
       mkChart("chart-headsets",
         headsets.map(r => r.product_id === "Unknown" ? r.label : r.label + " (0x" + r.product_id + ")"),
-        headsets.map(r => r.nb), "doughnut");
+        headsets.map(r => r.nb), "bar", { indexAxis: 'y' });
       mkChart("chart-versions",
         data.versions.map(r => r.label), data.versions.map(r => r.nb));
     })
