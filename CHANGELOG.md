@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.33] - 18 May 2026
+
+### Fixed
+
+- **ClearCast crash on startup when noise cancellation was enabled** — `_NoiseCancelingCard` connected the toggle signal before creating `self._slider`; PySide6 fires `checkStateChanged` synchronously during `setChecked()`, so restoring an enabled state from the previous session triggered `_set_enabled` before the slider existed, raising `AttributeError` (issue #51).
+- **README: First launch section** — clarified that the daemon starts automatically but the GUI must be opened separately (`asm-gui` or via the app launcher), documented `--systray` mode and per-DE autostart methods.
+
+## [1.1.32] - 18 May 2026
+
+### Fixed
+
+- **Audio redirect broken for 8 wireless models** — `is_device_online()` compared `on_off` parser values (`'on'`/`'off'`) against YAML `online_value: online` literally; added aliasing so `'on'` ↔ `'online'` and `'off'` ↔ `'offline'` are treated as equivalent (discussion #48).
+- **Streams stay on dead loopbacks after disconnect** — `redirect_audio()` changed the default sink but did not migrate active streams; now iterates `sink_input_list()` and moves every stream sitting on an ASM-owned sink, and persists the choice via `pw-metadata` for PipeWire restart survival (issue #50).
+- **`babel` missing from packaging metadata** — added to PKGBUILD depends, RPM Requires, debian/control Depends, system deps checker, and packaging drift check.
+
 ## [1.1.31] - 16 May 2026
 
 ### Fixed
