@@ -28,12 +28,12 @@ jobs:
       - name: Resolve release tag
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          echo "GITHUB_REF_NAME=$TAG" >> $GITHUB_ENV
+          echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
 
       - name: Extract changelog for this version
         id: changelog
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${RELEASE_TAG#v}"
           NOTES=$(awk "/^## \[$VERSION\]/{flag=1; next} /^## \[/{flag=0} flag" CHANGELOG.md | sed '/^$/N;/^\n$/d')
           echo "notes<<EOF" >> $GITHUB_OUTPUT
           echo "$NOTES" >> $GITHUB_OUTPUT
@@ -52,7 +52,7 @@ jobs:
       - name: Build deterministic source tarball for AUR
         id: src
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${RELEASE_TAG#v}"
           # Output to build/aur/ rather than dist/ so the AUR archive is NOT
           # picked up by `pypi-publish` (twine rejects the hyphenated name).
           mkdir -p build/aur
@@ -208,7 +208,7 @@ jobs:
 
       - name: Update spec version
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${{ needs.release.outputs.version }}"
           git config user.name "loteran"
           git config user.email "axel.valadon@gmail.com"
           git fetch origin main
@@ -222,7 +222,7 @@ jobs:
         run: |
           copr-cli buildscm \
             --clone-url https://github.com/loteran/Arctis-Sound-Manager \
-            --commit "${GITHUB_REF_NAME}" \
+            --commit "v${{ needs.release.outputs.version }}" \
             --method make_srpm \
             --nowait \
             loteran/arctis-sound-manager
