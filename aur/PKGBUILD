@@ -10,6 +10,7 @@ depends=(
     'python>=3.10'
     'pyside6'
     'qt6-svg'
+    'python-babel'
     'python-pillow'
     'python-pyudev'
     'python-pyusb'

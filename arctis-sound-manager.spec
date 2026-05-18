@@ -22,6 +22,7 @@ BuildRequires:  systemd-rpm-macros
 BuildRequires:  desktop-file-utils
 BuildRequires:  libappstream-glib
 
+Requires:       python3-babel
 Requires:       python3-pyside6
 Requires:       python3-pillow
 Requires:       python3-pulsectl

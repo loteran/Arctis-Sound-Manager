@@ -42,6 +42,7 @@ DEB_CHANGELOG = ROOT / "debian" / "changelog"
 # A dep is considered satisfied if ANY of the listed names appears in the
 # packager's metadata. `bundled` skips the check (the wheel ships the dep).
 DEPS_MAP: dict[str, dict[str, list[str] | str]] = {
+    "babel":       {"arch": ["python-babel"],  "fedora": ["python3-babel"], "debian": ["python3-babel"]},
     "dbus-next":   {"arch": "bundled",         "fedora": "bundled",         "debian": "bundled"},
     "pillow":      {"arch": ["python-pillow"], "fedora": ["python3-pillow"], "debian": ["python3-pil", "python3-pillow"]},
     "pulsectl":    {"arch": "bundled",         "fedora": ["python3-pulsectl"], "debian": ["python3-pulsectl"]},
