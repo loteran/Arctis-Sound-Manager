@@ -15,7 +15,8 @@ from arctis_sound_manager.config import (CommandTransport,
                                          load_device_configurations,
                                          parsed_status)
 from arctis_sound_manager.constants import (PULSE_CHAT_NODE_NAME,
-                                            PULSE_MEDIA_NODE_NAME)
+                                            PULSE_MEDIA_NODE_NAME,
+                                            STEELSERIES_VENDOR_ID)
 from arctis_sound_manager.pactl import ONLY_PHYSICAL, PulseAudioManager
 from arctis_sound_manager.settings import DeviceSettings, GeneralSettings
 from arctis_sound_manager.usb_devices_monitor import USBDevicesMonitor
@@ -166,18 +167,25 @@ class CoreEngine:
     
     async def loop(self):
         listen_coroutines: list[asyncio.Task] = []
+        poll_task: asyncio.Task | None = None
         while not self._stopping:
             if not self.usb_device:
                 # Cancel any leftover tasks from a previous connection
                 for task in listen_coroutines:
                     task.cancel()
                 listen_coroutines = []
+                if poll_task is not None:
+                    poll_task.cancel()
+                    poll_task = None
                 await asyncio.sleep(0.1)
                 continue
 
             if self.device_config is not None:
                 all_listen = list(set(self.device_config.listen_interface_indexes + self._active_extra_dial_interfaces))
                 listen_coroutines = [asyncio.create_task(self.listen_endpoint_loop(interface_id)) for interface_id in all_listen]
+
+                if poll_task is None or poll_task.done():
+                    poll_task = asyncio.create_task(self._status_poll_loop())
 
             self.request_device_status()
 
@@ -186,6 +194,8 @@ class CoreEngine:
         # Cleanup on stop
         for task in listen_coroutines:
             task.cancel()
+        if poll_task is not None:
+            poll_task.cancel()
 
     def on_device_connected(self, vendor_id: int, product_id: int) -> None:
         for device_config in self.device_configurations:
@@ -485,13 +495,27 @@ class CoreEngine:
     def is_device_online(self) -> bool:
         if self.device_status is None or self.device_config is None:
             return False
-        
+
         if (online_status_config := self.device_config.online_status) is None:
             return True
-        
-        parsed = parsed_status(self.device_status, self.device_config)
 
-        return online_status_config is None or parsed.get(online_status_config.status_variable) == online_status_config.online_value
+        parsed = parsed_status(self.device_status, self.device_config)
+        actual = parsed.get(online_status_config.status_variable)
+        expected = online_status_config.online_value
+
+        # The `on_off` parser returns 'on'/'off' but 8 device YAMLs declare
+        # online_value: 'online'. Without this aliasing Nova 5, Nova 7,
+        # Arctis 7+, Arctis 9 and Arctis 1 Wireless always report offline.
+        _ON = {'on', 'online'}
+        _OFF = {'off', 'offline'}
+        if isinstance(actual, str) and isinstance(expected, str):
+            al, el = actual.lower(), expected.lower()
+            if el in _ON:
+                return al in _ON
+            if el in _OFF:
+                return al in _OFF
+
+        return actual == expected
     
     def on_device_status_changed(self, key: str, value: int):
         if self.device_config and self.device_config.online_status and key == self.device_config.online_status.status_variable:
@@ -522,11 +546,41 @@ class CoreEngine:
 
         self.pa_audio_manager.redirect_audio(PULSE_MEDIA_NODE_NAME)
 
-    def redirect_audio_on_disconnect(self):
-        redirect_device = self.general_settings.redirect_audio_on_disconnect_device if self.general_settings.redirect_audio_on_disconnect else None
-        current_default_device = self.pa_audio_manager.get_default_device()
+    # Sink name fragments that mean "audio is going through the Arctis headset".
+    # Includes all three virtual loopbacks, the full Sonar EQ pipeline and the
+    # raw SteelSeries ALSA node. If the current default matches any fragment
+    # we fall back to the user-configured disconnect device.
+    _ARCTIS_OWNED_SINK_FRAGMENTS = (
+        'Arctis_Game', 'Arctis_Chat', 'Arctis_Media',
+        'effect_input.sonar-game-eq',
+        'effect_input.sonar-chat-eq',
+        'effect_input.sonar-media-eq',
+        'effect_input.sonar-output-eq',
+        'effect_input.virtual-surround-7.1-hesuvi',
+    )
 
-        if current_default_device and redirect_device and current_default_device.name in [PULSE_MEDIA_NODE_NAME, PULSE_CHAT_NODE_NAME]:
+    def redirect_audio_on_disconnect(self):
+        if not self.general_settings.redirect_audio_on_disconnect:
+            return
+        redirect_device = self.general_settings.redirect_audio_on_disconnect_device
+        if not redirect_device:
+            return
+
+        current_default_device = self.pa_audio_manager.get_default_device()
+        if current_default_device is None:
+            self.pa_audio_manager.redirect_audio(redirect_device)
+            return
+
+        current_name = current_default_device.name or ''
+        is_steelseries_alsa = (
+            current_name.startswith('alsa_output')
+            and int(current_default_device.proplist.get('device.vendor.id', '0') or '0', 16) == STEELSERIES_VENDOR_ID
+        )
+        is_arctis_owned = any(
+            frag in current_name for frag in self._ARCTIS_OWNED_SINK_FRAGMENTS
+        )
+
+        if is_steelseries_alsa or is_arctis_owned:
             self.pa_audio_manager.redirect_audio(redirect_device)
     
     def translate_init_bytes(self, data: list[int|str]) -> list[int]:
@@ -772,6 +826,32 @@ class CoreEngine:
         
         endpoint = self.get_command_endpoint_address()
         self.send_command([self.device_config.status.request], endpoint)
+
+    async def _status_poll_loop(self, period: float = 2.0):
+        # Nova 5 and 7 firmwares only emit a status frame when the radio link
+        # changes. If the user powers off the headset while the dongle stays
+        # plugged in, no packet arrives and on_device_status_changed never
+        # fires. Polling at a fixed cadence detects the power-off within
+        # `period` seconds and triggers redirect_audio_on_disconnect().
+        try:
+            while not self._stopping:
+                await asyncio.sleep(period)
+                with self._device_lock:
+                    have_device = (
+                        self.usb_device is not None
+                        and self.device_config is not None
+                        and self.device_config.status is not None
+                    )
+                if have_device:
+                    try:
+                        self.request_device_status()
+                    except usb.core.USBError as e:
+                        if getattr(e, 'errno', None) not in (16, 19, 110):
+                            self.logger.warning(f"Status poll USB error: {e!r}")
+                    except Exception as e:
+                        self.logger.warning(f"Status poll failed: {e!r}")
+        except asyncio.CancelledError:
+            raise
 
     def teardown(self) -> None:
         if self.usb_device:

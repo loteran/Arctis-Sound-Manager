@@ -1,4 +1,7 @@
+import json
 import logging
+import shutil
+import subprocess
 import time
 
 import pulsectl
@@ -174,14 +177,73 @@ class PulseAudioManager:
 
         return sinks
 
+    # Fragments that identify sinks owned by ASM. Streams stuck on any of
+    # these when the headset powers off will be silently dead — we migrate
+    # them to the new default sink so the user never has to touch "Channels".
+    _ASM_SINK_FRAGMENTS = (
+        'Arctis_Game', 'Arctis_Chat', 'Arctis_Media',
+        'effect_input.sonar-game-eq',
+        'effect_input.sonar-chat-eq',
+        'effect_input.sonar-media-eq',
+        'effect_input.sonar-output-eq',
+        'effect_input.virtual-surround-7.1-hesuvi',
+    )
+
     def redirect_audio(self, output_sink_node_name: str) -> None:
         self.logger.info(f'Redirecting audio to {output_sink_node_name}...')
 
-        sink = next((s for s in self.sink_list_wrapper() if s.proplist.get('node.nick', '') == output_sink_node_name or s.proplist.get('node.name', '') == output_sink_node_name), None)
+        sinks = self.sink_list_wrapper()
+        sink = next(
+            (s for s in sinks
+             if s.proplist.get('node.nick', '') == output_sink_node_name
+             or s.proplist.get('node.name', '') == output_sink_node_name),
+            None,
+        )
         if sink is None:
             self.logger.error(f'Failed to find sink {output_sink_node_name} to set it as default')
             return
-        self.pulse.default_set(sink)
+
+        try:
+            self.pulse.default_set(sink)
+        except Exception as e:
+            self.logger.warning(f'pulse.default_set failed: {e!r}')
+
+        # On PipeWire, also persist via pw-metadata so the change survives
+        # daemon restarts and isn't overridden by WirePlumber shortly after.
+        target_name = sink.proplist.get('node.name', '') or sink.name
+        if target_name and shutil.which('pw-metadata'):
+            payload = json.dumps({'name': target_name})
+            for key in ('default.configured.audio.sink', 'default.audio.sink'):
+                try:
+                    subprocess.run(
+                        ['pw-metadata', '0', key, payload],
+                        check=False, timeout=3,
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    )
+                except Exception as e:
+                    self.logger.debug(f'pw-metadata {key} failed: {e!r}')
+
+        # Migrate every stream currently parked on an ASM-owned sink to the
+        # new target. Without this, apps that opened a stream while the headset
+        # was alive stay glued to a dead loopback (issue #50).
+        try:
+            sink_by_index = {s.index: s for s in sinks}
+            for si in self.pulse.sink_input_list():
+                current = sink_by_index.get(si.sink)
+                if current is None or current.index == sink.index:
+                    continue
+                current_name = current.proplist.get('node.name', '') or current.name or ''
+                if any(frag in current_name for frag in self._ASM_SINK_FRAGMENTS):
+                    try:
+                        self.pulse.sink_input_move(si.index, sink.index)
+                    except Exception as e:
+                        app = si.proplist.get('application.name', '?')
+                        self.logger.warning(
+                            f'Failed to move stream {si.index} ({app}) '
+                            f'from {current_name} to {output_sink_node_name}: {e!r}'
+                        )
+        except Exception as e:
+            self.logger.warning(f'Could not enumerate streams for migration: {e!r}')
     
     def get_default_device(self) -> TypedPulseSinkInfo|None:
         try:
