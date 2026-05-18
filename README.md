@@ -20,6 +20,7 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
 - [Screenshots](#screenshots)
 - [Supported devices](#supported-devices)
 - [Installation](#installation)
+- [First launch](#first-launch)
 - [Upgrading](#upgrading)
 - [How the mixer works](#how-the-mixer-works)
 - [Virtual surround 7.1](#virtual-surround-71)
@@ -203,6 +204,76 @@ bash scripts/install.sh
 > `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc`
 
 > **USB permissions:** if the headset isn't detected, ASM shows a one-click **Install rules** dialog at startup. Manual fallback: `sudo asm-cli udev write-rules --force --reload`
+</details>
+
+---
+
+## First launch
+
+After `asm-setup` completes, launch the GUI with:
+
+```bash
+asm-gui
+```
+
+Or find **Arctis Sound Manager** in your application launcher (KDE, GNOME, etc.).
+
+> The daemon (`asm-manager.service`) starts automatically at login — the GUI is separate and must be opened manually the first time.
+
+### System tray mode
+
+```bash
+asm-gui --systray
+```
+
+Starts minimised to the system tray. From there you can switch Audio Profiles, open the full window, or quit. This is the recommended mode for daily use.
+
+### Autostart at login
+
+The easiest way is the in-app toggle: **Settings → General → Start with system** — ASM handles the correct setup for your desktop environment automatically.
+
+If the toggle doesn't work for your DE, use the manual method:
+
+<details>
+<summary><strong>KDE Plasma / GNOME (systemd user session)</strong></summary>
+
+```bash
+systemctl --user enable --now asm-gui-tray.service
+```
+
+A `asm-gui-tray.service` unit is installed by `asm-setup`. If missing:
+
+```bash
+asm-cli desktop write
+systemctl --user daemon-reload
+systemctl --user enable --now asm-gui-tray.service
+```
+</details>
+
+<details>
+<summary><strong>Hyprland / Sway / other wlroots compositors</strong></summary>
+
+Add to `~/.config/hypr/hyprland.conf` (or your compositor's startup config):
+
+```ini
+exec-once = asm-gui --systray
+```
+</details>
+
+<details>
+<summary><strong>i3 / bspwm / other X11 WMs</strong></summary>
+
+Add to your WM startup file (`~/.config/i3/config`, `~/.xinitrc`, etc.):
+
+```bash
+asm-gui --systray &
+```
+
+Or create an XDG autostart entry:
+
+```bash
+asm-cli desktop write   # writes ~/.config/autostart/arctis-sound-manager.desktop
+```
 </details>
 
 ---
