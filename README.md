@@ -5,11 +5,11 @@
 [![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)](https://github.com/loteran/Arctis-Sound-Manager)
 [![Crowdin](https://badges.crowdin.net/arctis-sound-manager/localized.svg)](https://crowdin.com/project/arctis-sound-manager)
 [![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/f7CcrFHFA)
+[![ASM Presets](https://img.shields.io/badge/EQ%20Presets-Community%20site-FB4A00)](https://loteran.github.io/asm-presets/)
 
 A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio mixer (Game / Chat / Media / Output), automatic media routing, and a full **Sonar EQ** system powered by PipeWire filter-chain.
 
-> Based on [Arctis Sound Manager](https://github.com/elegos/Linux-Arctis-Manager) by elegos.
-
+> 🎚️ **[ASM Presets](https://loteran.github.io/asm-presets/)** — browse and share community EQ presets!
 > 💬 **[Join the Discord](https://discord.gg/f7CcrFHFA)** — chat, share presets and get help from the community!
 > 📝 **[Share your experience in Discussions](https://github.com/loteran/Arctis-Sound-Manager/discussions)** — feedback helps improve compatibility for everyone!
 > ☕ [Buy me a coffee](https://ko-fi.com/loteran) if you find it useful!
@@ -25,6 +25,7 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
 - [First launch](#first-launch)
 - [Upgrading](#upgrading)
 - [How the mixer works](#how-the-mixer-works)
+- [Sharing and downloading EQ presets](#sharing-and-downloading-eq-presets)
 - [Virtual surround 7.1](#virtual-surround-71)
 - [Translations](#translations)
 - [Community stats](#community-stats)
@@ -336,6 +337,42 @@ ASM creates 3 virtual sinks on top of your Arctis device plus one external outpu
 The **media router** (`asm-router`) automatically moves browsers and video players to `Arctis_Media`. Manual placements via G / C / M / O buttons are saved as persistent overrides.
 
 The External Output card routes audio **directly** to the physical sink, bypassing virtual stereo sinks — this preserves true 5.1 / 7.1 passthrough. Configure it in **Settings → Audio → External Output Device**.
+
+---
+
+## Sharing and downloading EQ presets
+
+ASM lets you share any Sonar EQ preset with one click and import presets shared by the community.
+
+### Exporting a preset
+
+1. Open the **Sonar EQ** tab and select or create a preset.
+2. Click the **Share** button (export icon) next to the preset name.
+3. Choose how to share:
+   - **Copy link** — copies an `arctis-asm://import?data=…` deep link to your clipboard.
+   - **Save as file** — saves a `.json` file you can send directly.
+   - **Publish to community** — opens a browser form pre-filled with your preset data; sign in with GitHub and submit.
+
+### Importing a preset
+
+1. Open the **Sonar EQ** tab.
+2. Click **Import preset** (import icon).
+3. Paste an `arctis-asm://import?data=…` deep link **or** a SteelSeries GG deep link, then click **Import**.
+
+> You can also double-click an `arctis-asm://` link in a browser if you registered the URL handler with `asm-setup`.
+
+### Community site — ASM Presets
+
+**[loteran.github.io/asm-presets](https://loteran.github.io/asm-presets/)** — browse, vote for, and download EQ presets shared by the community.
+
+| Action | How |
+|---|---|
+| Browse presets | Open the site — no login required |
+| Filter by channel / device | Use the search bar and dropdowns |
+| Import a preset into ASM | Click **Import in ASM** on any card |
+| Vote for a preset | Click the ♡ button (requires GitHub login) |
+| Publish a preset | Click **Share a Preset**, sign in with GitHub, fill in the form |
+| Delete your preset | Click 🗑 on your own preset card (only visible when logged in) |
 
 ---
 
