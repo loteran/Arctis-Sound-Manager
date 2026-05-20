@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QPlainTextEdit,
+    QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -94,20 +94,6 @@ class PresetExportDialog(QDialog):
 
         # ── JSON section ──────────────────────────────────────────────────────
         root.addWidget(self._section_label(_t("export_json_file")))
-
-        self._json_edit = QPlainTextEdit(self._json_text)
-        self._json_edit.setReadOnly(True)
-        self._json_edit.setStyleSheet(
-            f"QPlainTextEdit {{"
-            f"  background: {BG_BUTTON}; border: 1px solid {BORDER};"
-            f"  border-radius: 6px; color: {TEXT_PRIMARY};"
-            f"  font-family: monospace; font-size: 9pt;"
-            f"  padding: 6px;"
-            f"}}"
-        )
-        self._json_edit.setMinimumHeight(160)
-        self._json_edit.setMaximumHeight(240)
-        root.addWidget(self._json_edit)
 
         json_btns = QHBoxLayout()
         json_btns.setSpacing(8)
@@ -205,6 +191,17 @@ class PresetExportDialog(QDialog):
         QTimer.singleShot(2000, lambda: self._copy_json_btn.setText(_t("export_copy_json")))
 
     def _share_community(self) -> None:
+        yes_btn = QMessageBox.StandardButton.Yes
+        cancel_btn = QMessageBox.StandardButton.Cancel
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle(_t("publish_confirm_title"))
+        msg_box.setText(_t("publish_confirm_msg").format(name=self._preset_name))
+        yes = msg_box.addButton(_t("publish_confirm_yes"), QMessageBox.ButtonRole.YesRole)
+        msg_box.addButton(QMessageBox.StandardButton.Cancel)
+        msg_box.exec()
+        if msg_box.clickedButton() is not yes:
+            return
+
         params: dict[str, str] = {
             "submit": "1",
             "data": self._link,

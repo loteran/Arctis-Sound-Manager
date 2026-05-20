@@ -11,12 +11,14 @@ import json
 import socket
 import urllib.error
 import urllib.request
+import webbrowser
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal, Slot
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -119,6 +121,15 @@ class PresetImportDialog(QDialog):
         )
         layout.addWidget(self._url_edit)
 
+        self._browse_file_btn = QPushButton(_t("import_from_file"))
+        self._browse_file_btn.setStyleSheet(
+            f"QPushButton {{ background: {BG_BUTTON}; border: 1px solid {BORDER}; "
+            f"border-radius: 6px; color: {TEXT_PRIMARY}; padding: 6px 14px; font-size: 10pt; }}"
+            f"QPushButton:hover {{ background: {ACCENT}33; }}"
+        )
+        self._browse_file_btn.clicked.connect(self._on_browse_file)
+        layout.addWidget(self._browse_file_btn)
+
         self._status = QLabel("")
         self._status.setWordWrap(True)
         self._status.setStyleSheet(
@@ -142,6 +153,15 @@ class PresetImportDialog(QDialog):
         self._import_btn.clicked.connect(self._on_import)
         layout.addWidget(self._import_btn)
 
+        self._browse_community_btn = QPushButton(_t("browse_community"))
+        self._browse_community_btn.setStyleSheet(
+            f"QPushButton {{ background: {BG_BUTTON}; border: 1px solid {BORDER}; "
+            f"border-radius: 6px; color: {TEXT_PRIMARY}; padding: 6px 14px; font-size: 10pt; }}"
+            f"QPushButton:hover {{ background: {ACCENT}33; }}"
+        )
+        self._browse_community_btn.clicked.connect(self._on_browse_community)
+        layout.addWidget(self._browse_community_btn)
+
         cancel = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
         cancel.rejected.connect(self.reject)
         layout.addWidget(cancel)
@@ -154,6 +174,22 @@ class PresetImportDialog(QDialog):
             f"color: {color}; font-size: 10pt; background: transparent;"
         )
         self._status.setText(msg)
+
+    def _on_browse_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, _t("import_from_file"), str(Path.home()), "JSON Files (*.json)"
+        )
+        if path:
+            try:
+                data = json.loads(Path(path).read_text(encoding="utf-8"))
+                if "name" not in data:
+                    data["name"] = Path(path).stem
+                self._finalize_import(data)
+            except (json.JSONDecodeError, KeyError) as e:
+                self._set_status(f"{_t('import_invalid_url')}: {e}", error=True)
+
+    def _on_browse_community(self) -> None:
+        webbrowser.open("https://loteran.github.io/asm-presets/")
 
     def _on_import(self) -> None:
         url = self._url_edit.text().strip()
