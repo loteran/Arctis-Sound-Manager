@@ -56,6 +56,21 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.34" date="2026-05-18">
+      <description>
+        <p>Wireless headset disconnect/reconnect loop — when the USB dongle stays plugged in but the RF link drops (headset powered off or out of range), ASM retried USB commands thousands of times per second with no back-off, preventing the dongle firmware from completing RF re-association. Errors with errno 19 (ENODEV) now trigger a 1-second back-off; after ~10 s of consecutive failures ASM voluntarily releases the handle to let the dongle reconnect cleanly. Removed a redundant request_device_status() call that was firing on every loop iteration instead of the intended 2-second cadence (issue #49).</p>
+      </description>
+    </release>
+    <release version="1.1.33" date="2026-05-18">
+      <description>
+        <p>ClearCast crash on startup when noise cancellation was enabled — _NoiseCancelingCard connected the toggle signal before creating self._slider; PySide6 fires checkStateChanged synchronously during setChecked(), so restoring an enabled state from the previous session triggered _set_enabled before the slider existed, raising AttributeError (issue #51). README: First launch section — clarified that the daemon starts automatically but the GUI must be opened separately (asm-gui or via the app launcher), documented --systray mode and per-DE autostart methods.</p>
+      </description>
+    </release>
+    <release version="1.1.32" date="2026-05-18">
+      <description>
+        <p>Audio redirect broken for 8 wireless models — is_device_online() compared on_off parser values ('on'/'off') against YAML online_value: online literally; added aliasing so 'on' ↔ 'online' and 'off' ↔ 'offline' are treated as equivalent (discussion #48). Streams stay on dead loopbacks after disconnect — redirect_audio() changed the default sink but did not migrate active streams; now iterates sink_input_list() and moves every stream sitting on an ASM-owned sink, and persists the choice via pw-metadata for PipeWire restart survival (issue #50). babel missing from packaging metadata — added to PKGBUILD depends, RPM Requires, debian/control Depends, system deps checker, and packaging drift check.</p>
+      </description>
+    </release>
     <release version="1.1.31" date="2026-05-16">
       <description>
         <p>Microphone routed to wrong device on startup — when the Arctis headset is not yet detected when the filter-chain config is written, target.object was left empty and PipeWire would bind the virtual microphone to the first available source (e.g. a DualSense controller mic). check_and_fix_stale_configs() now detects this condition at daemon startup and patches the target in-place, triggering a filter-chain restart.</p>
@@ -189,21 +204,6 @@
     <release version="1.0.69" date="2026-04-24">
       <description>
         <p>Remove all remaining hardcoded Nova Pro Wireless defaults (follow-up to #21): device_state.py used Nova Pro Wireless ALSA node names and the string "Arctis Nova Pro Wireless" as initial values AND as post-disconnect values. sonar_to_pipewire.py had the same strings as fallback constants in dead-code except branches. On a system without a Nova Pro Wireless, any code path that generated a filter-chain config before a device was attached (or after a disconnect) would write configs pointing to a sink that does not exist — same class of bug as #21, just at a different moment. device_state now defaults to empty strings and exposes is_device_set() so callers can distinguish "no device" from "device ready". All PipeWire config generators in sonar_to_pipewire.py (generate_sonar_eq_conf for device-dependent channels, generate_sonar_micro_conf, generate_virtual_sinks_conf, generate_hesuvi_conf) now skip generation with a clear warning when no device is attached, instead of writing configs with a hardcoded wrong target.</p>
-      </description>
-    </release>
-    <release version="1.0.68" date="2026-04-24">
-      <description>
-        <p>Audio routing on non-Nova-Pro-Wireless devices (#21): when the ALSA sink lookup failed for the attached device, the daemon fell back to a hardcoded alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.analog-stereo sink name. On any other headset (e.g. Arctis Nova 7, Nova 3, Nova 5…), this sink does not exist, so the generated virtual sinks routed audio into the void and the headset disappeared from KDE / GNOME audio trays. The PID comparison in pactl.py now parses both sides as integers, so it matches regardless of hex casing or 0x prefix differences across PipeWire versions. configure_virtual_sinks now retries the sink lookup for up to ~4 s, giving PipeWire time to enumerate a freshly-attached USB audio card at boot.</p>
-      </description>
-    </release>
-    <release version="1.0.67" date="2026-04-24">
-      <description>
-        <p>Anonymous telemetry: each submission now includes an installation_id — a salted SHA-256 hash of /etc/machine-id (irreversible, no personal data). The server uses this ID to deduplicate unique users exactly, instead of grouping by (distro, headset). Falls back to a random UUID stored in ~/.config/arctis_manager/telemetry.yaml on systems where /etc/machine-id is unreadable. Stats dashboard &amp; README: all usage stats (distributions, headsets, versions, totals) are now computed per unique installation instead of per raw event. The KPI previously labelled "Data points" is now "Unique users".</p>
-      </description>
-    </release>
-    <release version="1.0.65" date="2026-04-22">
-      <description>
-        <p>DEB build: fixed CI release workflow failure — debian/91-steelseries-arctis.rules was removed from the repo but build-deb.sh still referenced it as a static file. The script now generates udev rules at build time via uv run python3 scripts/generate_udev_rules.py.</p>
       </description>
     </release>
   </releases>
