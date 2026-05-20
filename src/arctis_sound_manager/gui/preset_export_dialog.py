@@ -8,6 +8,8 @@ Shows two sections:
 from __future__ import annotations
 
 import json
+import urllib.parse
+import webbrowser
 from pathlib import Path
 
 from PySide6.QtWidgets import (
@@ -53,6 +55,7 @@ class PresetExportDialog(QDialog):
         super().__init__(parent)
         self._preset_name = preset_name
         self._link = link
+        self._preset_data = preset_data
         self._json_text = json.dumps(preset_data, indent=2, ensure_ascii=False)
 
         self.setWindowTitle(_t("export_dialog_title"))
@@ -122,6 +125,27 @@ class PresetExportDialog(QDialog):
 
         root.addLayout(json_btns)
 
+        # ── Share to community section ────────────────────────────────────────
+        root.addWidget(self._section_label(_t("share_to_community")))
+
+        community_desc = QLabel(_t("share_community_desc"))
+        community_desc.setWordWrap(True)
+        community_desc.setStyleSheet(
+            f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;"
+        )
+        root.addWidget(community_desc)
+
+        community_row = QHBoxLayout()
+        community_row.setSpacing(8)
+        community_row.addStretch()
+
+        self._publish_btn = QPushButton(_t("share_community_btn"))
+        self._publish_btn.setStyleSheet(self._btn_ss(accent=True))
+        self._publish_btn.clicked.connect(self._share_community)
+        community_row.addWidget(self._publish_btn)
+
+        root.addLayout(community_row)
+
         # ── Status label ──────────────────────────────────────────────────────
         self._status = QLabel("")
         self._status.setStyleSheet(
@@ -179,6 +203,23 @@ class PresetExportDialog(QDialog):
         QApplication.clipboard().setText(self._json_text)
         self._copy_json_btn.setText("✓ " + _t("export_copied_short"))
         QTimer.singleShot(2000, lambda: self._copy_json_btn.setText(_t("export_copy_json")))
+
+    def _share_community(self) -> None:
+        params: dict[str, str] = {
+            "submit": "1",
+            "data": self._link,
+            "name": self._preset_name,
+        }
+        vad = self._preset_data.get("virtualAudioDevice")
+        if isinstance(vad, dict):
+            channel = vad.get("channel")
+            device = vad.get("device")
+            if channel:
+                params["channel"] = str(channel)
+            if device:
+                params["device"] = str(device)
+        url = "https://loteran.github.io/asm-presets/?" + urllib.parse.urlencode(params)
+        webbrowser.open(url)
 
     def _save_file(self) -> None:
         safe_name = self._preset_name.replace("/", "-").replace("\\", "-")
