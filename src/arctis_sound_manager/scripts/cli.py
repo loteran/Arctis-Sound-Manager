@@ -265,6 +265,18 @@ def write_desktop_entries() -> int:
 
     DESKTOP_WINDOW_PATH.chmod(0o755)
 
+    # Register arctis-asm:// as a URL scheme handler
+    import subprocess as _sp
+    _sp.run(
+        ["xdg-mime", "default", "ArctisManager.desktop", "x-scheme-handler/arctis-asm"],
+        check=False, capture_output=True,
+    )
+    _sp.run(
+        ["update-desktop-database", str(APPLICATIONS_PATH)],
+        check=False, capture_output=True,
+    )
+    print("    [ok] Registered arctis-asm:// URL handler")
+
     # Remove legacy systray-only shortcut if present
     if DESKTOP_SYSTRAY_PATH.exists():
         DESKTOP_SYSTRAY_PATH.unlink()

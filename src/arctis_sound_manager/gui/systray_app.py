@@ -393,6 +393,21 @@ class QSystrayApp(QBaseDesktopApp):
         self._main_app.main_window.raise_()
         self._main_app.main_window.activateWindow()
 
+    def import_preset_url(self, url: str) -> None:
+        """Handle an arctis-asm:// deep link — open the import dialog pre-filled."""
+        self.open_main_window()
+        from PySide6.QtCore import QTimer
+
+        def _open_dialog():
+            from arctis_sound_manager.gui.preset_import_dialog import PresetImportDialog
+            parent = self._main_app.main_window if hasattr(self, '_main_app') else None
+            dlg = PresetImportDialog("game", parent)
+            dlg._url_edit.setText(url)
+            QTimer.singleShot(100, dlg._on_import)
+            dlg.exec()
+
+        QTimer.singleShot(300, _open_dialog)
+
     @Slot()
     def sig_stop(self):
         if self.is_stopping():

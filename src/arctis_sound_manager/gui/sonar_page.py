@@ -21,6 +21,7 @@ from PySide6.QtCore import QThread, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -985,6 +986,30 @@ class _PresetBar(QWidget):
         reset_btn.clicked.connect(lambda: self._load_and_emit("Flat"))
         row1.addWidget(reset_btn)
 
+        import_btn = QPushButton()
+        import_btn.setFixedSize(32, 32)
+        import_btn.setToolTip(_t("import_preset"))
+        import_btn.setIcon(_svg_icon("import_icon.svg", TEXT_PRIMARY))
+        import_btn.setIconSize(import_btn.size() * 0.55)
+        import_btn.setStyleSheet(self._icon_btn_ss())
+        import_btn.clicked.connect(self._on_import)
+        row1.addWidget(import_btn)
+
+        self._export_btn = QPushButton()
+        self._export_btn.setFixedSize(32, 32)
+        self._export_btn.setToolTip(_t("export_preset"))
+        self._export_btn.setIcon(_svg_icon("export_icon.svg", TEXT_PRIMARY))
+        self._export_btn.setIconSize(self._export_btn.size() * 0.55)
+        self._export_btn.setStyleSheet(self._icon_btn_ss())
+        self._export_btn.clicked.connect(self._on_export)
+        row1.addWidget(self._export_btn)
+
+        self._export_status = QLabel("")
+        self._export_status.setStyleSheet(
+            f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;"
+        )
+        row1.addWidget(self._export_status)
+
         root.addLayout(row1)
 
         # ── Row 2: search + favorites label ─────────────────────────────────
@@ -1151,6 +1176,37 @@ class _PresetBar(QWidget):
         name = self._favs[idx] if idx < len(self._favs) else None
         if name:
             self._load_and_emit(name)
+
+    def _on_import(self) -> None:
+        from arctis_sound_manager.gui.preset_import_dialog import PresetImportDialog
+        dlg = PresetImportDialog(self._channel, self)
+        if dlg.exec() == QDialog.DialogCode.Accepted and dlg.imported_name:
+            self._presets = _list_presets(self._channel)
+            self._load_and_emit(dlg.imported_name)
+
+    def _on_export(self) -> None:
+        from arctis_sound_manager.gui.preset_share import build_asm_link
+        from arctis_sound_manager.gui.preset_export_dialog import PresetExportDialog
+        presets = _list_presets(self._channel)
+        path = presets.get(self._active)
+        if not path:
+            self._export_status.setText(_t("export_no_preset"))
+            return
+
+        try:
+            data = json.loads(path.read_text())
+        except Exception:
+            self._export_status.setText(_t("export_no_preset"))
+            return
+
+        # Invert _CHANNEL_TAG to get virtualAudioDevice from channel
+        _TAG_TO_DEVICE = {v: k for k, v in _CHANNEL_TAG.items()}
+        tag = _CHANNEL_TAG.get(self._channel, "[Game]")
+        virtual_device = _TAG_TO_DEVICE.get(tag, self._channel)
+
+        link = build_asm_link(self._active, virtual_device, data)
+        dlg = PresetExportDialog(self._active, link, data, self)
+        dlg.exec()
 
 
 # ── Macro sliders ─────────────────────────────────────────────────────────────
