@@ -66,6 +66,8 @@ def main():
                         help='Start systray without opening window (for autostart at login)')
     parser.add_argument('--verbose', '-v', action='count', default=0, help='Increase verbosity (up to -vvvv)')
     parser.add_argument('--no-enforce-systemd', action='store_true', help='Do not enforce systemd unit')
+    parser.add_argument('url', nargs='?', default=None,
+                        help='arctis-asm:// URL to handle (invoked by xdg-open)')
     args = parser.parse_args()
 
     # Default base level depends on -v flags (CRITICAL→…→DEBUG), but ARCTIS_LOG_LEVEL
@@ -112,7 +114,10 @@ def main():
     socket.connectToServer(_SERVER_NAME)
     if socket.waitForConnected(1500):
         # Send the command and wait for "ok" to confirm the instance is alive.
-        msg = b"show" if not args.systray else b"alive"
+        if args.url:
+            msg = b"url:" + args.url.encode()
+        else:
+            msg = b"show" if not args.systray else b"alive"
         socket.write(msg)
         socket.flush()
         if socket.waitForReadyRead(500):
@@ -141,6 +146,9 @@ def main():
             conn.disconnectFromServer()
             if data == b"show":
                 q_object.open_main_window()
+            elif data.startswith(b"url:"):
+                url = data[4:].decode(errors="replace")
+                q_object.import_preset_url(url)
 
     server.newConnection.connect(_on_new_connection)
 
@@ -216,7 +224,10 @@ def main():
     QTimer.singleShot(2500, _check_deps)
 
     # Open the window once the event loop is running.
-    if not args.systray:
+    if args.url:
+        _url_to_handle = args.url
+        QTimer.singleShot(500, lambda: q_object.import_preset_url(_url_to_handle))
+    elif not args.systray:
         QTimer.singleShot(0, q_object.open_main_window)
 
     if not args.no_enforce_systemd:
