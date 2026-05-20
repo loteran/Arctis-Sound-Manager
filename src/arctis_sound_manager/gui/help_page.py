@@ -159,6 +159,55 @@ HELP_CONTENT: dict[str, dict] = {
                 ),
             },
             {
+                "heading": "EQ Preset Import / Export",
+                "body": (
+                    "ASM lets you export and import EQ presets to share them with others or "
+                    "back them up.\n\n"
+                    "── Exporting a preset ──\n"
+                    "In the Sonar EQ page, select a preset and click the export button (↑ or "
+                    "\"Export\" in the preset menu). The Export dialog opens with three options:\n"
+                    "• Share Link — a compact arctis-asm://import?data=… URL. Copy it and send "
+                    "it to anyone running ASM; they can paste it in the Import dialog to load "
+                    "your exact EQ settings instantly.\n"
+                    "• Copy JSON — copies the raw preset data to clipboard.\n"
+                    "• Save to File — saves the preset as a .json file on your computer.\n"
+                    "• Share to Community — publishes the preset to the ASM Presets community "
+                    "site (GitHub login required). A confirmation popup appears before publishing.\n\n"
+                    "── Importing a preset ──\n"
+                    "Click the import button (↓ or \"Import\" in the preset menu). "
+                    "The Import dialog accepts:\n"
+                    "• An arctis-asm:// deep link (paste from a share link)\n"
+                    "• A SteelSeries GG deep link (https://www.steelseries.com/deeplink/…)\n"
+                    "• A .json file — click \"Browse file\" to pick one from your disk\n"
+                    "• Click \"Browse ASM Presets ↗\" to open the community site and import "
+                    "presets shared by other users.\n\n"
+                    "Imported presets are saved in ~/.config/arctis_manager/sonar_presets/ "
+                    "and appear immediately in the preset list."
+                ),
+            },
+            {
+                "heading": "ASM Presets Community",
+                "body": (
+                    "The ASM Presets community site lets you browse, share and vote for EQ "
+                    "presets created by other ASM users.\n\n"
+                    "Site: https://loteran.github.io/asm-presets/\n\n"
+                    "── What you can do ──\n"
+                    "• Browse all published presets — filter by game, channel or device\n"
+                    "• Vote for presets you like (GitHub login required)\n"
+                    "• Publish your own presets from the ASM Export dialog\n"
+                    "• Delete your own presets (visible only to the author)\n"
+                    "• Copy the share link for any preset\n"
+                    "• Import a preset directly by clicking \"Import in ASM\" — it opens "
+                    "the deep link in ASM automatically\n\n"
+                    "── Publishing ──\n"
+                    "Click \"Share to Community\" in the ASM Export dialog. "
+                    "If you are not logged in, you will be redirected to GitHub for "
+                    "authentication and then returned to the submit page automatically.\n\n"
+                    "No moderation — presets are published immediately. The community relies "
+                    "on votes to surface the best ones."
+                ),
+            },
+            {
                 "heading": "Micro Processing",
                 "body": (
                     "The Micro tab in Sonar EQ includes audio processing features for your "
@@ -472,6 +521,59 @@ HELP_CONTENT: dict[str, dict] = {
                     "Compresseur dynamique avec trois profils (Silencieux / Équilibré / Fort) "
                     "pour uniformiser les différences de volume entre les sources.\n\n"
                     "Toutes les modifications sont appliquées en direct via PipeWire."
+                ),
+            },
+            {
+                "heading": "Import / Export de presets EQ",
+                "body": (
+                    "ASM vous permet d'exporter et d'importer des presets EQ pour les partager "
+                    "ou les sauvegarder.\n\n"
+                    "── Exporter un preset ──\n"
+                    "Dans la page Sonar EQ, sélectionnez un preset et cliquez sur le bouton "
+                    "d'export (↑ ou \"Exporter\" dans le menu du preset). La fenêtre d'export "
+                    "propose trois options :\n"
+                    "• Lien de partage — une URL compacte arctis-asm://import?data=… à copier "
+                    "et envoyer à n'importe qui utilisant ASM ; ils peuvent la coller dans la "
+                    "fenêtre d'import pour charger vos réglages EQ instantanément.\n"
+                    "• Copier JSON — copie les données brutes du preset dans le presse-papier.\n"
+                    "• Enregistrer en fichier — sauvegarde le preset en .json sur votre disque.\n"
+                    "• Partager sur la communauté — publie le preset sur le site ASM Presets "
+                    "(connexion GitHub requise). Une popup de confirmation apparaît avant la "
+                    "publication.\n\n"
+                    "── Importer un preset ──\n"
+                    "Cliquez sur le bouton d'import (↓ ou \"Importer\"). "
+                    "La fenêtre d'import accepte :\n"
+                    "• Un lien deep link arctis-asm:// (collez un lien de partage)\n"
+                    "• Un lien SteelSeries GG (https://www.steelseries.com/deeplink/…)\n"
+                    "• Un fichier .json — cliquez sur \"Rechercher un fichier\" pour en "
+                    "sélectionner un depuis votre disque\n"
+                    "• Cliquez sur \"Parcourir ASM Presets ↗\" pour ouvrir le site communautaire "
+                    "et importer des presets partagés par d'autres utilisateurs.\n\n"
+                    "Les presets importés sont enregistrés dans "
+                    "~/.config/arctis_manager/sonar_presets/ et apparaissent immédiatement "
+                    "dans la liste."
+                ),
+            },
+            {
+                "heading": "Communauté ASM Presets",
+                "body": (
+                    "Le site communautaire ASM Presets vous permet de parcourir, partager et "
+                    "voter pour des presets EQ créés par d'autres utilisateurs.\n\n"
+                    "Site : https://loteran.github.io/asm-presets/\n\n"
+                    "── Ce que vous pouvez faire ──\n"
+                    "• Parcourir tous les presets publiés — filtrez par jeu, canal ou appareil\n"
+                    "• Voter pour les presets que vous aimez (connexion GitHub requise)\n"
+                    "• Publier vos propres presets depuis la fenêtre d'export d'ASM\n"
+                    "• Supprimer vos presets (bouton visible uniquement pour l'auteur)\n"
+                    "• Copier le lien de partage de n'importe quel preset\n"
+                    "• Importer un preset directement en cliquant sur \"Importer dans ASM\" — "
+                    "le lien deep link s'ouvre automatiquement dans ASM\n\n"
+                    "── Publication ──\n"
+                    "Cliquez sur \"Partager sur la communauté\" dans la fenêtre d'export. "
+                    "Si vous n'êtes pas connecté, vous serez redirigé vers GitHub pour "
+                    "l'authentification, puis ramené automatiquement à la page de soumission.\n\n"
+                    "Aucune modération — les presets sont publiés immédiatement. "
+                    "La communauté s'appuie sur les votes pour mettre en avant les meilleurs."
                 ),
             },
             {
@@ -792,6 +894,57 @@ HELP_CONTENT: dict[str, dict] = {
                     "Compresor dinámico con tres perfiles (Silencioso / Equilibrado / Alto) "
                     "para uniformizar las diferencias de volumen entre fuentes.\n\n"
                     "Todos los cambios se aplican en directo mediante PipeWire."
+                ),
+            },
+            {
+                "heading": "Importar / Exportar presets EQ",
+                "body": (
+                    "ASM te permite exportar e importar presets EQ para compartirlos con "
+                    "otros usuarios o guardarlos como copia de seguridad.\n\n"
+                    "── Exportar un preset ──\n"
+                    "En la página Sonar EQ, selecciona un preset y haz clic en el botón "
+                    "de exportar (↑ o \"Exportar\" en el menú del preset). El diálogo de "
+                    "exportación ofrece tres opciones:\n"
+                    "• Enlace de compartición — una URL compacta arctis-asm://import?data=… "
+                    "para copiar y enviar a cualquier usuario de ASM; puede pegarla en el "
+                    "diálogo de importación para cargar tu EQ al instante.\n"
+                    "• Copiar JSON — copia los datos brutos del preset al portapapeles.\n"
+                    "• Guardar archivo — guarda el preset como .json en tu disco.\n"
+                    "• Compartir en la comunidad — publica el preset en el sitio ASM Presets "
+                    "(requiere cuenta GitHub). Aparece un popup de confirmación antes de publicar.\n\n"
+                    "── Importar un preset ──\n"
+                    "Haz clic en el botón de importar (↓ o \"Importar\"). "
+                    "El diálogo de importación acepta:\n"
+                    "• Un enlace deep link arctis-asm:// (pega un enlace de compartición)\n"
+                    "• Un enlace SteelSeries GG (https://www.steelseries.com/deeplink/…)\n"
+                    "• Un archivo .json — haz clic en \"Buscar archivo\" para seleccionarlo\n"
+                    "• Haz clic en \"Explorar ASM Presets ↗\" para abrir el sitio comunitario "
+                    "e importar presets compartidos por otros usuarios.\n\n"
+                    "Los presets importados se guardan en "
+                    "~/.config/arctis_manager/sonar_presets/ y aparecen inmediatamente "
+                    "en la lista."
+                ),
+            },
+            {
+                "heading": "Comunidad ASM Presets",
+                "body": (
+                    "El sitio comunitario ASM Presets permite explorar, compartir y votar "
+                    "presets EQ creados por otros usuarios de ASM.\n\n"
+                    "Sitio: https://loteran.github.io/asm-presets/\n\n"
+                    "── Qué puedes hacer ──\n"
+                    "• Explorar todos los presets publicados — filtra por juego, canal o dispositivo\n"
+                    "• Votar por los presets que te gusten (requiere cuenta GitHub)\n"
+                    "• Publicar tus propios presets desde el diálogo de exportación de ASM\n"
+                    "• Eliminar tus presets (botón visible solo para el autor)\n"
+                    "• Copiar el enlace de compartición de cualquier preset\n"
+                    "• Importar un preset directamente haciendo clic en \"Importar en ASM\" — "
+                    "el deep link se abre automáticamente en ASM\n\n"
+                    "── Publicación ──\n"
+                    "Haz clic en \"Compartir en la comunidad\" en el diálogo de exportación. "
+                    "Si no has iniciado sesión, serás redirigido a GitHub para autenticarte "
+                    "y volver automáticamente a la página de envío.\n\n"
+                    "Sin moderación — los presets se publican inmediatamente. "
+                    "La comunidad usa los votos para destacar los mejores."
                 ),
             },
             {
