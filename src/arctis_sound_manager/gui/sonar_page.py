@@ -1186,6 +1186,7 @@ class _PresetBar(QWidget):
 
     def _on_export(self) -> None:
         from arctis_sound_manager.gui.preset_share import build_asm_link
+        from arctis_sound_manager.gui.preset_export_dialog import PresetExportDialog
         presets = _list_presets(self._channel)
         path = presets.get(self._active)
         if not path:
@@ -1204,10 +1205,8 @@ class _PresetBar(QWidget):
         virtual_device = _TAG_TO_DEVICE.get(tag, self._channel)
 
         link = build_asm_link(self._active, virtual_device, data)
-        QApplication.clipboard().setText(link)
-
-        self._export_status.setText(_t("export_copied"))
-        QTimer.singleShot(3000, lambda: self._export_status.setText(""))
+        dlg = PresetExportDialog(self._active, link, data, self)
+        dlg.exec()
 
 
 # ── Macro sliders ─────────────────────────────────────────────────────────────
