@@ -45,7 +45,7 @@ let
 in
 python3Packages.buildPythonApplication {
   pname = "arctis-sound-manager";
-  version = "1.1.36";
+  version = (builtins.fromTOML (builtins.readFile ../pyproject.toml)).project.version;
   pyproject = true;
   inherit src;
 

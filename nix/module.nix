@@ -69,8 +69,8 @@ in
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = import ./default.nix { };
-      defaultText = lib.literalExpression "import ./default.nix { } (built from the pinned nixpkgs in nix/sources.nix)";
+      default = pkgs.callPackage ./package.nix { };
+      defaultText = lib.literalExpression "pkgs.callPackage ./nix/package.nix { }";
       description = "The arctis-sound-manager package to use.";
     };
 

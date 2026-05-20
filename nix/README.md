@@ -21,6 +21,9 @@ It builds the **unmodified upstream source** and wraps it so it runs natively:
 Everything is pinned to nixpkgs **25.11** (`nix/sources.nix` + `flake.lock`), so
 it builds reproducibly whether or not your system has flakes enabled.
 
+The package version is read directly from `pyproject.toml` — it always tracks the
+upstream release automatically.
+
 ---
 
 ## Quick start (classic — flakes disabled)
@@ -136,13 +139,13 @@ nix build "git+file:///opt/projects/Arctis-Sound-Manager?dir=nix#default"
 | Option | Default | Notes |
 |---|---|---|
 | `services.arctis-sound-manager.enable` | `false` | Master switch. Asserts `services.pipewire.enable`. |
-| `…​.package` | built from `nix/sources.nix` pin | Override to use your own build. |
+| `…​.package` | `pkgs.callPackage ./nix/package.nix { }` | Override to use your own build. Flake users get the flake-pinned package automatically via `nixosModules.default`. |
 | `…​.ladspaPlugins` | `[ pkgs.ladspaPlugins pkgs.rnnoise-plugin ]` | On the filter-chain's `LADSPA_PATH`. |
 | `…​.autostartTray` | `true` | Launch `asm-gui --systray` on login. |
 
 What the module configures:
 
-- `environment.systemPackages` → `asm-gui`, `asm-daemon`, `asm-cli`, `asm-router`, `asm-setup`.
+- `environment.systemPackages` → `asm-gui`, `asm-daemon`, `asm-cli`, `asm-router`, `asm-setup`, `asm-diag-dinit`.
 - `services.udev.packages` → `91-steelseries-arctis.rules`.
 - `systemd.user.services.{arctis-manager,arctis-video-router,filter-chain,arctis-gui}`.
 - `systemd.tmpfiles` symlink `/usr/lib/ladspa` → the Sonar LADSPA plugins
