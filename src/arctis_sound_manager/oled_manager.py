@@ -29,7 +29,6 @@ def _active_eq_preset(channel: str) -> str:
 
 _REFRESH_INTERVAL_S = 5.0
 _SPLASH_DURATION_S = 3.0
-_VOLUME_POPUP_DURATION_S = 3.0
 _OLED_INTERFACE = 4
 _OLED_WVALUE = 0x0300
 _SCROLL_PAUSE_TOP_S = 5.0       # seconds to pause at top before scrolling
@@ -83,8 +82,6 @@ class OledManager:
         self._burn_in_y: int = 0
         self._burn_in_last: float = 0.0
         self._splash_until: float = 0.0
-        self._last_volume: int = -1
-        self._volume_popup_until: float = 0.0
         self._eq_chat_scroll_offset: int = 0
         self._eq_chat_reset_event = threading.Event()
         self._eq_chat_scroll_thread: threading.Thread | None = None
@@ -218,26 +215,6 @@ class OledManager:
         eq_chat_preset = _active_eq_preset("chat")
         eq_mode_file = _CFG / ".eq_mode"
         eq_mode = eq_mode_file.read_text().strip() if eq_mode_file.exists() else "custom"
-        try:
-            volume = int(parsed.get("station_volume", -1))
-        except (ValueError, TypeError):
-            volume = -1
-
-        # Volume change → trigger full-screen popup
-        if gs.oled_show_volume and volume >= 0 and self._last_volume >= 0 and volume != self._last_volume:
-            self._volume_popup_until = datetime.now().timestamp() + _VOLUME_POPUP_DURATION_S
-        if volume >= 0:
-            self._last_volume = volume
-
-        # While popup is active, skip normal render
-        if datetime.now().timestamp() < self._volume_popup_until and gs.oled_show_volume:
-            popup_frame = self._renderer.render_volume_popup(self._last_volume, gs.oled_font_volume)
-            packets = self._protocol.build_frame_packets(
-                popup_frame, self._protocol.DISPLAY_WIDTH, self._protocol.DISPLAY_HEIGHT
-            )
-            for packet in packets:
-                self._send_oled_packet(packet)
-            return
 
         weather_data: WeatherData | None = None
         if gs.weather_enabled and gs.weather_lat and gs.weather_lon:
@@ -259,11 +236,10 @@ class OledManager:
             show_battery=gs.oled_show_battery,
             show_profile=gs.oled_show_profile,
             show_eq=gs.oled_show_eq,
-            show_volume=gs.oled_show_volume,
             show_mic_status=gs.oled_show_mic_status,
             show_sonar_mode=gs.oled_show_sonar_mode,
             show_eq_chat=gs.oled_show_eq_chat,
-            volume=volume,
+            show_weather_city=gs.oled_show_weather_city,
             mic_status=mic_status,
             eq_mode=eq_mode,
             eq_chat_preset=eq_chat_preset,
@@ -274,7 +250,6 @@ class OledManager:
                 'profile':      gs.oled_font_profile,
                 'eq':           gs.oled_font_eq,
                 'eq_chat':      gs.oled_font_eq_chat,
-                'volume':       gs.oled_font_volume,
                 'mic_status':   gs.oled_font_mic_status,
                 'sonar_mode':   gs.oled_font_sonar_mode,
                 'weather_temp': gs.oled_font_weather_temp,
@@ -353,13 +328,6 @@ class OledManager:
                         # to prevent the DAC firmware's own ~60s screen-off from firing.
                         if timeout == 0:
                             self.set_brightness(gs.oled_brightness)
-                    elif datetime.now().timestamp() < self._volume_popup_until and gs.oled_show_volume:
-                        popup_frame = self._renderer.render_volume_popup(self._last_volume, gs.oled_font_volume)
-                        packets = self._protocol.build_frame_packets(
-                            popup_frame, self._protocol.DISPLAY_WIDTH, self._protocol.DISPLAY_HEIGHT
-                        )
-                        for packet in packets:
-                            self._send_oled_packet(packet)
                     else:
                         self.update_display(activity=False)
                         self.set_brightness(gs.oled_brightness)

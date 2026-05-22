@@ -97,7 +97,7 @@ class OledRenderer:
             pts = [(cx + 2, cy + 3), (cx - 3, cy + 9), (cx + 1, cy + 9), (cx - 4, y + s - 1)]
             draw.line(pts, fill=1, width=3)
 
-    _DEFAULT_DISPLAY_ORDER = ['volume', 'mic_status', 'sonar_mode', 'profile', 'eq', 'eq_chat', 'weather']
+    _DEFAULT_DISPLAY_ORDER = ['mic_status', 'sonar_mode', 'profile', 'eq', 'eq_chat', 'weather']
 
     @staticmethod
     def _measure_text_pixels(font: "ImageFont.FreeTypeFont", text: str) -> int:
@@ -133,21 +133,6 @@ class OledRenderer:
         font = ImageFont.load_default(size=max(7, min(30, sz_eq_chat)))
         return self._measure_text_pixels(font, f"Chat: {eq_chat_preset}")
 
-    def render_volume_popup(self, volume: int, font_size: int = 30) -> bytes:
-        """Full-screen volume popup shown briefly when the volume knob changes."""
-        image = Image.new("1", (self.WIDTH, self.HEIGHT), color=0)
-        draw = ImageDraw.Draw(image)
-        font_vol = ImageFont.load_default(size=font_size)
-        vol_str = f"{volume}%"
-        vol_w = int(font_vol.getlength(vol_str))
-        draw.text(((self.WIDTH - vol_w) // 2, 2), vol_str, font=font_vol, fill=1)
-        bar_y = 2 + font_size + 4
-        self._draw_bar(draw, 4, bar_y, self.WIDTH - 8, 10, volume)
-        label = "Volume"
-        lw = int(self._font.getlength(label))
-        draw.text(((self.WIDTH - lw) // 2, bar_y + 14), label, font=self._font, fill=1)
-        return self._image_to_bytes(image)
-
     def render_status_image(
         self,
         battery_percent: int,
@@ -162,11 +147,10 @@ class OledRenderer:
         show_battery: bool = True,
         show_profile: bool = True,
         show_eq: bool = True,
-        show_volume: bool = False,
         show_mic_status: bool = True,
         show_sonar_mode: bool = True,
         show_eq_chat: bool = False,
-        volume: int = -1,
+        show_weather_city: bool = True,
         mic_status: str = "",
         eq_mode: str = "custom",
         eq_chat_preset: str = "",
@@ -186,7 +170,6 @@ class OledRenderer:
         sz_eq          = max(7, min(30, fs.get('eq', 8)))
         sz_weather_tmp = max(7, min(30, fs.get('weather_temp', _FONT_BIG_SIZE)))
         sz_eq_chat    = max(7, min(30, fs.get('eq_chat',      8)))
-        sz_volume     = max(7, min(30, fs.get('volume',        20)))
         sz_mic        = max(7, min(30, fs.get('mic_status',    8)))
         sz_sonar_mode = max(7, min(30, fs.get('sonar_mode',    8)))
 
@@ -196,21 +179,19 @@ class OledRenderer:
         font_eq      = ImageFont.load_default(size=sz_eq)
         font_wtmp    = ImageFont.load_default(size=sz_weather_tmp)
         font_eq_chat  = ImageFont.load_default(size=sz_eq_chat)
-        font_volume   = ImageFont.load_default(size=sz_volume)
         font_mic      = ImageFont.load_default(size=sz_mic)
         font_sonar    = ImageFont.load_default(size=sz_sonar_mode)
         font_small   = self._font  # city / labels always small
 
         natural_h = self._natural_height(
             show_time, show_battery, show_profile, show_eq, weather,
-            show_volume=show_volume, volume=volume,
             show_mic_status=show_mic_status, mic_status=mic_status,
             show_sonar_mode=show_sonar_mode,
             show_eq_chat=show_eq_chat, eq_chat_preset=eq_chat_preset,
             sz_time=sz_time, sz_battery=sz_battery, sz_profile=sz_profile,
             sz_eq=sz_eq, sz_weather_tmp=sz_weather_tmp,
-            sz_volume=sz_volume, sz_mic=sz_mic,
-            sz_sonar_mode=sz_sonar_mode, sz_eq_chat=sz_eq_chat,
+            sz_mic=sz_mic, sz_sonar_mode=sz_sonar_mode, sz_eq_chat=sz_eq_chat,
+            display_order=order,
         )
         buf_h = max(self.HEIGHT, natural_h)
 
@@ -256,25 +237,15 @@ class OledRenderer:
                 self._draw_weather_icon_id(draw, 1, y + (icon_h - _ICON_SIZE) // 2, weather.icon_id)
                 temp_str = f"{weather.temp:g}{weather.unit_label}"
                 draw.text((_ICON_SIZE + 4, y), temp_str, font=font_wtmp, fill=1)
-                city = weather.city[:10] if len(weather.city) > 10 else weather.city
-                temp_w = int(font_wtmp.getlength(temp_str))
-                city_x = _ICON_SIZE + 4 + temp_w + 4
-                if city_x + int(font_small.getlength(city)) <= self.WIDTH:
-                    draw.text((city_x, y + sz_weather_tmp - 8), city, font=font_small, fill=1)
-                else:
-                    draw.text((_ICON_SIZE + 4, y + sz_weather_tmp + 2), city, font=font_small, fill=1)
+                if show_weather_city:
+                    city = weather.city[:10] if len(weather.city) > 10 else weather.city
+                    temp_w = int(font_wtmp.getlength(temp_str))
+                    city_x = _ICON_SIZE + 4 + temp_w + 4
+                    if city_x + int(font_small.getlength(city)) <= self.WIDTH:
+                        draw.text((city_x, y + sz_weather_tmp - 8), city, font=font_small, fill=1)
+                    else:
+                        draw.text((_ICON_SIZE + 4, y + sz_weather_tmp + 2), city, font=font_small, fill=1)
                 y += icon_h + 4
-            elif element == 'volume' and show_volume and volume >= 0:
-                vol_str = f"{volume}%"
-                vol_w = int(font_volume.getlength(vol_str))
-                label = "Vol"
-                lbl_w = int(font_volume.getlength(label)) + 4
-                draw.text((1, y), label, font=font_volume, fill=1)
-                bar_x = 1 + lbl_w
-                bar_w = self.WIDTH - bar_x - vol_w - 4
-                self._draw_bar(draw, bar_x, y + (sz_volume - _BAR_H) // 2, bar_w, _BAR_H, volume)
-                draw.text((self.WIDTH - vol_w - 1, y), vol_str, font=font_volume, fill=1)
-                y += sz_volume + 3
             elif element == 'mic_status' and show_mic_status and mic_status:
                 is_muted = mic_status == "muted"
                 icon_y = y + max(0, (sz_mic - 8) // 2)
@@ -302,32 +273,32 @@ class OledRenderer:
         self,
         show_time: bool, show_battery: bool, show_profile: bool,
         show_eq: bool, weather: "WeatherData | None",
-        show_volume: bool = False, volume: int = -1,
         show_mic_status: bool = False, mic_status: str = "",
         show_sonar_mode: bool = False,
         show_eq_chat: bool = False, eq_chat_preset: str = "",
         sz_time: int = _FONT_BIG_SIZE, sz_battery: int = _FONT_MED_SIZE,
         sz_profile: int = 8, sz_eq: int = 8, sz_weather_tmp: int = _FONT_BIG_SIZE,
-        sz_volume: int = 20, sz_mic: int = 8, sz_sonar_mode: int = 8, sz_eq_chat: int = 8,
+        sz_mic: int = 8, sz_sonar_mode: int = 8, sz_eq_chat: int = 8,
+        display_order: "list[str] | None" = None,
     ) -> int:
         y = 1
         if show_time or show_battery:
             top_row = sz_time + 2 if show_time else sz_battery + 2
             y += top_row + 1 + 3
-        if show_profile:
-            y += sz_profile + 3
-        if show_eq:
-            y += sz_eq + 3
-        if weather is not None:
-            y += 2 + max(_ICON_SIZE, sz_weather_tmp) + 4
-        if show_volume and volume >= 0:
-            y += sz_volume + 3
-        if show_mic_status and mic_status:
-            y += max(14, sz_mic) + 3
-        if show_sonar_mode:
-            y += sz_sonar_mode + 3
-        if show_eq_chat and eq_chat_preset:
-            y += sz_eq_chat + 3
+        order = display_order if display_order is not None else self._DEFAULT_DISPLAY_ORDER
+        for element in order:
+            if element == 'profile' and show_profile:
+                y += sz_profile + 3
+            elif element == 'eq' and show_eq:
+                y += sz_eq + 3
+            elif element == 'weather' and weather is not None:
+                y += 2 + max(_ICON_SIZE, sz_weather_tmp) + 4
+            elif element == 'mic_status' and show_mic_status and mic_status:
+                y += max(14, sz_mic) + 3
+            elif element == 'sonar_mode' and show_sonar_mode:
+                y += sz_sonar_mode + 3
+            elif element == 'eq_chat' and show_eq_chat and eq_chat_preset:
+                y += sz_eq_chat + 3
         return y
 
     def render_splash_image(self) -> bytes:

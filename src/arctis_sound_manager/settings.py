@@ -109,10 +109,10 @@ class GeneralSettings(JsonSerializable):
     oled_show_battery: bool = True
     oled_show_profile: bool = True
     oled_show_eq: bool = True
-    oled_show_volume: bool = False
     oled_show_mic_status: bool = True
     oled_show_sonar_mode: bool = True
     oled_show_eq_chat: bool = False
+    oled_show_weather_city: bool = True
 
     # Display order for orderable elements below the time/battery row
     oled_display_order: list = None  # type: ignore — set per-instance in __init__
@@ -123,7 +123,6 @@ class GeneralSettings(JsonSerializable):
     oled_font_profile: int = 8
     oled_font_eq: int = 8
     oled_font_eq_chat: int = 8
-    oled_font_volume: int = 20
     oled_font_mic_status: int = 8
     oled_font_sonar_mode: int = 8
     oled_font_weather_temp: int = 20
@@ -154,19 +153,25 @@ class GeneralSettings(JsonSerializable):
         ConfigSetting('oled_show_battery', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('oled_show_profile', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('oled_show_eq', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
-        ConfigSetting('oled_show_volume', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('oled_show_mic_status', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('oled_show_sonar_mode', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('oled_show_eq_chat', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
+        ConfigSetting('oled_show_weather_city', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
     ]
 
-    _DEFAULT_DISPLAY_ORDER = ['volume', 'mic_status', 'sonar_mode', 'profile', 'eq', 'eq_chat', 'weather']
+    _DEFAULT_DISPLAY_ORDER = ['mic_status', 'sonar_mode', 'profile', 'eq', 'eq_chat', 'weather']
 
     def __init__(self, **kwargs):
         self.oled_display_order = list(self._DEFAULT_DISPLAY_ORDER)
         for key, value in kwargs.items():
             if key in self.__class__.__annotations__:
                 setattr(self, key, value)
+        # Append any new default items missing from a saved order (version migration)
+        for key in self._DEFAULT_DISPLAY_ORDER:
+            if key not in self.oled_display_order:
+                self.oled_display_order.append(key)
+        # Remove obsolete keys no longer in the default order
+        self.oled_display_order = [k for k in self.oled_display_order if k in self._DEFAULT_DISPLAY_ORDER]
 
     @staticmethod
     def read_from_file() -> 'GeneralSettings':
