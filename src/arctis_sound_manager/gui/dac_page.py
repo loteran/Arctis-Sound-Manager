@@ -58,6 +58,13 @@ _DAC_WIDGET_EXCLUDE = {
     'oled_show_time', 'oled_show_battery', 'oled_show_profile',
     'oled_show_eq', 'oled_show_mic_status',
     'oled_show_sonar_mode', 'oled_show_eq_chat',
+    'oled_show_weather_city',
+}
+
+# Sub-options rendered indented below their parent orderable row.
+# Format: parent_order_key → [(setting_key, label_key), ...]
+_ORDERABLE_SUB_OPTIONS: dict[str, list[tuple[str, str]]] = {
+    'weather': [('oled_show_weather_city', 'oled_show_weather_city')],
 }
 
 
@@ -195,6 +202,9 @@ class DacPage(QWidget):
             row = self._build_orderable_row(order_key, setting_key, label_key, font_key, default_sz, cb_style, sp_style)
             self._orderable_rows[order_key] = row
             self._orderable_container.addWidget(row)
+            for sub_key, sub_label in _ORDERABLE_SUB_OPTIONS.get(order_key, []):
+                sub_row = self._build_sub_option_row(sub_key, sub_label, cb_style)
+                self._orderable_container.addWidget(sub_row)
 
         return card
 
@@ -241,6 +251,21 @@ class DacPage(QWidget):
 
         self._display_checkboxes[setting_key] = cb
         row._order_key = order_key  # type: ignore[attr-defined]
+        return row
+
+    def _build_sub_option_row(self, setting_key: str, label_key: str, cb_style: str) -> QWidget:
+        """Indented checkbox row (no ▲▼, no spinbox) for sub-options of an orderable item."""
+        row = QWidget()
+        row.setStyleSheet("background: transparent;")
+        hl = QHBoxLayout(row)
+        hl.setContentsMargins(52, 1, 0, 1)
+        hl.setSpacing(4)
+        cb = QCheckBox(I18n.translate("settings", label_key))
+        cb.setChecked(True)
+        cb.setStyleSheet(cb_style)
+        cb.toggled.connect(lambda checked, k=setting_key: DbusWrapper.change_setting(k, checked))
+        hl.addWidget(cb, stretch=1)
+        self._display_checkboxes[setting_key] = cb
         return row
 
     def _build_font_spinbox(self, font_key: str, default_sz: int, sp_style: str) -> QSpinBox:

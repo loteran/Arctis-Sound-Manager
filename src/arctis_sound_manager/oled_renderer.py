@@ -32,24 +32,27 @@ class OledRenderer:
     def _draw_battery_icon(
         self, draw: ImageDraw.ImageDraw, x: int, y: int, percent: int, charging: bool, blink_state: bool = True
     ) -> int:
-        body_w, body_h = 22, 12
-        tip_w, tip_h = 3, 7
-
-        draw.rectangle([x, y, x + body_w - 1, y + body_h - 1], outline=1, fill=0)
-        draw.rectangle(
-            [x + body_w, y + (body_h - tip_h) // 2, x + body_w + tip_w - 1, y + (body_h + tip_h) // 2 - 1],
-            fill=1,
-        )
-        fill_max = body_w - 4
-        fill_w = max(0, int(fill_max * max(0, min(100, percent)) / 100))
-        if fill_w > 0:
-            draw.rectangle([x + 2, y + 2, x + 2 + fill_w - 1, y + body_h - 3], fill=1)
+        body_w, body_h = 8, 12
+        tip_w, tip_h = 4, 2
+        tip_x = x + (body_w - tip_w) // 2
+        body_y = y + tip_h
+        # Tip
+        draw.rectangle([tip_x, y, tip_x + tip_w - 1, y + tip_h - 1], fill=1)
+        # Body outline
+        draw.rectangle([x, body_y, x + body_w - 1, body_y + body_h - 1], outline=1, fill=0)
+        # Fill from bottom upward
+        fill_max = body_h - 4
+        fill_h = max(0, int(fill_max * max(0, min(100, percent)) / 100))
+        if fill_h > 0:
+            fill_bottom = body_y + body_h - 3
+            draw.rectangle([x + 2, fill_bottom - fill_h + 1, x + body_w - 3, fill_bottom], fill=1)
+        # Charging bolt
         if charging and blink_state:
             cx = x + body_w // 2
-            cy = y + body_h // 2
-            draw.line([(cx + 2, cy - 4), (cx - 2, cy)], fill=1, width=2)
-            draw.line([(cx - 2, cy), (cx + 2, cy + 4)], fill=1, width=2)
-        return body_w + tip_w + 1
+            cy = body_y + body_h // 2
+            draw.line([(cx + 1, cy - 3), (cx - 1, cy)], fill=1, width=2)
+            draw.line([(cx - 1, cy), (cx + 1, cy + 3)], fill=1, width=2)
+        return body_w  # total width
 
     def _draw_bar(
         self, draw: ImageDraw.ImageDraw, x: int, y: int, width: int, height: int, percent: int
@@ -209,11 +212,12 @@ class OledRenderer:
                 else:
                     bat_label = f"{max(0, battery_percent)}%" if battery_percent >= 0 else "?%"
                     bat_label_w = int(font_battery.getlength(bat_label))
-                    icon_w = 26
-                    bat_x = self.WIDTH - icon_w - bat_label_w - 7
-                    icon_y = y + (sz_time - 12) // 2
+                    icon_w = 10  # 8px vertical icon + 2px gap
+                    bat_x = self.WIDTH - icon_w - bat_label_w - 4
+                    icon_y = y + max(0, (sz_time - 14) // 2)
+                    label_y = y + max(0, (sz_time - sz_battery) // 2)
                     self._draw_battery_icon(draw, bat_x, icon_y, battery_percent if battery_percent >= 0 else 0, charging, blink_state)
-                    draw.text((bat_x + icon_w + 4, y), bat_label, font=font_battery, fill=1)
+                    draw.text((bat_x + icon_w, label_y), bat_label, font=font_battery, fill=1)
             if show_time:
                 draw.text((1, y - 1), time_str, font=font_time, fill=1)
                 y += sz_time + 2
