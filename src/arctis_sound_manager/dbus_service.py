@@ -79,8 +79,8 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
                 'oled_show_time', 'oled_show_battery', 'oled_show_profile',
                 'oled_show_eq', 'oled_show_mic_status', 'oled_show_sonar_mode', 'oled_show_eq_chat',
                 'oled_show_weather_city', 'oled_display_order',
-                'oled_font_time', 'oled_font_battery', 'oled_font_profile',
-                'oled_font_eq', 'oled_font_eq_chat', 'oled_font_mic_status', 'oled_font_sonar_mode',
+                'oled_font_time', 'oled_font_battery', 'oled_font_mic', 'oled_font_profile',
+                'oled_font_eq', 'oled_font_eq_chat', 'oled_font_sonar_mode',
                 'oled_font_weather_temp',
                 'weather_enabled', 'weather_location', 'weather_units', 'weather_city_display',
             )},
@@ -149,9 +149,9 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
 
         # Special case: font size settings (int, no ConfigSetting entry)
         _FONT_SIZE_KEYS = {
-            'oled_font_time', 'oled_font_battery', 'oled_font_profile',
+            'oled_font_time', 'oled_font_battery', 'oled_font_mic', 'oled_font_profile',
             'oled_font_eq', 'oled_font_eq_chat',
-            'oled_font_mic_status', 'oled_font_sonar_mode', 'oled_font_weather_temp',
+            'oled_font_sonar_mode', 'oled_font_weather_temp',
         }
         if setting in _FONT_SIZE_KEYS:
             if not isinstance(value, int) or not (7 <= value <= 30):

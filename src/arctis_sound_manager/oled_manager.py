@@ -77,6 +77,7 @@ class OledManager:
         self._profile_reset_event = threading.Event()
         self._profile_scroll_thread: threading.Thread | None = None
         self._last_render_params: dict = {}
+        self._header_h: int = 0
         self._burn_in_step: int = 0
         self._burn_in_x: int = 0
         self._burn_in_y: int = 0
@@ -247,15 +248,15 @@ class OledManager:
             font_sizes={
                 'time':         gs.oled_font_time,
                 'battery':      gs.oled_font_battery,
+                'mic':          gs.oled_font_mic,
                 'profile':      gs.oled_font_profile,
                 'eq':           gs.oled_font_eq,
                 'eq_chat':      gs.oled_font_eq_chat,
-                'mic_status':   gs.oled_font_mic_status,
                 'sonar_mode':   gs.oled_font_sonar_mode,
                 'weather_temp': gs.oled_font_weather_temp,
             },
         )
-        image = self._renderer.render_status_image(
+        image, header_h = self._renderer.render_status_image(
             **self._last_render_params,
             eq_scroll_offset=self._eq_scroll_offset,
             profile_scroll_offset=self._profile_scroll_offset,
@@ -264,6 +265,7 @@ class OledManager:
 
         with self._image_lock:
             self._current_image = image
+            self._header_h = header_h
 
         # On activity (user interaction), reset scroll and send immediately
         if activity:
@@ -276,7 +278,8 @@ class OledManager:
             if self._current_image is None:
                 return
             frame = self._renderer.crop_frame(
-                self._current_image, self._scroll_offset + self._burn_in_y, self._burn_in_x
+                self._current_image, self._scroll_offset + self._burn_in_y,
+                self._header_h, self._burn_in_x,
             )
         packets = self._protocol.build_frame_packets(
             frame, self._protocol.DISPLAY_WIDTH, self._protocol.DISPLAY_HEIGHT
@@ -339,7 +342,7 @@ class OledManager:
         params = self._last_render_params
         if not params:
             return
-        image = self._renderer.render_status_image(
+        image, header_h = self._renderer.render_status_image(
             **params,
             eq_scroll_offset=self._eq_scroll_offset,
             profile_scroll_offset=self._profile_scroll_offset,
@@ -347,6 +350,7 @@ class OledManager:
         )
         with self._image_lock:
             self._current_image = image
+            self._header_h = header_h
         self._send_current_frame()
 
     def _eq_scroll_wait(self, seconds: float) -> bool:

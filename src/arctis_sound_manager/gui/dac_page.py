@@ -38,14 +38,15 @@ _LBL_STYLE = "color: {color}; font-size: 11pt; background: transparent; border: 
 _HINT_STYLE = "color: {color}; font-size: 9pt; background: transparent; border: none;"
 
 # Fixed top elements (always shown, not orderable): (setting_key, label_key, font_size_key, default_size)
+# font_size_key=None means no spinbox (e.g. mic icon has no configurable font)
 _FIXED_DISPLAY_KEYS = [
-    ('oled_show_time',    'oled_show_time',    'oled_font_time',    20),
-    ('oled_show_battery', 'oled_show_battery', 'oled_font_battery', 16),
+    ('oled_show_time',       'oled_show_time',       'oled_font_time',    20),
+    ('oled_show_battery',    'oled_show_battery',     'oled_font_battery', 16),
+    ('oled_show_mic_status', 'oled_show_mic_status',  'oled_font_mic',     12),
 ]
 
 # Orderable elements: (order_key, setting_key, label_key, font_size_key, default_size)
 _ORDERABLE_ITEMS = [
-    ('mic_status',  'oled_show_mic_status',  'oled_show_mic_status',  'oled_font_mic_status',    8),
     ('sonar_mode',  'oled_show_sonar_mode',  'oled_show_sonar_mode',  'oled_font_sonar_mode',    8),
     ('profile',     'oled_show_profile',     'oled_show_profile',     'oled_font_profile',        8),
     ('eq',          'oled_show_eq',          'oled_show_eq',          'oled_font_eq',             8),
@@ -178,9 +179,10 @@ class DacPage(QWidget):
             cb.toggled.connect(lambda checked, k=key: DbusWrapper.change_setting(k, checked))
             fixed_hl.addWidget(cb, stretch=1)
             self._display_checkboxes[key] = cb
-            sp = self._build_font_spinbox(font_key, default_sz, sp_style)
-            fixed_hl.addWidget(sp)
-            self._font_spinboxes[font_key] = sp
+            if font_key is not None:
+                sp = self._build_font_spinbox(font_key, default_sz, sp_style)
+                fixed_hl.addWidget(sp)
+                self._font_spinboxes[font_key] = sp
             col.addWidget(fixed_row)
 
         # Separator
@@ -193,6 +195,7 @@ class DacPage(QWidget):
         # Orderable elements
         self._orderable_order: list[str] = [item[0] for item in _ORDERABLE_ITEMS]
         self._orderable_rows: dict[str, QWidget] = {}
+        self._orderable_sub_rows: dict[str, list[QWidget]] = {}
         self._orderable_container = QVBoxLayout()
         self._orderable_container.setSpacing(2)
         self._orderable_container.setContentsMargins(0, 0, 0, 0)
@@ -202,9 +205,12 @@ class DacPage(QWidget):
             row = self._build_orderable_row(order_key, setting_key, label_key, font_key, default_sz, cb_style, sp_style)
             self._orderable_rows[order_key] = row
             self._orderable_container.addWidget(row)
+            sub_rows: list[QWidget] = []
             for sub_key, sub_label in _ORDERABLE_SUB_OPTIONS.get(order_key, []):
                 sub_row = self._build_sub_option_row(sub_key, sub_label, cb_style)
                 self._orderable_container.addWidget(sub_row)
+                sub_rows.append(sub_row)
+            self._orderable_sub_rows[order_key] = sub_rows
 
         return card
 
@@ -289,13 +295,14 @@ class DacPage(QWidget):
         DbusWrapper.change_setting('oled_display_order', order)
 
     def _rebuild_orderable_ui(self) -> None:
-        # Remove all widgets from container then re-add in new order
+        # Detach all items from the layout without destroying them (no setParent(None)).
         while self._orderable_container.count():
-            item = self._orderable_container.takeAt(0)
-            if item.widget():
-                item.widget().setParent(None)  # type: ignore[arg-type]
+            self._orderable_container.takeAt(0)
+        # Re-add in new order, including sub-option rows that follow each parent.
         for key in self._orderable_order:
             self._orderable_container.addWidget(self._orderable_rows[key])
+            for sub_row in self._orderable_sub_rows.get(key, []):
+                self._orderable_container.addWidget(sub_row)
 
     def _spinbox_style(self) -> str:
         return (

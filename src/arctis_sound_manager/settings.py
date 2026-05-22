@@ -120,10 +120,10 @@ class GeneralSettings(JsonSerializable):
     # Font sizes per element (pixels, 7–30)
     oled_font_time: int = 20
     oled_font_battery: int = 16
+    oled_font_mic: int = 12
     oled_font_profile: int = 8
     oled_font_eq: int = 8
     oled_font_eq_chat: int = 8
-    oled_font_mic_status: int = 8
     oled_font_sonar_mode: int = 8
     oled_font_weather_temp: int = 20
 
@@ -158,7 +158,7 @@ class GeneralSettings(JsonSerializable):
         ConfigSetting('oled_show_eq_chat', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
     ]
 
-    _DEFAULT_DISPLAY_ORDER = ['mic_status', 'sonar_mode', 'profile', 'eq', 'eq_chat', 'weather']
+    _DEFAULT_DISPLAY_ORDER = ['sonar_mode', 'profile', 'eq', 'eq_chat', 'weather']
 
     def __init__(self, **kwargs):
         self.oled_display_order = list(self._DEFAULT_DISPLAY_ORDER)

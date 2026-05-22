@@ -54,6 +54,89 @@ class OledRenderer:
             draw.line([(cx - 1, cy), (cx + 1, cy + 3)], fill=1, width=2)
         return body_w  # total width
 
+    @staticmethod
+    def _draw_mic_icon(
+        draw: "ImageDraw.ImageDraw", x: int, y: int, size: int = 14, muted: bool = False
+    ) -> int:
+        """SM58-style handheld mic: filled round ball + tapered handle + cable. Returns width."""
+        h = max(8, size)
+        w = max(5, h * 65 // 100)
+        cx = x + w // 2
+
+        ball_h   = max(4, h * 44 // 100)
+        cable_h  = max(1, h *  8 // 100)
+        handle_h = h - ball_h - cable_h
+
+        # ── Ball (filled ellipse) ────────────────────────────────────────────
+        draw.ellipse([x, y, x + w - 1, y + ball_h - 1], fill=1)
+
+        # Separator arc near bottom of ball (~70 % down)
+        sep_y = y + ball_h * 70 // 100
+        if sep_y < y + ball_h - 1:
+            ry = ball_h / 2.0
+            cy_ball = y + ball_h / 2.0
+            dy_n = abs(sep_y - cy_ball) / ry
+            if dy_n < 1.0:
+                sep_hw = int((w / 2.0) * (1.0 - dy_n ** 2) ** 0.5)
+                draw.line([(cx - sep_hw, sep_y), (cx + sep_hw, sep_y)], fill=0)
+
+        # Small capsule notch just above the separator (skip when ball < 7 px)
+        if ball_h >= 7:
+            ind_y = y + ball_h * 42 // 100
+            ind_w = max(2, w * 26 // 100)
+            draw.rectangle(
+                [cx - ind_w // 2, ind_y,
+                 cx - ind_w // 2 + ind_w - 1, ind_y],
+                fill=0,
+            )
+
+        # ── Handle (tapered filled body) ────────────────────────────────────
+        for i in range(handle_h):
+            t  = i / max(1, handle_h - 1)
+            hw = max(2, int(w * (0.52 - t * 0.22)))
+            hx = cx - hw // 2
+            draw.line([(hx, y + ball_h + i), (hx + hw - 1, y + ball_h + i)], fill=1)
+
+        # Button notch on handle
+        if handle_h >= 4:
+            btn_y = y + ball_h + max(1, handle_h * 38 // 100)
+            btn_w = max(2, w * 22 // 100)
+            btn_h = max(1, handle_h * 18 // 100)
+            draw.rectangle(
+                [cx - btn_w // 2, btn_y,
+                 cx - btn_w // 2 + btn_w - 1, btn_y + btn_h - 1],
+                fill=0,
+            )
+
+        # ── Cable (1-px line at the very bottom) ────────────────────────────
+        draw.line([(cx, y + ball_h + handle_h), (cx, y + h - 1)], fill=1)
+
+        # ── Muted: diagonal slash erases icon pixels → visible cut ───────────
+        if muted:
+            slash_w = max(2, h // 6)
+            draw.line([(x + w, y - 1), (x - 1, y + h)], fill=0, width=slash_w)
+
+        return w
+
+    @staticmethod
+    def _draw_eq_mode_icon(
+        draw: "ImageDraw.ImageDraw", x: int, y: int, eq_mode: str, size: int = 12
+    ) -> int:
+        """Boxed 'S' (sonar) or 'C' (custom EQ). Returns width used."""
+        letter = "S" if eq_mode == "sonar" else "C"
+        font_sz = max(6, size - 2)
+        font = ImageFont.load_default(size=font_sz)
+        lw = int(math.ceil(font.getlength(letter)))
+        box_w = lw + 4
+        box_h = size
+        draw.rounded_rectangle(
+            [x, y, x + box_w - 1, y + box_h - 1], radius=2, outline=1, fill=0
+        )
+        lx = x + (box_w - lw) // 2
+        ly = y + max(0, (box_h - font_sz) // 2) - 1
+        draw.text((lx, ly), letter, font=font, fill=1)
+        return box_w
+
     def _draw_bar(
         self, draw: ImageDraw.ImageDraw, x: int, y: int, width: int, height: int, percent: int
     ) -> None:
@@ -100,7 +183,7 @@ class OledRenderer:
             pts = [(cx + 2, cy + 3), (cx - 3, cy + 9), (cx + 1, cy + 9), (cx - 4, y + s - 1)]
             draw.line(pts, fill=1, width=3)
 
-    _DEFAULT_DISPLAY_ORDER = ['mic_status', 'sonar_mode', 'profile', 'eq', 'eq_chat', 'weather']
+    _DEFAULT_DISPLAY_ORDER = ['sonar_mode', 'profile', 'eq', 'eq_chat', 'weather']
 
     @staticmethod
     def _measure_text_pixels(font: "ImageFont.FreeTypeFont", text: str) -> int:
@@ -162,8 +245,13 @@ class OledRenderer:
         font_sizes: "dict[str, int] | None" = None,
         eq_scroll_offset: int = 0,
         profile_scroll_offset: int = 0,
-    ) -> Image.Image:
-        """Render all content at natural height, no clipping."""
+    ) -> "tuple[Image.Image, int]":
+        """Render all content at natural height.
+
+        Returns (image, header_h) where header_h is the height of the fixed
+        top zone (time row + separator bar). The caller must use this value
+        to keep the header pinned while scrolling only the body below it.
+        """
         order = display_order if display_order is not None else self._DEFAULT_DISPLAY_ORDER
         fs = font_sizes or {}
 
@@ -173,7 +261,6 @@ class OledRenderer:
         sz_eq          = max(7, min(30, fs.get('eq', 8)))
         sz_weather_tmp = max(7, min(30, fs.get('weather_temp', _FONT_BIG_SIZE)))
         sz_eq_chat    = max(7, min(30, fs.get('eq_chat',      8)))
-        sz_mic        = max(7, min(30, fs.get('mic_status',    8)))
         sz_sonar_mode = max(7, min(30, fs.get('sonar_mode',    8)))
 
         font_time    = ImageFont.load_default(size=sz_time)
@@ -182,18 +269,16 @@ class OledRenderer:
         font_eq      = ImageFont.load_default(size=sz_eq)
         font_wtmp    = ImageFont.load_default(size=sz_weather_tmp)
         font_eq_chat  = ImageFont.load_default(size=sz_eq_chat)
-        font_mic      = ImageFont.load_default(size=sz_mic)
         font_sonar    = ImageFont.load_default(size=sz_sonar_mode)
         font_small   = self._font  # city / labels always small
 
         natural_h = self._natural_height(
             show_time, show_battery, show_profile, show_eq, weather,
-            show_mic_status=show_mic_status, mic_status=mic_status,
             show_sonar_mode=show_sonar_mode,
             show_eq_chat=show_eq_chat, eq_chat_preset=eq_chat_preset,
             sz_time=sz_time, sz_battery=sz_battery, sz_profile=sz_profile,
             sz_eq=sz_eq, sz_weather_tmp=sz_weather_tmp,
-            sz_mic=sz_mic, sz_sonar_mode=sz_sonar_mode, sz_eq_chat=sz_eq_chat,
+            sz_sonar_mode=sz_sonar_mode, sz_eq_chat=sz_eq_chat,
             display_order=order,
         )
         buf_h = max(self.HEIGHT, natural_h)
@@ -201,23 +286,43 @@ class OledRenderer:
         image = Image.new("1", (self.WIDTH, buf_h), color=0)
         draw = ImageDraw.Draw(image)
         y = 1
+        header_h = 0
 
-        # Fixed top row — time (left) + battery/status (right)
+        # Fixed top row — time (left) + mic icon + battery (right)
         if show_time or show_battery:
+            # Compute right-side anchor first so mic can be placed just left of battery
+            bat_left = self.WIDTH  # left edge of battery area (fallback = far right)
+
             if show_battery:
                 if not connected:
                     offline_label = "Offline"
                     offline_w = int(font_battery.getlength(offline_label))
-                    draw.text((self.WIDTH - offline_w - 2, y), offline_label, font=font_battery, fill=1)
+                    bat_left = self.WIDTH - offline_w - 2
+                    draw.text((bat_left, y), offline_label, font=font_battery, fill=1)
                 else:
                     bat_label = f"{max(0, battery_percent)}%" if battery_percent >= 0 else "?%"
                     bat_label_w = int(font_battery.getlength(bat_label))
                     icon_w = 10  # 8px vertical icon + 2px gap
                     bat_x = self.WIDTH - icon_w - bat_label_w - 4
+                    bat_left = bat_x
                     icon_y = y + max(0, (sz_time - 14) // 2)
                     label_y = y + max(0, (sz_time - sz_battery) // 2)
-                    self._draw_battery_icon(draw, bat_x, icon_y, battery_percent if battery_percent >= 0 else 0, charging, blink_state)
+                    self._draw_battery_icon(
+                        draw, bat_x, icon_y,
+                        battery_percent if battery_percent >= 0 else 0, charging, blink_state
+                    )
                     draw.text((bat_x + icon_w, label_y), bat_label, font=font_battery, fill=1)
+
+            # Mic icon: right-aligned just left of battery, vertically centred on time row
+            if show_mic_status and mic_status and show_time:
+                mic_size = max(6, min(sz_time, fs.get('mic', 12)))
+                mic_w_approx = max(4, mic_size * 57 // 100)
+                mic_x = bat_left - mic_w_approx - 5
+                time_text_right = int(font_time.getlength(time_str)) + 8
+                if mic_x >= time_text_right:
+                    mic_y = y + max(0, (sz_time - mic_size) // 2)
+                    self._draw_mic_icon(draw, mic_x, mic_y, mic_size, mic_status == "muted")
+
             if show_time:
                 draw.text((1, y - 1), time_str, font=font_time, fill=1)
                 y += sz_time + 2
@@ -225,6 +330,7 @@ class OledRenderer:
                 y += sz_battery + 2
             draw.line([(0, y), (self.WIDTH - 1, y)], fill=1)
             y += 3
+            header_h = y  # everything above this y is fixed (not scrolled)
 
         # Orderable elements
         for element in order:
@@ -250,39 +356,24 @@ class OledRenderer:
                     else:
                         draw.text((_ICON_SIZE + 4, y + sz_weather_tmp + 2), city, font=font_small, fill=1)
                 y += icon_h + 4
-            elif element == 'mic_status' and show_mic_status and mic_status:
-                is_muted = mic_status == "muted"
-                icon_y = y + max(0, (sz_mic - 8) // 2)
-                draw.rectangle([2, icon_y, 7, icon_y + 7], outline=1, fill=0)
-                draw.arc([2, icon_y, 7, icon_y + 4], 180, 0, fill=1)
-                draw.arc([0, icon_y + 4, 9, icon_y + 10], 180, 0, fill=1)
-                draw.line([(4, icon_y + 10), (4, icon_y + 12)], fill=1)
-                draw.line([(1, icon_y + 12), (7, icon_y + 12)], fill=1)
-                if is_muted:
-                    draw.line([(0, icon_y), (9, icon_y + 12)], fill=1, width=1)
-                status_text = "Muted" if is_muted else "Active"
-                draw.text((12, y), status_text, font=font_mic, fill=1)
-                y += max(14, sz_mic) + 3
             elif element == 'sonar_mode' and show_sonar_mode:
-                mode_label = "Sonar" if eq_mode == "sonar" else "Custom EQ"
-                draw.text((1, y), f"Mode: {mode_label}", font=font_sonar, fill=1)
+                self._draw_eq_mode_icon(draw, 1, y, eq_mode, sz_sonar_mode)
                 y += sz_sonar_mode + 3
             elif element == 'eq_chat' and show_eq_chat and eq_chat_preset:
                 draw.text((1 - eq_chat_scroll_offset, y), f"Chat: {eq_chat_preset}", font=font_eq_chat, fill=1)
                 y += sz_eq_chat + 3
 
-        return image
+        return image, header_h
 
     def _natural_height(
         self,
         show_time: bool, show_battery: bool, show_profile: bool,
         show_eq: bool, weather: "WeatherData | None",
-        show_mic_status: bool = False, mic_status: str = "",
         show_sonar_mode: bool = False,
         show_eq_chat: bool = False, eq_chat_preset: str = "",
         sz_time: int = _FONT_BIG_SIZE, sz_battery: int = _FONT_MED_SIZE,
         sz_profile: int = 8, sz_eq: int = 8, sz_weather_tmp: int = _FONT_BIG_SIZE,
-        sz_mic: int = 8, sz_sonar_mode: int = 8, sz_eq_chat: int = 8,
+        sz_sonar_mode: int = 8, sz_eq_chat: int = 8,
         display_order: "list[str] | None" = None,
     ) -> int:
         y = 1
@@ -297,8 +388,6 @@ class OledRenderer:
                 y += sz_eq + 3
             elif element == 'weather' and weather is not None:
                 y += 2 + max(_ICON_SIZE, sz_weather_tmp) + 4
-            elif element == 'mic_status' and show_mic_status and mic_status:
-                y += max(14, sz_mic) + 3
             elif element == 'sonar_mode' and show_sonar_mode:
                 y += sz_sonar_mode + 3
             elif element == 'eq_chat' and show_eq_chat and eq_chat_preset:
@@ -330,8 +419,20 @@ class OledRenderer:
 
         return self._image_to_bytes(image.convert("1"))
 
-    def crop_frame(self, image: Image.Image, offset: int, x_offset: int = 0) -> bytes:
-        """Crop HEIGHT rows starting at offset, return as OLED bytes."""
+    def crop_frame(self, image: Image.Image, offset: int, header_h: int = 0, x_offset: int = 0) -> bytes:
+        """Crop HEIGHT rows and return as OLED bytes.
+
+        When header_h > 0, the top header_h rows stay pinned (not scrolled)
+        and only the body below the header scrolls by offset pixels.
+        """
+        if header_h > 0:
+            header = image.crop((x_offset, 0, x_offset + self.WIDTH, header_h))
+            body_h = self.HEIGHT - header_h
+            body = image.crop((x_offset, header_h + offset, x_offset + self.WIDTH, header_h + offset + body_h))
+            result = Image.new("1", (self.WIDTH, self.HEIGHT), 0)
+            result.paste(header, (0, 0))
+            result.paste(body, (0, header_h))
+            return self._image_to_bytes(result)
         cropped = image.crop((x_offset, offset, x_offset + self.WIDTH, offset + self.HEIGHT))
         return self._image_to_bytes(cropped)
 
@@ -353,7 +454,7 @@ class OledRenderer:
         eq_scroll_offset: int = 0,
         profile_scroll_offset: int = 0,
     ) -> bytes:
-        image = self.render_status_image(
+        image, header_h = self.render_status_image(
             battery_percent=battery_percent, charging=charging, connected=connected,
             time_str=time_str, active_profile=active_profile, blink_state=blink_state,
             eq_preset=eq_preset, weather=weather, show_time=show_time,
@@ -361,4 +462,4 @@ class OledRenderer:
             eq_scroll_offset=eq_scroll_offset,
             profile_scroll_offset=profile_scroll_offset,
         )
-        return self.crop_frame(image, scroll_offset)
+        return self.crop_frame(image, scroll_offset, header_h)
