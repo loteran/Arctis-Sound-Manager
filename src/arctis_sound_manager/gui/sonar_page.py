@@ -1068,10 +1068,12 @@ class _PresetBar(QWidget):
         n = len(self._favs)
         self._fav_count.setText(f"{_t('favorites')} ({n})")
 
-        # Remove old rows
+        # Remove old rows — hide() immediately so floating children don't stay
+        # visible while Qt's async deleteLater() is pending.
         while self._slots_layout.count():
             item = self._slots_layout.takeAt(0)
             if item.widget():
+                item.widget().hide()
                 item.widget().deleteLater()
         self._slots.clear()
 
