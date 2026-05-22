@@ -109,6 +109,10 @@ class GeneralSettings(JsonSerializable):
     oled_show_battery: bool = True
     oled_show_profile: bool = True
     oled_show_eq: bool = True
+    oled_show_volume: bool = False
+    oled_show_mic_status: bool = True
+    oled_show_sonar_mode: bool = True
+    oled_show_eq_chat: bool = False
 
     # Display order for orderable elements below the time/battery row
     oled_display_order: list = None  # type: ignore — set per-instance in __init__
@@ -118,6 +122,10 @@ class GeneralSettings(JsonSerializable):
     oled_font_battery: int = 16
     oled_font_profile: int = 8
     oled_font_eq: int = 8
+    oled_font_eq_chat: int = 8
+    oled_font_volume: int = 20
+    oled_font_mic_status: int = 8
+    oled_font_sonar_mode: int = 8
     oled_font_weather_temp: int = 20
 
     # Weather module
@@ -146,9 +154,13 @@ class GeneralSettings(JsonSerializable):
         ConfigSetting('oled_show_battery', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('oled_show_profile', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('oled_show_eq', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
+        ConfigSetting('oled_show_volume', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
+        ConfigSetting('oled_show_mic_status', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
+        ConfigSetting('oled_show_sonar_mode', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
+        ConfigSetting('oled_show_eq_chat', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
     ]
 
-    _DEFAULT_DISPLAY_ORDER = ['profile', 'eq', 'weather']
+    _DEFAULT_DISPLAY_ORDER = ['volume', 'mic_status', 'sonar_mode', 'profile', 'eq', 'eq_chat', 'weather']
 
     def __init__(self, **kwargs):
         self.oled_display_order = list(self._DEFAULT_DISPLAY_ORDER)
