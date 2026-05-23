@@ -1128,9 +1128,14 @@ class HomePage(QWidget):
             if si.sink in sink_indices and "application.name" in si.proplist
         ]
         card.clear_apps()
+        seen_names: set[str] = set()
         for si in matching:
+            app_name = si.proplist["application.name"]
+            if app_name in seen_names:
+                continue
+            seen_names.add(app_name)
             pid = int(si.proplist.get("application.process.id", 0))
-            card.add_app_tag(si.proplist["application.name"], si.index, pid, bg_color=card._accent)
+            card.add_app_tag(app_name, si.index, pid, bg_color=card._accent)
 
     def _update_native_apps(self, pulse_sinks, already_shown: set[str] = frozenset()):
         """Add native PipeWire streams (e.g. haruna/mpv) to the correct card."""
