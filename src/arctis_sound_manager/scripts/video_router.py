@@ -97,6 +97,16 @@ def _sink_name(sinks, index: int) -> str | None:
     return s.name if s else None
 
 
+def _is_physical_arctis(sink_name: str) -> bool:
+    """Return True for the physical Arctis hardware output.
+
+    WirePlumber may restore a stream's target.object preference back to the
+    physical output after our router moves it to a virtual channel.  We must
+    not treat that as a deliberate user action and save it as an override.
+    """
+    return "SteelSeries_Arctis" in sink_name and not sink_name.startswith("Arctis_")
+
+
 def _subscribe(pulse: pulsectl.Pulse) -> None:
     """Subscribe to sink and sink-input events; stop the loop on any event."""
     pulse.event_mask_set('sink', 'sink_input')
@@ -203,9 +213,14 @@ def _main_loop():
                     if current_name:
                         # Never save effect_input sinks as overrides
                         save_name = _EFFECT_REMAP.get(current_name, current_name)
-                        log.info("Manual move detected: '%s' -> %s (saving override)", app, save_name)
-                        overrides[app] = save_name
-                        save_overrides(overrides)
+                        if _is_physical_arctis(save_name):
+                            # WirePlumber restoring its target.object preference —
+                            # not a user move, do not overwrite the virtual-channel override.
+                            log.debug("Ignoring WirePlumber move of '%s' -> %s", app, save_name)
+                        else:
+                            log.info("Manual move detected: '%s' -> %s (saving override)", app, save_name)
+                            overrides[app] = save_name
+                            save_overrides(overrides)
                     _pa_placed[app] = si.sink
 
                 # Auto-route new apps that have no override yet
@@ -263,9 +278,12 @@ def _main_loop():
                     if current and current != placed:
                         # Never save effect_input sinks as overrides
                         save_name = _EFFECT_REMAP.get(current, current)
-                        log.info("Manual move detected (native): '%s' -> %s (saving override)", app, save_name)
-                        overrides[app] = save_name
-                        save_overrides(overrides)
+                        if _is_physical_arctis(save_name):
+                            log.debug("Ignoring WirePlumber move (native) of '%s' -> %s", app, save_name)
+                        else:
+                            log.info("Manual move detected (native): '%s' -> %s (saving override)", app, save_name)
+                            overrides[app] = save_name
+                            save_overrides(overrides)
                         _native_placed[app] = current
 
                 # Auto-route new native apps that have no override yet
