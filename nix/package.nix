@@ -19,7 +19,9 @@
   pulseaudio, # pactl (client tool; not shipped by pipewire on NixOS)
   procps, # pgrep (asm-router singleton guard)
   coreutils,
+  bash, # sig_stop runs `bash -c "… systemctl --user restart pipewire …"` on GUI quit
   curl, # HRIR download in asm-setup
+  dbus, # dbus-send (bug-report D-Bus diagnostic dump)
 }:
 
 let
@@ -102,7 +104,10 @@ python3Packages.buildPythonApplication {
   #     what crashes the distrobox PySide6); --prefix puts the correct dirs
   #     first no matter what the session exports.
   #   - LD_LIBRARY_PATH → libusb (pyusb) + libudev (pyudev) ctypes backends.
-  #   - PATH → pw-* / wpctl / pgrep / systemctl / curl used at runtime.
+  #   - PATH → pactl / pw-* / wpctl / pgrep / systemctl / curl / dbus-send /
+  #     bash used at runtime (bash: sig_stop restarts pipewire via `bash -c` on
+  #     GUI quit), plus /run/wrappers/bin for the setuid pkexec (a BLOCKING dep
+  #     check) that systemd user services don't otherwise inherit.
   #
   # Set as Nix-level strings rather than via wrapQtAppsHook's qtWrapperArgs: the
   # hook only wraps ELF binaries (it skips the Python entry points), and the
@@ -131,10 +136,16 @@ python3Packages.buildPythonApplication {
         pulseaudio
         procps
         coreutils
+        bash
         curl
         systemd
+        dbus
       ]
     }"
+    # pkexec is a setuid wrapper at /run/wrappers/bin on NixOS (never a store
+    # path); systemd user services don't inherit it. Suffix so it's found
+    # without shadowing anything.
+    "--suffix PATH : /run/wrappers/bin"
   ];
 
   # Don't run the test suite here: tests import pulsectl/PySide6 against a live
