@@ -18,20 +18,36 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
 
 ## Table of contents
 
-- [Features](#features)
-- [Screenshots](#screenshots)
-- [Supported devices](#supported-devices)
-- [Installation](#installation)
-- [First launch](#first-launch)
-- [Upgrading](#upgrading)
-- [How the mixer works](#how-the-mixer-works)
-- [Sharing and downloading EQ presets](#sharing-and-downloading-eq-presets)
-- [Virtual surround 7.1](#virtual-surround-71)
-- [Translations](#translations)
-- [Community stats](#community-stats)
-- [Uninstall](#uninstall)
-- [Reporting a bug](#reporting-a-bug)
-- [Development](#development)
+- [Arctis Sound Manager](#arctis-sound-manager)
+  - [Table of contents](#table-of-contents)
+  - [Features](#features)
+    - [🎚️ Audio mixer](#️-audio-mixer)
+    - [🎛️ EQ \& audio processing](#️-eq--audio-processing)
+    - [🎧 Device control](#-device-control)
+    - [⚙️ App \& system](#️-app--system)
+  - [Screenshots](#screenshots)
+  - [Supported devices](#supported-devices)
+  - [Installation](#installation)
+  - [First launch](#first-launch)
+    - [System tray mode](#system-tray-mode)
+    - [Autostart at login](#autostart-at-login)
+  - [Upgrading](#upgrading)
+  - [How the mixer works](#how-the-mixer-works)
+  - [Sharing and downloading EQ presets](#sharing-and-downloading-eq-presets)
+    - [Exporting a preset](#exporting-a-preset)
+    - [Importing a preset](#importing-a-preset)
+    - [Community site — ASM Presets](#community-site--asm-presets)
+  - [Virtual surround 7.1](#virtual-surround-71)
+  - [Translations](#translations)
+  - [Community stats](#community-stats)
+  - [Uninstall](#uninstall)
+  - [Reporting a bug](#reporting-a-bug)
+    - [In-app reporter (recommended)](#in-app-reporter-recommended)
+    - [CLI equivalents](#cli-equivalents)
+    - [Tips for a good report](#tips-for-a-good-report)
+  - [Development](#development)
+  - [©️ Credits](#️-credits)
+  - [💬 Share your experience](#-share-your-experience)
 
 ---
 
@@ -620,6 +636,14 @@ scripts/
 </details>
 
 ---
+
+## ©️ Credits
+
+This software is a derivative work of [Linux Arctis Manager](https://github.com/elegos/Linux-Arctis-Manager/) by @elegos et al.
+
+The software was forked on 2026-03-09 at version 2.1.0 of the original work, and from there on it continued the development indipendently.
+
+Credits must be also given to the original project for the community support for devices support, that have been manually cherry-picked and authored in this project under the name of @loteran.
 
 ## 💬 Share your experience
 
