@@ -120,22 +120,22 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
 | Device | Working | Users | Product ID(s) |
 |---|---|---|---|
 | Arctis 1 / 7X / 7P Wireless |  |  | 12b3, 12b6, 12d5, 12d7 |
-| Arctis 7 / 7 2019 / Pro 2019 / Pro GameDAC | ✅ | 1 | 1260, $\color{royalblue}{\textbf{12ad}}$, 1252, 1280 |
-| Arctis 7+ / PS5 / Xbox / Destiny | ✅ | 2 | $\color{royalblue}{\textbf{220e}}$, 2212, 2216, 2236 |
-| Arctis 9 Wireless | ✅ | 2 | $\color{royalblue}{\textbf{12c2}}$ |
-| Arctis Pro Wireless | ✅ | 3 | $\color{royalblue}{\textbf{1290}}$, $\color{royalblue}{\textbf{1294}}$ |
-| Arctis Nova Pro Wireless / X | ✅ | 23 | $\color{royalblue}{\textbf{12e0}}$, $\color{royalblue}{\textbf{12e5}}$ |
-| Arctis Nova Pro Wired / Xbox Wired | ✅ | 2 | $\color{royalblue}{\textbf{12cb}}$, 12cd |
-| Arctis Nova 3 | ✅ | 4 | $\color{royalblue}{\textbf{12ec}}$ |
-| Arctis Nova 3P / 3X Wireless | ✅ | 4 | $\color{royalblue}{\textbf{2269}}$, 226d |
-| Arctis Nova 5 / 5X | ✅ | 3 | $\color{royalblue}{\textbf{2232}}$, 2253 |
-| Arctis Nova 7 Gen 1 | ✅ | 2 | $\color{royalblue}{\textbf{2202}}$, 2206, 223a, 227a, 22ab, 22a4 |
-| Arctis Nova 7 Gen 2 | ✅ | 17 | $\color{royalblue}{\textbf{22a1}}$, $\color{royalblue}{\textbf{227e}}$, 2258, $\color{royalblue}{\textbf{229e}}$, 22a9, $\color{royalblue}{\textbf{22a5}}$ |
-| Arctis Nova 7P | ✅ | 5 | 220a, $\color{royalblue}{\textbf{22a7}}$ |
+| Arctis 7 / 7 2019 / Pro 2019 / Pro GameDAC | ✅ | 1 | 1260, 12ad, 1252, 1280 |
+| Arctis 7+ / PS5 / Xbox / Destiny | ✅ | 2 | 220e, 2212, 2216, 2236 |
+| Arctis 9 Wireless | ✅ | 2 | 12c2 |
+| Arctis Pro Wireless | ✅ | 3 | 1290, 1294 |
+| Arctis Nova Pro Wireless / X | ✅ | 23 | 12e0, 12e5 |
+| Arctis Nova Pro Wired / Xbox Wired | ✅ | 2 | 12cb, 12cd |
+| Arctis Nova 3 | ✅ | 4 | 12ec |
+| Arctis Nova 3P / 3X Wireless | ✅ | 4 | 2269, 226d |
+| Arctis Nova 5 / 5X | ✅ | 3 | 2232, 2253 |
+| Arctis Nova 7 Gen 1 | ✅ | 2 | 2202, 2206, 223a, 227a, 22ab, 22a4 |
+| Arctis Nova 7 Gen 2 | ✅ | 17 | 22a1, 227e, 2258, 229e, 22a9, 22a5 |
+| Arctis Nova 7P | ✅ | 5 | 220a, 22a7 |
 | Arctis Nova Elite |  |  | 2244, 2249 |
 <!-- STATS:DEVICES:END -->
 
-> ✅ Confirmed by at least one opted-in user · PIDs in blue confirmed by telemetry
+> ✅ Confirmed by at least one opted-in user
 
 ---
 
