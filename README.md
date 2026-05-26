@@ -641,7 +641,7 @@ scripts/
 
 This software is a derivative work of [Linux Arctis Manager](https://github.com/elegos/Linux-Arctis-Manager/) by @elegos et al.
 
-The software was forked on 2026-03-09 at version 2.1.0 of the original work, and from there on it continued the development indipendently.
+The software was forked on 2026-03-09 at version 2.1.0 of the original work, and from there on it continued the development independently.
 
 Credits must be also given to the original project for the community support for devices support, that have been manually cherry-picked and authored in this project under the name of @loteran.
 
