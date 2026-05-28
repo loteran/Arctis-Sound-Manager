@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Regression tests for the init-system abstraction (service_control).
 
 Run with:  python3 -m unittest tests.test_service_control  (from repo root,
