@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """device_state.py — Runtime state for the currently connected Arctis device.
 
 Set by CoreEngine.configure_virtual_sinks() when a device is detected.

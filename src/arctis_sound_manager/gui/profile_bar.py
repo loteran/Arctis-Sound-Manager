@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Profile bar widget — horizontal chip row for the Home page."""
 from __future__ import annotations
 

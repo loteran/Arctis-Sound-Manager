@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 from typing import Callable, Literal, ParamSpec, TypeVar
 
 P = ParamSpec("P")

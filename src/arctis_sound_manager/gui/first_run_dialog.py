@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """
 FirstRunDialog — runs `asm-setup` automatically on first GUI launch.
 
