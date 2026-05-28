@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.43] - 28 May 2026
+
+### Fixed
+
+- **Distrobox container fails to start after reboot on Bazzite / SteamOS / Silverblue** — `/run/asm-hidraw` lives on a tmpfs and is wiped at every boot; the `sudo mkdir -p` in the install script only ran at container creation time, so on the next boot `crun` could not stat the bind-mount source and refused to start the container (`crun: cannot stat /run/asm-hidraw: No such file or directory`). A `systemd-tmpfiles` drop-in (`/etc/tmpfiles.d/asm-hidraw.conf`) is now installed on the host, recreating the directory at `sysinit.target` well before Distrobox starts. Added `ConditionPathIsDirectory=/run/asm-hidraw` to `arctis-manager.service` to prevent crash-loops if the directory is somehow absent. Affects all three Distrobox installers (bazzite.sh, steamos.sh, silverblue.sh — issue #59).
+
 ## [1.1.34] - 18 May 2026
 
 ### Fixed

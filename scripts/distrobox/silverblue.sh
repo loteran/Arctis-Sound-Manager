@@ -16,6 +16,7 @@ _SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 _UDEV_RULES="/etc/udev/rules.d/91-steelseries-arctis.rules"
 _HIDRAW_SYMLINK_RULES="/etc/udev/rules.d/90-asm-hidraw-symlink.rules"
 _HIDRAW_RUN_DIR="/run/asm-hidraw"
+_HIDRAW_TMPFILES_CONF="/etc/tmpfiles.d/asm-hidraw.conf"
 _IMAGE="registry.fedoraproject.org/fedora-toolbox:41"
 
 # ---------------------------------------------------------------------------
@@ -98,7 +99,7 @@ create_container() {
     log_step "Creating container '$_CONTAINER' (image: $_IMAGE)..."
     local cmd=(distrobox create --name "$_CONTAINER" --image "$_IMAGE" --home "$HOME" --pull --yes)
 
-    sudo mkdir -p "$_HIDRAW_RUN_DIR"
+    ensure_hidraw_dir
     cmd+=("--volume" "$_HIDRAW_RUN_DIR:$_HIDRAW_RUN_DIR:rslave")
     [[ -d /dev/bus/usb ]] && cmd+=("--volume" "/dev/bus/usb:/dev/bus/usb:rslave")
 
@@ -124,6 +125,30 @@ verify_container_health() {
         fi
     done
     log_ok "Container healthy (${elapsed}s)"
+}
+
+# ---------------------------------------------------------------------------
+# Persistent /run/asm-hidraw provisioning
+# ---------------------------------------------------------------------------
+# /run is a tmpfs wiped at every boot. Without this, the container bind-mount
+# fails on the next boot with: crun: cannot stat /run/asm-hidraw
+# systemd-tmpfiles runs at sysinit.target, well before distrobox starts.
+install_hidraw_tmpfiles() {
+    log_step "Installing systemd-tmpfiles rule for $_HIDRAW_RUN_DIR..."
+    sudo tee "$_HIDRAW_TMPFILES_CONF" >/dev/null <<'TMPF'
+# Arctis Sound Manager — recreate /run/asm-hidraw at every boot so the
+# Distrobox container bind-mount source exists before crun starts the container.
+d /run/asm-hidraw 0755 root root - -
+TMPF
+    sudo systemd-tmpfiles --create "$_HIDRAW_TMPFILES_CONF" \
+        || sudo mkdir -p "$_HIDRAW_RUN_DIR"
+    log_ok "tmpfiles rule: $_HIDRAW_TMPFILES_CONF"
+}
+
+ensure_hidraw_dir() {
+    [[ -d "$_HIDRAW_RUN_DIR" ]] && return 0
+    sudo mkdir -p "$_HIDRAW_RUN_DIR"
+    sudo chmod 0755 "$_HIDRAW_RUN_DIR"
 }
 
 # ---------------------------------------------------------------------------
@@ -172,6 +197,7 @@ write_systemd_units() {
 Description=Arctis Sound Manager (Distrobox)
 After=pipewire.service pipewire-pulse.service
 Wants=pipewire.service
+ConditionPathIsDirectory=/run/asm-hidraw
 StartLimitInterval=1min
 StartLimitBurst=5
 
@@ -325,6 +351,7 @@ if ! grep -qiE 'silverblue|kinoite' /etc/os-release 2>/dev/null; then
 fi
 
 check_prereqs
+install_hidraw_tmpfiles
 
 if [[ $DO_REINSTALL -eq 1 ]] && container_exists; then
     log_step "Reinstall: removing existing container..."
