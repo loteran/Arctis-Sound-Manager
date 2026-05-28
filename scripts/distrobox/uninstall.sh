@@ -105,6 +105,10 @@ do_uninstall() {
             removed=1
             log_info "Removed: $ASM_HIDRAW_SYMLINK_RULES"
         fi
+        if [[ -f "$ASM_HIDRAW_TMPFILES_CONF" ]]; then
+            sudo rm -f "$ASM_HIDRAW_TMPFILES_CONF"
+            log_info "Removed: $ASM_HIDRAW_TMPFILES_CONF (issue #59 boot rule)"
+        fi
         if [[ $removed -eq 1 ]]; then
             sudo udevadm control --reload-rules
             log_ok "udev rules removed and reloaded"

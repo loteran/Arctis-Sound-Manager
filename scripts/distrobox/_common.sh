@@ -11,6 +11,7 @@ ASM_LOG_FILE="${XDG_CACHE_HOME:-$HOME/.cache}/asm-distrobox-install.log"
 ASM_SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 ASM_UDEV_RULES_PATH="/etc/udev/rules.d/91-steelseries-arctis.rules"
 ASM_HIDRAW_SYMLINK_RULES="/etc/udev/rules.d/90-asm-hidraw-symlink.rules"
+ASM_HIDRAW_TMPFILES_CONF="/etc/tmpfiles.d/asm-hidraw.conf"
 ASM_HIDRAW_RUN_DIR="/run/asm-hidraw"
 
 # Root of the ASM scripts/ directory (resolved relative to this file)
