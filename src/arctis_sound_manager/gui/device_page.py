@@ -4,7 +4,6 @@ Matches the ref_settingsPage.png design.
 """
 import os
 import shutil
-import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Slot
@@ -48,14 +47,8 @@ _GUI_SERVICE = "arctis-gui.service"
 
 
 def _autostart_enabled() -> bool:
-    from arctis_sound_manager.init_system import detect_init, is_dinit_service_enabled
-    if detect_init() == "dinit":
-        return is_dinit_service_enabled("arctis-manager")
-    result = subprocess.run(
-        ["systemctl", "--user", "is-enabled", _SERVICE],
-        capture_output=True, text=True,
-    )
-    return result.stdout.strip() == "enabled"
+    from arctis_sound_manager import service_control as sc
+    return sc.is_enabled("arctis-manager")
 
 
 _GUI_SERVICE_TEMPLATE = """\
@@ -85,35 +78,39 @@ def _ensure_gui_service() -> Path | None:
         return None
     gui_service_path.parent.mkdir(parents=True, exist_ok=True)
     gui_service_path.write_text(_GUI_SERVICE_TEMPLATE.format(asm_gui=asm_gui))
-    subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True)
+    from arctis_sound_manager import service_control as sc
+    sc.daemon_reload()
     return gui_service_path
 
 
 def _set_autostart(enabled: bool) -> None:
+    from arctis_sound_manager import service_control as sc
     from arctis_sound_manager.init_system import (
         detect_init, write_xdg_autostart, remove_xdg_autostart,
     )
+
+    if enabled:
+        sc.enable("arctis-manager")
+    else:
+        sc.disable("arctis-manager")
+
+    # dinit has no GUI service — autostart is handled via XDG desktop file.
     if detect_init() == "dinit":
-        verb = "enable" if enabled else "disable"
-        subprocess.run(["dinitctl", verb, "arctis-manager"], check=False)
         if enabled:
             write_xdg_autostart()
         else:
             remove_xdg_autostart()
         return
-    action = "enable" if enabled else "disable"
-    subprocess.run(
-        ["systemctl", "--user", action, _SERVICE],
-        capture_output=True,
-    )
+
+    # systemd: enable/disable the GUI tray service too.
     gui_service_path = _ensure_gui_service() if enabled else (
         Path.home() / ".config" / "systemd" / "user" / _GUI_SERVICE
     )
     if gui_service_path and gui_service_path.exists():
-        subprocess.run(
-            ["systemctl", "--user", action, _GUI_SERVICE],
-            capture_output=True,
-        )
+        if enabled:
+            sc.enable("arctis-gui")
+        else:
+            sc.disable("arctis-gui")
 
 
 def _styled_button(text: str) -> QPushButton:
@@ -559,18 +556,15 @@ class DevicePage(QWidget):
 
     @Slot(bool, str)
     def _on_install_finished(self, success: bool, error_msg: str) -> None:
-        import os, subprocess, sys
+        import os, sys
         if success:
             self._update_status_lbl.setText("Update installed — running setup…")
             from pathlib import Path
             (Path.home() / ".config" / "arctis_manager" / ".setup_done").unlink(missing_ok=True)
             from arctis_sound_manager.gui.first_run_dialog import FirstRunDialog
             FirstRunDialog(self).exec()
-            from arctis_sound_manager.init_system import detect_init
-            if detect_init() == "dinit":
-                subprocess.Popen(["dinitctl", "restart", "arctis-manager"])
-            else:
-                subprocess.Popen(["systemctl", "--user", "restart", "arctis-manager"])
+            from arctis_sound_manager import service_control as sc
+            sc.restart("arctis-manager")
             os.execv(sys.executable, [sys.executable, "-m", "arctis_sound_manager.scripts.gui"])
         else:
             self._update_status_lbl.setStyleSheet(

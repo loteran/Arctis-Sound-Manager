@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPushButton, QSlider,
                                 QVBoxLayout, QWidget)
 
+from arctis_sound_manager import service_control as sc
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
 from arctis_sound_manager.i18n import I18n
 from arctis_sound_manager.sonar_to_pipewire import generate_virtual_sinks_conf
@@ -89,13 +90,11 @@ class _ToggleWorker(QThread):
         # Update virtual sink targets before restarting PipeWire
         generate_virtual_sinks_conf(sonar=(self._new_mode == 'sonar'))
 
-        result = subprocess.run(
-            ['systemctl', '--user', 'restart',
-             'pipewire', 'wireplumber', 'pipewire-pulse', 'filter-chain', 'arctis-manager'],
-            check=False,
+        ok = sc.restart(
+            "pipewire", "wireplumber", "pipewire-pulse", "filter-chain", "arctis-manager",
         )
 
-        if result.returncode != 0:
+        if not ok:
             _apply_yaml(self._old_mode)  # rollback
             self.done.emit(False, self._old_mode)
             return

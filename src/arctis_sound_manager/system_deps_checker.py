@@ -309,6 +309,21 @@ def _udev_rules_valid() -> bool:
 # ── The dep registry ──────────────────────────────────────────────────────────
 
 
+def _pipewire_pulse_restart_cmd() -> list[str]:
+    """Argv to restart the PipeWire/pulse daemon for the active init system.
+
+    Returned verbatim as an ``_internal`` remediation and executed directly by
+    the CLI/GUI caller (it is not routed through ``service_control``), so the
+    command must match the init manager: ``systemctl --user`` accepts several
+    units at once, dinit needs ``dinitctl`` (one service per call → use a shell
+    chain so a single argv still restarts both).
+    """
+    from arctis_sound_manager.init_system import detect_init
+    if detect_init() == "dinit":
+        return ["sh", "-c", "dinitctl restart pipewire && dinitctl restart pipewire-pulse"]
+    return ["systemctl", "--user", "restart", "pipewire", "pipewire-pulse"]
+
+
 def _build_checks() -> list[DepCheck]:
     """Single source of truth for every external dep ASM verifies.
 
@@ -377,8 +392,13 @@ def _build_checks() -> list[DepCheck]:
             detect=_pipewire_running,
             install_commands={
                 # Not a package install — the daemon is just down. The GUI
-                # surfaces a "Start pipewire-pulse" button that runs this.
-                "_internal": ["systemctl", "--user", "restart", "pipewire", "pipewire-pulse"],
+                # surfaces a "Start pipewire-pulse" button that runs this argv
+                # verbatim, so it must be correct for the active init system
+                # (dinit takes one service per `dinitctl` call, not `systemctl`).
+                # NOTE: this argv is executed directly by the CLI/GUI caller, not
+                # routed through service_control; we pick the right command per
+                # init here instead.
+                "_internal": _pipewire_pulse_restart_cmd(),
             },
         ),
         DepCheck(

@@ -165,14 +165,8 @@ def _link_ladspa(out: str, inp: str) -> str:
 
 def _restart_filter_chain() -> None:
     """Restart filter-chain service (systemd or dinit)."""
-    import subprocess
-    from arctis_sound_manager.init_system import detect_init, FILTER_CHAIN_SERVICE_NAME
-    init = detect_init()
-    svc = FILTER_CHAIN_SERVICE_NAME.get(init, "filter-chain")
-    if init == "dinit":
-        subprocess.run(["dinitctl", "restart", svc], check=False, timeout=15)
-    else:
-        subprocess.run(["systemctl", "--user", "restart", svc], check=False, timeout=15)
+    from arctis_sound_manager import service_control as sc
+    sc.restart("filter-chain", timeout=15)
 
 
 def apply_hrir_choice(hrir_id: str | None) -> None:
@@ -891,18 +885,14 @@ def apply_sonar_channel(
     PipeWire daemon.  This requires a PipeWire restart but avoids the
     WirePlumber deadlock caused by the separate filter-chain service.
     """
-    import subprocess
-    from arctis_sound_manager.init_system import detect_init
+    from arctis_sound_manager import service_control as sc
 
     if channel == "micro":
         generate_sonar_micro_conf(bands, basses_db, voix_db, aigus_db)
     else:
         generate_sonar_eq_conf(channel, bands, basses_db, voix_db, aigus_db)
 
-    if detect_init() == "dinit":
-        subprocess.run(["dinitctl", "restart", "pipewire"], check=False, timeout=15)
-    else:
-        subprocess.run(["systemctl", "--user", "restart", "pipewire"], check=False, timeout=15)
+    sc.restart("pipewire", timeout=15)
 
 
 def check_and_fix_stale_configs() -> tuple[bool, bool]:

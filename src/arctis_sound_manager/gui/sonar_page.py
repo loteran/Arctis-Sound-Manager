@@ -15,6 +15,7 @@ import math
 import subprocess
 from pathlib import Path
 
+from arctis_sound_manager import service_control as sc
 from arctis_sound_manager.i18n import I18n
 
 from PySide6.QtCore import QThread, Qt, QTimer, Signal, Slot
@@ -486,37 +487,17 @@ class _ApplyWorker(QThread):
             # relinking them to the new effect_input.sonar-*-eq nodes.
             # Without restarting PipeWire, WirePlumber does not fire its linking
             # scripts for pre-existing loopback nodes, leaving the chain silently broken.
-            from arctis_sound_manager.init_system import detect_init
             if self._channel == "output":
-                if detect_init() == "dinit":
-                    result = subprocess.run(
-                        ["dinitctl", "restart", "pipewire-filter-chain"],
-                        capture_output=True, text=True, timeout=15,
-                    )
-                else:
-                    result = subprocess.run(
-                        ["systemctl", "--user", "restart", "filter-chain"],
-                        capture_output=True, text=True, timeout=15,
-                    )
+                ok = sc.restart("filter-chain", timeout=15)
             else:
                 if need_full_restart:
                     generate_virtual_sinks_conf(sonar=True)
-                if detect_init() == "dinit":
-                    for svc in ["pipewire", "wireplumber", "pipewire-pulse"]:
-                        subprocess.run(["dinitctl", "restart", svc], check=False)
-                    result = subprocess.run(
-                        ["dinitctl", "restart", "pipewire-filter-chain"],
-                        capture_output=True, text=True, timeout=15,
-                    )
-                else:
-                    result = subprocess.run(
-                        ["systemctl", "--user", "restart",
-                         "pipewire", "wireplumber", "pipewire-pulse", "filter-chain"],
-                        capture_output=True, text=True, timeout=15,
-                    )
-            if result.returncode != 0:
-                log.error("audio restart failed (rc=%d): %s",
-                          result.returncode, result.stderr.strip())
+                ok = sc.restart(
+                    "pipewire", "wireplumber", "pipewire-pulse", "filter-chain",
+                    timeout=15,
+                )
+            if not ok:
+                log.error("audio restart failed")
                 self.done.emit(False)
                 return
 
@@ -677,22 +658,12 @@ class _ApplyAllWorker(QThread):
                 )
 
             # Single restart
-            from arctis_sound_manager.init_system import detect_init
-            if detect_init() == "dinit":
-                for svc in ["pipewire", "wireplumber", "pipewire-pulse"]:
-                    subprocess.run(["dinitctl", "restart", svc], check=False)
-                result = subprocess.run(
-                    ["dinitctl", "restart", "pipewire-filter-chain"],
-                    capture_output=True, text=True, timeout=15,
-                )
-            else:
-                result = subprocess.run(
-                    ["systemctl", "--user", "restart",
-                     "pipewire", "wireplumber", "pipewire-pulse", "filter-chain"],
-                    capture_output=True, text=True, timeout=15,
-                )
-            if result.returncode != 0:
-                log.error("audio restart failed: %s", result.stderr.strip())
+            ok = sc.restart(
+                "pipewire", "wireplumber", "pipewire-pulse", "filter-chain",
+                timeout=15,
+            )
+            if not ok:
+                log.error("audio restart failed")
                 self.done.emit(False)
                 return
 
@@ -2533,27 +2504,11 @@ class SonarPage(QWidget):
                 logging.getLogger(__name__).info(
                     "Stale static HeSuVi config removed — restarting PipeWire to clear duplicate node"
                 )
-                from arctis_sound_manager.init_system import detect_init
-                if detect_init() == "dinit":
-                    for svc in ["pipewire", "wireplumber", "pipewire-pulse"]:
-                        subprocess.run(["dinitctl", "restart", svc], check=False)
-                    subprocess.run(["dinitctl", "restart", "pipewire-filter-chain"],
-                                   check=False, timeout=20)
-                else:
-                    subprocess.run(
-                        ["systemctl", "--user", "restart",
-                         "pipewire", "wireplumber", "pipewire-pulse", "filter-chain"],
-                        check=False, timeout=20,
-                    )
+                sc.restart("pipewire", "wireplumber", "pipewire-pulse", "filter-chain",
+                           timeout=20)
             else:
                 logging.getLogger(__name__).info("Stale Sonar configs fixed, restarting filter-chain")
-                from arctis_sound_manager.init_system import detect_init
-                if detect_init() == "dinit":
-                    subprocess.run(["dinitctl", "restart", "pipewire-filter-chain"],
-                                   check=False, timeout=15)
-                else:
-                    subprocess.run(["systemctl", "--user", "restart", "filter-chain"],
-                                   check=False, timeout=15)
+                sc.restart("filter-chain", timeout=15)
 
         self.setStyleSheet(f"background-color: {BG_MAIN};")
 

@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from arctis_sound_manager import service_control as sc
 from arctis_sound_manager.gui.components import AccentButton
 from arctis_sound_manager.gui.sonar_page import SonarPage
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
@@ -283,20 +284,8 @@ class _ToggleWorker(QThread):
         saved_si, saved_so = self._snapshot_streams(log)
 
         # Phase 1: restart PipeWire stack and wait for ALSA sinks to be recreated
-        from arctis_sound_manager.init_system import detect_init
-        if detect_init() == "dinit":
-            for svc in ["pipewire", "wireplumber", "pipewire-pulse"]:
-                subprocess.run(["dinitctl", "restart", svc], check=False)
-            result = subprocess.run(
-                ["dinitctl", "restart", "pipewire-pulse"],
-                check=False, timeout=20,
-            )
-        else:
-            result = subprocess.run(
-                ["systemctl", "--user", "restart", "pipewire", "wireplumber", "pipewire-pulse"],
-                check=False, timeout=20,
-            )
-        if result.returncode != 0:
+        ok = sc.restart("pipewire", "wireplumber", "pipewire-pulse", timeout=20)
+        if not ok:
             _apply_yaml(self._old_mode)
             self.done.emit(False, self._old_mode)
             return
@@ -304,19 +293,11 @@ class _ToggleWorker(QThread):
         # Wait for WirePlumber to recreate ALSA sink nodes before starting filter-chain
         self.msleep(2000)
 
-        # Phase 2: restart filter-chain and arctis-manager
-        if detect_init() == "dinit":
-            subprocess.run(["dinitctl", "start", "pipewire-filter-chain"], check=False, timeout=20)
-            result = subprocess.run(
-                ["dinitctl", "restart", "arctis-manager"],
-                check=False, timeout=20,
-            )
-        else:
-            result = subprocess.run(
-                ["systemctl", "--user", "restart", "filter-chain", "arctis-manager"],
-                check=False, timeout=20,
-            )
-        if result.returncode != 0:
+        # Phase 2: restart filter-chain and arctis-manager.
+        # Must be restart (not start): a no-op start would never reload the new
+        # EQ config — the root cause of the "EQ does nothing" report (issue #25).
+        ok = sc.restart("filter-chain", "arctis-manager", timeout=20)
+        if not ok:
             _apply_yaml(self._old_mode)
             self.done.emit(False, self._old_mode)
             return
