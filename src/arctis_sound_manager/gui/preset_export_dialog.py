@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """
 preset_export_dialog.py — Dialog for exporting an EQ preset.
 

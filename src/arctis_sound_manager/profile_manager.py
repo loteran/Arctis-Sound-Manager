@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Audio profile management — snapshot and restore audio settings."""
 from __future__ import annotations
 

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """
 Apply manual routing overrides for audio streams.
 Respects manual overrides written by the GUI (routing_overrides.json).

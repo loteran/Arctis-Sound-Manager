@@ -8,7 +8,7 @@
             "name": "Daemon",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/src/linux_arctis_manager/scripts/daemon.py",
+            "program": "${workspaceFolder}/src/arctis_sound_manager/scripts/daemon.py",
             "console": "integratedTerminal",
             "args": ["-vvvv"]
         },
@@ -16,7 +16,7 @@
             "name": "Main window (no systemd)",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/src/linux_arctis_manager/scripts/gui.py",
+            "program": "${workspaceFolder}/src/arctis_sound_manager/scripts/gui.py",
             "console": "integratedTerminal",
             "args": ["--no-enforce-systemd", "-vvvv"]
         },
@@ -24,7 +24,7 @@
             "name": "Main window",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/src/linux_arctis_manager/scripts/gui.py",
+            "program": "${workspaceFolder}/src/arctis_sound_manager/scripts/gui.py",
             "console": "integratedTerminal",
             "args": ["-vvvv"]
         },
@@ -32,7 +32,7 @@
             "name": "Systray app (no systemd)",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/src/linux_arctis_manager/scripts/gui.py",
+            "program": "${workspaceFolder}/src/arctis_sound_manager/scripts/gui.py",
             "args": ["--systray", "--no-enforce-systemd", "-vvvv"],
             "console": "integratedTerminal"
         },
@@ -40,7 +40,7 @@
             "name": "Systray app",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/src/linux_arctis_manager/scripts/gui.py",
+            "program": "${workspaceFolder}/src/arctis_sound_manager/scripts/gui.py",
             "args": ["--systray", "-vvvv"],
             "console": "integratedTerminal"
         },
@@ -48,7 +48,7 @@
             "name": "Tools: USB arctis devices",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/src/linux_arctis_manager/scripts/cli.py",
+            "program": "${workspaceFolder}/src/arctis_sound_manager/scripts/cli.py",
             "args": ["tools", "arctis-devices"],
             "console": "integratedTerminal"
         }

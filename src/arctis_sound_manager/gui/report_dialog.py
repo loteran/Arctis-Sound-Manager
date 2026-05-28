@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """
 ReportBugDialog — modal dialog to review and submit a bug report to GitHub.
 """

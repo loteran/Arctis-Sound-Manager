@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Single source of truth for the SteelSeries Arctis udev rules.
 
 Both packaging (PKGBUILD / RPM spec / debian/rules → scripts/generate_udev_rules.py)

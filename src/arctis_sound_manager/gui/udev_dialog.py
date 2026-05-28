@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """
 UdevRulesDialog — shown at startup when udev rules are missing or invalid,
 or at runtime when the daemon reports an EACCES on the USB device.
