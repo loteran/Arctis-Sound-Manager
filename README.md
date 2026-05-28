@@ -644,3 +644,13 @@ Tried ASM on your headset or distro? Found a bug or have a feature idea?
 **[Join GitHub Discussions →](https://github.com/loteran/Arctis-Sound-Manager/discussions)**
 
 Your feedback helps improve compatibility for everyone — especially for headsets not yet confirmed working.
+
+---
+
+## License
+
+This project is licensed under the [GNU General Public License v3.0](LICENSE).
+
+The majority of the source code is original work — Copyright (C) 2026 loteran.
+
+25 files are partially derived from [Linux Arctis Manager](https://github.com/elegos/Linux-Arctis-Manager/) by Giacomo Furlan (elegos), used under GPL-3.0 — Copyright (C) 2022 Giacomo Furlan (elegos).
