@@ -3,22 +3,18 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
+from arctis_sound_manager import service_control as sc
 from arctis_sound_manager.constants import (HOME_SYSTEMD_SERVICE_FOLDER,
                                             SYSTEMD_SERVICE_NAME)
 
 
 def is_systemd_unit_enabled() -> bool:
-    try:
-        subprocess.check_call(['systemctl', '--user', 'is-enabled', SYSTEMD_SERVICE_NAME], stdout=subprocess.DEVNULL)
-        return True
-    except subprocess.CalledProcessError:
-        pass
-
-    return False
+    # "arctis-manager" is the logical name; service_control resolves it to the
+    # real systemd unit and runs `systemctl --user is-enabled`.
+    return sc.is_enabled("arctis-manager")
 
 def ensure_systemd_unit(enable: bool = False) -> None:
     from arctis_sound_manager.init_system import detect_init
@@ -28,13 +24,9 @@ def ensure_systemd_unit(enable: bool = False) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     write_systemd_service(path)
     if enable:
-        try:
-            subprocess.run(
-                ['systemctl', '--user', 'enable', '--now', SYSTEMD_SERVICE_NAME],
-                check=True, capture_output=True,
-            )
-        except subprocess.CalledProcessError:
-            pass  # service may already be running or managed by system package
+        # service_control swallows failures and returns False (the service may
+        # already be running or be managed by a system package).
+        sc.enable("arctis-manager", now=True)
 
 def write_systemd_service(path: Path) -> None:
     daemon_path = shutil.which('asm-daemon') or Path(sys.argv[0]).resolve().parent / 'asm-daemon'

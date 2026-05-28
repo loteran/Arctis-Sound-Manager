@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.44] - 29 May 2026
+
+### Fixed
+
+- **dinit (Artix): Sonar mode toggle crashed** — switching Game/Chat ↔ Sonar called `systemctl --user restart …` with no dinit branch, raising `FileNotFoundError: systemctl` on systems without systemd. The toggle now works on dinit (issue #25).
+- **dinit (Artix): EQ / Sonar changes had no effect** — applying a new equalizer mode ran `dinitctl start pipewire-filter-chain`, but `start` is a no-op when the service is already running, so the freshly generated config was never reloaded (systemd correctly used `restart`). All config-reload paths now use `restart` on both init systems — this is the root cause of the "EQ does nothing" reports on dinit (issue #25).
+
+### Changed
+
+- **Centralised init-system handling** — introduced `service_control.py`, a single abstraction over `systemctl --user` and `dinitctl`. The logical→real service-name mapping (notably `filter-chain` → `pipewire-filter-chain` on dinit) and the start/restart distinction now live in one place instead of being copy-pasted across ~25 call sites in 11 files. Service calls no longer crash when the init manager binary is absent; they log and skip. This removes ~230 lines of duplicated branching and makes the issue #25 class of bugs impossible to reintroduce per-site. Added a regression test suite (`tests/test_service_control.py`).
+
 ## [1.1.43] - 28 May 2026
 
 ### Fixed

@@ -7,6 +7,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from arctis_sound_manager import service_control as sc
+
 logger = logging.getLogger(__name__)
 
 _SERVICE = "arctis-manager.service"
@@ -68,23 +70,19 @@ class SystemdBackend:
         return systemd_user_available()
 
     def is_enabled(self) -> bool:
-        result = subprocess.run(
-            ["systemctl", "--user", "is-enabled", _SERVICE],
-            capture_output=True, text=True,
-        )
-        return result.stdout.strip() == "enabled"
+        return sc.is_enabled("arctis-manager")
 
     def enable(self) -> None:
-        subprocess.run(["systemctl", "--user", "enable", _SERVICE], capture_output=True)
+        sc.enable("arctis-manager")
         gui_path = self._ensure_gui_service()
         if gui_path and gui_path.exists():
-            subprocess.run(["systemctl", "--user", "enable", _GUI_SERVICE], capture_output=True)
+            sc.enable("arctis-gui")
 
     def disable(self) -> None:
-        subprocess.run(["systemctl", "--user", "disable", _SERVICE], capture_output=True)
+        sc.disable("arctis-manager")
         gui_path = Path.home() / ".config" / "systemd" / "user" / _GUI_SERVICE
         if gui_path.exists():
-            subprocess.run(["systemctl", "--user", "disable", _GUI_SERVICE], capture_output=True)
+            sc.disable("arctis-gui")
 
     def display_name(self) -> str:
         return "systemd user service"
@@ -99,7 +97,7 @@ class SystemdBackend:
         try:
             gui_path.parent.mkdir(parents=True, exist_ok=True)
             gui_path.write_text(_GUI_SERVICE_TEMPLATE.format(asm_gui=asm_gui))
-            subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True)
+            sc.daemon_reload()
         except OSError as e:
             logger.warning("autostart: could not write arctis-gui.service: %s", e)
             return None
@@ -119,7 +117,7 @@ class DinitBackend:
         return is_dinit_service_enabled("arctis-manager") and is_xdg_autostart_enabled()
 
     def enable(self) -> None:
-        subprocess.run(["dinitctl", "enable", "arctis-manager"], check=False)
+        sc.enable("arctis-manager")
         # arctis-gui has no dinit service — XDG autostart is the right mechanism
         # (dinit services have no $DISPLAY/$WAYLAND_DISPLAY).
         from arctis_sound_manager.init_system import (
@@ -130,7 +128,7 @@ class DinitBackend:
             write_xprofile_fallback()
 
     def disable(self) -> None:
-        subprocess.run(["dinitctl", "disable", "arctis-manager"], check=False)
+        sc.disable("arctis-manager")
         from arctis_sound_manager.init_system import (
             remove_xdg_autostart, remove_xprofile_fallback,
         )
