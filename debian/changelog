@@ -1,3 +1,20 @@
+arctis-sound-manager (1.1.43-1) noble; urgency=medium
+
+  * Distrobox container fails to start after reboot on Bazzite / SteamOS /
+    Silverblue — /run/asm-hidraw lives on a tmpfs and is wiped at every
+    boot; the sudo mkdir -p in the install script only ran at container
+    creation time, so on the next boot crun could not stat the bind-mount
+    source and refused to start the container (crun: cannot stat
+    /run/asm-hidraw: No such file or directory). A systemd-tmpfiles drop-in
+    (/etc/tmpfiles.d/asm-hidraw.conf) is now installed on the host,
+    recreating the directory at sysinit.target well before Distrobox starts.
+    Added ConditionPathIsDirectory=/run/asm-hidraw to arctis-manager.service
+    to prevent crash-loops if the directory is somehow absent. Affects all
+    three Distrobox installers (bazzite.sh, steamos.sh, silverblue.sh —
+    issue #59).
+
+ -- loteran <axel.valadon@gmail.com>  Thu, 28 May 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.34-1) noble; urgency=medium
 
   * Wireless headset disconnect/reconnect loop — when the USB dongle stays

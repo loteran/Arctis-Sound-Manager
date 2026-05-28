@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.43" date="2026-05-28">
+      <description>
+        <p>Distrobox container fails to start after reboot on Bazzite / SteamOS / Silverblue — /run/asm-hidraw lives on a tmpfs and is wiped at every boot; the sudo mkdir -p in the install script only ran at container creation time, so on the next boot crun could not stat the bind-mount source and refused to start the container (crun: cannot stat /run/asm-hidraw: No such file or directory). A systemd-tmpfiles drop-in (/etc/tmpfiles.d/asm-hidraw.conf) is now installed on the host, recreating the directory at sysinit.target well before Distrobox starts. Added ConditionPathIsDirectory=/run/asm-hidraw to arctis-manager.service to prevent crash-loops if the directory is somehow absent. Affects all three Distrobox installers (bazzite.sh, steamos.sh, silverblue.sh — issue #59).</p>
+      </description>
+    </release>
     <release version="1.1.34" date="2026-05-18">
       <description>
         <p>Wireless headset disconnect/reconnect loop — when the USB dongle stays plugged in but the RF link drops (headset powered off or out of range), ASM retried USB commands thousands of times per second with no back-off, preventing the dongle firmware from completing RF re-association. Errors with errno 19 (ENODEV) now trigger a 1-second back-off; after ~10 s of consecutive failures ASM voluntarily releases the handle to let the dongle reconnect cleanly. Removed a redundant request_device_status() call that was firing on every loop iteration instead of the intended 2-second cadence (issue #49).</p>
@@ -199,11 +204,6 @@
     <release version="1.0.70" date="2026-04-25">
       <description>
         <p>Daemon crash on USB permission errors (#22): when is_kernel_driver_active() or detach_kernel_driver() raised a USBError (typically [Errno 13] Access denied because udev rules were not yet applied to a device that was already plugged in), the entire daemon crashed at startup. The GUI then failed to appear because the systemd service was in a failed state. kernel_detach() and kernel_attach() now catch USBError and return a status flag instead of propagating the exception. On EACCES, a clear error message is logged with three concrete remediation steps (replug, udevadm reload-rules + trigger, or reinstall via the distro package).</p>
-      </description>
-    </release>
-    <release version="1.0.69" date="2026-04-24">
-      <description>
-        <p>Remove all remaining hardcoded Nova Pro Wireless defaults (follow-up to #21): device_state.py used Nova Pro Wireless ALSA node names and the string "Arctis Nova Pro Wireless" as initial values AND as post-disconnect values. sonar_to_pipewire.py had the same strings as fallback constants in dead-code except branches. On a system without a Nova Pro Wireless, any code path that generated a filter-chain config before a device was attached (or after a disconnect) would write configs pointing to a sink that does not exist — same class of bug as #21, just at a different moment. device_state now defaults to empty strings and exposes is_device_set() so callers can distinguish "no device" from "device ready". All PipeWire config generators in sonar_to_pipewire.py (generate_sonar_eq_conf for device-dependent channels, generate_sonar_micro_conf, generate_virtual_sinks_conf, generate_hesuvi_conf) now skip generation with a clear warning when no device is attached, instead of writing configs with a hardcoded wrong target.</p>
       </description>
     </release>
   </releases>
