@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Central init-system abstraction for ASM.
 
 Every part of ASM that needs to start/stop/restart/enable a service (the
