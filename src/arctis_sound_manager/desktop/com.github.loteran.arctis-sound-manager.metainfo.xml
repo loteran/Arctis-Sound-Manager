@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.45" date="2026-05-29">
+      <description>
+        <p>Arctis 7X: daemon crashed with "Failed to find command interface endpoint" — some Arctis 7X (and other Arctis 1 family) firmwares expose the vendor HID command interface with an interrupt IN endpoint only, no OUT endpoint. get_command_endpoint_address() raised an exception instead of falling back, crashing the whole daemon before the GUI could appear. ASM now detects the missing OUT endpoint and routes commands over HID SET_REPORT (control transfer) automatically, which is the correct path for such devices (issue #59).</p>
+      </description>
+    </release>
     <release version="1.1.44" date="2026-05-29">
       <description>
         <p>dinit (Artix): Sonar mode toggle crashed — switching Game/Chat ↔ Sonar called systemctl --user restart … with no dinit branch, raising FileNotFoundError: systemctl on systems without systemd. The toggle now works on dinit (issue #25). dinit (Artix): EQ / Sonar changes had no effect — applying a new equalizer mode ran dinitctl start pipewire-filter-chain, but start is a no-op when the service is already running, so the freshly generated config was never reloaded (systemd correctly used restart). All config-reload paths now use restart on both init systems — this is the root cause of the "EQ does nothing" reports on dinit (issue #25). Centralised init-system handling — introduced service_control.py, a single abstraction over systemctl --user and dinitctl. The logical→real service-name mapping (notably filter-chain → pipewire-filter-chain on dinit) and the start/restart distinction now live in one place instead of being copy-pasted across ~25 call sites in 11 files. Service calls no longer crash when the init manager binary is absent; they log and skip. This removes ~230 lines of duplicated branching and makes the issue #25 class of bugs impossible to reintroduce per-site. Added a regression test suite (tests/test_service_control.py).</p>
@@ -199,11 +204,6 @@
     <release version="1.0.72" date="2026-04-25">
       <description>
         <p>Auto-run asm-setup on first GUI launch for installs that didn't go through a distro-package post-install hook (typically pipx). When the GUI starts and ~/.config/arctis_manager/.setup_done is missing, a new FirstRunDialog opens, runs asm-setup as a subprocess and streams its output live in the dialog so the user can follow what's happening (HRIR download, services, udev install). Distro packages already shipped /etc/xdg/autostart/asm-first-run.desktop for this — pipx users were left out, which was the root cause behind issue #22.</p>
-      </description>
-    </release>
-    <release version="1.0.71" date="2026-04-25">
-      <description>
-        <p>asm-setup now always reloads + triggers udev rules, even when the rules file on disk is already valid. Previously it printed [ok] udev rules already valid — skipping and exited, leaving the currently-attached dongle without the new permissions — which was the root cause behind issue #22 ("no device detected after upgrade"). GUI dialog "Apply now" when the daemon detects an EACCES on the USB device. The daemon now exposes a permission_error flag over D-Bus; when the GUI sees it, it surfaces a dialog explaining that the rules exist but were not applied to the connected device, with a one-click button that runs asm-cli udev reload-rules (with pkexec/sudo) and then asks the daemon to re-scan via the existing ReloadConfigs D-Bus method. CoreEngine exposes a new permission_error: bool attribute set by _log_usb_access_error and cleared on the next successful kernel_detach. ArctisManagerDbusSettingsService.GetSettings now returns it under the permission_error key.</p>
       </description>
     </release>
   </releases>

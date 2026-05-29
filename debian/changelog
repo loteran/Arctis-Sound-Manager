@@ -1,3 +1,16 @@
+arctis-sound-manager (1.1.45-1) noble; urgency=medium
+
+  * Arctis 7X: daemon crashed with "Failed to find command interface
+    endpoint" — some Arctis 7X (and other Arctis 1 family) firmwares expose
+    the vendor HID command interface with an interrupt IN endpoint only, no
+    OUT endpoint. get_command_endpoint_address() raised an exception instead
+    of falling back, crashing the whole daemon before the GUI could appear.
+    ASM now detects the missing OUT endpoint and routes commands over HID
+    SET_REPORT (control transfer) automatically, which is the correct path
+    for such devices (issue #59).
+
+ -- loteran <axel.valadon@gmail.com>  Fri, 29 May 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.44-1) noble; urgency=medium
 
   * dinit (Artix): Sonar mode toggle crashed — switching Game/Chat ↔ Sonar
