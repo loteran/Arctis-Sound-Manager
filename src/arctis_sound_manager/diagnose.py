@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Generate a diagnostic dump for bug reports.
 
 Captures everything a maintainer typically needs to triage an Arctis Sound

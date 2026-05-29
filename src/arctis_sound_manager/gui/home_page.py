@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """
 Home page — Audio mixer matching the ArctisSonar GUI visual style.
 Shows horizontal audio channel cards (Game, Chat, Media, etc.) with vertical sliders.

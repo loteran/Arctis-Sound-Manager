@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Background lang updater — checks GitHub for new/updated .ini files once per run."""
 from __future__ import annotations
 

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """
 preset_share.py — Encode/decode EQ preset deep links (no Qt dependency).
 

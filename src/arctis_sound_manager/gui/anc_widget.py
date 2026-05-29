@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """
 ANC / Transparent mode — interactive control.
 Sends USB commands to change mode and transparent level via D-Bus.

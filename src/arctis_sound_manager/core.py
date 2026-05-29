@@ -1,3 +1,7 @@
+# Copyright (C) 2022 Giacomo Furlan (elegos) — original work
+# Copyright (C) 2026 loteran — modifications
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 import asyncio
 import json
 import logging
@@ -614,7 +618,18 @@ class CoreEngine:
 
         endpoint, _ = self.guess_interface_endpoint('out', self.device_config.command_interface_index[0], self.device_config.command_interface_index[1])
         if endpoint is None:
-            raise Exception(f"Failed to find command interface endpoint for device: {self.usb_device.idProduct:04x}:{self.usb_device.idVendor:04x}")
+            # Some units (e.g. certain Arctis 7X firmwares, issue #59) expose the
+            # command interface with an interrupt IN endpoint only — no OUT. The
+            # correct path then is HID SET_REPORT over the control endpoint, which
+            # send_command() already handles for endpoint 0 (wValue 0x0200, output).
+            # Fall back instead of crashing the whole daemon.
+            self.logger.warning(
+                f"No interrupt OUT endpoint on command interface "
+                f"{self.device_config.command_interface_index[0]} for "
+                f"{self.usb_device.idVendor:04x}:{self.usb_device.idProduct:04x}; "
+                f"falling back to HID SET_REPORT (control transfer)."
+            )
+            return 0
 
         return endpoint
     

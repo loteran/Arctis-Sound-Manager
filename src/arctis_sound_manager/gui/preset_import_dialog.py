@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """
 preset_import_dialog.py — Dialog for importing EQ presets via deep link.
 

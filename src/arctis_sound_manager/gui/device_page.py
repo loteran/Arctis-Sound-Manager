@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """
 Device / Settings page — ArctisSonar GUI visual style.
 Matches the ref_settingsPage.png design.

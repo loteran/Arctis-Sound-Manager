@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """
 Bug reporting utilities — system info, crash file I/O, GitHub URL.
 No Qt imports: safe to use in daemon (headless).

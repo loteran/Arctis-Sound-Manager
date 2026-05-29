@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.45] - 29 May 2026
+
+### Fixed
+
+- **Arctis 7X: daemon crashed with "Failed to find command interface endpoint"** — some Arctis 7X (and other Arctis 1 family) firmwares expose the vendor HID command interface with an interrupt IN endpoint only, no OUT endpoint. `get_command_endpoint_address()` raised an exception instead of falling back, crashing the whole daemon before the GUI could appear. ASM now detects the missing OUT endpoint and routes commands over HID SET_REPORT (control transfer) automatically, which is the correct path for such devices (issue #59).
+
 ## [1.1.44] - 29 May 2026
 
 ### Fixed

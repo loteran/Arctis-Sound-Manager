@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Lightweight weather fetcher — Open-Meteo (no API key) + Nominatim geocoding."""
 from __future__ import annotations
 

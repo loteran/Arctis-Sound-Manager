@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """
 PipeWire utilities for native (non-PulseAudio) stream management.
 Used to detect and move apps like mpv/haruna that bypass PulseAudio.

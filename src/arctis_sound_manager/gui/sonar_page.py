@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """
 sonar_page.py — Full Sonar mode UI: Game / Chat / Micro tabs.
 

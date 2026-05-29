@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """
 Equalizer page — EQ mode toggle (Sonar / Custom) + 10-band EQ sliders + presets.
 """

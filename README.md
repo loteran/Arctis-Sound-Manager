@@ -120,18 +120,18 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
 | Device | Working | Users | Product ID(s) |
 |---|---|---|---|
 | Arctis 1 / 7X / 7P Wireless |  |  | 12b3, 12b6, 12d5, 12d7 |
-| Arctis 7 / 7 2019 / Pro 2019 / Pro GameDAC | ✅ | 1 | 1260, 12ad, 1252, 1280 |
-| Arctis 7+ / PS5 / Xbox / Destiny | ✅ | 2 | 220e, 2212, 2216, 2236 |
-| Arctis 9 Wireless | ✅ | 2 | 12c2 |
-| Arctis Pro Wireless | ✅ | 3 | 1290, 1294 |
-| Arctis Nova Pro Wireless / X | ✅ | 23 | 12e0, 12e5 |
-| Arctis Nova Pro Wired / Xbox Wired | ✅ | 2 | 12cb, 12cd |
-| Arctis Nova 3 | ✅ | 4 | 12ec |
-| Arctis Nova 3P / 3X Wireless | ✅ | 4 | 2269, 226d |
-| Arctis Nova 5 / 5X | ✅ | 3 | 2232, 2253 |
-| Arctis Nova 7 Gen 1 | ✅ | 2 | 2202, 2206, 223a, 227a, 22ab, 22a4 |
-| Arctis Nova 7 Gen 2 | ✅ | 17 | 22a1, 227e, 2258, 229e, 22a9, 22a5 |
-| Arctis Nova 7P | ✅ | 5 | 220a, 22a7 |
+| Arctis 7 / 7 2019 / Pro 2019 / Pro GameDAC | ✅ | 1 | 1260, $\color{royalblue}{\textbf{12ad}}$, 1252, 1280 |
+| Arctis 7+ / PS5 / Xbox / Destiny | ✅ | 2 | $\color{royalblue}{\textbf{220e}}$, 2212, 2216, 2236 |
+| Arctis 9 Wireless | ✅ | 2 | $\color{royalblue}{\textbf{12c2}}$ |
+| Arctis Pro Wireless | ✅ | 3 | $\color{royalblue}{\textbf{1290}}$, $\color{royalblue}{\textbf{1294}}$ |
+| Arctis Nova Pro Wireless / X | ✅ | 26 | $\color{royalblue}{\textbf{12e0}}$, $\color{royalblue}{\textbf{12e5}}$ |
+| Arctis Nova Pro Wired / Xbox Wired | ✅ | 4 | $\color{royalblue}{\textbf{12cb}}$, 12cd |
+| Arctis Nova 3 | ✅ | 4 | $\color{royalblue}{\textbf{12ec}}$ |
+| Arctis Nova 3P / 3X Wireless | ✅ | 4 | $\color{royalblue}{\textbf{2269}}$, 226d |
+| Arctis Nova 5 / 5X | ✅ | 5 | $\color{royalblue}{\textbf{2232}}$, 2253 |
+| Arctis Nova 7 Gen 1 | ✅ | 2 | $\color{royalblue}{\textbf{2202}}$, 2206, 223a, 227a, 22ab, 22a4 |
+| Arctis Nova 7 Gen 2 | ✅ | 19 | $\color{royalblue}{\textbf{22a1}}$, $\color{royalblue}{\textbf{227e}}$, 2258, $\color{royalblue}{\textbf{229e}}$, 22a9, $\color{royalblue}{\textbf{22a5}}$ |
+| Arctis Nova 7P | ✅ | 5 | 220a, $\color{royalblue}{\textbf{22a7}}$ |
 | Arctis Nova Elite |  |  | 2244, 2249 |
 <!-- STATS:DEVICES:END -->
 
@@ -449,7 +449,7 @@ To request a new language, open a [GitHub issue](https://github.com/loteran/Arct
 ## Community stats
 
 <!-- STATS:META:START -->
-_Based on **65** unique users (**392** anonymous data points) — last updated 2026-05-26_
+_Based on **74** unique users (**442** anonymous data points) — last updated 2026-05-29_
 <!-- STATS:META:END -->
 
 > Anonymous usage data shared voluntarily by opted-in users.
@@ -461,16 +461,16 @@ _Based on **65** unique users (**392** anonymous data points) — last updated 2
 <!-- STATS:TESTED_DISTROS:START -->
 | Distribution | Install method | Users |
 |---|---|---|
-| CachyOS | 🎯 AUR | 👥 29 |
+| CachyOS | 🎯 AUR | 👥 36 |
 | Nobara Linux 43 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 6 |
 | Arch Linux | 🎯 AUR | 👥 6 |
 | Ubuntu 26.04 LTS | 🎯 PPA | 👥 3 |
+| Ubuntu 24.04.4 LTS | 🎯 PPA | 👥 3 |
 | Linux Mint 22.3 | 🎯 PPA | 👥 3 |
+| Garuda Linux | 🎯 AUR | 👥 3 |
 | Fedora Linux 44 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 3 |
 | Artix Linux | 🎯 AUR | 👥 3 |
-| Ubuntu 24.04.4 LTS | 🎯 PPA | 👥 2 |
 | Manjaro Linux | 🎯 AUR | 👥 2 |
-| Garuda Linux | 🎯 AUR | 👥 2 |
 | PikaOS 4 | 📦 Source | 👥 1 |
 | NixOS 26.05 (Yarara) | 📦 Source | 👥 1 |
 | Fedora Linux 44 (Workstation Edition) | 🎯 COPR | 👥 1 |
@@ -486,16 +486,16 @@ _Based on **65** unique users (**392** anonymous data points) — last updated 2
 <!-- STATS:HEADSETS:START -->
 | Headset | Installs |
 |---|---|
-| Arctis Nova Pro Wireless | 23 |
-| Arctis Nova 7 (Gen 2) | 17 |
+| Arctis Nova Pro Wireless | 26 |
+| Arctis Nova 7 (Gen 2) | 19 |
+| Arctis Nova 5 Wireless | 5 |
 | Arctis Nova 7P (Gen 2) | 5 |
 | Arctis Nova 3 | 4 |
-| Arctis Nova 5 Wireless | 3 |
+| Arctis Nova Pro Wired | 4 |
 | Arctis Pro Wireless | 3 |
 | Arctis 7+ | 2 |
 | Arctis 9 Wireless | 2 |
 | Arctis Nova 7 (Gen 1) | 2 |
-| Arctis Nova Pro Wired | 2 |
 | Arctis 7/Pro Gaming | 1 |
 | Arctis Nova 5X (PID 2255) | 1 |
 <!-- STATS:HEADSETS:END -->
@@ -503,16 +503,16 @@ _Based on **65** unique users (**392** anonymous data points) — last updated 2
 <!-- STATS:DISTROS:START -->
 | Distribution | Installs |
 |---|---|
-| CachyOS | 29 |
+| CachyOS | 36 |
 | Nobara Linux 43 (KDE Plasma Desktop Edition) | 6 |
 | Arch Linux | 6 |
 | Ubuntu 26.04 LTS | 3 |
+| Ubuntu 24.04.4 LTS | 3 |
 | Linux Mint 22.3 | 3 |
+| Garuda Linux | 3 |
 | Fedora Linux 44 (KDE Plasma Desktop Edition) | 3 |
 | Artix Linux | 3 |
-| Ubuntu 24.04.4 LTS | 2 |
 | Manjaro Linux | 2 |
-| Garuda Linux | 2 |
 | PikaOS 4 | 1 |
 | NixOS 26.05 (Yarara) | 1 |
 | Fedora Linux 44 (Workstation Edition) | 1 |
@@ -637,14 +637,6 @@ scripts/
 
 ---
 
-## ©️ Credits
-
-This software is a derivative work of [Linux Arctis Manager](https://github.com/elegos/Linux-Arctis-Manager/) by @elegos et al.
-
-The software was forked on 2026-03-09 at version 2.1.0 of the original work, and from there on it continued the development independently.
-
-Credits must be also given to the original project for the community support for devices support, that have been manually cherry-picked and authored in this project under the name of @loteran.
-
 ## 💬 Share your experience
 
 Tried ASM on your headset or distro? Found a bug or have a feature idea?
@@ -652,3 +644,13 @@ Tried ASM on your headset or distro? Found a bug or have a feature idea?
 **[Join GitHub Discussions →](https://github.com/loteran/Arctis-Sound-Manager/discussions)**
 
 Your feedback helps improve compatibility for everyone — especially for headsets not yet confirmed working.
+
+---
+
+## License
+
+This project is licensed under the [GNU General Public License v3.0](LICENSE).
+
+The majority of the source code is original work — Copyright (C) 2026 loteran.
+
+25 files are partially derived from [Linux Arctis Manager](https://github.com/elegos/Linux-Arctis-Manager/) by Giacomo Furlan (elegos), used under GPL-3.0 — Copyright (C) 2022 Giacomo Furlan (elegos).
