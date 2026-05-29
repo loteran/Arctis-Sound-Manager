@@ -237,13 +237,22 @@ def test_check_and_fix_stale_configs_fixes_2ch_game(tmp_path):
 
 
 def test_check_and_fix_stale_configs_noop_when_clean(tmp_path, monkeypatch):
-    # ensure_sonar_eq_configs() validates that BOTH game and chat configs
-    # exist with the right target+channels — the fixture must mirror the
-    # full contract for the noop assertion to hold. Use stable test values
-    # for both physical-out helpers so the expected node.target is known
-    # (no real Arctis is plugged into CI runners).
+    # check_and_fix_stale_configs() validates that the game, media AND chat
+    # configs exist with the right target+channels — the fixture must mirror
+    # the full contract for the noop assertion to hold. Use stable test values
+    # for the physical-out helpers so the expected node.target is known
+    # (no real Arctis is plugged into CI runners). Spatial audio defaults to
+    # enabled, so game and media are 8ch routed through the HeSuVi surround.
     monkeypatch.setattr(
         "arctis_sound_manager.sonar_to_pipewire._get_physical_out",
+        lambda: "alsa_output.test-headset",
+    )
+    monkeypatch.setattr(
+        "arctis_sound_manager.sonar_to_pipewire._get_physical_out_game",
+        lambda: "alsa_output.test-headset",
+    )
+    monkeypatch.setattr(
+        "arctis_sound_manager.sonar_to_pipewire._get_physical_out_chat",
         lambda: "alsa_output.test-headset",
     )
 
@@ -267,7 +276,11 @@ def test_check_and_fix_stale_configs_noop_when_clean(tmp_path, monkeypatch):
         '    playback.props = { node.target         = "alsa_output.test-headset" } } }\n'
         ']\n'
     )
+    # Media mirrors game: 8ch routed through the HeSuVi surround when spatial
+    # audio is enabled (the default).
+    media_clean = game_clean
     (tmp_path / "sonar-game-eq.conf").write_text(game_clean)
+    (tmp_path / "sonar-media-eq.conf").write_text(media_clean)
     (tmp_path / "sonar-chat-eq.conf").write_text(chat_clean)
 
     with patch("arctis_sound_manager.sonar_to_pipewire._CONF_DIR", tmp_path):

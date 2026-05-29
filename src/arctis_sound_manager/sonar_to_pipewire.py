@@ -878,29 +878,6 @@ def _write_conf(path: Path, text: str) -> None:
     path.write_text(text)
 
 
-def apply_sonar_channel(
-    channel: str,
-    bands: list[EqBand],
-    basses_db: float = 0.0,
-    voix_db: float = 0.0,
-    aigus_db: float = 0.0,
-) -> None:
-    """Generate config and restart PipeWire to reload filter-chain modules.
-
-    All Sonar configs go to pipewire.conf.d/ and are loaded by the main
-    PipeWire daemon.  This requires a PipeWire restart but avoids the
-    WirePlumber deadlock caused by the separate filter-chain service.
-    """
-    from arctis_sound_manager import service_control as sc
-
-    if channel == "micro":
-        generate_sonar_micro_conf(bands, basses_db, voix_db, aigus_db)
-    else:
-        generate_sonar_eq_conf(channel, bands, basses_db, voix_db, aigus_db)
-
-    sc.restart("pipewire", timeout=15)
-
-
 def check_and_fix_stale_configs() -> tuple[bool, bool]:
     """Detect and fix stale Sonar configs.
 
