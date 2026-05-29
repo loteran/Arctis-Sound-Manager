@@ -110,8 +110,19 @@ def test_game_8ch_channels():
 
 def test_chat_targets_physical_output():
     """Chat EQ targets ALSA physical output directly (2ch stereo)."""
-    text = generate_sonar_eq_conf("chat", [], 0.0, 0.0, 0.0,
-                                  output_path=Path("/dev/null"))
+    from arctis_sound_manager import device_state
+    device_state.set_current_device(
+        physical_out_game="alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.pro-output-1",
+        physical_out_chat="alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.pro-output-0",
+        physical_in="alsa_input.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.mono-fallback",
+        spatial_engine="hesuvi",
+        device_name="SteelSeries Arctis Nova Pro Wireless",
+    )
+    try:
+        text = generate_sonar_eq_conf("chat", [], 0.0, 0.0, 0.0,
+                                      output_path=Path("/dev/null"))
+    finally:
+        device_state.clear()
     assert "alsa_output.usb-SteelSeries" in text
     assert "audio.channels = 2" in text
 

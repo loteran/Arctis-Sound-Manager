@@ -103,6 +103,9 @@ def test_xdg_is_enabled_false_when_hidden_true(monkeypatch, tmp_path):
 
 def test_hyprland_enable_creates_config(monkeypatch, tmp_path):
     monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+    # Pin the resolved exe so the test is deterministic regardless of whether
+    # asm-gui is on PATH on the machine running the suite.
+    monkeypatch.setattr(autostart_mod.shutil, "which", lambda name: None)
     hypr_dir = tmp_path / ".config" / "hypr"
     hypr_dir.mkdir(parents=True)
     backend = HyprlandBackend()
@@ -116,6 +119,7 @@ def test_hyprland_enable_creates_config(monkeypatch, tmp_path):
 
 def test_hyprland_enable_appends_to_existing_config(monkeypatch, tmp_path):
     monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(autostart_mod.shutil, "which", lambda name: None)
     hypr_dir = tmp_path / ".config" / "hypr"
     hypr_dir.mkdir(parents=True)
     conf = hypr_dir / "hyprland.conf"

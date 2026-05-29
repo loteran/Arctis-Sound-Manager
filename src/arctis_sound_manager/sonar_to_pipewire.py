@@ -561,8 +561,11 @@ def generate_sonar_micro_conf(
     last_is_ladspa = False
 
     def _smart_link(new_name: str, new_is_ladspa: bool) -> str:
-        """Pick the right link helper based on source/dest node types."""
-        nonlocal last_is_ladspa
+        """Pick the right link helper based on source/dest node types.
+
+        Reads ``last_node`` / ``last_is_ladspa`` from the enclosing scope; it
+        never rebinds them, so no ``nonlocal`` declaration is needed.
+        """
         if last_is_ladspa and new_is_ladspa:
             return _link_ladspa(last_node, new_name)
         elif last_is_ladspa:

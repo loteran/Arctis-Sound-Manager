@@ -701,7 +701,7 @@ class HomePage(QWidget):
 
         # ── Cards area (3/4 of window width, centered) ────────────────────────
         cards_outer = QWidget()
-        cards_outer.setStyleSheet(f"background: transparent;")
+        cards_outer.setStyleSheet("background: transparent;")
         cards_outer_layout = QHBoxLayout(cards_outer)
         cards_outer_layout.setContentsMargins(0, 0, 0, 0)
         cards_outer_layout.setSpacing(0)
@@ -872,7 +872,6 @@ class HomePage(QWidget):
             InstallMethod, PACKAGE_MANAGER_COMMANDS,
             UpdateInstallWorker, detect_all_install_methods,
         )
-        from PySide6.QtGui import QClipboard
         from PySide6.QtCore import QTimer
         from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
 
