@@ -152,6 +152,43 @@ class CoreEngine:
         except Exception as exc:
             self.logger.error("recreate_loopbacks: unexpected error: %r", exc)
 
+    async def _loopback_watchdog(self) -> None:
+        """Periodically check for dead loopback processes and restart them.
+
+        Runs as an asyncio ``Task`` alongside ``core_loop``.  Every 5 seconds,
+        if a device is currently connected (``device_state.is_device_set()``)
+        and there are registered loopbacks to watch, calls
+        :meth:`LoopbackManager.restart_dead` to revive any crashed
+        ``pw-loopback`` processes.
+
+        The coroutine exits cleanly when ``self._stopping`` is set (by
+        :meth:`stop`) or when the task is cancelled (by the daemon shutdown
+        handler).  Errors are always caught and logged — this coroutine must
+        never crash the daemon.
+        """
+        _WATCHDOG_INTERVAL: float = 5.0
+        try:
+            while not self._stopping:
+                await asyncio.sleep(_WATCHDOG_INTERVAL)
+                if self._stopping:
+                    break
+                if not device_state.is_device_set():
+                    # No device — no loopbacks to watch.
+                    continue
+                try:
+                    restarted = self.loopback_manager.restart_dead()
+                    if restarted:
+                        self.logger.warning(
+                            "_loopback_watchdog: restarted dead loopback(s): %s",
+                            restarted,
+                        )
+                except Exception as exc:
+                    self.logger.error(
+                        "_loopback_watchdog: unexpected error in restart_dead: %r", exc
+                    )
+        except asyncio.CancelledError:
+            raise
+
     def start(self) -> Coroutine:
         self._stopping = False
         self.usb_devices_monitor.start()
@@ -162,6 +199,16 @@ class CoreEngine:
         self.logger.info("Stopping CoreEngine...")
         self._stopping = True
         self.usb_devices_monitor.stop()
+        # Stop all pw-loopback child processes so they don't become orphans
+        # when the daemon exits via SIGTERM/SIGINT.  Without this, every
+        # `systemctl --user restart arctis-manager` leaves orphan processes
+        # that conflict with the next startup (duplicate node.name).
+        # Called synchronously from an asyncio signal handler, so we keep it
+        # fast and best-effort — never raise.
+        try:
+            self.loopback_manager.stop_all()
+        except Exception as exc:
+            self.logger.warning("stop(): error stopping loopbacks: %r", exc)
 
     def manage_mix_change(self):
         if not self.device_status or not self.device_config:

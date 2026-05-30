@@ -182,6 +182,10 @@ class LoopbackManager:
     def __init__(self) -> None:
         self._lock: threading.Lock = threading.Lock()
         self._handles: dict[str, subprocess.Popen] = {}  # channel -> Popen
+        # Remembered spec per channel, used by restart_dead() to re-launch
+        # a crashed process.  A channel is removed from _specs when stopped
+        # intentionally (stop / stop_all) so the watchdog does not revive it.
+        self._specs: dict[str, LoopbackSpec] = {}
 
     # ── Public API ────────────────────────────────────────────────────────
 
@@ -189,7 +193,8 @@ class LoopbackManager:
         """Launch a ``pw-loopback`` process for *spec*.
 
         If a process is already registered for ``spec.channel``, it is stopped
-        first (ensuring clean re-creation).
+        first (ensuring clean re-creation).  The spec is memorised so that
+        :meth:`restart_dead` can revive the process if it crashes later.
 
         Parameters
         ----------
@@ -202,6 +207,10 @@ class LoopbackManager:
             _log.info("Starting loopback %r: %s", spec.channel, " ".join(argv))
             proc = subprocess.Popen(argv)
             self._handles[spec.channel] = proc
+            # Remember spec AFTER a successful Popen so a failed launch
+            # (OSError) doesn't leave a stale entry that the watchdog would
+            # keep trying to re-start forever.
+            self._specs[spec.channel] = spec
 
     def stop(self, channel: str) -> None:
         """Terminate the loopback process for *channel*.
@@ -210,6 +219,9 @@ class LoopbackManager:
         the process has not exited by then, SIGKILL is sent.  No-op if the
         channel is not registered or the process has already exited.
 
+        The spec for *channel* is removed so that :meth:`restart_dead` will
+        not attempt to revive an intentionally-stopped loopback.
+
         Parameters
         ----------
         channel:
@@ -217,6 +229,8 @@ class LoopbackManager:
         """
         with self._lock:
             self._stop_unlocked(channel)
+            # Discard the remembered spec so the watchdog does not revive it.
+            self._specs.pop(channel, None)
 
     def recreate(self, spec: LoopbackSpec) -> None:
         """Stop the existing loopback for *spec.channel*, then start a new one.
@@ -230,10 +244,17 @@ class LoopbackManager:
         self.start(spec)
 
     def stop_all(self) -> None:
-        """Stop all registered loopback processes."""
+        """Stop all registered loopback processes.
+
+        All remembered specs are discarded so :meth:`restart_dead` will not
+        attempt to revive any of them after a deliberate shutdown.
+        """
         with self._lock:
             for channel in list(self._handles.keys()):
                 self._stop_unlocked(channel)
+            # Clear specs for intentionally-stopped channels so the watchdog
+            # does not attempt to revive them.
+            self._specs.clear()
 
     def recreate_all(self, specs: list[LoopbackSpec]) -> None:
         """Stop all current loopbacks, then start one for each spec.
@@ -263,6 +284,55 @@ class LoopbackManager:
             if proc is None:
                 return False
             return proc.poll() is None
+
+    def restart_dead(self) -> list[str]:
+        """Restart any loopback process that has died unexpectedly.
+
+        Iterates over every channel that has a remembered spec (i.e. was
+        started and not intentionally stopped).  For each one whose process
+        has exited (``poll() is not None``) or was never tracked, the process
+        is re-launched using the memorised :class:`LoopbackSpec`.
+
+        Channels stopped deliberately via :meth:`stop` or :meth:`stop_all`
+        have their spec removed from :attr:`_specs`, so this method will
+        **not** revive them.
+
+        This method is thread-safe and is designed to be called from the
+        :meth:`CoreEngine._loopback_watchdog` coroutine at a regular cadence.
+
+        Returns
+        -------
+        list[str]
+            Logical channel names that were restarted (empty list if all
+            loopbacks are healthy or nothing is registered).
+        """
+        restarted: list[str] = []
+        with self._lock:
+            for channel, spec in list(self._specs.items()):
+                proc = self._handles.get(channel)
+                is_dead = proc is None or proc.poll() is not None
+                if not is_dead:
+                    continue
+                # The process has crashed — attempt to re-launch it.
+                _log.warning(
+                    "Loopback %r died unexpectedly (rc=%s) — restarting",
+                    channel,
+                    proc.returncode if proc is not None else "N/A",
+                )
+                try:
+                    argv = _build_pw_loopback_argv(spec)
+                    new_proc = subprocess.Popen(argv)
+                    self._handles[channel] = new_proc
+                    restarted.append(channel)
+                    _log.info(
+                        "Loopback %r restarted (pid=%d)", channel, new_proc.pid
+                    )
+                except Exception as exc:
+                    _log.error(
+                        "Failed to restart loopback %r: %r — will retry next cycle",
+                        channel, exc,
+                    )
+        return restarted
 
     # ── Internal helpers ──────────────────────────────────────────────────
 

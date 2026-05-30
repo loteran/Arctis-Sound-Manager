@@ -447,3 +447,133 @@ class TestMakeSpecs:
         specs = make_specs(sonar=True, physical_game=self.PHYS_GAME, physical_chat=self.PHYS_CHAT)
         for spec in specs:
             assert "Arctis" in spec.description
+
+
+# ── LoopbackManager.restart_dead ─────────────────────────────────────────────
+
+
+class TestRestartDead:
+    """Tests for restart_dead() — watchdog recovery of crashed loopbacks.
+
+    Key invariants:
+    - A loopback whose process has exited (poll() returns an int) is relaunched
+      and included in the return value.
+    - A loopback whose process is still running (poll() returns None) is NOT
+      relaunched.
+    - A channel stopped intentionally via stop() has its spec removed; it is
+      NOT relaunched by restart_dead().
+    - An empty manager returns an empty list.
+    """
+
+    def test_returns_empty_when_nothing_registered(self) -> None:
+        mgr = LoopbackManager()
+        assert mgr.restart_dead() == []
+
+    def test_dead_loopback_is_restarted_and_listed(
+        self, media_spec: LoopbackSpec
+    ) -> None:
+        """A process whose poll() returns a non-None exit code must be relaunched."""
+        mgr = LoopbackManager()
+        dead_proc = _mock_proc(returncode=1)
+        new_proc = _mock_proc()
+        new_proc.pid = 77777
+
+        with patch("subprocess.Popen", side_effect=[dead_proc, new_proc]) as mock_popen:
+            mgr.start(media_spec)          # Popen call 1 — dead_proc
+            restarted = mgr.restart_dead() # Popen call 2 — new_proc
+
+        assert "media" in restarted
+        assert len(restarted) == 1
+        assert mock_popen.call_count == 2
+
+    def test_alive_loopback_is_not_restarted(
+        self, media_spec: LoopbackSpec
+    ) -> None:
+        """A process still running (poll()=None) must not be touched."""
+        mgr = LoopbackManager()
+        live_proc = _mock_proc(returncode=None)  # poll() returns None → alive
+
+        with patch("subprocess.Popen", return_value=live_proc) as mock_popen:
+            mgr.start(media_spec)
+            restarted = mgr.restart_dead()
+
+        assert restarted == []
+        # Popen was called exactly once (for the initial start only)
+        assert mock_popen.call_count == 1
+
+    def test_intentionally_stopped_channel_not_restarted(
+        self, media_spec: LoopbackSpec
+    ) -> None:
+        """A channel stopped via stop() must not be revived by restart_dead()."""
+        mgr = LoopbackManager()
+        proc = _mock_proc()
+
+        with patch("subprocess.Popen", return_value=proc):
+            mgr.start(media_spec)
+
+        mgr.stop("media")  # intentional stop — removes spec from _specs
+
+        with patch("subprocess.Popen") as mock_popen:
+            restarted = mgr.restart_dead()
+
+        assert restarted == []
+        mock_popen.assert_not_called()
+
+    def test_mixed_channels_only_dead_ones_restarted(
+        self,
+        game_spec: LoopbackSpec,
+        chat_spec: LoopbackSpec,
+        media_spec: LoopbackSpec,
+    ) -> None:
+        """With multiple channels, only the dead ones are restarted."""
+        mgr = LoopbackManager()
+        live_proc = _mock_proc(returncode=None)   # game — alive
+        dead_proc = _mock_proc(returncode=2)      # chat — dead
+        live_proc2 = _mock_proc(returncode=None)  # media — alive
+        revived_proc = _mock_proc()
+        revived_proc.pid = 88888
+
+        with patch(
+            "subprocess.Popen",
+            side_effect=[live_proc, dead_proc, live_proc2, revived_proc],
+        ):
+            mgr.start(game_spec)
+            mgr.start(chat_spec)
+            mgr.start(media_spec)
+            restarted = mgr.restart_dead()
+
+        assert restarted == ["chat"]
+
+    def test_stop_all_prevents_watchdog_from_reviving(
+        self, all_sonar_specs: list[LoopbackSpec]
+    ) -> None:
+        """stop_all() must clear _specs so restart_dead() is a no-op afterwards."""
+        mgr = LoopbackManager()
+        procs = [_mock_proc() for _ in all_sonar_specs]
+
+        with patch("subprocess.Popen", side_effect=procs):
+            for spec in all_sonar_specs:
+                mgr.start(spec)
+
+        mgr.stop_all()  # clears both _handles and _specs
+
+        with patch("subprocess.Popen") as mock_popen:
+            restarted = mgr.restart_dead()
+
+        assert restarted == []
+        mock_popen.assert_not_called()
+
+    def test_restart_dead_updates_handle(
+        self, media_spec: LoopbackSpec
+    ) -> None:
+        """After restart_dead(), is_running() must return True for the channel."""
+        mgr = LoopbackManager()
+        dead_proc = _mock_proc(returncode=0)
+        new_proc = _mock_proc(returncode=None)  # alive after restart
+        new_proc.pid = 55566
+
+        with patch("subprocess.Popen", side_effect=[dead_proc, new_proc]):
+            mgr.start(media_spec)
+            mgr.restart_dead()
+
+        assert mgr.is_running("media") is True
