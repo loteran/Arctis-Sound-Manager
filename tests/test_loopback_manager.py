@@ -144,7 +144,14 @@ class TestBuildArgv:
 
     def test_playback_description(self, media_spec: LoopbackSpec) -> None:
         argv = _build_pw_loopback_argv(media_spec)
-        assert f"node.description={media_spec.description}" in argv[2]
+        # Description is quoted because it contains spaces.
+        assert f'node.description="{media_spec.description}"' in argv[2]
+
+    def test_capture_has_quoted_description(self, media_spec: LoopbackSpec) -> None:
+        # The capture side is the sink apps see (Discord/browser pickers, mixers),
+        # so the user-facing description must be there, quoted (spaces).
+        argv = _build_pw_loopback_argv(media_spec)
+        assert f'node.description="{media_spec.description}"' in argv[1]
 
     # ── Per-channel correctness ────────────────────────────────────────────
 

@@ -126,15 +126,20 @@ def _build_pw_loopback_argv(spec: LoopbackSpec) -> list[str]:
     list[str]
         Argv suitable for ``subprocess.Popen``.
     """
+    # node.description is the user-facing name shown in app output pickers
+    # (Discord, browsers) and mixers — it MUST be on the capture side, which is
+    # the sink applications see. The value contains spaces, so it is wrapped in
+    # double quotes; PipeWire's SPA parser reads the quoted string as one value.
     capture_props = (
         f"node.name={spec.capture_name}"
+        f' node.description="{spec.description}"'
         f" media.class=Audio/Sink"
         f" audio.channels=2"
         f" audio.position=[FL FR]"
     )
     playback_props = (
         f"node.name={spec.playback_name}"
-        f" node.description={spec.description}"
+        f' node.description="{spec.description}"'
         f" audio.channels=2"
         f" audio.position=[FL FR]"
         f" stream.dont-remix=false"
