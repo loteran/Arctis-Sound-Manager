@@ -32,7 +32,7 @@ from arctis_sound_manager.gui.components import AccentButton
 from arctis_sound_manager.gui.sonar_page import SonarPage
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
 from arctis_sound_manager.i18n import I18n
-from arctis_sound_manager.sonar_to_pipewire import generate_virtual_sinks_conf, ensure_sonar_eq_configs
+from arctis_sound_manager.sonar_to_pipewire import ensure_sonar_eq_configs
 from arctis_sound_manager.gui.theme import (
     ACCENT,
     BG_CARD,
@@ -280,30 +280,31 @@ class _ToggleWorker(QThread):
         if self._new_mode == 'sonar':
             ensure_sonar_eq_configs()
 
-        # Update virtual sink targets before restarting PipeWire
-        generate_virtual_sinks_conf(sonar=(self._new_mode == 'sonar'))
+        # Persist the mode BEFORE recreating the loopbacks: the daemon reads
+        # ~/.config/arctis_manager/.eq_mode to pick each loopback's target
+        # (Sonar EQ node in sonar mode, physical output otherwise).
+        STATE_FILE.write_text(self._new_mode)
 
-        # Snapshot active streams BEFORE restarting PipeWire
+        # Snapshot active streams before the filter-chain restart.
         saved_si, saved_so = self._snapshot_streams(log)
 
-        # Phase 1: restart PipeWire stack and wait for ALSA sinks to be recreated
-        ok = sc.restart("pipewire", "wireplumber", "pipewire-pulse", timeout=20)
+        # Discord-safe mode switch: restart filter-chain only (must be restart,
+        # not start — a no-op start would never reload the new EQ config, the
+        # "EQ does nothing" report, issue #25), then have the daemon recreate the
+        # Arctis_* loopbacks with the new targets. We never restart pipewire /
+        # pipewire-pulse / arctis-manager, so connected apps (Discord) keep their
+        # sink and audio.
+        ok = sc.restart("filter-chain", timeout=20)
         if not ok:
             _apply_yaml(self._old_mode)
+            STATE_FILE.write_text(self._old_mode)
             self.done.emit(False, self._old_mode)
             return
 
-        # Wait for WirePlumber to recreate ALSA sink nodes before starting filter-chain
-        self.msleep(2000)
-
-        # Phase 2: restart filter-chain and arctis-manager.
-        # Must be restart (not start): a no-op start would never reload the new
-        # EQ config — the root cause of the "EQ does nothing" report (issue #25).
-        ok = sc.restart("filter-chain", "arctis-manager", timeout=20)
-        if not ok:
-            _apply_yaml(self._old_mode)
-            self.done.emit(False, self._old_mode)
-            return
+        # Let filter-chain recreate the EQ nodes, then recreate the loopbacks
+        # (they relink to the new targets by node.target).
+        self.msleep(1500)
+        DbusWrapper.recreate_loopbacks_sync()
 
         for remaining in range(5, 0, -1):
             self.countdown_tick.emit(remaining)
@@ -311,8 +312,6 @@ class _ToggleWorker(QThread):
 
         # Restore streams to the correct sinks/sources for the new mode
         self._restore_streams(saved_si, saved_so, log)
-
-        STATE_FILE.write_text(self._new_mode)
         _update_routing_overrides(self._new_mode)
         try:
             subprocess.run(

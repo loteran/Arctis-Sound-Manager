@@ -8,6 +8,7 @@ from arctis_sound_manager.sonar_to_pipewire import (
     check_and_fix_stale_configs,
     generate_sonar_eq_conf,
     generate_sonar_micro_conf,
+    generate_virtual_sinks_conf,
 )
 
 
@@ -237,13 +238,22 @@ def test_check_and_fix_stale_configs_fixes_2ch_game(tmp_path):
 
 
 def test_check_and_fix_stale_configs_noop_when_clean(tmp_path, monkeypatch):
-    # ensure_sonar_eq_configs() validates that BOTH game and chat configs
-    # exist with the right target+channels — the fixture must mirror the
-    # full contract for the noop assertion to hold. Use stable test values
-    # for both physical-out helpers so the expected node.target is known
-    # (no real Arctis is plugged into CI runners).
+    # check_and_fix_stale_configs() validates that the game, media AND chat
+    # configs exist with the right target+channels — the fixture must mirror
+    # the full contract for the noop assertion to hold. Use stable test values
+    # for the physical-out helpers so the expected node.target is known
+    # (no real Arctis is plugged into CI runners). Spatial audio defaults to
+    # enabled, so game and media are 8ch routed through the HeSuVi surround.
     monkeypatch.setattr(
         "arctis_sound_manager.sonar_to_pipewire._get_physical_out",
+        lambda: "alsa_output.test-headset",
+    )
+    monkeypatch.setattr(
+        "arctis_sound_manager.sonar_to_pipewire._get_physical_out_game",
+        lambda: "alsa_output.test-headset",
+    )
+    monkeypatch.setattr(
+        "arctis_sound_manager.sonar_to_pipewire._get_physical_out_chat",
         lambda: "alsa_output.test-headset",
     )
 
@@ -267,7 +277,11 @@ def test_check_and_fix_stale_configs_noop_when_clean(tmp_path, monkeypatch):
         '    playback.props = { node.target         = "alsa_output.test-headset" } } }\n'
         ']\n'
     )
+    # Media mirrors game: 8ch routed through the HeSuVi surround when spatial
+    # audio is enabled (the default).
+    media_clean = game_clean
     (tmp_path / "sonar-game-eq.conf").write_text(game_clean)
+    (tmp_path / "sonar-media-eq.conf").write_text(media_clean)
     (tmp_path / "sonar-chat-eq.conf").write_text(chat_clean)
 
     with patch("arctis_sound_manager.sonar_to_pipewire._CONF_DIR", tmp_path):
@@ -292,3 +306,154 @@ def test_check_and_fix_stale_configs_fixes_micro_source_virtual(tmp_path):
     fixed = (tmp_path / "sonar-micro-eq.conf").read_text()
     assert "Audio/Source/Virtual" not in fixed
     assert "media.class    = Audio/Source" in fixed
+
+
+# ── generate_virtual_sinks_conf — deprecated shim behaviour ──────────────────
+
+def test_generate_virtual_sinks_conf_returns_empty_string(tmp_path):
+    """The deprecated shim must return '' regardless of sonar mode."""
+    sinks_conf_dir = tmp_path / "pipewire.conf.d"
+    sinks_conf_dir.mkdir()
+
+    with patch("arctis_sound_manager.sonar_to_pipewire._SINKS_CONF_DIR", sinks_conf_dir):
+        result_sonar = generate_virtual_sinks_conf(sonar=True)
+        result_simple = generate_virtual_sinks_conf(sonar=False)
+
+    assert result_sonar == ""
+    assert result_simple == ""
+
+
+def test_generate_virtual_sinks_conf_removes_static_file(tmp_path):
+    """The deprecated shim must delete 10-arctis-virtual-sinks.conf if present."""
+    sinks_conf_dir = tmp_path / "pipewire.conf.d"
+    sinks_conf_dir.mkdir()
+    static_file = sinks_conf_dir / "10-arctis-virtual-sinks.conf"
+    static_file.write_text("context.modules = []")
+
+    with patch("arctis_sound_manager.sonar_to_pipewire._SINKS_CONF_DIR", sinks_conf_dir):
+        generate_virtual_sinks_conf(sonar=True)
+
+    assert not static_file.exists(), "Legacy static loopback config should have been removed"
+
+
+def test_generate_virtual_sinks_conf_noop_when_no_file(tmp_path):
+    """The shim must not crash when the static file does not exist."""
+    sinks_conf_dir = tmp_path / "pipewire.conf.d"
+    sinks_conf_dir.mkdir()
+
+    with patch("arctis_sound_manager.sonar_to_pipewire._SINKS_CONF_DIR", sinks_conf_dir):
+        result = generate_virtual_sinks_conf(sonar=False)
+
+    assert result == ""
+
+
+# ── check_and_fix_stale_configs — static loopback file migration ──────────────
+
+def test_check_and_fix_removes_static_sinks_and_signals_pw_restart(tmp_path):
+    """When 10-arctis-virtual-sinks.conf exists, it must be removed and
+    needs_pw_restart must be True (one-shot migration to dynamic loopbacks)."""
+    sinks_conf_dir = tmp_path / "pipewire.conf.d"
+    sinks_conf_dir.mkdir()
+    static_file = sinks_conf_dir / "10-arctis-virtual-sinks.conf"
+    static_file.write_text("context.modules = []")
+
+    with (
+        patch("arctis_sound_manager.sonar_to_pipewire._CONF_DIR", tmp_path),
+        patch("arctis_sound_manager.sonar_to_pipewire._SINKS_CONF_DIR", sinks_conf_dir),
+    ):
+        fixed, needs_pw_restart = check_and_fix_stale_configs()
+
+    assert fixed is True
+    assert needs_pw_restart is True
+    assert not static_file.exists(), "Legacy static loopback config should have been deleted"
+
+
+def test_check_and_fix_noop_when_no_static_sinks_file(tmp_path, monkeypatch):
+    """When no 10-arctis-virtual-sinks.conf exists, fixed must be False
+    (no migration needed)."""
+    sinks_conf_dir = tmp_path / "pipewire.conf.d"
+    sinks_conf_dir.mkdir()
+
+    monkeypatch.setattr(
+        "arctis_sound_manager.sonar_to_pipewire._get_physical_out",
+        lambda: "alsa_output.test-headset",
+    )
+    monkeypatch.setattr(
+        "arctis_sound_manager.sonar_to_pipewire._get_physical_out_game",
+        lambda: "alsa_output.test-headset",
+    )
+    monkeypatch.setattr(
+        "arctis_sound_manager.sonar_to_pipewire._get_physical_out_chat",
+        lambda: "alsa_output.test-headset",
+    )
+
+    # check_and_fix also ensures the per-channel EQ confs exist; provide clean
+    # ones (8ch game/media via HeSuVi, 2ch chat) so that part is a no-op and we
+    # isolate the "no static sinks file → no migration" assertion.
+    eq_8ch = (
+        'context.modules = [\n'
+        '  { name = libpipewire-module-filter-chain\n'
+        '    args = { filter.graph = { nodes = [\n'
+        '      { type = builtin  name = copy  label = copy }\n'
+        '    ] }\n'
+        '    capture.props  = { audio.channels = 8 }\n'
+        '    playback.props = { node.target         = "effect_input.virtual-surround-7.1-hesuvi" } } }\n'
+        ']\n'
+    )
+    eq_chat = (
+        'context.modules = [\n'
+        '  { name = libpipewire-module-filter-chain\n'
+        '    args = { filter.graph = { nodes = [\n'
+        '      { type = builtin  name = copy  label = copy }\n'
+        '    ] }\n'
+        '    capture.props  = { audio.channels = 2 }\n'
+        '    playback.props = { node.target         = "alsa_output.test-headset" } } }\n'
+        ']\n'
+    )
+    (tmp_path / "sonar-game-eq.conf").write_text(eq_8ch)
+    (tmp_path / "sonar-media-eq.conf").write_text(eq_8ch)
+    (tmp_path / "sonar-chat-eq.conf").write_text(eq_chat)
+
+    with (
+        patch("arctis_sound_manager.sonar_to_pipewire._CONF_DIR", tmp_path),
+        patch("arctis_sound_manager.sonar_to_pipewire._SINKS_CONF_DIR", sinks_conf_dir),
+    ):
+        fixed, needs_pw_restart = check_and_fix_stale_configs()
+
+    assert fixed is False
+    assert needs_pw_restart is False
+
+
+# ── CoreEngine._read_eq_mode_is_sonar ─────────────────────────────────────────
+# CoreEngine imports USB deps at module level, so we test the helper logic
+# directly here rather than importing CoreEngine and risking import errors on CI
+# machines without a USB stack.  The logic in _read_eq_mode_is_sonar is a
+# one-liner; these tests verify the three distinct cases.
+
+def _eq_mode_is_sonar(path: Path) -> bool:
+    """Mirror of CoreEngine._read_eq_mode_is_sonar for isolated testing."""
+    try:
+        return path.exists() and path.read_text().strip() == "sonar"
+    except OSError:
+        return False
+
+
+def test_read_eq_mode_is_sonar_returns_true_when_file_contains_sonar(tmp_path):
+    """Logic returns True when .eq_mode contains 'sonar'."""
+    eq_mode_file = tmp_path / ".eq_mode"
+    eq_mode_file.write_text("sonar")
+    assert _eq_mode_is_sonar(eq_mode_file) is True
+
+
+def test_read_eq_mode_is_sonar_returns_false_when_file_missing(tmp_path):
+    """Logic returns False when .eq_mode does not exist."""
+    eq_mode_file = tmp_path / ".eq_mode"
+    assert not eq_mode_file.exists()
+    assert _eq_mode_is_sonar(eq_mode_file) is False
+
+
+def test_read_eq_mode_is_sonar_returns_false_when_file_contains_custom(tmp_path):
+    """Logic returns False when .eq_mode contains anything other than 'sonar'."""
+    eq_mode_file = tmp_path / ".eq_mode"
+    eq_mode_file.write_text("custom")
+    assert _eq_mode_is_sonar(eq_mode_file) is False

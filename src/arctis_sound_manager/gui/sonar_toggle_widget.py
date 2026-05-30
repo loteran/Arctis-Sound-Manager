@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPushButton, QSlider,
 from arctis_sound_manager import service_control as sc
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
 from arctis_sound_manager.i18n import I18n
-from arctis_sound_manager.sonar_to_pipewire import generate_virtual_sinks_conf
+from arctis_sound_manager.sonar_to_pipewire import ensure_sonar_eq_configs
 
 
 STATE_FILE      = Path.home() / '.config' / 'arctis_manager' / '.eq_mode'
@@ -90,23 +90,34 @@ class _ToggleWorker(QThread):
             self.done.emit(False, self._old_mode)
             return
 
-        # Update virtual sink targets before restarting PipeWire
-        generate_virtual_sinks_conf(sonar=(self._new_mode == 'sonar'))
+        # Ensure the Sonar EQ filter-chain configs exist before the loopbacks
+        # are pointed at their effect_input.sonar-*-eq nodes.
+        if self._new_mode == 'sonar':
+            ensure_sonar_eq_configs()
 
-        ok = sc.restart(
-            "pipewire", "wireplumber", "pipewire-pulse", "filter-chain", "arctis-manager",
-        )
+        # Persist the mode BEFORE recreating the loopbacks: the daemon reads
+        # ~/.config/arctis_manager/.eq_mode to pick each loopback's target.
+        STATE_FILE.write_text(self._new_mode)
 
+        # Discord-safe mode switch: restart filter-chain only, then have the
+        # daemon recreate the Arctis_* loopbacks with the new targets. We never
+        # restart pipewire / pipewire-pulse / arctis-manager, so connected apps
+        # (Discord) keep their sink and audio.
+        ok = sc.restart("filter-chain")
         if not ok:
             _apply_yaml(self._old_mode)  # rollback
+            STATE_FILE.write_text(self._old_mode)
             self.done.emit(False, self._old_mode)
             return
+
+        # Let filter-chain recreate the EQ nodes, then recreate the loopbacks.
+        self.msleep(1500)
+        DbusWrapper.recreate_loopbacks_sync()
 
         for remaining in range(5, 0, -1):
             self.countdown_tick.emit(remaining)
             self.msleep(1000)
 
-        STATE_FILE.write_text(self._new_mode)
         _update_routing_overrides(self._new_mode)
         try:
             subprocess.run(

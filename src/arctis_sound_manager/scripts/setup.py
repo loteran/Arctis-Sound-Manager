@@ -296,13 +296,28 @@ def main() -> None:
     _refuse_root()
 
     # ── PipeWire configs ──
-    # 10-arctis-virtual-sinks.conf → pipewire.conf.d (loaded by pipewire itself)
     # sink-virtual-surround-7.1-hesuvi.conf → filter-chain.conf.d (loaded by filter-chain service)
+    #
+    # NOTE: 10-arctis-virtual-sinks.conf is intentionally NOT installed here.
+    # Virtual sinks (Arctis_Game / Arctis_Chat / Arctis_Media) are now created
+    # dynamically by the daemon at runtime via pw-loopback child processes
+    # (LoopbackManager).  A static pipewire.conf.d entry would create duplicate
+    # loopbacks that cannot be unloaded at runtime ("Access denied" from pactl).
+    # Any legacy copy is removed by check_and_fix_stale_configs() on daemon start.
     pw_src = _SHARE_DIR / "pipewire"
     if pw_src.is_dir():
         _PW_CONF_DIR.mkdir(parents=True, exist_ok=True)
         _FC_CONF_DIR.mkdir(parents=True, exist_ok=True)
         for conf in pw_src.glob("*.conf"):
+            # Skip the static virtual-sinks file — loopbacks are now dynamic.
+            if conf.name == "10-arctis-virtual-sinks.conf":
+                print(f"  [skip] {conf.name} — loopbacks are now dynamic (managed by daemon)")
+                # Remove any stale copy that was installed by a previous version.
+                stale_sinks = _PW_CONF_DIR / conf.name
+                if stale_sinks.exists():
+                    stale_sinks.unlink()
+                    print(f"  [ok] Removed legacy static loopback config from pipewire.conf.d")
+                continue
             if "hesuvi" in conf.name or "surround" in conf.name:
                 # HeSuVi surround → filter-chain.conf.d (avoids duplicate-node conflict)
                 dst = _FC_CONF_DIR / conf.name
