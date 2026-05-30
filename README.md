@@ -132,7 +132,7 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
 | Arctis Nova 7 Gen 1 | ✅ | 2 | $\color{royalblue}{\textbf{2202}}$, 2206, 223a, 227a, 22ab, 22a4 |
 | Arctis Nova 7 Gen 2 | ✅ | 19 | $\color{royalblue}{\textbf{22a1}}$, $\color{royalblue}{\textbf{227e}}$, 2258, $\color{royalblue}{\textbf{229e}}$, 22a9, $\color{royalblue}{\textbf{22a5}}$ |
 | Arctis Nova 7P | ✅ | 5 | 220a, $\color{royalblue}{\textbf{22a7}}$ |
-| Arctis Nova Elite |  |  | 2244, 2249 |
+| Arctis Nova Elite | ✅ | 1 | $\color{royalblue}{\textbf{2244}}$, 2249 |
 <!-- STATS:DEVICES:END -->
 
 > ✅ Confirmed by at least one opted-in user
@@ -449,7 +449,7 @@ To request a new language, open a [GitHub issue](https://github.com/loteran/Arct
 ## Community stats
 
 <!-- STATS:META:START -->
-_Based on **74** unique users (**442** anonymous data points) — last updated 2026-05-29_
+_Based on **75** unique users (**459** anonymous data points) — last updated 2026-05-30_
 <!-- STATS:META:END -->
 
 > Anonymous usage data shared voluntarily by opted-in users.
@@ -461,7 +461,7 @@ _Based on **74** unique users (**442** anonymous data points) — last updated 2
 <!-- STATS:TESTED_DISTROS:START -->
 | Distribution | Install method | Users |
 |---|---|---|
-| CachyOS | 🎯 AUR | 👥 36 |
+| CachyOS | 🎯 AUR | 👥 37 |
 | Nobara Linux 43 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 6 |
 | Arch Linux | 🎯 AUR | 👥 6 |
 | Ubuntu 26.04 LTS | 🎯 PPA | 👥 3 |
@@ -498,12 +498,13 @@ _Based on **74** unique users (**442** anonymous data points) — last updated 2
 | Arctis Nova 7 (Gen 1) | 2 |
 | Arctis 7/Pro Gaming | 1 |
 | Arctis Nova 5X (PID 2255) | 1 |
+| Arctis Nova Elite | 1 |
 <!-- STATS:HEADSETS:END -->
 
 <!-- STATS:DISTROS:START -->
 | Distribution | Installs |
 |---|---|
-| CachyOS | 36 |
+| CachyOS | 37 |
 | Nobara Linux 43 (KDE Plasma Desktop Edition) | 6 |
 | Arch Linux | 6 |
 | Ubuntu 26.04 LTS | 3 |
