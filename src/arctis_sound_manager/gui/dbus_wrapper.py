@@ -216,33 +216,6 @@ class DbusWrapper(QObject):
                 dbus_bus.disconnect()
 
     @staticmethod
-    def reload_configs() -> None:
-        """Tell the daemon to re-scan USB and re-configure virtual sinks."""
-        DbusWrapper._executor.submit(DbusWrapper._reload_configs_thread)
-
-    @staticmethod
-    def _reload_configs_thread() -> None:
-        asyncio.run(DbusWrapper._reload_configs_async())
-
-    @staticmethod
-    async def _reload_configs_async() -> None:
-        dbus_bus = None
-        try:
-            dbus_bus = await MessageBus().connect()
-            await dbus_bus.call(Message(
-                destination=DBUS_BUS_NAME,
-                path=DBUS_CONFIG_OBJECT_PATH,
-                interface=DBUS_CONFIG_INTERFACE_NAME,
-                member='ReloadConfigs',
-                message_type=MessageType.METHOD_CALL,
-            ))
-        except Exception as e:
-            DbusWrapper.logger.error('Error in reload_configs: %s', e)
-        finally:
-            if dbus_bus is not None:
-                dbus_bus.disconnect()
-
-    @staticmethod
     def set_weather_settings(enabled: bool, location: str, units: str, callback) -> None:
         """Call SetWeatherSettings D-Bus method and invoke callback(result_dict)."""
         DbusWrapper._executor.submit(
@@ -373,3 +346,43 @@ class DbusWrapper(QObject):
         finally:
             if dbus_bus is not None:
                 dbus_bus.disconnect()
+
+    @staticmethod
+    async def _recreate_loopbacks_async() -> None:
+        dbus_bus = None
+        try:
+            dbus_bus = await MessageBus().connect()
+            await dbus_bus.call(Message(
+                destination=DBUS_BUS_NAME,
+                path=DBUS_CONFIG_OBJECT_PATH,
+                interface=DBUS_CONFIG_INTERFACE_NAME,
+                member='RecreateLoopbacks',
+                message_type=MessageType.METHOD_CALL,
+            ))
+        except Exception as e:
+            DbusWrapper.logger.error('Error in recreate_loopbacks: %s', e)
+        finally:
+            if dbus_bus is not None:
+                dbus_bus.disconnect()
+
+    @staticmethod
+    def recreate_loopbacks() -> None:
+        """Tell the daemon to recreate the Arctis_* virtual-sink loopbacks
+        (fresh pw-loopback processes) so they relink to the freshly recreated
+        Sonar EQ nodes. Fire-and-forget, off the UI thread."""
+        DbusWrapper._executor.submit(
+            lambda: asyncio.run(DbusWrapper._recreate_loopbacks_async())
+        )
+
+    @staticmethod
+    def recreate_loopbacks_sync() -> bool:
+        """Synchronous variant for worker threads that must sequence
+        'restart filter-chain → wait for EQ node → recreate loopbacks → restore
+        streams'. Blocks until the D-Bus call completes. Returns False on error.
+        MUST be called off the Qt UI thread (e.g. from an _ApplyWorker)."""
+        try:
+            asyncio.run(DbusWrapper._recreate_loopbacks_async())
+            return True
+        except Exception as e:
+            DbusWrapper.logger.error('Error in recreate_loopbacks_sync: %s', e)
+            return False

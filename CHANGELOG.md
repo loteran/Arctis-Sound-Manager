@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.46] - 30 May 2026
+
+### Fixed
+
+- **Discord (and other apps) lost their audio sink when changing a Sonar profile** — applying a Sonar profile or EQ used to restart the whole PipeWire stack, tearing down every node. Apps that do not re-enumerate their output devices when the PulseAudio server connection drops (Discord/Electron in particular) ended up silent until restarted. Profile and EQ changes now restart only the filter-chain service and recreate the virtual-sink loopbacks dynamically, leaving pipewire/pipewire-pulse untouched, so connected apps keep their sink and audio.
+- **Virtual sinks showed a generic "pw-loopback-NNN" name** in application output pickers and mixers — the Arctis Game/Chat/Media sinks now expose their proper "Arctis … Game/Chat/Media" name and can be selected as an output device (e.g. as Discord's Chat output).
+- **Discord appeared as "WEBRTC VoiceEngine"** in a channel's application list — applications that report a generic audio-engine name now fall back to their process binary, so Discord shows as "Discord".
+
+### Changed
+
+- The Arctis Game/Chat/Media virtual-sink loopbacks are now created and owned dynamically by the daemon (instead of a static `pipewire.conf.d` file), so they can be recreated after an EQ change without a full PipeWire restart. The 7.1 surround (HeSuVi) chain for Game and Media is unchanged. The daemon cleans up its loopbacks on shutdown, and a watchdog respawns any loopback whose process crashes.
+
 ## [1.1.45] - 29 May 2026
 
 ### Fixed

@@ -324,6 +324,7 @@ class SystemDepsDialog(QDialog):
         groups: dict[str, list[str]] = {}  # pkgmgr -> packages list
         internals: list[list[str]] = []    # asm-setup / asm-cli / systemctl
         skipped: list[str] = []
+        batches: list[list[str]] = []      # multi-step bash cmds + per-pkgmgr groups
 
         for r in bad:
             argv = install_command_for(r.check)
@@ -355,7 +356,6 @@ class SystemDepsDialog(QDialog):
                 # unknown pkgmgr — run as-is
                 groups.setdefault(head, []).append(argv[-1])
 
-        batches: list[list[str]] = []
         for mgr, pkgs in groups.items():
             if mgr == "dnf":
                 batches.append(["dnf", "install", "-y", *pkgs])

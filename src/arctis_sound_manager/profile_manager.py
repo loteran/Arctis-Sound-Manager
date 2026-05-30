@@ -303,7 +303,7 @@ def _apply_dac(dac: dict) -> None:
 
 
 def _apply_eq_mode(new_mode: str) -> None:
-    """Write EQ mode state and regenerate virtual sinks config if mode changed."""
+    """Write EQ mode state and trigger loopback recreation if mode changed."""
     current = _current_eq_mode()
     if current == new_mode:
         return
@@ -311,6 +311,11 @@ def _apply_eq_mode(new_mode: str) -> None:
         from arctis_sound_manager.gui.sonar_toggle_widget import _apply_yaml
         from arctis_sound_manager.sonar_to_pipewire import generate_virtual_sinks_conf
         _apply_yaml(new_mode)
+        # generate_virtual_sinks_conf is now a no-op shim that removes the
+        # legacy static file (migration).  The actual loopback recreation is
+        # handled by the daemon via the RecreateLoopbacks D-Bus method, called
+        # by the GUI (Agent 3 — equalizer_page / sonar_toggle_widget).
+        # TODO: loopback recreation handled by daemon RecreateLoopbacks (Agent 3 GUI / mode switch)
         generate_virtual_sinks_conf(sonar=(new_mode == "sonar"))
         _EQ_MODE_FILE.write_text(new_mode)
     except Exception:

@@ -701,7 +701,7 @@ class HomePage(QWidget):
 
         # ── Cards area (3/4 of window width, centered) ────────────────────────
         cards_outer = QWidget()
-        cards_outer.setStyleSheet(f"background: transparent;")
+        cards_outer.setStyleSheet("background: transparent;")
         cards_outer_layout = QHBoxLayout(cards_outer)
         cards_outer_layout.setContentsMargins(0, 0, 0, 0)
         cards_outer_layout.setSpacing(0)
@@ -872,7 +872,6 @@ class HomePage(QWidget):
             InstallMethod, PACKAGE_MANAGER_COMMANDS,
             UpdateInstallWorker, detect_all_install_methods,
         )
-        from PySide6.QtGui import QClipboard
         from PySide6.QtCore import QTimer
         from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
 
@@ -1116,6 +1115,25 @@ class HomePage(QWidget):
             self._pulse = None
             self._set_disconnected()
 
+    # application.name is often a generic audio-engine label rather than the
+    # actual program name (e.g. Discord streams report "WEBRTC VoiceEngine").
+    # For those we fall back to the process binary so the user sees "Discord".
+    _GENERIC_APP_NAMES = {
+        "WEBRTC VoiceEngine", "AudioStream", "Playback", "audio stream",
+        "Chromium", "cras", "libcanberra", "speech-dispatcher",
+    }
+
+    @staticmethod
+    def _friendly_app_name(proplist) -> str:
+        name = (proplist.get("application.name", "") or "").strip()
+        if name and name not in HomePage._GENERIC_APP_NAMES:
+            return name
+        binary = (proplist.get("application.process.binary", "") or "").strip()
+        binary = binary.rsplit("/", 1)[-1]
+        if binary:
+            return binary[:1].upper() + binary[1:]
+        return name or "Audio"
+
     def _update_apps(self, sink_inputs, sinks: list, card: "AudioCard"):
         if not sinks:
             card.clear_apps()
@@ -1128,7 +1146,7 @@ class HomePage(QWidget):
         card.clear_apps()
         seen_names: set[str] = set()
         for si in matching:
-            app_name = si.proplist["application.name"]
+            app_name = self._friendly_app_name(si.proplist)
             if app_name in seen_names:
                 continue
             seen_names.add(app_name)

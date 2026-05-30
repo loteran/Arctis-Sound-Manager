@@ -118,6 +118,7 @@ async def main_async():
 
     core_loop = asyncio.create_task(core_engine.start(), name='core-loop')
     dbus_awake_loop = asyncio.create_task(DbusAwake.get_instance().start(core_engine), name='dbus-awake')
+    watchdog_loop = asyncio.create_task(core_engine._loopback_watchdog(), name='loopback-watchdog')
 
     # Wire SIGINT/SIGTERM into the asyncio loop so the handler can both flip
     # the stop flags AND cancel the long-lived tasks. Plain signal.signal()
@@ -136,7 +137,7 @@ async def main_async():
             dbus_manager.stop()
         except Exception as e:
             logger.warning(f'dbus_manager.stop() raised: {e!r}')
-        for task in (core_loop, dbus_awake_loop):
+        for task in (core_loop, dbus_awake_loop, watchdog_loop):
             if not task.done():
                 task.cancel()
 
@@ -153,10 +154,10 @@ async def main_async():
         await dbus_manager.wait_for_stop()
     finally:
         # Best-effort: make sure background tasks really exit.
-        for task in (core_loop, dbus_awake_loop):
+        for task in (core_loop, dbus_awake_loop, watchdog_loop):
             if not task.done():
                 task.cancel()
-        await asyncio.gather(core_loop, dbus_awake_loop, return_exceptions=True)
+        await asyncio.gather(core_loop, dbus_awake_loop, watchdog_loop, return_exceptions=True)
 
 
 def main():

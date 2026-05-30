@@ -5,7 +5,6 @@
 Device / Settings page — ArctisSonar GUI visual style.
 Matches the ref_settingsPage.png design.
 """
-import os
 import shutil
 from pathlib import Path
 
@@ -36,7 +35,6 @@ from arctis_sound_manager.gui.settings_widget import QSettingsWidget
 from arctis_sound_manager.autostart import active_backend_name, autostart_enabled, set_autostart
 from arctis_sound_manager.gui.theme import (
     ACCENT,
-    BG_CARD,
     BG_BUTTON,
     BG_BUTTON_HOVER,
     BG_MAIN,
@@ -571,6 +569,6 @@ class DevicePage(QWidget):
             os.execv(sys.executable, [sys.executable, "-m", "arctis_sound_manager.scripts.gui"])
         else:
             self._update_status_lbl.setStyleSheet(
-                f"color: #FF5555; font-size: 10pt; background: transparent;"
+                "color: #FF5555; font-size: 10pt; background: transparent;"
             )
             self._update_status_lbl.setText(f"Update failed: {error_msg}")

@@ -272,7 +272,6 @@ class OledRenderer:
         font_eq      = ImageFont.load_default(size=sz_eq)
         font_wtmp    = ImageFont.load_default(size=sz_weather_tmp)
         font_eq_chat  = ImageFont.load_default(size=sz_eq_chat)
-        font_sonar    = ImageFont.load_default(size=sz_sonar_mode)
         font_small   = self._font  # city / labels always small
 
         natural_h = self._natural_height(

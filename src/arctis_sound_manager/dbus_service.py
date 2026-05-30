@@ -36,6 +36,18 @@ class ArctisManagerDbusConfigService(ServiceInterface):
 
         return True
 
+    @method('RecreateLoopbacks')
+    def recreate_loopbacks(self) -> 'b':  # type: ignore
+        """Recreate the Arctis dynamic loopbacks (Game/Chat/Media).
+
+        Re-reads the current EQ mode from disk so Sonar ↔ simple mode
+        switches are picked up.  No-op when no device is connected.
+        Returns True on success (errors are logged and swallowed so the
+        daemon is never crashed by a D-Bus call).
+        """
+        self.core_engine.recreate_loopbacks()
+        return True
+
 class ArctisManagerDbusStatusService(ServiceInterface):
     def __init__(self, core: CoreEngine):
         super().__init__(DBUS_STATUS_INTERFACE_NAME)

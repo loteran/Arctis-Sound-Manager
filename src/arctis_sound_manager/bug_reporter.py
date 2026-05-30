@@ -387,7 +387,7 @@ def format_bug_report_short(traceback_str: Optional[str] = None,
             '## Full diagnostic',
             f'> Drag-and-drop **`{attachment_path.name}`** into the issue editor below.',
             f'> File location on disk: `{attachment_path}`',
-            f'> Contains: USB tree, udev rules, PA/PW sinks, WirePlumber state, journalctl logs.',
+            '> Contains: USB tree, udev rules, PA/PW sinks, WirePlumber state, journalctl logs.',
             '',
         ]
 
@@ -457,7 +457,7 @@ def submit_via_gh_cli(title: str, short_body: str, full_report_path: Path,
             capture_output=True, text=True, timeout=15, check=True,
         )
         gist_url = gist.stdout.strip().splitlines()[-1].strip()
-    except Exception as e:
+    except Exception:
         return None
     if not gist_url.startswith('https://'):
         return None
