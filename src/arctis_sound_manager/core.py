@@ -21,6 +21,7 @@ from arctis_sound_manager.config import (CommandTransport,
 from arctis_sound_manager.constants import (PULSE_CHAT_NODE_NAME,
                                             PULSE_MEDIA_NODE_NAME,
                                             STEELSERIES_VENDOR_ID)
+from arctis_sound_manager.loopback_manager import LoopbackManager, make_specs
 from arctis_sound_manager.pactl import ONLY_PHYSICAL, PulseAudioManager
 from arctis_sound_manager.settings import DeviceSettings, GeneralSettings
 from arctis_sound_manager.usb_devices_monitor import USBDevicesMonitor
@@ -74,6 +75,10 @@ class CoreEngine:
         self.pa_audio_manager = PulseAudioManager.get_instance()
         self.usb_devices_monitor = USBDevicesMonitor.get_instance()
 
+        # Dynamic loopback manager: owns the pw-loopback child processes for
+        # Arctis_Game / Arctis_Chat / Arctis_Media virtual sinks.
+        self.loopback_manager = LoopbackManager()
+
         self.reload_device_configurations()
         self.usb_devices_monitor.register_on_connect(self.on_device_connected)
         self.usb_devices_monitor.register_on_disconnect(self.on_device_disconnected)
@@ -83,7 +88,70 @@ class CoreEngine:
         device_status.add_observer(self.on_device_status_changed)
 
         return device_status
-    
+
+    # ── Loopback helpers ──────────────────────────────────────────────────────
+
+    @staticmethod
+    def _read_eq_mode_is_sonar() -> bool:
+        """Return True if the EQ mode file indicates Sonar mode.
+
+        The mode file lives at ``~/.config/arctis_manager/.eq_mode``.
+        If the file is absent or contains anything other than ``"sonar"``,
+        simple (non-Sonar) mode is assumed.
+        """
+        state_file = Path.home() / ".config" / "arctis_manager" / ".eq_mode"
+        try:
+            return state_file.exists() and state_file.read_text().strip() == "sonar"
+        except OSError:
+            return False
+
+    def setup_loopbacks(self) -> None:
+        """Create or recreate the Arctis virtual loopbacks for the current mode.
+
+        Reads the EQ mode from disk, resolves physical output nodes from
+        ``device_state``, builds ``LoopbackSpec`` objects via ``make_specs``,
+        and calls ``LoopbackManager.recreate_all`` to tear down any existing
+        loopbacks and launch fresh ``pw-loopback`` processes.
+
+        No-op (with a log message) when no device is registered in
+        ``device_state`` — the loopbacks will be created when the device is
+        detected and ``configure_virtual_sinks`` is called.
+        """
+        if not device_state.is_device_set():
+            self.logger.info("setup_loopbacks: no device registered, skipping loopback creation")
+            return
+        sonar = self._read_eq_mode_is_sonar()
+        physical_game = device_state.get_physical_out_game()
+        physical_chat = device_state.get_physical_out_chat()
+        dev_name = device_state.get_device_name()
+        specs = make_specs(
+            sonar=sonar,
+            physical_game=physical_game,
+            physical_chat=physical_chat,
+            device_name=dev_name,
+        )
+        try:
+            self.loopback_manager.recreate_all(specs)
+            self.logger.info(
+                "setup_loopbacks: loopbacks recreated (sonar=%s, game=%s, chat=%s)",
+                sonar, physical_game, physical_chat,
+            )
+        except Exception as exc:
+            self.logger.error("setup_loopbacks: failed to recreate loopbacks: %r", exc)
+
+    def recreate_loopbacks(self) -> None:
+        """Public entry point called by the D-Bus ``RecreateLoopbacks`` method.
+
+        Re-reads the EQ mode from disk so mode switches (Sonar ↔ simple) are
+        picked up, then recreates all loopbacks.  Wrapped in try/except so a
+        failure never crashes the daemon.
+        """
+        self.logger.info("recreate_loopbacks: requested via D-Bus")
+        try:
+            self.setup_loopbacks()
+        except Exception as exc:
+            self.logger.error("recreate_loopbacks: unexpected error: %r", exc)
+
     def start(self) -> Coroutine:
         self._stopping = False
         self.usb_devices_monitor.start()
@@ -351,6 +419,11 @@ class CoreEngine:
         # was previously only run when the user opened the Sonar page in the
         # GUI — users running headless (or never opening that page) saw the
         # bug forever.
+        #
+        # As of the dynamic-loopbacks migration: check_and_fix_stale_configs
+        # now removes the legacy 10-arctis-virtual-sinks.conf and signals a
+        # one-shot PipeWire restart.  After the restart the daemon creates the
+        # loopbacks dynamically via setup_loopbacks() below.
         try:
             from arctis_sound_manager.sonar_to_pipewire import check_and_fix_stale_configs
             fixed, needs_pw_restart = check_and_fix_stale_configs()
@@ -366,6 +439,13 @@ class CoreEngine:
         except Exception as exc:
             # Never let a config-repair failure block device init.
             self.logger.warning(f"check_and_fix_stale_configs failed: {exc!r}")
+
+        # Create dynamic loopbacks (Arctis_Game / Arctis_Chat / Arctis_Media).
+        # device_state is already populated above, so make_specs can resolve
+        # targets.  The EQ nodes (effect_input.sonar-*-eq) are created by
+        # filter-chain; node.target by name binds when the node appears, so
+        # the ordering here is tolerant of filter-chain not being up yet.
+        self.setup_loopbacks()
 
         # Configure the device
         self.init_device()
@@ -877,6 +957,13 @@ class CoreEngine:
             self.redirect_audio_on_disconnect()
         except Exception as e:
             self.logger.warning(f"Error redirecting audio on disconnect: {e}")
+
+        # Stop all dynamic loopbacks before clearing device state so the
+        # pw-loopback processes are cleanly terminated.
+        try:
+            self.loopback_manager.stop_all()
+        except Exception as e:
+            self.logger.warning(f"Error stopping loopbacks on teardown: {e}")
 
         device_state.clear()
 

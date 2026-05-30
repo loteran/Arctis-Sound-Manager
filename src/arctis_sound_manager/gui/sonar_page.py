@@ -87,7 +87,6 @@ from arctis_sound_manager.sonar_to_pipewire import (
     check_and_fix_stale_configs,
     generate_sonar_eq_conf,
     generate_sonar_micro_conf,
-    generate_virtual_sinks_conf,
 )
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -413,19 +412,6 @@ class _ApplyWorker(QThread):
             except Exception as e:
                 log.warning("smart_volume load failed: %s — using default", e)
                 smart_state = {"enabled": False, "level": 0.0, "loudness": "balanced"}
-            # Snapshot old EQ channel count before overwriting config,
-            # so we can detect spatial audio toggle (2ch↔8ch) later.
-            _old_game_ch = None
-            if self._channel in ("game", "media"):
-                import re as _re
-                _conf_name = f"sonar-{self._channel}-eq.conf"
-                _eq_path = Path.home() / ".config" / "pipewire" / "filter-chain.conf.d" / _conf_name
-                try:
-                    _m = _re.search(r"audio\.channels\s*=\s*(\d+)", _eq_path.read_text())
-                    if _m:
-                        _old_game_ch = int(_m.group(1))
-                except Exception:
-                    pass
 
             if self._channel == "micro":
                 micro_proc = _load_micro_proc()
@@ -474,46 +460,48 @@ class _ApplyWorker(QThread):
             # A full pipewire restart is needed so the loopback reconnects
             # to the new sink with the correct channel count.
             _ApplyWorker._last_restart = time.monotonic()
-            need_full_restart = False
-            if self._channel == "game" and _old_game_ch is not None:
-                new_ch = 8 if spatial else 2
-                need_full_restart = _old_game_ch != new_ch
-            elif self._channel == "media" and _old_game_ch is not None:
-                new_ch = 8 if spatial else 2
-                need_full_restart = _old_game_ch != new_ch
 
             # Restart audio services.
-            # Output channel: filter-chain only — no stream interruption (issue #22).
-            # All other channels: full restart (pipewire + wireplumber + filter-chain).
-            # A full restart is required so WirePlumber starts fresh and correctly
-            # re-evaluates node.target on the Arctis_*_sink_out loopback nodes,
-            # relinking them to the new effect_input.sonar-*-eq nodes.
-            # Without restarting PipeWire, WirePlumber does not fire its linking
-            # scripts for pre-existing loopback nodes, leaving the chain silently broken.
-            if self._channel == "output":
-                ok = sc.restart("filter-chain", timeout=15)
-            else:
-                if need_full_restart:
-                    generate_virtual_sinks_conf(sonar=True)
-                ok = sc.restart(
-                    "pipewire", "wireplumber", "pipewire-pulse", "filter-chain",
-                    timeout=15,
-                )
-            if not ok:
-                log.error("audio restart failed")
-                self.done.emit(False)
-                return
-
-            # Wait for the sink/source to actually appear in PipeWire
+            #
+            # We never restart the pipewire / pipewire-pulse daemons for a
+            # profile/EQ change: a full restart tears down every node (including
+            # the physical output) and breaks apps that don't re-enumerate when
+            # the PulseAudio server connection drops — Discord (Electron) loses
+            # its sink and stays silent until restarted.
+            #
+            # Instead: restart filter-chain only (recreates the
+            # effect_input.sonar-*-eq nodes with the new curve), wait for the
+            # node, then ask the daemon to recreate the Arctis_* loopbacks (fresh
+            # pw-loopback processes). A freshly-created loopback re-negotiates its
+            # width (2ch chat / 8ch game+media) and relinks to the EQ node by
+            # node.target reliably — which WirePlumber does NOT do for a
+            # pre-existing loopback when its target node is swapped underneath it.
+            # pipewire / pipewire-pulse stay up, so Discord keeps its sink+audio.
+            # (need_full_restart / spatial 2ch↔8ch is handled the same way: the
+            # recreated loopback simply negotiates the new width.)
             if self._channel == "micro":
                 target_node = "effect_output.sonar-micro-eq"
             else:
                 target_node = f"effect_input.sonar-{self._channel}-eq"
 
+            ok = sc.restart("filter-chain", timeout=15)
+            if not ok:
+                log.error("audio restart failed")
+                self.done.emit(False)
+                return
+
+            # Wait for the recreated EQ node before recreating the loopbacks.
             if not self._wait_for_node(target_node, timeout_ms=8000):
                 log.warning("Sonar node %s did not appear within timeout", target_node)
                 self.done.emit(False)
                 return
+
+            # The Output channel has no Arctis_* loopback of its own; every other
+            # channel feeds one, so have the daemon recreate them fresh now that
+            # the EQ node exists (Discord-safe relink — see comment above).
+            if self._channel != "output":
+                from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
+                DbusWrapper.recreate_loopbacks_sync()
 
             # Wait for any saved Arctis_* target sinks to come back before
             # attempting move-sink-input (issue #22).
@@ -660,18 +648,26 @@ class _ApplyAllWorker(QThread):
                     distance_pct=media_spatial.get("distance", 50),
                 )
 
-            # Single restart
-            ok = sc.restart(
-                "pipewire", "wireplumber", "pipewire-pulse", "filter-chain",
-                timeout=15,
-            )
+            # Profile-switch path (apply_all_from_files). Same Discord-safe
+            # strategy as _ApplyWorker: restart filter-chain only (recreates all
+            # effect_input.sonar-*-eq nodes), wait for them, then have the daemon
+            # recreate the Arctis_* loopbacks fresh so they relink correctly.
+            # Never restart pipewire / pipewire-pulse → connected apps (Discord)
+            # keep their sink.
+            ok = sc.restart("filter-chain", timeout=15)
             if not ok:
                 log.error("audio restart failed")
                 self.done.emit(False)
                 return
 
-            if not _ApplyWorker._wait_for_node("effect_input.sonar-game-eq", timeout_ms=8000):
-                log.warning("sonar-game-eq did not appear")
+            for node in ("effect_input.sonar-game-eq",
+                         "effect_input.sonar-media-eq",
+                         "effect_input.sonar-chat-eq"):
+                if not _ApplyWorker._wait_for_node(node, timeout_ms=8000):
+                    log.warning("%s did not appear", node)
+
+            from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
+            DbusWrapper.recreate_loopbacks_sync()
 
             self.done.emit(True)
         except Exception as exc:
