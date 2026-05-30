@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.46" date="2026-05-30">
+      <description>
+        <p>Discord (and other apps) lost their audio sink when changing a Sonar profile — applying a Sonar profile or EQ used to restart the whole PipeWire stack, tearing down every node. Apps that do not re-enumerate their output devices when the PulseAudio server connection drops (Discord/Electron in particular) ended up silent until restarted. Profile and EQ changes now restart only the filter-chain service and recreate the virtual-sink loopbacks dynamically, leaving pipewire/pipewire-pulse untouched, so connected apps keep their sink and audio. Virtual sinks showed a generic "pw-loopback-NNN" name in application output pickers and mixers — the Arctis Game/Chat/Media sinks now expose their proper "Arctis … Game/Chat/Media" name and can be selected as an output device (e.g. as Discord's Chat output). Discord appeared as "WEBRTC VoiceEngine" in a channel's application list — applications that report a generic audio-engine name now fall back to their process binary, so Discord shows as "Discord".</p>
+      </description>
+    </release>
     <release version="1.1.45" date="2026-05-29">
       <description>
         <p>Arctis 7X: daemon crashed with "Failed to find command interface endpoint" — some Arctis 7X (and other Arctis 1 family) firmwares expose the vendor HID command interface with an interrupt IN endpoint only, no OUT endpoint. get_command_endpoint_address() raised an exception instead of falling back, crashing the whole daemon before the GUI could appear. ASM now detects the missing OUT endpoint and routes commands over HID SET_REPORT (control transfer) automatically, which is the correct path for such devices (issue #59).</p>
@@ -199,11 +204,6 @@
     <release version="1.0.73" date="2026-04-25">
       <description>
         <p>scripts/clean-reinstall.sh — a self-contained, curl | bash-friendly script that audits every existing ASM install (rpm + dpkg + pacman + pipx + orphan binaries in $PATH), uninstalls all of them, then installs the latest release via the user's chosen method, runs asm-setup and verifies that the daemon is active. Solves the dup-binary mess that built up across mixed install methods (RPM + pipx --force etc.). Multi-install detection in the in-app updater: clicking "Install update" now checks whether ASM is currently installed by more than one method (rpm + pipx, etc.) and refuses to upgrade until the conflict is resolved, opening a clear dialog that points to clean-reinstall.sh with a copy-to-clipboard command. In-app updater now runs asm-setup after a pipx upgrade (via the new FirstRunDialog), so udev rules are reloaded and PipeWire restarted on the new binary. Previously only asm-cli desktop write was called, which left udev permissions stale on already-attached devices.</p>
-      </description>
-    </release>
-    <release version="1.0.72" date="2026-04-25">
-      <description>
-        <p>Auto-run asm-setup on first GUI launch for installs that didn't go through a distro-package post-install hook (typically pipx). When the GUI starts and ~/.config/arctis_manager/.setup_done is missing, a new FirstRunDialog opens, runs asm-setup as a subprocess and streams its output live in the dialog so the user can follow what's happening (HRIR download, services, udev install). Distro packages already shipped /etc/xdg/autostart/asm-first-run.desktop for this — pipx users were left out, which was the root cause behind issue #22.</p>
       </description>
     </release>
   </releases>
