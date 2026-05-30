@@ -266,8 +266,18 @@
       mkChart("chart-headsets",
         headsets.map(r => r.product_id === "Unknown" ? r.label : r.label + " (0x" + r.product_id + ")"),
         headsets.map(r => r.nb), "bar", { indexAxis: 'y' });
+      // Versions: order by version number (descending) instead of user count.
+      const versionsByNumber = [...data.versions].sort((a, b) => {
+        const pa = String(a.label).split(".").map(n => parseInt(n, 10) || 0);
+        const pb = String(b.label).split(".").map(n => parseInt(n, 10) || 0);
+        for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+          const d = (pb[i] || 0) - (pa[i] || 0);
+          if (d) return d;
+        }
+        return 0;
+      });
       mkChart("chart-versions",
-        data.versions.map(r => r.label), data.versions.map(r => r.nb));
+        versionsByNumber.map(r => r.label), versionsByNumber.map(r => r.nb));
     })
     .catch(err => {
       console.error(err);
