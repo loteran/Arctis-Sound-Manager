@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.48] - 31 May 2026
+
+Hardening release from a full code audit (no new features).
+
+### Fixed
+
+- **Microphone Background / Impact noise reduction could not be turned off** — same `Qt.CheckState` truthiness bug as the Spatial Audio toggle in 1.1.47; the OFF state is now registered correctly.
+- **GUI could crash (SIGABRT) on a quick EQ-mode toggle or when applying a preset from the tray** — the background apply thread could be destroyed while still running. Thread cleanup now waits for the thread to fully stop (same class as the Smart Volume slider crash fixed in 1.1.47).
+- **The daemon froze for up to several seconds while reloading its configuration** (e.g. on `ReloadConfigs` / loopback recreation) because blocking device discovery ran on the asyncio event loop. That work is now offloaded to a worker thread, keeping the daemon responsive.
+
+### Changed
+
+- The daemon no longer imports any GUI/Qt code: `EqBand` and the filter labels moved to a Qt-free `eq_types` module, so the background service is lighter and headless-safe.
+- Added timeouts to `systemctl`/`dinitctl`/`udevadm` calls so a degraded init system can no longer hang the autostart/setup paths, and a corrupt profile is now logged instead of silently skipped.
+- Hardened a race when a device is (re)configured while it disconnects, and a couple of dialog timers that could fire on already-closed windows.
+
 ## [1.1.47] - 31 May 2026
 
 ### Fixed
