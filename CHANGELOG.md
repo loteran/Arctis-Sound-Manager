@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.47] - 31 May 2026
+
+### Fixed
+
+- **App audio channel assignments were "randomly forgotten" (#64)** — moving an app to a channel (e.g. LibreWolf → Media) was only persisted for apps the router was already tracking; an app sitting on the default channel was never recorded, so the manual move was never saved and the app kept reverting. Every observed stream's placement is now recorded, so a later manual move is detected and persisted. Also added LibreWolf, Tor Browser, Waterfox, Floorp, Mullvad Browser, Thorium and ungoogled-chromium to the browsers auto-routed to the Media channel.
+- **GUI crash when dragging the Smart Volume → Level slider quickly (#63)** — the apply worker (a QThread) could be destroyed while still running during rapid re-applies, aborting the application. Worker cleanup now happens only after the thread has fully stopped.
+- **Spatial Audio (and the microphone noise-canceling / noise-gate / compressor) toggles did not save their OFF state (#62)** — a PySide6 quirk (`bool(Qt.CheckState.Unchecked)` is `True`) meant turning these off was never recorded, so e.g. Spatial Audio OFF was lost when saving a custom preset. The OFF state is now persisted correctly.
+
+### Changed
+
+- The virtual-sink loopback watchdog now also recovers loopbacks that are alive but linked to the wrong output (e.g. bound to another audio device instead of their Sonar EQ node), not just crashed ones — restoring sound on the affected channel automatically.
+
 ## [1.1.46] - 30 May 2026
 
 ### Fixed
