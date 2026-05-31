@@ -1532,25 +1532,40 @@ class SonarChannelWidget(QWidget):
         self._apply_timer.start()
 
     def _do_apply(self):
-        if self._worker and self._worker.isRunning():
-            # Worker still running — remember to apply once it finishes
+        if self._worker is not None:
+            # A worker is in flight (running, or finishing but not yet cleaned
+            # up) — remember to re-apply once it is fully done.
             self._pending_apply = True
             return
         self._pending_apply = False
         basses, voix, aigus = self._macros.get_values()
-        self._worker = _ApplyWorker(
+        worker = _ApplyWorker(
             self._channel, list(self._committed_bands), basses, voix, aigus,
             target_override=self._target_override,
         )
-        self._worker.done.connect(self._on_apply_done)
-        self._worker.start()
+        self._worker = worker
+        worker.done.connect(self._on_apply_result)
+        # Clean up only once the QThread has FULLY stopped. Dropping the
+        # reference (and letting it be GC'd) from the `done` handler — which
+        # fires from inside run() before the thread has actually stopped —
+        # aborts with "QThread: Destroyed while thread is still running" when
+        # the slider is dragged quickly (rapid re-applies), crashing the GUI
+        # (issue #63). `finished` is emitted only after the thread has stopped.
+        worker.finished.connect(self._on_worker_finished)
+        worker.start()
         self._status_lbl.setText(_t("applying"))
 
     @Slot(bool)
-    def _on_apply_done(self, ok: bool):
+    def _on_apply_result(self, ok: bool):
         self._status_lbl.setText(_t("applied") if ok else _t("error"))
         QTimer.singleShot(2000, lambda: self._status_lbl.setText(""))
+
+    @Slot()
+    def _on_worker_finished(self):
+        worker = self._worker
         self._worker = None
+        if worker is not None:
+            worker.deleteLater()
         if self._pending_apply:
             self._pending_apply = False
             self._do_apply()
@@ -1704,7 +1719,11 @@ class SpatialAudioWidget(QWidget):
     # ── Slots ─────────────────────────────────────────────────────────────────
 
     def _on_toggle(self, checked):
-        enabled = bool(checked)
+        # checkStateChanged emits a Qt.CheckState; bool(Qt.CheckState.Unchecked)
+        # is True in PySide6 (the enum is always truthy), so bool(checked) would
+        # never register the OFF state — the Spatial Audio toggle was never saved
+        # as disabled (issue #62). Compare against Checked explicitly.
+        enabled = checked == Qt.CheckState.Checked
         self._state["enabled"] = enabled
         _save_spatial_audio(self._state, self._channel)
         self._detail.setVisible(enabled)
@@ -2214,8 +2233,11 @@ class _NoiseCancelingCard(QWidget):
         self._waveform.setVisible(enabled)
 
     def _on_toggle(self, checked):
-        self._state["noiseCanceling"]["enabled"] = bool(checked)
-        self._set_enabled(bool(checked))
+        # bool(Qt.CheckState.Unchecked) is True in PySide6 — compare explicitly
+        # so the OFF state actually registers (same class of bug as issue #62).
+        enabled = checked == Qt.CheckState.Checked
+        self._state["noiseCanceling"]["enabled"] = enabled
+        self._set_enabled(enabled)
         self.state_changed.emit()
 
     def _on_slider(self, value: int):
@@ -2339,8 +2361,11 @@ class _NoiseGateCard(QWidget):
         self._auto_cb.setEnabled(enabled)
 
     def _on_toggle(self, checked):
-        self._state["noiseGate"]["enabled"] = bool(checked)
-        self._set_enabled(bool(checked))
+        # bool(Qt.CheckState.Unchecked) is True in PySide6 — compare explicitly
+        # so the OFF state actually registers (same class of bug as issue #62).
+        enabled = checked == Qt.CheckState.Checked
+        self._state["noiseGate"]["enabled"] = enabled
+        self._set_enabled(enabled)
         self.state_changed.emit()
 
     def _on_seuil(self, value: int):
@@ -2402,8 +2427,11 @@ class _CompressorCard(QWidget):
         self._detail.setVisible(enabled)
 
     def _on_toggle(self, checked):
-        self._state["compressor"]["enabled"] = bool(checked)
-        self._set_enabled(bool(checked))
+        # bool(Qt.CheckState.Unchecked) is True in PySide6 — compare explicitly
+        # so the OFF state actually registers (same class of bug as issue #62).
+        enabled = checked == Qt.CheckState.Checked
+        self._state["compressor"]["enabled"] = enabled
+        self._set_enabled(enabled)
         self.state_changed.emit()
 
     def _on_slider(self, value: int):
