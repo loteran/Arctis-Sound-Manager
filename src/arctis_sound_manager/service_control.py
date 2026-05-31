@@ -183,11 +183,15 @@ def is_active(service: str) -> bool:
     try:
         if init == "systemd":
             r = subprocess.run(["systemctl", "--user", "is-active", real],
-                               capture_output=True, text=True)
+                               capture_output=True, text=True, timeout=5)
             return r.stdout.strip() == "active"
-        r = subprocess.run(["dinitctl", "status", real], capture_output=True, text=True)
+        r = subprocess.run(["dinitctl", "status", real], capture_output=True, text=True,
+                           timeout=5)
         # dinit status prints "State: STARTED" for a running service.
         return "STARTED" in r.stdout
+    except subprocess.TimeoutExpired:
+        logger.warning("service_control: is_active(%s) timed out", service)
+        return False
     except (FileNotFoundError, OSError):
         return False
 
@@ -203,8 +207,11 @@ def is_enabled(service: str) -> bool:
     if init == "systemd":
         try:
             r = subprocess.run(["systemctl", "--user", "is-enabled", real],
-                               capture_output=True, text=True)
+                               capture_output=True, text=True, timeout=5)
             return r.stdout.strip() == "enabled"
+        except subprocess.TimeoutExpired:
+            logger.warning("service_control: is_enabled(%s) timed out", service)
+            return False
         except (FileNotFoundError, OSError):
             return False
     # dinit has no is-enabled; reuse the symlink-walking helper.

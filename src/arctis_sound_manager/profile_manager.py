@@ -5,9 +5,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
 
 _CFG = Path.home() / ".config" / "arctis_manager"
 _PROFILES_DIR = _CFG / "profiles"
@@ -117,8 +120,8 @@ class Profile:
         for p in sorted(_PROFILES_DIR.glob("*.json")):
             try:
                 profiles.append(Profile.load(p))
-            except Exception:
-                pass
+            except Exception as e:
+                _log.warning("Skipping corrupt profile %s: %r", p, e)
         return profiles
 
 
