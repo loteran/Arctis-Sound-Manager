@@ -74,6 +74,64 @@ def get_native_streams(data: list | None = None) -> list[dict]:
     return list(streams.values())
 
 
+def loopback_link_target(playback_name: str, data: list | None = None) -> str | None:
+    """Return the node.name of the node currently linked as the input of *playback_name*.
+
+    In other words: given the ``node.name`` of the playback side of a
+    ``pw-loopback`` (e.g. ``"Arctis_Game_sink_out"``), return the name of the
+    downstream node that PipeWire has actually wired it to
+    (e.g. ``"effect_input.sonar-game-eq"`` when correctly linked, or
+    ``"alsa_output.usb-SteelSeries_..."`` when WirePlumber has mis-routed it).
+
+    Parameters
+    ----------
+    playback_name:
+        ``node.name`` of the loopback playback node to inspect.
+    data:
+        Optional pre-fetched ``pw-dump`` payload (list of objects).  When
+        *None*, a fresh ``pw-dump`` is executed.
+
+    Returns
+    -------
+    str | None
+        The ``node.name`` of the linked input node, or *None* if the loopback
+        is not currently linked to anything or an error occurred.
+    """
+    try:
+        if data is None:
+            data = _pw_dump()
+
+        # Build id → node.name map for all Node objects.
+        node_names: dict[int, str] = {}
+        for obj in data:
+            obj_type = obj.get("type", "")
+            if not obj_type.endswith("Node"):
+                continue
+            props = obj.get("info", {}).get("props", {})
+            node_name = props.get("node.name", "")
+            if node_name:
+                node_names[obj["id"]] = node_name
+
+        # Find the first Link whose output node is playback_name.
+        for obj in data:
+            obj_type = obj.get("type", "")
+            if not obj_type.endswith("Link"):
+                continue
+            props = obj.get("info", {}).get("props", {})
+            output_node_id = props.get("link.output.node")
+            input_node_id = props.get("link.input.node")
+            if output_node_id is None or input_node_id is None:
+                continue
+            if node_names.get(output_node_id) == playback_name:
+                return node_names.get(input_node_id)
+
+        # No link found for this playback node — orphan / not yet linked.
+        return None
+    except Exception as e:
+        logger.warning("loopback_link_target failed: %s", e)
+        return None
+
+
 def move_native_stream(stream_node_id: int, target_sink_name: str, data: list | None = None) -> bool:
     """Move a native PipeWire stream to target_sink_name using pw-metadata."""
     if data is None:

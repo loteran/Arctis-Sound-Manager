@@ -271,6 +271,23 @@ class LoopbackManager:
         for spec in specs:
             self.start(spec)
 
+    def specs(self) -> dict[str, "LoopbackSpec"]:
+        """Return a shallow copy of the current spec registry.
+
+        The copy is safe to iterate outside the lock.  Mutating the returned
+        dict does not affect the internal state; however, the
+        :class:`LoopbackSpec` values themselves are shared (they are
+        immutable dataclasses so this is fine).
+
+        Returns
+        -------
+        dict[str, LoopbackSpec]
+            Mapping of channel name → remembered spec for every channel that
+            has been started and not yet intentionally stopped.
+        """
+        with self._lock:
+            return dict(self._specs)
+
     def is_running(self, channel: str) -> bool:
         """Return True if the loopback process for *channel* is still alive.
 

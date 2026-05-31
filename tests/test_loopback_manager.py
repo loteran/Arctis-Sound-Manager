@@ -577,3 +577,72 @@ class TestRestartDead:
             mgr.restart_dead()
 
         assert mgr.is_running("media") is True
+
+
+# ── LoopbackManager.specs ─────────────────────────────────────────────────────
+
+
+class TestSpecs:
+    """Tests for specs() — the read-only snapshot of registered LoopbackSpecs."""
+
+    def test_specs_empty_when_nothing_registered(self) -> None:
+        mgr = LoopbackManager()
+        assert mgr.specs() == {}
+
+    def test_specs_reflects_started_channel(
+        self, media_spec: LoopbackSpec
+    ) -> None:
+        """After start(), specs() must include the channel with the correct spec."""
+        mgr = LoopbackManager()
+        with patch("subprocess.Popen", return_value=_mock_proc()):
+            mgr.start(media_spec)
+        result = mgr.specs()
+        assert "media" in result
+        assert result["media"] is media_spec
+
+    def test_specs_returns_copy_not_reference(
+        self, media_spec: LoopbackSpec
+    ) -> None:
+        """Mutating the returned dict must not affect LoopbackManager._specs."""
+        mgr = LoopbackManager()
+        with patch("subprocess.Popen", return_value=_mock_proc()):
+            mgr.start(media_spec)
+        snapshot = mgr.specs()
+        snapshot["injected"] = media_spec  # mutate the copy
+        # The internal registry must be unchanged
+        assert "injected" not in mgr.specs()
+
+    def test_specs_channel_removed_after_stop(
+        self, media_spec: LoopbackSpec
+    ) -> None:
+        """stop() removes the spec; subsequent specs() must not include it."""
+        mgr = LoopbackManager()
+        with patch("subprocess.Popen", return_value=_mock_proc()):
+            mgr.start(media_spec)
+        mgr.stop("media")
+        assert "media" not in mgr.specs()
+
+    def test_specs_contains_all_started_channels(
+        self, game_spec: LoopbackSpec, chat_spec: LoopbackSpec, media_spec: LoopbackSpec
+    ) -> None:
+        """All three started channels must be present in specs()."""
+        mgr = LoopbackManager()
+        procs = [_mock_proc() for _ in range(3)]
+        with patch("subprocess.Popen", side_effect=procs):
+            mgr.start(game_spec)
+            mgr.start(chat_spec)
+            mgr.start(media_spec)
+        result = mgr.specs()
+        assert set(result.keys()) == {"game", "chat", "media"}
+
+    def test_specs_cleared_after_stop_all(
+        self, all_sonar_specs: list[LoopbackSpec]
+    ) -> None:
+        """stop_all() must clear specs so specs() returns an empty dict."""
+        mgr = LoopbackManager()
+        procs = [_mock_proc() for _ in all_sonar_specs]
+        with patch("subprocess.Popen", side_effect=procs):
+            for spec in all_sonar_specs:
+                mgr.start(spec)
+        mgr.stop_all()
+        assert mgr.specs() == {}
