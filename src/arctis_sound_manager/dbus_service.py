@@ -31,13 +31,14 @@ class ArctisManagerDbusConfigService(ServiceInterface):
         self.core_engine = core
 
     @method('ReloadConfigs')
-    def reload_configs(self) -> 'b': # type: ignore
-        self.core_engine.reload_device_configurations()
-
+    async def reload_configs(self) -> 'b': # type: ignore
+        await asyncio.get_running_loop().run_in_executor(
+            None, self.core_engine.reload_device_configurations
+        )
         return True
 
     @method('RecreateLoopbacks')
-    def recreate_loopbacks(self) -> 'b':  # type: ignore
+    async def recreate_loopbacks(self) -> 'b':  # type: ignore
         """Recreate the Arctis dynamic loopbacks (Game/Chat/Media).
 
         Re-reads the current EQ mode from disk so Sonar ↔ simple mode
@@ -45,7 +46,9 @@ class ArctisManagerDbusConfigService(ServiceInterface):
         Returns True on success (errors are logged and swallowed so the
         daemon is never crashed by a D-Bus call).
         """
-        self.core_engine.recreate_loopbacks()
+        await asyncio.get_running_loop().run_in_executor(
+            None, self.core_engine.recreate_loopbacks
+        )
         return True
 
 class ArctisManagerDbusStatusService(ServiceInterface):

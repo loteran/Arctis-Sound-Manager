@@ -3,7 +3,7 @@
 from pathlib import Path
 from unittest.mock import patch
 
-from arctis_sound_manager.gui.eq_curve_widget import EqBand
+from arctis_sound_manager.eq_types import EqBand
 from arctis_sound_manager.sonar_to_pipewire import (
     check_and_fix_stale_configs,
     generate_sonar_eq_conf,

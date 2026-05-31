@@ -44,7 +44,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from arctis_sound_manager.gui.eq_curve_widget import EqBand, EqCurveWidget
+from arctis_sound_manager.eq_types import EqBand
+from arctis_sound_manager.gui.eq_curve_widget import EqCurveWidget
 
 _IMAGES_DIR = Path(__file__).parent / "images"
 
