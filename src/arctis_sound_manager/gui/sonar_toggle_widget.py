@@ -257,16 +257,24 @@ class QSonarToggleWidget(QWidget):
         DbusWrapper.send_eq_command(list(self._band_values))
 
     def _on_toggle(self):
+        if self._worker is not None:
+            return  # a mode switch is already in flight
         old_mode = _current_mode()
         new_mode = 'sonar' if old_mode == 'custom' else 'custom'
 
         self._button.setEnabled(False)
         self._button.setText(I18n.translate('ui', 'restarting_audio'))
 
-        self._worker = _ToggleWorker(new_mode, old_mode)
-        self._worker.countdown_tick.connect(self._on_countdown)
-        self._worker.done.connect(self._on_done)
-        self._worker.start()
+        worker = _ToggleWorker(new_mode, old_mode)
+        self._worker = worker
+        worker.countdown_tick.connect(self._on_countdown)
+        worker.done.connect(self._on_done)
+        # Clean up + re-enable only once the QThread has fully stopped: `done`
+        # fires from inside run() before the thread stops, so dropping/replacing
+        # the reference then can abort with "QThread: Destroyed while running"
+        # on a quick re-toggle (issue #63 class).
+        worker.finished.connect(self._on_worker_finished)
+        worker.start()
 
     def _on_countdown(self, remaining: int):
         self._button.setText(I18n.translate('ui', 'please_wait') % remaining)
@@ -275,6 +283,12 @@ class QSonarToggleWidget(QWidget):
         if not success:
             self._mode_label.setText(f'<b style="color:red;">{I18n.translate("ui", "switch_failed")}</b>')
         self._refresh()
-        self._button.setEnabled(True)
         if success and mode == 'custom':
             DbusWrapper.get_eq_bands(self._sig_eq_bands)
+
+    def _on_worker_finished(self):
+        worker = self._worker
+        self._worker = None
+        if worker is not None:
+            worker.deleteLater()
+        self._button.setEnabled(True)

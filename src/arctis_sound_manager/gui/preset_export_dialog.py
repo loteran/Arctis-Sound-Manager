@@ -179,19 +179,22 @@ class PresetExportDialog(QDialog):
 
     def _flash_status(self, msg: str) -> None:
         self._status.setText(msg)
-        QTimer.singleShot(2500, lambda: self._status.setText(""))
+        # Bind the timer to `self` (the dialog) as context: if the dialog is
+        # closed/destroyed before it fires, Qt cancels it instead of calling the
+        # lambda on a deleted C++ widget (RuntimeError).
+        QTimer.singleShot(2500, self, lambda: self._status.setText(""))
 
     # ── Actions ───────────────────────────────────────────────────────────────
 
     def _copy_link(self) -> None:
         QApplication.clipboard().setText(self._link)
         self._copy_link_btn.setText("✓ " + _t("export_copied_short"))
-        QTimer.singleShot(2000, lambda: self._copy_link_btn.setText(_t("export_copy_link")))
+        QTimer.singleShot(2000, self, lambda: self._copy_link_btn.setText(_t("export_copy_link")))
 
     def _copy_json(self) -> None:
         QApplication.clipboard().setText(self._json_text)
         self._copy_json_btn.setText("✓ " + _t("export_copied_short"))
-        QTimer.singleShot(2000, lambda: self._copy_json_btn.setText(_t("export_copy_json")))
+        QTimer.singleShot(2000, self, lambda: self._copy_json_btn.setText(_t("export_copy_json")))
 
     def _share_community(self) -> None:
         yes_btn = QMessageBox.StandardButton.Yes
