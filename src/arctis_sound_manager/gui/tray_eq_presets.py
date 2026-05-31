@@ -129,8 +129,17 @@ class SonarPresetApplier(QObject):
         )
         self._worker = worker
         worker.done.connect(lambda ok: self._on_done(ok, channel, name))
+        # Drop the reference only once the QThread has fully stopped — `done`
+        # fires from inside run() before the thread stops, so nulling _worker
+        # there can abort with "QThread: Destroyed while running" (issue #63).
+        worker.finished.connect(self._on_worker_finished)
         worker.start()
 
     def _on_done(self, ok: bool, channel: str, name: str) -> None:
-        self._worker = None
         self.done.emit(ok, channel, name)
+
+    def _on_worker_finished(self) -> None:
+        worker = self._worker
+        self._worker = None
+        if worker is not None:
+            worker.deleteLater()

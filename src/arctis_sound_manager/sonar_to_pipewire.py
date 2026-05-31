@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from arctis_sound_manager.gui.eq_curve_widget import EqBand, PW_LABEL
+from arctis_sound_manager.eq_types import EqBand, PW_LABEL
 
 _log = logging.getLogger(__name__)
 

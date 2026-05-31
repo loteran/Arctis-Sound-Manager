@@ -233,9 +233,12 @@ def reload_udev_rules() -> int:
             ["udevadm", "trigger", "--action=add", "--subsystem-match=usb"],
         ]:
             try:
-                result = subprocess.run(cmd, check=True).returncode
+                result = subprocess.run(cmd, check=True, timeout=30).returncode
                 if result:
                     return result
+            except subprocess.TimeoutExpired:
+                print(f'- Command timed out: {" ".join(cmd)}')
+                continue
             except subprocess.CalledProcessError as e:
                 print(f'- Command failed with code {e.returncode}!')
                 return e.returncode

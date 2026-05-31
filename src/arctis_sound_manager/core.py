@@ -442,10 +442,11 @@ class CoreEngine:
             # Reset the previous device first
             self.teardown()
         
-        self.usb_device = cast(TypedDevice, usb_device)
-        self.device_config = device_config
-        self.device_status = self.new_device_status()
-        self.device_settings = DeviceSettings(self.usb_device.idVendor, self.usb_device.idProduct)
+        with self._device_lock:
+            self.usb_device = cast(TypedDevice, usb_device)
+            self.device_config = device_config
+            self.device_status = self.new_device_status()
+            self.device_settings = DeviceSettings(self.usb_device.idVendor, self.usb_device.idProduct)
 
         # Load defaults
         for _, section in self.device_config.settings.items():

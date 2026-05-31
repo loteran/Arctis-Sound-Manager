@@ -544,6 +544,7 @@ def main() -> None:
         "dbus_ok": r_dbus.get("dbus_ok", False),
         "asm_version": r_asm.get("asm_version"),
         "pipewire_version": r_pw.get("pipewire_version"),
+        "corrections": r_corr,
     }
 
     print("\n" + "=" * 60)

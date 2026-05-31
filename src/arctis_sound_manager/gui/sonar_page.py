@@ -44,7 +44,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from arctis_sound_manager.gui.eq_curve_widget import EqBand, EqCurveWidget
+from arctis_sound_manager.eq_types import EqBand
+from arctis_sound_manager.gui.eq_curve_widget import EqCurveWidget
 
 _IMAGES_DIR = Path(__file__).parent / "images"
 
@@ -2276,7 +2277,10 @@ class _NoiseReductionCard(QWidget):
         row.setSpacing(8)
         toggle = QToggle(is_checkbox=True)
         toggle.setChecked(self._state[key]["enabled"])
-        toggle.checkStateChanged.connect(lambda c, k=key: self._on_toggle(k, bool(c)))
+        # bool(Qt.CheckState.Unchecked) is True in PySide6 — compare explicitly,
+        # otherwise this reduction could never be turned off (issue #62 class).
+        toggle.checkStateChanged.connect(
+            lambda c, k=key: self._on_toggle(k, c == Qt.CheckState.Checked))
         row.addWidget(toggle)
         lbl = QLabel(label)
         lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt; min-width: 68px;")

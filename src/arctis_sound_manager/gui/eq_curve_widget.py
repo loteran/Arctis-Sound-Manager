@@ -14,7 +14,6 @@ Interactions:
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
@@ -36,6 +35,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from arctis_sound_manager.eq_types import EqBand, PW_LABEL  # noqa: F401 — re-exported for back-compat
 from arctis_sound_manager.gui.theme import ACCENT, BG_CARD, BORDER, TEXT_PRIMARY, TEXT_SECONDARY
 
 # ── Data ──────────────────────────────────────────────────────────────────────
@@ -48,27 +48,11 @@ FILTER_LABELS = {
     "lowShelving":  "Low Shelf",
     "highShelving": "High Shelf",
 }
-PW_LABEL = {
-    "peakingEQ":    "bq_peaking",
-    "lowPass":      "bq_lowpass",
-    "highPass":     "bq_highpass",
-    "lowShelving":  "bq_lowshelf",
-    "highShelving": "bq_highshelf",
-}
 
 BAND_COLORS = [
     "#FF6B6B", "#FF9F43", "#FECA57", "#48DBFB", "#1DD1A1",
     "#C56BFF", "#FF78C4", "#54A0FF", "#FF6348", "#01CBC6",
 ]
-
-
-@dataclass
-class EqBand:
-    freq: float = 1000.0
-    gain: float = 0.0
-    q: float = 0.707
-    type: str = "peakingEQ"
-    enabled: bool = True
 
 
 # ── Biquad RBJ cookbook ───────────────────────────────────────────────────────
