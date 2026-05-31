@@ -52,7 +52,9 @@ _GAME_BINARIES = {"wine64-preloader", "wine-preloader", "wine", "wine64",
 
 # Auto-routing: known browser application names → Media channel
 _BROWSER_APPS = {"Firefox", "Chromium", "Google Chrome", "Brave", "Vivaldi",
-                 "Opera", "Microsoft Edge", "Zen Browser"}
+                 "Opera", "Microsoft Edge", "Zen Browser", "LibreWolf",
+                 "Waterfox", "Tor Browser", "Floorp", "Mullvad Browser",
+                 "Thorium", "Chrome", "Ungoogled Chromium"}
 
 # Known VoIP / chat apps → Chat channel
 _CHAT_APPS = {"WEBRTC VoiceEngine", "Discord", "TeamSpeak", "Mumble",
@@ -262,6 +264,14 @@ def _main_loop():
                         _pa_placed[app] = wanted_index
                     else:
                         _pa_placed[app] = si.sink
+                else:
+                    # App we neither auto-route nor have an override for (e.g. a
+                    # browser not in _BROWSER_APPS that already sits on an Arctis
+                    # sink). Still record where it currently is, so a later manual
+                    # move (KDE mixer → another channel) is detected next tick and
+                    # saved as an override. Without this the move is never seen and
+                    # the channel choice is "forgotten" (issue #64).
+                    _pa_placed[app] = si.sink
 
             # ── Native PipeWire streams (mpv, haruna…) ────────────────────────
             # pw-dump is expensive — only run every NATIVE_INTERVAL seconds
