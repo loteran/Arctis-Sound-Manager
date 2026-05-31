@@ -153,19 +153,31 @@ class CoreEngine:
             self.logger.error("recreate_loopbacks: unexpected error: %r", exc)
 
     async def _loopback_watchdog(self) -> None:
-        """Periodically check for dead loopback processes and restart them.
+        """Periodically check for dead or mislinked loopback processes.
 
         Runs as an asyncio ``Task`` alongside ``core_loop``.  Every 5 seconds,
-        if a device is currently connected (``device_state.is_device_set()``)
-        and there are registered loopbacks to watch, calls
-        :meth:`LoopbackManager.restart_dead` to revive any crashed
-        ``pw-loopback`` processes.
+        if a device is currently connected (``device_state.is_device_set()``),
+        performs two passes:
+
+        1. **Dead-process pass** — calls :meth:`LoopbackManager.restart_dead`
+           to revive any crashed ``pw-loopback`` processes.
+        2. **Mislink pass** — for every loopback that was *not* just restarted
+           and is still running, queries PipeWire (via
+           :func:`~arctis_sound_manager.pw_utils.loopback_link_target`) to see
+           which sink it is actually wired to.  If the actual link target differs
+           from the expected ``spec.target``, the loopback is recreated so that
+           WirePlumber re-applies ``node.target``.  Orphan loopbacks (not yet
+           linked to anything, ``actual is None``) are left alone — they are
+           transitionally unlinked and ``node.target`` will wire them on the
+           next PipeWire graph change.
 
         The coroutine exits cleanly when ``self._stopping`` is set (by
         :meth:`stop`) or when the task is cancelled (by the daemon shutdown
         handler).  Errors are always caught and logged — this coroutine must
         never crash the daemon.
         """
+        from arctis_sound_manager.pw_utils import loopback_link_target
+
         _WATCHDOG_INTERVAL: float = 5.0
         try:
             while not self._stopping:
@@ -185,6 +197,32 @@ class CoreEngine:
                 except Exception as exc:
                     self.logger.error(
                         "_loopback_watchdog: unexpected error in restart_dead: %r", exc
+                    )
+                    continue
+
+                # Mislink detection pass: verify that each running loopback is
+                # wired to the expected node.target.  Skip channels that were
+                # just restarted — give them one watchdog tick to get linked.
+                try:
+                    for channel, spec in self.loopback_manager.specs().items():
+                        if channel in restarted:
+                            # Just recreated — node.target will bind next cycle.
+                            continue
+                        if not self.loopback_manager.is_running(channel):
+                            continue
+                        actual = loopback_link_target(spec.playback_name)
+                        # actual is None  → orphan / not yet linked: leave it alone.
+                        # actual != target → clearly mislinked: recreate.
+                        if actual is not None and actual != spec.target:
+                            self.logger.warning(
+                                "_loopback_watchdog: loopback '%s' mislinked to %s "
+                                "(want %s) — recreating",
+                                channel, actual, spec.target,
+                            )
+                            self.loopback_manager.recreate(spec)
+                except Exception as exc:
+                    self.logger.error(
+                        "_loopback_watchdog: unexpected error in mislink check: %r", exc
                     )
         except asyncio.CancelledError:
             raise

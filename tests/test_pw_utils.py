@@ -1,6 +1,10 @@
 """Tests for pw_utils — native PipeWire stream detection and routing."""
 
-from arctis_sound_manager.pw_utils import get_native_streams, move_native_stream
+from arctis_sound_manager.pw_utils import (
+    get_native_streams,
+    loopback_link_target,
+    move_native_stream,
+)
 
 
 def _make_pw_dump(sinks=None, streams=None, links=None):
@@ -106,3 +110,137 @@ def test_move_native_stream_sink_not_found():
     data = _make_pw_dump(sinks={10: "Arctis_Game"})
     result = move_native_stream(999, "NonExistent_Sink", data)
     assert result is False
+
+
+# ── loopback_link_target ──────────────────────────────────────────────────────
+
+
+def _make_loopback_pw_dump(nodes: dict[int, str], links: list[tuple[int, int]]) -> list[dict]:
+    """Build a minimal pw-dump for loopback_link_target tests.
+
+    Parameters
+    ----------
+    nodes:
+        Mapping of node_id → node.name.  All objects are typed as
+        ``PipeWire:Interface:Node`` with ``node.name`` in ``info.props``.
+    links:
+        List of (output_node_id, input_node_id) pairs.  Each pair becomes a
+        ``PipeWire:Interface:Link`` object whose ``info.props`` carries the
+        ``link.output.node`` and ``link.input.node`` keys — the real pw-dump
+        format used by :func:`loopback_link_target`.
+    """
+    data: list[dict] = []
+    for node_id, node_name in nodes.items():
+        data.append({
+            "id": node_id,
+            "type": "PipeWire:Interface:Node",
+            "info": {"props": {"node.name": node_name}},
+        })
+    for link_id, (out_id, in_id) in enumerate(links, start=5000):
+        data.append({
+            "id": link_id,
+            "type": "PipeWire:Interface:Link",
+            "info": {
+                "props": {
+                    "link.output.node": out_id,
+                    "link.input.node": in_id,
+                }
+            },
+        })
+    return data
+
+
+class TestLoopbackLinkTarget:
+    """Tests for loopback_link_target() — detects which sink a loopback is wired to."""
+
+    def test_correctly_linked_returns_expected_target(self) -> None:
+        """Loopback wired to effect_input.sonar-game-eq returns that name."""
+        data = _make_loopback_pw_dump(
+            nodes={
+                10: "Arctis_Game_sink_out",
+                20: "effect_input.sonar-game-eq",
+            },
+            links=[(10, 20)],
+        )
+        result = loopback_link_target("Arctis_Game_sink_out", data=data)
+        assert result == "effect_input.sonar-game-eq"
+
+    def test_mislinked_returns_wrong_sink_name(self) -> None:
+        """Loopback wired to a DualSense speaker instead of the EQ returns that name."""
+        data = _make_loopback_pw_dump(
+            nodes={
+                10: "Arctis_Game_sink_out",
+                30: "alsa_output.usb-Sony_DualSense_Wireless_Controller.stereo",
+            },
+            links=[(10, 30)],
+        )
+        result = loopback_link_target("Arctis_Game_sink_out", data=data)
+        assert result == "alsa_output.usb-Sony_DualSense_Wireless_Controller.stereo"
+
+    def test_unlinked_loopback_returns_none(self) -> None:
+        """A loopback with no outgoing link returns None (orphan / not yet bound)."""
+        data = _make_loopback_pw_dump(
+            nodes={
+                10: "Arctis_Game_sink_out",
+                20: "effect_input.sonar-game-eq",
+            },
+            links=[],   # no links at all
+        )
+        result = loopback_link_target("Arctis_Game_sink_out", data=data)
+        assert result is None
+
+    def test_unknown_playback_name_returns_none(self) -> None:
+        """If playback_name is not present as any link's output, return None."""
+        data = _make_loopback_pw_dump(
+            nodes={
+                10: "Arctis_Game_sink_out",
+                20: "effect_input.sonar-game-eq",
+            },
+            links=[(10, 20)],
+        )
+        result = loopback_link_target("Arctis_Chat_sink_out", data=data)
+        assert result is None
+
+    def test_empty_dump_returns_none(self) -> None:
+        result = loopback_link_target("Arctis_Game_sink_out", data=[])
+        assert result is None
+
+    def test_link_with_missing_props_is_skipped(self) -> None:
+        """Links that lack link.output.node / link.input.node in props are ignored."""
+        data: list[dict] = [
+            {"id": 10, "type": "PipeWire:Interface:Node",
+             "info": {"props": {"node.name": "Arctis_Game_sink_out"}}},
+            # Link with props but missing the required keys
+            {"id": 5000, "type": "PipeWire:Interface:Link",
+             "info": {"props": {}}},
+        ]
+        result = loopback_link_target("Arctis_Game_sink_out", data=data)
+        assert result is None
+
+    def test_corrupt_data_returns_none(self) -> None:
+        """Completely malformed data must not raise — returns None defensively."""
+        corrupt: list[dict] = [{"not_a_valid": "object"}]
+        result = loopback_link_target("Arctis_Game_sink_out", data=corrupt)
+        assert result is None
+
+    def test_picks_first_link_when_multiple_links_for_same_output(self) -> None:
+        """When a node has multiple outgoing links, the first match is returned."""
+        data = _make_loopback_pw_dump(
+            nodes={
+                10: "Arctis_Game_sink_out",
+                20: "effect_input.sonar-game-eq",
+                30: "some_other_node",
+            },
+            links=[(10, 20), (10, 30)],   # two links from the same output
+        )
+        # The first link (10→20) should be returned
+        result = loopback_link_target("Arctis_Game_sink_out", data=data)
+        assert result == "effect_input.sonar-game-eq"
+
+    def test_type_suffix_matching_handles_full_interface_name(self) -> None:
+        """Type string 'PipeWire:Interface:Node' ends with 'Node' — matched correctly."""
+        data = _make_loopback_pw_dump(
+            nodes={50: "Arctis_Media_sink_out", 60: "effect_input.sonar-media-eq"},
+            links=[(50, 60)],
+        )
+        assert loopback_link_target("Arctis_Media_sink_out", data=data) == "effect_input.sonar-media-eq"

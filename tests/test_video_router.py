@@ -5,7 +5,34 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from arctis_sound_manager.scripts.video_router import load_overrides, save_overrides
+from arctis_sound_manager.scripts.video_router import (
+    load_overrides,
+    save_overrides,
+    _auto_route,
+)
+
+
+# ── _auto_route (issue #64: browsers, incl. LibreWolf, must go to Media) ──────
+
+def test_auto_route_librewolf_to_media():
+    assert _auto_route("LibreWolf", {}) == "Arctis_Media"
+
+
+def test_auto_route_firefox_to_media():
+    assert _auto_route("Firefox", {}) == "Arctis_Media"
+
+
+def test_auto_route_game_binary_to_game():
+    assert _auto_route("RocketLeague.exe",
+                       {"application.process.binary": "wine64-preloader"}) == "Arctis_Game"
+
+
+def test_auto_route_chat_app_to_chat():
+    assert _auto_route("Discord", {}) == "Arctis_Chat"
+
+
+def test_auto_route_unknown_returns_none():
+    assert _auto_route("SomeRandomApp", {}) is None
 
 
 def test_load_overrides_missing_file():
