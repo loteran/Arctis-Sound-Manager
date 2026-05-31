@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.47" date="2026-05-31">
+      <description>
+        <p>App audio channel assignments were "randomly forgotten" (#64) — moving an app to a channel (e.g. LibreWolf → Media) was only persisted for apps the router was already tracking; an app sitting on the default channel was never recorded, so the manual move was never saved and the app kept reverting. Every observed stream's placement is now recorded, so a later manual move is detected and persisted. Also added LibreWolf, Tor Browser, Waterfox, Floorp, Mullvad Browser, Thorium and ungoogled-chromium to the browsers auto-routed to the Media channel. GUI crash when dragging the Smart Volume → Level slider quickly (#63) — the apply worker (a QThread) could be destroyed while still running during rapid re-applies, aborting the application. Worker cleanup now happens only after the thread has fully stopped. Spatial Audio (and the microphone noise-canceling / noise-gate / compressor) toggles did not save their OFF state (#62) — a PySide6 quirk (bool(Qt.CheckState.Unchecked) is True) meant turning these off was never recorded, so e.g. Spatial Audio OFF was lost when saving a custom preset. The OFF state is now persisted correctly.</p>
+      </description>
+    </release>
     <release version="1.1.46" date="2026-05-30">
       <description>
         <p>Discord (and other apps) lost their audio sink when changing a Sonar profile — applying a Sonar profile or EQ used to restart the whole PipeWire stack, tearing down every node. Apps that do not re-enumerate their output devices when the PulseAudio server connection drops (Discord/Electron in particular) ended up silent until restarted. Profile and EQ changes now restart only the filter-chain service and recreate the virtual-sink loopbacks dynamically, leaving pipewire/pipewire-pulse untouched, so connected apps keep their sink and audio. Virtual sinks showed a generic "pw-loopback-NNN" name in application output pickers and mixers — the Arctis Game/Chat/Media sinks now expose their proper "Arctis … Game/Chat/Media" name and can be selected as an output device (e.g. as Discord's Chat output). Discord appeared as "WEBRTC VoiceEngine" in a channel's application list — applications that report a generic audio-engine name now fall back to their process binary, so Discord shows as "Discord".</p>
@@ -199,11 +204,6 @@
     <release version="1.0.74" date="2026-04-25">
       <description>
         <p>Automatic PyPI publish on every tagged release via PyPA's gh-action-pypi-publish action using OIDC Trusted Publishers (no token in repo secrets). Once the project is published once, end-users can install/upgrade with the canonical one-liner pipx install arctis-sound-manager --force instead of having to track release URLs. Release workflow writes the deterministic AUR source tarball to build/aur/ instead of dist/, so the hyphen-named archive doesn't get scooped up by twine when publishing to PyPI. The GitHub release upload list now reflects the new path.</p>
-      </description>
-    </release>
-    <release version="1.0.73" date="2026-04-25">
-      <description>
-        <p>scripts/clean-reinstall.sh — a self-contained, curl | bash-friendly script that audits every existing ASM install (rpm + dpkg + pacman + pipx + orphan binaries in $PATH), uninstalls all of them, then installs the latest release via the user's chosen method, runs asm-setup and verifies that the daemon is active. Solves the dup-binary mess that built up across mixed install methods (RPM + pipx --force etc.). Multi-install detection in the in-app updater: clicking "Install update" now checks whether ASM is currently installed by more than one method (rpm + pipx, etc.) and refuses to upgrade until the conflict is resolved, opening a clear dialog that points to clean-reinstall.sh with a copy-to-clipboard command. In-app updater now runs asm-setup after a pipx upgrade (via the new FirstRunDialog), so udev rules are reloaded and PipeWire restarted on the new binary. Previously only asm-cli desktop write was called, which left udev permissions stale on already-attached devices.</p>
       </description>
     </release>
   </releases>
