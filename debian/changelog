@@ -1,3 +1,18 @@
+arctis-sound-manager (1.1.49-1) noble; urgency=medium
+
+  * RNNoise mic noise-suppression dependency failed to install on Ubuntu
+    (#65) — the plugin is not packaged for Ubuntu or its derivatives (Linux
+    Mint, Pop!_OS, elementary, KDE neon), yet ASM suggested an apt package
+    that has no candidate there. Those distros now build the LADSPA plugin
+    from source in one click (Install / Copy cmd), and the dependency is no
+    longer treated as blocking — the rest of ASM works without it. Debian
+    keeps the apt package; Fedora and Arch are unchanged. The "Copy cmd"
+    button also now preserves command quoting correctly.
+  * On the DAC OLED, the EQ-mode badge (S = Sonar, C = Custom EQ) is now
+    shown to the right of the clock instead of on its own line.
+
+ -- loteran <axel.valadon@gmail.com>  Mon, 01 Jun 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.48-1) noble; urgency=medium
 
   * Microphone Background / Impact noise reduction could not be turned off —
