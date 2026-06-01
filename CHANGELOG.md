@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.49] - 1 June 2026
+
+### Fixed
+
+- **RNNoise mic noise-suppression dependency failed to install on Ubuntu (#65)** — the plugin is not packaged for Ubuntu or its derivatives (Linux Mint, Pop!_OS, elementary, KDE neon), yet ASM suggested an apt package that has no candidate there. Those distros now build the LADSPA plugin from source in one click (Install / Copy cmd), and the dependency is no longer treated as blocking — the rest of ASM works without it. Debian keeps the apt package; Fedora and Arch are unchanged. The "Copy cmd" button also now preserves command quoting correctly.
+
+### Changed
+
+- On the DAC OLED, the EQ-mode badge (**S** = Sonar, **C** = Custom EQ) is now shown to the right of the clock instead of on its own line.
+
 ## [1.1.48] - 31 May 2026
 
 Hardening release from a full code audit (no new features).
