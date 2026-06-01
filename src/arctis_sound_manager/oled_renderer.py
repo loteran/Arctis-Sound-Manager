@@ -315,6 +315,10 @@ class OledRenderer:
                     )
                     draw.text((bat_x + icon_w, label_y), bat_label, font=font_battery, fill=1)
 
+            # Right boundary for elements placed on the time row (mic/battery sit
+            # on the right; anything after the time must stop before this).
+            top_row_right = bat_left
+
             # Mic icon: right-aligned just left of battery, vertically centred on time row
             if show_mic_status and mic_status and show_time:
                 mic_size = max(6, min(sz_time, fs.get('mic', 12)))
@@ -324,9 +328,18 @@ class OledRenderer:
                 if mic_x >= time_text_right:
                     mic_y = y + max(0, (sz_time - mic_size) // 2)
                     self._draw_mic_icon(draw, mic_x, mic_y, mic_size, mic_status == "muted")
+                    top_row_right = mic_x
 
             if show_time:
                 draw.text((1, y - 1), time_str, font=font_time, fill=1)
+                # EQ-mode badge (S = Sonar, C = Custom EQ) placed to the RIGHT of
+                # the time with a clear gap, vertically centred on the time row.
+                if show_sonar_mode:
+                    mode_size = max(7, min(sz_time, sz_sonar_mode))
+                    mode_x = 1 + int(font_time.getlength(time_str)) + 10
+                    mode_y = y + max(0, (sz_time - mode_size) // 2)
+                    if mode_x + mode_size + 4 <= top_row_right:
+                        self._draw_eq_mode_icon(draw, mode_x, mode_y, eq_mode, mode_size)
                 y += sz_time + 2
             else:
                 y += sz_battery + 2
@@ -358,9 +371,10 @@ class OledRenderer:
                     else:
                         draw.text((_ICON_SIZE + 4, y + sz_weather_tmp + 2), city, font=font_small, fill=1)
                 y += icon_h + 4
-            elif element == 'sonar_mode' and show_sonar_mode:
-                self._draw_eq_mode_icon(draw, 1, y, eq_mode, sz_sonar_mode)
-                y += sz_sonar_mode + 3
+            elif element == 'sonar_mode':
+                # The EQ-mode badge is now drawn on the time row (right of the
+                # clock), not as its own body row — nothing to do here.
+                pass
             elif element == 'eq_chat' and show_eq_chat and eq_chat_preset:
                 draw.text((1 - eq_chat_scroll_offset, y), f"Chat: {eq_chat_preset}", font=font_eq_chat, fill=1)
                 y += sz_eq_chat + 3
@@ -390,8 +404,9 @@ class OledRenderer:
                 y += sz_eq + 3
             elif element == 'weather' and weather is not None:
                 y += 2 + max(_ICON_SIZE, sz_weather_tmp) + 4
-            elif element == 'sonar_mode' and show_sonar_mode:
-                y += sz_sonar_mode + 3
+            elif element == 'sonar_mode':
+                # Drawn on the time row now — adds no body height.
+                pass
             elif element == 'eq_chat' and show_eq_chat and eq_chat_preset:
                 y += sz_eq_chat + 3
         return y
