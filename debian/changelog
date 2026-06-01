@@ -1,3 +1,108 @@
+arctis-sound-manager (1.1.49-1) noble; urgency=medium
+
+  * RNNoise mic noise-suppression dependency failed to install on Ubuntu
+    (#65) — the plugin is not packaged for Ubuntu or its derivatives (Linux
+    Mint, Pop!_OS, elementary, KDE neon), yet ASM suggested an apt package
+    that has no candidate there. Those distros now build the LADSPA plugin
+    from source in one click (Install / Copy cmd), and the dependency is no
+    longer treated as blocking — the rest of ASM works without it. Debian
+    keeps the apt package; Fedora and Arch are unchanged. The "Copy cmd"
+    button also now preserves command quoting correctly.
+  * On the DAC OLED, the EQ-mode badge (S = Sonar, C = Custom EQ) is now
+    shown to the right of the clock instead of on its own line.
+
+ -- loteran <axel.valadon@gmail.com>  Mon, 01 Jun 2026 00:00:00 +0000
+
+arctis-sound-manager (1.1.48-1) noble; urgency=medium
+
+  * Microphone Background / Impact noise reduction could not be turned off —
+    same Qt.CheckState truthiness bug as the Spatial Audio toggle in 1.1.47;
+    the OFF state is now registered correctly.
+  * GUI could crash (SIGABRT) on a quick EQ-mode toggle or when applying a
+    preset from the tray — the background apply thread could be destroyed
+    while still running. Thread cleanup now waits for the thread to fully
+    stop (same class as the Smart Volume slider crash fixed in 1.1.47).
+  * The daemon froze for up to several seconds while reloading its
+    configuration (e.g. on ReloadConfigs / loopback recreation) because
+    blocking device discovery ran on the asyncio event loop. That work is
+    now offloaded to a worker thread, keeping the daemon responsive.
+  * The daemon no longer imports any GUI/Qt code: EqBand and the filter
+    labels moved to a Qt-free eq_types module, so the background service is
+    lighter and headless-safe.
+  * Added timeouts to systemctl/dinitctl/udevadm calls so a degraded init
+    system can no longer hang the autostart/setup paths, and a corrupt
+    profile is now logged instead of silently skipped.
+  * Hardened a race when a device is (re)configured while it disconnects,
+    and a couple of dialog timers that could fire on already-closed windows.
+
+ -- loteran <axel.valadon@gmail.com>  Sun, 31 May 2026 00:00:00 +0000
+
+arctis-sound-manager (1.1.47-1) noble; urgency=medium
+
+  * App audio channel assignments were "randomly forgotten" (#64) — moving
+    an app to a channel (e.g. LibreWolf → Media) was only persisted for apps
+    the router was already tracking; an app sitting on the default channel
+    was never recorded, so the manual move was never saved and the app kept
+    reverting. Every observed stream's placement is now recorded, so a later
+    manual move is detected and persisted. Also added LibreWolf, Tor
+    Browser, Waterfox, Floorp, Mullvad Browser, Thorium and
+    ungoogled-chromium to the browsers auto-routed to the Media channel.
+  * GUI crash when dragging the Smart Volume → Level slider quickly (#63) —
+    the apply worker (a QThread) could be destroyed while still running
+    during rapid re-applies, aborting the application. Worker cleanup now
+    happens only after the thread has fully stopped.
+  * Spatial Audio (and the microphone noise-canceling / noise-gate /
+    compressor) toggles did not save their OFF state (#62) — a PySide6 quirk
+    (bool(Qt.CheckState.Unchecked) is True) meant turning these off was
+    never recorded, so e.g. Spatial Audio OFF was lost when saving a custom
+    preset. The OFF state is now persisted correctly.
+  * The virtual-sink loopback watchdog now also recovers loopbacks that are
+    alive but linked to the wrong output (e.g. bound to another audio device
+    instead of their Sonar EQ node), not just crashed ones — restoring sound
+    on the affected channel automatically.
+
+ -- loteran <axel.valadon@gmail.com>  Sun, 31 May 2026 00:00:00 +0000
+
+arctis-sound-manager (1.1.46-1) noble; urgency=medium
+
+  * Discord (and other apps) lost their audio sink when changing a Sonar
+    profile — applying a Sonar profile or EQ used to restart the whole
+    PipeWire stack, tearing down every node. Apps that do not re-enumerate
+    their output devices when the PulseAudio server connection drops
+    (Discord/Electron in particular) ended up silent until restarted.
+    Profile and EQ changes now restart only the filter-chain service and
+    recreate the virtual-sink loopbacks dynamically, leaving
+    pipewire/pipewire-pulse untouched, so connected apps keep their sink and
+    audio.
+  * Virtual sinks showed a generic "pw-loopback-NNN" name in application
+    output pickers and mixers — the Arctis Game/Chat/Media sinks now expose
+    their proper "Arctis … Game/Chat/Media" name and can be selected as an
+    output device (e.g. as Discord's Chat output).
+  * Discord appeared as "WEBRTC VoiceEngine" in a channel's application list
+    — applications that report a generic audio-engine name now fall back to
+    their process binary, so Discord shows as "Discord".
+  * The Arctis Game/Chat/Media virtual-sink loopbacks are now created and
+    owned dynamically by the daemon (instead of a static pipewire.conf.d
+    file), so they can be recreated after an EQ change without a full
+    PipeWire restart. The 7.1 surround (HeSuVi) chain for Game and Media is
+    unchanged. The daemon cleans up its loopbacks on shutdown, and a
+    watchdog respawns any loopback whose process crashes.
+
+ -- loteran <axel.valadon@gmail.com>  Sat, 30 May 2026 00:00:00 +0000
+
+arctis-sound-manager (1.1.45-1) noble; urgency=medium
+
+  * Arctis 7X: daemon crashed with "Failed to find command interface
+    endpoint" — some Arctis 7X (and other Arctis 1 family) firmwares expose
+    the vendor HID command interface with an interrupt IN endpoint only, no
+    OUT endpoint. get_command_endpoint_address() raised an exception instead
+    of falling back, crashing the whole daemon before the GUI could appear.
+    ASM now detects the missing OUT endpoint and routes commands over HID
+    SET_REPORT (control transfer) automatically, which is the correct path
+    for such devices (issue #59).
+
+ -- loteran <axel.valadon@gmail.com>  Fri, 29 May 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.44-1) noble; urgency=medium
 
   * dinit (Artix): Sonar mode toggle crashed — switching Game/Chat ↔ Sonar

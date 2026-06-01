@@ -56,6 +56,31 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.49" date="2026-06-01">
+      <description>
+        <p>RNNoise mic noise-suppression dependency failed to install on Ubuntu (#65) — the plugin is not packaged for Ubuntu or its derivatives (Linux Mint, Pop!_OS, elementary, KDE neon), yet ASM suggested an apt package that has no candidate there. Those distros now build the LADSPA plugin from source in one click (Install / Copy cmd), and the dependency is no longer treated as blocking — the rest of ASM works without it. Debian keeps the apt package; Fedora and Arch are unchanged. The "Copy cmd" button also now preserves command quoting correctly. On the DAC OLED, the EQ-mode badge (S = Sonar, C = Custom EQ) is now shown to the right of the clock instead of on its own line.</p>
+      </description>
+    </release>
+    <release version="1.1.48" date="2026-05-31">
+      <description>
+        <p>Microphone Background / Impact noise reduction could not be turned off — same Qt.CheckState truthiness bug as the Spatial Audio toggle in 1.1.47; the OFF state is now registered correctly. GUI could crash (SIGABRT) on a quick EQ-mode toggle or when applying a preset from the tray — the background apply thread could be destroyed while still running. Thread cleanup now waits for the thread to fully stop (same class as the Smart Volume slider crash fixed in 1.1.47). The daemon froze for up to several seconds while reloading its configuration (e.g. on ReloadConfigs / loopback recreation) because blocking device discovery ran on the asyncio event loop. That work is now offloaded to a worker thread, keeping the daemon responsive.</p>
+      </description>
+    </release>
+    <release version="1.1.47" date="2026-05-31">
+      <description>
+        <p>App audio channel assignments were "randomly forgotten" (#64) — moving an app to a channel (e.g. LibreWolf → Media) was only persisted for apps the router was already tracking; an app sitting on the default channel was never recorded, so the manual move was never saved and the app kept reverting. Every observed stream's placement is now recorded, so a later manual move is detected and persisted. Also added LibreWolf, Tor Browser, Waterfox, Floorp, Mullvad Browser, Thorium and ungoogled-chromium to the browsers auto-routed to the Media channel. GUI crash when dragging the Smart Volume → Level slider quickly (#63) — the apply worker (a QThread) could be destroyed while still running during rapid re-applies, aborting the application. Worker cleanup now happens only after the thread has fully stopped. Spatial Audio (and the microphone noise-canceling / noise-gate / compressor) toggles did not save their OFF state (#62) — a PySide6 quirk (bool(Qt.CheckState.Unchecked) is True) meant turning these off was never recorded, so e.g. Spatial Audio OFF was lost when saving a custom preset. The OFF state is now persisted correctly.</p>
+      </description>
+    </release>
+    <release version="1.1.46" date="2026-05-30">
+      <description>
+        <p>Discord (and other apps) lost their audio sink when changing a Sonar profile — applying a Sonar profile or EQ used to restart the whole PipeWire stack, tearing down every node. Apps that do not re-enumerate their output devices when the PulseAudio server connection drops (Discord/Electron in particular) ended up silent until restarted. Profile and EQ changes now restart only the filter-chain service and recreate the virtual-sink loopbacks dynamically, leaving pipewire/pipewire-pulse untouched, so connected apps keep their sink and audio. Virtual sinks showed a generic "pw-loopback-NNN" name in application output pickers and mixers — the Arctis Game/Chat/Media sinks now expose their proper "Arctis … Game/Chat/Media" name and can be selected as an output device (e.g. as Discord's Chat output). Discord appeared as "WEBRTC VoiceEngine" in a channel's application list — applications that report a generic audio-engine name now fall back to their process binary, so Discord shows as "Discord".</p>
+      </description>
+    </release>
+    <release version="1.1.45" date="2026-05-29">
+      <description>
+        <p>Arctis 7X: daemon crashed with "Failed to find command interface endpoint" — some Arctis 7X (and other Arctis 1 family) firmwares expose the vendor HID command interface with an interrupt IN endpoint only, no OUT endpoint. get_command_endpoint_address() raised an exception instead of falling back, crashing the whole daemon before the GUI could appear. ASM now detects the missing OUT endpoint and routes commands over HID SET_REPORT (control transfer) automatically, which is the correct path for such devices (issue #59).</p>
+      </description>
+    </release>
     <release version="1.1.44" date="2026-05-29">
       <description>
         <p>dinit (Artix): Sonar mode toggle crashed — switching Game/Chat ↔ Sonar called systemctl --user restart … with no dinit branch, raising FileNotFoundError: systemctl on systems without systemd. The toggle now works on dinit (issue #25). dinit (Artix): EQ / Sonar changes had no effect — applying a new equalizer mode ran dinitctl start pipewire-filter-chain, but start is a no-op when the service is already running, so the freshly generated config was never reloaded (systemd correctly used restart). All config-reload paths now use restart on both init systems — this is the root cause of the "EQ does nothing" reports on dinit (issue #25). Centralised init-system handling — introduced service_control.py, a single abstraction over systemctl --user and dinitctl. The logical→real service-name mapping (notably filter-chain → pipewire-filter-chain on dinit) and the start/restart distinction now live in one place instead of being copy-pasted across ~25 call sites in 11 files. Service calls no longer crash when the init manager binary is absent; they log and skip. This removes ~230 lines of duplicated branching and makes the issue #25 class of bugs impossible to reintroduce per-site. Added a regression test suite (tests/test_service_control.py).</p>
@@ -179,31 +204,6 @@
     <release version="1.0.76" date="2026-04-25">
       <description>
         <p>GUI fails to open (regression in 1.0.69): generate_hesuvi_conf() raised UnboundLocalError: cannot access local variable '_log' when no Arctis device was attached. The early-return guard called the module-level _log, but a later import logging as _log inside the same function rebinds _log, which Python treats as a function-local for the entire scope. Replaced the local rebinding with a direct _log.warning(...) so the module-level logger stays accessible.</p>
-      </description>
-    </release>
-    <release version="1.0.75" date="2026-04-25">
-      <description>
-        <p>First version published on PyPI — install / upgrade is now a one-liner that always pulls the latest:</p>
-      </description>
-    </release>
-    <release version="1.0.74" date="2026-04-25">
-      <description>
-        <p>Automatic PyPI publish on every tagged release via PyPA's gh-action-pypi-publish action using OIDC Trusted Publishers (no token in repo secrets). Once the project is published once, end-users can install/upgrade with the canonical one-liner pipx install arctis-sound-manager --force instead of having to track release URLs. Release workflow writes the deterministic AUR source tarball to build/aur/ instead of dist/, so the hyphen-named archive doesn't get scooped up by twine when publishing to PyPI. The GitHub release upload list now reflects the new path.</p>
-      </description>
-    </release>
-    <release version="1.0.73" date="2026-04-25">
-      <description>
-        <p>scripts/clean-reinstall.sh — a self-contained, curl | bash-friendly script that audits every existing ASM install (rpm + dpkg + pacman + pipx + orphan binaries in $PATH), uninstalls all of them, then installs the latest release via the user's chosen method, runs asm-setup and verifies that the daemon is active. Solves the dup-binary mess that built up across mixed install methods (RPM + pipx --force etc.). Multi-install detection in the in-app updater: clicking "Install update" now checks whether ASM is currently installed by more than one method (rpm + pipx, etc.) and refuses to upgrade until the conflict is resolved, opening a clear dialog that points to clean-reinstall.sh with a copy-to-clipboard command. In-app updater now runs asm-setup after a pipx upgrade (via the new FirstRunDialog), so udev rules are reloaded and PipeWire restarted on the new binary. Previously only asm-cli desktop write was called, which left udev permissions stale on already-attached devices.</p>
-      </description>
-    </release>
-    <release version="1.0.72" date="2026-04-25">
-      <description>
-        <p>Auto-run asm-setup on first GUI launch for installs that didn't go through a distro-package post-install hook (typically pipx). When the GUI starts and ~/.config/arctis_manager/.setup_done is missing, a new FirstRunDialog opens, runs asm-setup as a subprocess and streams its output live in the dialog so the user can follow what's happening (HRIR download, services, udev install). Distro packages already shipped /etc/xdg/autostart/asm-first-run.desktop for this — pipx users were left out, which was the root cause behind issue #22.</p>
-      </description>
-    </release>
-    <release version="1.0.71" date="2026-04-25">
-      <description>
-        <p>asm-setup now always reloads + triggers udev rules, even when the rules file on disk is already valid. Previously it printed [ok] udev rules already valid — skipping and exited, leaving the currently-attached dongle without the new permissions — which was the root cause behind issue #22 ("no device detected after upgrade"). GUI dialog "Apply now" when the daemon detects an EACCES on the USB device. The daemon now exposes a permission_error flag over D-Bus; when the GUI sees it, it surfaces a dialog explaining that the rules exist but were not applied to the connected device, with a one-click button that runs asm-cli udev reload-rules (with pkexec/sudo) and then asks the daemon to re-scan via the existing ReloadConfigs D-Bus method. CoreEngine exposes a new permission_error: bool attribute set by _log_usb_access_error and cleared on the next successful kernel_detach. ArctisManagerDbusSettingsService.GetSettings now returns it under the permission_error key.</p>
       </description>
     </release>
   </releases>
