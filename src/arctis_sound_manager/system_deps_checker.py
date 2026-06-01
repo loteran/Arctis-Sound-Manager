@@ -327,6 +327,28 @@ def _pipewire_pulse_restart_cmd() -> list[str]:
     return ["systemctl", "--user", "restart", "pipewire", "pipewire-pulse"]
 
 
+# The RNNoise LADSPA plugin is not packaged for Ubuntu (or its derivatives), so
+# on those distros we build it from source. Only the LADSPA target is built
+# (VST/VST3/LV2/AU disabled) so no JUCE / X11 / freetype build deps are needed —
+# just git, cmake and a C/C++ toolchain. Runs as root via pkexec; output goes to
+# the standard LADSPA dir. Verified to produce build/bin/ladspa/librnnoise_ladspa.so.
+_RNNOISE_LADSPA_SOURCE_BUILD: list[str] = [
+    "bash", "-c",
+    "set -e; "
+    "apt-get install -y --no-install-recommends git cmake build-essential; "
+    'tmp="$(mktemp -d)"; '
+    'git clone --depth 1 https://github.com/werman/noise-suppression-for-voice.git "$tmp"; '
+    'cmake -S "$tmp" -B "$tmp/build" '
+    "-DBUILD_VST_PLUGIN=OFF -DBUILD_VST3_PLUGIN=OFF -DBUILD_LV2_PLUGIN=OFF "
+    "-DBUILD_AU_PLUGIN=OFF -DBUILD_AUV3_PLUGIN=OFF -DBUILD_TESTS=OFF "
+    "-DBUILD_LADSPA_PLUGIN=ON; "
+    'cmake --build "$tmp/build" -j"$(nproc)"; '
+    'install -Dm644 "$tmp/build/bin/ladspa/librnnoise_ladspa.so" '
+    "/usr/lib/ladspa/librnnoise_ladspa.so; "
+    'rm -rf "$tmp"',
+]
+
+
 def _build_checks() -> list[DepCheck]:
     """Single source of truth for every external dep ASM verifies.
 
@@ -349,8 +371,10 @@ def _build_checks() -> list[DepCheck]:
             },
         ),
         DepCheck(
+            # Optional ClearCast mic noise suppression — the rest of ASM works
+            # without it, so this is DEGRADED, not BLOCKING (issue #65).
             name="rnnoise LADSPA plugin",
-            severity=Severity.BLOCKING,
+            severity=Severity.DEGRADED,
             feature="ClearCast mic noise suppression",
             detect=lambda: _find_ladspa_plugin("librnnoise*.so") is not None,
             install_commands={
@@ -362,10 +386,24 @@ def _build_checks() -> list[DepCheck]:
                 "fedora": ["bash", "-c",
                            "dnf copr enable -y uriesk/noise-suppression-for-voice"
                            " && dnf install -y noise-suppression-for-voice"],
-                "debian": ["apt-get", "install", "-y", "noise-suppression-for-voice"],
+                # The noise-suppression-for-voice package exists on Debian but
+                # NOT on Ubuntu / its derivatives (issue #65), so those build it
+                # from source (LADSPA target only).
+                "debian":     ["apt-get", "install", "-y", "noise-suppression-for-voice"],
+                "ubuntu":     _RNNOISE_LADSPA_SOURCE_BUILD,
+                "linuxmint":  _RNNOISE_LADSPA_SOURCE_BUILD,
+                "pop":        _RNNOISE_LADSPA_SOURCE_BUILD,
+                "elementary": _RNNOISE_LADSPA_SOURCE_BUILD,
+                "neon":       _RNNOISE_LADSPA_SOURCE_BUILD,
                 # rnnoise is in the Arch official repos (extra/).
                 "arch":   ["pacman", "-S", "--noconfirm", "noise-suppression-for-voice"],
             },
+            user_action=(
+                "On Ubuntu and derivatives the plugin is not packaged, so Install "
+                "builds it from source (downloads git/cmake/build-essential, compiles "
+                "the LADSPA plugin only — takes a moment). Without it, only ClearCast "
+                "mic noise suppression is unavailable."
+            ),
         ),
         DepCheck(
             name="HRIR file (EAC_Default.wav)",

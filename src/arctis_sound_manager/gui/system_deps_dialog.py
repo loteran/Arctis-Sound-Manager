@@ -20,6 +20,7 @@ file tickets.
 from __future__ import annotations
 
 import logging
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -180,13 +181,14 @@ class _DepRow(QFrame):
     def _copy_command(self, argv: list[str] | None) -> None:
         if not argv:
             return
+        # shlex.join quotes each argument, so multi-word commands like
+        # `bash -c "<build script>"` (e.g. the from-source RNNoise build) stay
+        # intact when pasted — a plain " ".join would drop the quoting and the
+        # command would break.
+        cmd = shlex.join(argv)
         # Prepend `sudo ` for system-pkg installs so the clipboard line is
         # ready to paste into a terminal. Skip for internal helpers.
-        line = (
-            " ".join(argv)
-            if argv[0] in ("asm-setup", "asm-cli", "systemctl")
-            else "sudo " + " ".join(argv)
-        )
+        line = cmd if argv[0] in ("asm-setup", "asm-cli", "systemctl") else "sudo " + cmd
         QGuiApplication.clipboard().setText(line, QClipboard.Mode.Clipboard)
 
 

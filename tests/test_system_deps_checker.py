@@ -334,3 +334,39 @@ def test_every_check_either_has_install_commands_or_user_action():
             f"{check.name} offers neither install_commands nor user_action — "
             "the user has no way to recover"
         )
+
+
+# ── RNNoise LADSPA install resolution (issue #65) ─────────────────────────────
+
+def _rnnoise_check():
+    return {c.name: c for c in _build_checks()}["rnnoise LADSPA plugin"]
+
+
+def test_rnnoise_is_degraded_not_blocking():
+    # Optional ClearCast mic feature — must not block the whole app.
+    from arctis_sound_manager.system_deps_checker import Severity
+    assert _rnnoise_check().severity is Severity.DEGRADED
+
+
+def test_rnnoise_ubuntu_builds_from_source():
+    rn = _rnnoise_check()
+    with patch.object(sdc, "detect_distro", lambda: "ubuntu"):
+        cmd = install_command_for(rn)
+    assert cmd is not None and cmd[0] == "bash"
+    assert "noise-suppression-for-voice.git" in " ".join(cmd)
+    assert "BUILD_LADSPA_PLUGIN=ON" in " ".join(cmd)
+
+
+def test_rnnoise_debian_uses_apt_package():
+    rn = _rnnoise_check()
+    with patch.object(sdc, "detect_distro", lambda: "debian"):
+        cmd = install_command_for(rn)
+    assert cmd == ["apt-get", "install", "-y", "noise-suppression-for-voice"]
+
+
+def test_rnnoise_mint_and_pop_build_from_source():
+    rn = _rnnoise_check()
+    for distro in ("linuxmint", "pop", "elementary", "neon"):
+        with patch.object(sdc, "detect_distro", lambda d=distro: d):
+            cmd = install_command_for(rn)
+        assert cmd is not None and cmd[0] == "bash", distro
