@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.50] - 2 June 2026
+
+### Added
+
+- **Arctis Nova 5X (PID `0x2255`) support** — the 0x2255 variant is now declared in the device YAML, so it is detected and managed like the other Nova 5/5X models. Its udev rule is generated automatically at build time.
+- **Unmapped PIDs are surfaced in red in the README device table** — any Product ID reported by telemetry but not yet declared in a device YAML is now listed automatically in red, so it can be triaged and promoted into a YAML. The list self-cleans: a PID drops out once it lands in a YAML. The device table also gained an `lsusb -d 1038:` snippet so users can find their own Product ID.
+
 ## [1.1.49] - 1 June 2026
 
 ### Fixed

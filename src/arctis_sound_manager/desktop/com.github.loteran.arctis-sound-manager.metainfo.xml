@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.50" date="2026-06-02">
+      <description>
+        <p>Arctis Nova 5X (PID 0x2255) support — the 0x2255 variant is now declared in the device YAML, so it is detected and managed like the other Nova 5/5X models. Its udev rule is generated automatically at build time. Unmapped PIDs are surfaced in red in the README device table — any Product ID reported by telemetry but not yet declared in a device YAML is now listed automatically in red, so it can be triaged and promoted into a YAML. The list self-cleans: a PID drops out once it lands in a YAML. The device table also gained an lsusb -d 1038: snippet so users can find their own Product ID.</p>
+      </description>
+    </release>
     <release version="1.1.49" date="2026-06-01">
       <description>
         <p>RNNoise mic noise-suppression dependency failed to install on Ubuntu (#65) — the plugin is not packaged for Ubuntu or its derivatives (Linux Mint, Pop!_OS, elementary, KDE neon), yet ASM suggested an apt package that has no candidate there. Those distros now build the LADSPA plugin from source in one click (Install / Copy cmd), and the dependency is no longer treated as blocking — the rest of ASM works without it. Debian keeps the apt package; Fedora and Arch are unchanged. The "Copy cmd" button also now preserves command quoting correctly. On the DAC OLED, the EQ-mode badge (S = Sonar, C = Custom EQ) is now shown to the right of the clock instead of on its own line.</p>
@@ -199,11 +204,6 @@
     <release version="1.0.77" date="2026-04-25">
       <description>
         <p>Headset page: device name in the "Devices" card flickered between the i18n status category label ("Headset" / "Casque") and the actual device name ("Arctis Nova Pro Wireless"). update_status was overwriting _device_name_label on every status poll; the label is now only set by update_settings.</p>
-      </description>
-    </release>
-    <release version="1.0.76" date="2026-04-25">
-      <description>
-        <p>GUI fails to open (regression in 1.0.69): generate_hesuvi_conf() raised UnboundLocalError: cannot access local variable '_log' when no Arctis device was attached. The early-return guard called the module-level _log, but a later import logging as _log inside the same function rebinds _log, which Python treats as a function-local for the entire scope. Replaced the local rebinding with a direct _log.warning(...) so the module-level logger stays accessible.</p>
       </description>
     </release>
   </releases>
