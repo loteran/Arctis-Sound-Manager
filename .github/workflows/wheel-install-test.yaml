@@ -28,6 +28,22 @@ jobs:
       image: ${{ matrix.distro }}
 
     steps:
+      # The matrix images are bare distros with no git. actions/checkout needs
+      # git to produce a real .git checkout; without it, it silently falls back
+      # to a tarball download (no .git), and the later `git log` in the drift
+      # check fails with "not a git repository". So install git *before* checkout.
+      - name: Install git (required by actions/checkout)
+        run: |
+          set -e
+          if command -v apt-get >/dev/null; then
+            DEBIAN_FRONTEND="noninteractive" apt-get update
+            DEBIAN_FRONTEND="noninteractive" apt-get install -y git
+          elif command -v dnf >/dev/null; then
+            dnf install -y git
+          elif command -v pacman >/dev/null; then
+            pacman -Sy --noconfirm git
+          fi
+
       - uses: actions/checkout@v4
 
       - name: Install system dependencies
