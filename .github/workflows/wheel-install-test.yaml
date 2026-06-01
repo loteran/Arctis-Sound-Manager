@@ -48,6 +48,12 @@ jobs:
 
           curl -LsSf https://astral.sh/uv/install.sh | sh
 
+          # The job runs inside a distro container as root, but the checked-out
+          # files are owned by the runner uid. Without this, git refuses with
+          # "fatal: detected dubious ownership ... (exit 128)" in the drift-check
+          # steps below (which call `git log` / git from check-packaging-drift.py).
+          git config --global --add safe.directory '*'
+
       - name: Ensure PATHs
         run: |
           pipx ensurepath
