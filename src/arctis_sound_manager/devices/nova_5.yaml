@@ -4,6 +4,7 @@ device:
   product_ids:
     - 0x2232 # Arctis Nova 5
     - 0x2253 # Arctis Nova 5X
+    - 0x2255 # Arctis Nova 5X (variant)
     - 0x2264 # Arctis Nova 5X (rev2)
   command_padding:
     length: 64

@@ -26,6 +26,7 @@ from pathlib import Path
 
 PUBLIC_ENDPOINT = "https://asm-telemetry.arctis-asm.workers.dev/stats"
 README          = Path(__file__).parent.parent / "README.md"
+DEVICES_DIR     = Path(__file__).parent.parent / "src" / "arctis_sound_manager" / "devices"
 
 PROMOTE_THRESHOLD = 1  # ≥1 confirmed report → promote ⚠️ → ✅
 
@@ -140,6 +141,46 @@ def _seen_pids(stats: dict) -> set[str]:
     return pids
 
 
+def _supported_pids() -> set[str]:
+    """All product IDs declared in the device YAMLs (lowercase hex, no 0x).
+
+    A PID that lives in a YAML is "supported"; one that only shows up in
+    telemetry is surfaced in red in the device table so it can be triaged.
+    Parsed with a small line scanner rather than a YAML lib so the script
+    keeps zero runtime deps.
+    """
+    pids: set[str] = set()
+    if not DEVICES_DIR.is_dir():
+        return pids
+    for yml in DEVICES_DIR.glob("*.yaml"):
+        in_block = False
+        for line in yml.read_text().splitlines():
+            stripped = line.strip()
+            if stripped.startswith("product_ids:"):
+                in_block = True
+                continue
+            if in_block:
+                m = re.match(r"-\s*0x([0-9a-fA-F]+)", stripped)
+                if m:
+                    pids.add(m.group(1).lower())
+                elif stripped and not stripped.startswith("#"):
+                    in_block = False
+    return pids
+
+
+def _pending_pids(stats: dict, supported: set[str]) -> list[tuple[str, str, int]]:
+    """(label, pid, users) for PIDs seen in telemetry but in no device YAML."""
+    out: list[tuple[str, str, int]] = []
+    done: set[str] = set()
+    for row in stats.get("headsets", []):
+        pid = str(row.get("product_id") or "").lower().lstrip("0x").strip()
+        if not pid or pid == "unknown" or pid in supported or pid in done:
+            continue
+        done.add(pid)
+        out.append((row.get("label") or "Unknown device", pid, int(row.get("nb", 0))))
+    return out
+
+
 def _format_pids(pids_str: str, seen: set[str], force_confirm: bool = False) -> str:
     parts = []
     for p in pids_str.split(", "):
@@ -178,7 +219,8 @@ def _replace_block(text: str, marker: str, new_content: str) -> str:
 
 def _build_devices(block: str, headset_counts: dict[str, int], seen: set[str],
                    pid_counts: dict[str, int] | None = None,
-                   headset_counts_all_time: dict[str, int] | None = None) -> str:
+                   headset_counts_all_time: dict[str, int] | None = None,
+                   pending: list[tuple[str, str, int]] | None = None) -> str:
     lines  = block.strip().splitlines()
     if len(lines) < 2:
         return block
@@ -192,6 +234,11 @@ def _build_devices(block: str, headset_counts: dict[str, int], seen: set[str],
             new_rows.append(row)
             continue
         device_name, _working, _users, pids = cells[:4]
+        # Stale auto-generated "pending" rows (red PID) are regenerated from
+        # current telemetry at the end of this function — drop them on read so
+        # they neither pile up nor get recoloured blue once promoted.
+        if "color{red}" in pids:
+            continue
         pids_clean  = _PID_STRIP_RE.sub(r'\1', pids).replace("**", "")
         device_pids = {p.strip().lower() for p in pids_clean.split(",")}
 
@@ -223,6 +270,15 @@ def _build_devices(block: str, headset_counts: dict[str, int], seen: set[str],
         fmt_pids      = _format_pids(pids_clean, seen, force_confirm=force_confirm)
         new_rows.append(
             f"| {device_name} | {working_cell} | {user_cell} | {fmt_pids} |"
+        )
+
+    # PIDs seen in telemetry but present in no device YAML: surface them in red
+    # so the maintainer can confirm the model and promote it into a real row +
+    # add the PID to a YAML. Regenerated every run from current telemetry.
+    for label, pid, count in (pending or []):
+        users = str(count) if count else ""
+        new_rows.append(
+            f"| {label} | ❌ | {users} | $\\color{{red}}{{\\textbf{{{pid}}}}}$ |"
         )
     return "\n".join([header, sep] + new_rows)
 
@@ -296,6 +352,12 @@ def main() -> None:
     seen_all_time  = _seen_pids(all_time_stats)
     headset_counts_all_time = _headset_users(all_time_stats)
 
+    # PIDs reported by telemetry that no device YAML declares yet → red rows.
+    supported = _supported_pids()
+    pending   = _pending_pids(stats, supported)
+    if pending:
+        print(f"  unmapped PIDs (red): {', '.join(p for _, p, _ in pending)}")
+
     readme = README.read_text()
 
     # DEVICES block — read dynamically from README, never hardcoded
@@ -309,6 +371,7 @@ def main() -> None:
     new_devices = _build_devices(
         m.group(1), headset_counts, seen_all_time, pid_counts,
         headset_counts_all_time=headset_counts_all_time,
+        pending=pending,
     )
 
     new_readme = readme
