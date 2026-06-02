@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.53] - 2 June 2026
+
+### Added
+
+- **Left-click the tray icon to open the window** — a single left-click on the Arctis Sound Manager system-tray icon now opens the main window (launching it the first time, raising and focusing it afterwards). Previously the window could only be reached through the tray's right-click context menu. Right-click still shows the context menu.
+
 ## [1.1.52] - 2 June 2026
 
 ### Fixed
