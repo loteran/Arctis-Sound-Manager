@@ -281,32 +281,17 @@ jobs:
             --nowait \
             loteran/arctis-sound-manager
 
+  # Auto-publish to PyPI by calling pypi-publish.yaml as a reusable workflow.
+  # This makes the OIDC job_workflow_ref claim resolve to pypi-publish.yaml, so
+  # it matches the existing PyPI Trusted Publisher (workflow = pypi-publish.yaml)
+  # — no separate publisher for release.yaml is needed.
   pypi-publish:
-    runs-on: ubuntu-latest
     needs: release
     # Skip beta/pre-release tags, like aur-update and copr-build.
     if: "!contains(github.event.inputs.tag || github.ref_name, 'b')"
     permissions:
       id-token: write   # OIDC for the PyPI Trusted Publisher
       contents: read
-    steps:
-      - name: Download wheel + sdist from the GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          mkdir -p dist
-          # Only the canonical Python distribution files. The hyphen-named AUR
-          # tarball is excluded — twine would reject it.
-          gh release download "$TAG" \
-            --repo "${{ github.repository }}" \
-            --pattern 'arctis_sound_manager-*-py3-none-any.whl' \
-            --pattern 'arctis_sound_manager-*.tar.gz' \
-            --dir dist/
-          ls -l dist/
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: dist/
-          skip-existing: true   # safe re-runs; won't fail if the version exists
+    uses: ./.github/workflows/pypi-publish.yaml
+    with:
+      tag: ${{ github.event.inputs.tag || github.ref_name }}

@@ -1,10 +1,20 @@
-name: Publish to PyPI (manual)
+name: Publish to PyPI
 
-# Manual trigger so we can (re)publish any past release to PyPI once the
-# Trusted Publisher is configured (or after a transient PyPI outage).
-# The auto-publish inside release.yaml covers the normal flow on tag push.
+# Single source of PyPI publishing. Two entry points, one job identity:
+#   - workflow_call: invoked by release.yaml on tag push (normal auto-publish).
+#   - workflow_dispatch: manual (re)publish of a past release, or after a
+#     transient PyPI outage.
+# Because release.yaml calls this as a *reusable* workflow, the OIDC
+# job_workflow_ref claim always points at pypi-publish.yaml, so a single
+# PyPI Trusted Publisher (workflow = pypi-publish.yaml) covers both paths.
 
 on:
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Tag to publish (e.g. v1.0.75)'
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       tag:
