@@ -15,8 +15,8 @@ Exit status:
                           (a still-`pending` slow build is tolerated; the daily
                           audit is the safety net)
 
-PyPI is a SOFT channel: its result is reported but never fails the run, because
-the Trusted Publisher may not be configured yet. Flip SOFT below once it is live.
+All four channels are HARD checks. (PyPI went live with 1.1.51 once its Trusted
+Publisher was configured; set its flag to False in CHANNELS to make it soft again.)
 """
 from __future__ import annotations
 
@@ -118,7 +118,7 @@ CHANNELS = {
     "AUR": (check_aur, True),
     "COPR": (check_copr, True),
     "PPA": (check_ppa, True),
-    "PyPI": (check_pypi, False),  # SOFT until the PyPI Trusted Publisher is live
+    "PyPI": (check_pypi, True),  # live since 1.1.51 (Trusted Publisher configured)
 }
 
 ICON = {DELIVERED: "✅", PENDING: "⏳", MISSING: "❌"}
