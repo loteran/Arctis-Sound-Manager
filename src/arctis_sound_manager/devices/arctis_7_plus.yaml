@@ -53,7 +53,7 @@ device:
 
   online_status:
     status_variable: headset_power_status
-    online_value: 'on'
+    online_value: online
 
   audio:
     spatial_engine: hesuvi
