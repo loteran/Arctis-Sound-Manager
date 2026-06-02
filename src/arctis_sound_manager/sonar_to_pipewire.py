@@ -678,14 +678,18 @@ context.modules = [
         node.name      = "effect_input.sonar-micro-eq"
         node.passive   = true
         target.object  = "{_get_physical_in()}"
+        audio.rate     = 48000
         audio.channels = 1
         audio.position = [ MONO ]
       }}
       playback.props = {{
-        node.name      = "effect_output.sonar-micro-eq"
-        media.class    = Audio/Source
-        audio.channels = 1
-        audio.position = [ MONO ]
+        node.name         = "effect_output.sonar-micro-eq"
+        media.class       = Audio/Source
+        audio.rate        = 48000
+        audio.channels    = 1
+        audio.position    = [ MONO ]
+        node.latency      = 1024/48000
+        node.lock-quantum = true
       }}
     }}
   }}
@@ -785,14 +789,18 @@ context.modules = [
         node.name      = "effect_input.sonar-micro-eq"
         node.passive   = true
         target.object  = "{_get_physical_in()}"
+        audio.rate     = 48000
         audio.channels = 1
         audio.position = [ MONO ]
       }}
       playback.props = {{
-        node.name      = "effect_output.sonar-micro-eq"
-        media.class    = Audio/Source
-        audio.channels = 1
-        audio.position = [ MONO ]
+        node.name         = "effect_output.sonar-micro-eq"
+        media.class       = Audio/Source
+        audio.rate        = 48000
+        audio.channels    = 1
+        audio.position    = [ MONO ]
+        node.latency      = 1024/48000
+        node.lock-quantum = true
       }}
     }}
   }}
