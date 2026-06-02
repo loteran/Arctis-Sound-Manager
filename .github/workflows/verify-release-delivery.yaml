@@ -1,0 +1,54 @@
+name: Verify release delivery
+
+# Confirms that the current release version actually landed on every distro
+# channel (AUR, COPR, Launchpad PPA; PyPI is checked but soft). Two triggers:
+#   - workflow_run  : right after "Create GitHub Release" — lenient (slow builds
+#                     like Launchpad may still be Pending; that's tolerated here)
+#   - schedule      : daily audit — strict (by now everything must be Published;
+#                     a still-behind channel turns this red on purpose)
+#   - workflow_dispatch : manual re-check of any version
+on:
+  workflow_run:
+    workflows: ["Create GitHub Release"]
+    types: [completed]
+  schedule:
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to verify (e.g. 1.1.51); blank = latest release'
+        required: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    # On the workflow_run trigger, only proceed if the release actually succeeded.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version to verify
+        id: ver
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${{ github.event.inputs.version }}"
+          if [ -z "$V" ]; then
+            V=$(gh release view --repo "${{ github.repository }}" --json tagName --jq '.tagName')
+          fi
+          V="${V#v}"
+          echo "Verifying delivery for v$V"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Verify delivery across channels
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            # Fresh release: tolerate still-building channels, poll up to 45 min.
+            python3 scripts/verify_release_delivery.py "${{ steps.ver.outputs.version }}" \
+              --timeout 2700 --interval 90
+          else
+            # Daily/manual audit: everything must be delivered. Short poll absorbs
+            # the rare case of a release cut minutes before the cron fired.
+            python3 scripts/verify_release_delivery.py "${{ steps.ver.outputs.version }}" \
+              --strict --timeout 1800 --interval 120
+          fi
