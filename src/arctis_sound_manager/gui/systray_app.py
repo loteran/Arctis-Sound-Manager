@@ -77,6 +77,10 @@ class QSystrayApp(QBaseDesktopApp):
         self.menu.aboutToShow.connect(self.start_polling)
         self.menu.aboutToHide.connect(self.stop_polling)
         self.tray_icon.setContextMenu(self.menu)
+        # Left single-click on the tray icon opens the main window (launching it
+        # the first time, raising it on later clicks). Right-click still shows
+        # the context menu.
+        self.tray_icon.activated.connect(self._on_tray_activated)
         self.menu_setup()
         self.do_polling = False
 
@@ -383,6 +387,12 @@ class QSystrayApp(QBaseDesktopApp):
 
     def is_stopping(self):
         return hasattr(self, '_stopping') and self._stopping
+
+    def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
+        # Trigger = left single-click. Open (or raise) the main GUI window.
+        # Context (right-click) is handled by the attached context menu.
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
+            self.open_main_window()
 
     def open_main_window(self):
         if not hasattr(self, '_main_app'):
