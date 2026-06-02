@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.51" date="2026-06-02">
+      <description>
+        <p>Arctis 7+ reported as offline while actually connected — the power-status parser only recognised a single "online" byte (0x02), but the Arctis 7+ firmware reports several online sub-states (0x00, 0x02, 0x03). When the headset was in any of the unmatched states it was treated as powered off, so online detection and audio redirection failed. The parser now enumerates all online states explicitly via int_str_mapping (thanks @Michsior14 — #67). Bumped pygments to 2.20.0 (fixes a low-severity ReDoS advisory in the GUID regex) and pytest to 9.0.3 (dev dependency).</p>
+      </description>
+    </release>
     <release version="1.1.50" date="2026-06-02">
       <description>
         <p>Arctis Nova 5X (PID 0x2255) support — the 0x2255 variant is now declared in the device YAML, so it is detected and managed like the other Nova 5/5X models. Its udev rule is generated automatically at build time. Unmapped PIDs are surfaced in red in the README device table — any Product ID reported by telemetry but not yet declared in a device YAML is now listed automatically in red, so it can be triaged and promoted into a YAML. The list self-cleans: a PID drops out once it lands in a YAML. The device table also gained an lsusb -d 1038: snippet so users can find their own Product ID.</p>
@@ -199,11 +204,6 @@
     <release version="1.0.78" date="2026-04-25">
       <description>
         <p>Weather city search: typing in the city field was interrupted every few hundred milliseconds because update_settings unconditionally overwrote _city_input with the saved value on every daemon poll. The field is now only updated when it does not have focus.</p>
-      </description>
-    </release>
-    <release version="1.0.77" date="2026-04-25">
-      <description>
-        <p>Headset page: device name in the "Devices" card flickered between the i18n status category label ("Headset" / "Casque") and the actual device name ("Arctis Nova Pro Wireless"). update_status was overwriting _device_name_label on every status poll; the label is now only set by update_settings.</p>
       </description>
     </release>
   </releases>

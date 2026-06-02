@@ -1,3 +1,17 @@
+arctis-sound-manager (1.1.51-1) noble; urgency=medium
+
+  * Arctis 7+ reported as offline while actually connected — the
+    power-status parser only recognised a single "online" byte (0x02), but
+    the Arctis 7+ firmware reports several online sub-states (0x00, 0x02,
+    0x03). When the headset was in any of the unmatched states it was
+    treated as powered off, so online detection and audio redirection
+    failed. The parser now enumerates all online states explicitly via
+    int_str_mapping (thanks @Michsior14 — #67).
+  * Bumped pygments to 2.20.0 (fixes a low-severity ReDoS advisory in the
+    GUID regex) and pytest to 9.0.3 (dev dependency).
+
+ -- loteran <axel.valadon@gmail.com>  Tue, 02 Jun 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.50-1) noble; urgency=medium
 
   * Arctis Nova 5X (PID 0x2255) support — the 0x2255 variant is now declared
