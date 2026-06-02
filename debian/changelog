@@ -1,3 +1,13 @@
+arctis-sound-manager (1.1.53-1) noble; urgency=medium
+
+  * Left-click the tray icon to open the window — a single left-click on the
+    Arctis Sound Manager system-tray icon now opens the main window
+    (launching it the first time, raising and focusing it afterwards).
+    Previously the window could only be reached through the tray's
+    right-click context menu. Right-click still shows the context menu.
+
+ -- loteran <axel.valadon@gmail.com>  Tue, 02 Jun 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.52-1) noble; urgency=medium
 
   * Microphone filter-chain crashed PipeWire when ClearCast AI noise
