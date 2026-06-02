@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.52] - 2 June 2026
+
+### Fixed
+
+- **Microphone filter-chain crashed PipeWire when ClearCast AI noise cancellation was enabled (#69)** — the rnnoise LADSPA plugin (`librnnoise_ladspa`) aborts when it is fed buffers at a sample rate it was not built for, taking down the whole `filter-chain` service (`pipewire -c filter-chain.conf`) and leaving the system with no audio until reboot. The mic filter-chain is now pinned to 48 kHz — the rate rnnoise expects — so the plugin always receives valid buffers.
+- **Periodic ~1 s microphone dropouts in apps using echo cancellation (#68)** — Discord/Teams/Steam WebRTC echo cancellation drifted against the virtual mic source's clock and reset roughly once per second, silencing the mic for a split second at a steady cadence. Pinning the mic filter-chain to 48 kHz and locking its quantum (`node.lock-quantum`) removes the resampling and clock drift, so app-side echo cancellation can stay enabled without stuttering.
+
 ## [1.1.51] - 2 June 2026
 
 ### Fixed
