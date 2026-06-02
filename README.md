@@ -459,7 +459,7 @@ To request a new language, open a [GitHub issue](https://github.com/loteran/Arct
 ## Community stats
 
 <!-- STATS:META:START -->
-_Based on **82** unique users (**506** anonymous data points) — last updated 2026-06-01_
+_Based on **82** unique users (**508** anonymous data points) — last updated 2026-06-02_
 <!-- STATS:META:END -->
 
 > Anonymous usage data shared voluntarily by opted-in users.
