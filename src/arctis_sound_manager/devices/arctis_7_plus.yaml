@@ -107,9 +107,12 @@ device:
   status_parse:
     # Arctis 7+ offline flag: data[1]=0x01 means offline (different from Nova 7's 0x02)
     headset_power_status:
-      type: on_off
-      off: 0x01
-      on: 0x02
+      type: int_str_mapping
+      values:
+        0x01: 'off'
+        0x00: 'on'
+        0x02: 'on'
+        0x03: 'on'
     headset_battery_charge:
       type: percentage
       perc_min: 0
