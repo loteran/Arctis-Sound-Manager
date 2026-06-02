@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.52" date="2026-06-02">
+      <description>
+        <p>Microphone filter-chain crashed PipeWire when ClearCast AI noise cancellation was enabled (#69) — the rnnoise LADSPA plugin (librnnoise_ladspa) aborts when it is fed buffers at a sample rate it was not built for, taking down the whole filter-chain service (pipewire -c filter-chain.conf) and leaving the system with no audio until reboot. The mic filter-chain is now pinned to 48 kHz — the rate rnnoise expects — so the plugin always receives valid buffers. Periodic ~1 s microphone dropouts in apps using echo cancellation (#68) — Discord/Teams/Steam WebRTC echo cancellation drifted against the virtual mic source's clock and reset roughly once per second, silencing the mic for a split second at a steady cadence. Pinning the mic filter-chain to 48 kHz and locking its quantum (node.lock-quantum) removes the resampling and clock drift, so app-side echo cancellation can stay enabled without stuttering.</p>
+      </description>
+    </release>
     <release version="1.1.51" date="2026-06-02">
       <description>
         <p>Arctis 7+ reported as offline while actually connected — the power-status parser only recognised a single "online" byte (0x02), but the Arctis 7+ firmware reports several online sub-states (0x00, 0x02, 0x03). When the headset was in any of the unmatched states it was treated as powered off, so online detection and audio redirection failed. The parser now enumerates all online states explicitly via int_str_mapping (thanks @Michsior14 — #67). Bumped pygments to 2.20.0 (fixes a low-severity ReDoS advisory in the GUID regex) and pytest to 9.0.3 (dev dependency).</p>
@@ -199,11 +204,6 @@
     <release version="1.0.79" date="2026-04-26">
       <description>
         <p>udev (RPM): udevadm trigger now uses --action=add so device permissions are actually re-evaluated after upgrade on Fedora/Nobara/RHEL (was the same fix as cli.py / aur / debian). udev: is_udev_rules_valid() is now content-based (parses real rule lines) instead of substring-matching 'uaccess'/'1038' — no more false positives from comments, no more false negatives from a stale file at one path masking a valid file at another. udev paths: UDEV_RULES_PATHS now includes /run/udev/rules.d/ (NixOS, runtime overlays) and /lib/udev/rules.d/ (pre-usrmerge Debian).</p>
-      </description>
-    </release>
-    <release version="1.0.78" date="2026-04-25">
-      <description>
-        <p>Weather city search: typing in the city field was interrupted every few hundred milliseconds because update_settings unconditionally overwrote _city_input with the saved value on every daemon poll. The field is now only updated when it does not have focus.</p>
       </description>
     </release>
   </releases>
