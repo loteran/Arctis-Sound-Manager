@@ -2,7 +2,14 @@ name: Wheel install test (Linux)
 
 on:
   push:
+    # Branches only — never run on tag pushes. Releases are tagged on the same
+    # commit already tested on its branch, and release.yaml owns the tag event,
+    # so a tag-triggered run here is redundant (and used to show red on the
+    # transient packaging drift at release time).
+    branches:
+      - '**'
   pull_request:
+  workflow_dispatch:
 
 jobs:
   test-linux:
