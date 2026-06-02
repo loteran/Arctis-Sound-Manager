@@ -104,12 +104,16 @@ jobs:
 
       - name: Packaging drift check (versions, generated files, deps)
         run: |
-          # Skip on version-bump commits: the sync-packaging-version workflow
-          # updates PKGBUILD/.SRCINFO/.spec in a follow-up commit and those two
-          # jobs run in parallel, so the drift is expected and transient.
+          # Skip on release / version-bump commits: the sync-packaging-version
+          # workflow updates PKGBUILD/.SRCINFO/.spec/debian/changelog/metainfo in
+          # follow-up [skip ci] commits that run in parallel, so at the release
+          # commit (and its tag) the packaging files still lag pyproject.toml —
+          # the drift is expected and transient. Match every commit subject that
+          # bumps the version: `release: vX`, `Merge develop for vX`, and the
+          # legacy `chore: bump version`.
           MSG=$(git log -1 --pretty=%s)
-          if echo "$MSG" | grep -qE "^chore: bump version"; then
-            echo "Version bump commit — skipping packaging drift check (sync job will fix it)."
+          if echo "$MSG" | grep -qE "^(chore: bump version|release: v[0-9]|Merge develop for v[0-9])"; then
+            echo "Release/version-bump commit — skipping packaging drift check (sync job will fix it)."
             exit 0
           fi
           # Fails the matrix run if pyproject.toml, PKGBUILD, .SRCINFO, the
