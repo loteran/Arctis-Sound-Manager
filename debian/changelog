@@ -1,3 +1,26 @@
+arctis-sound-manager (1.1.54-1) noble; urgency=medium
+
+  * Arctis GameBuds / GameBuds X support — initial device support for the
+    Arctis GameBuds (PS5/PC, 0x230a) and GameBuds X for Xbox (0x2317) via
+    their 2.4 GHz USB dongle. Supported controls: mic volume, sidetone
+    (Off/Low/Medium/High), noise cancelling mode (Off/Transparency/ANC),
+    ANC/transparency level, volume limiter, wear sense, and auto power-off
+    (up to 90 min). Protocol reverse-engineered from a USB capture; battery
+    level and connection status are not yet available (status protocol
+    unknown).
+
+ -- loteran <axel.valadon@gmail.com>  Wed, 03 Jun 2026 00:00:00 +0000
+
+arctis-sound-manager (1.1.53-1) noble; urgency=medium
+
+  * Left-click the tray icon to open the window — a single left-click on the
+    Arctis Sound Manager system-tray icon now opens the main window
+    (launching it the first time, raising and focusing it afterwards).
+    Previously the window could only be reached through the tray's
+    right-click context menu. Right-click still shows the context menu.
+
+ -- loteran <axel.valadon@gmail.com>  Tue, 02 Jun 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.52-1) noble; urgency=medium
 
   * Microphone filter-chain crashed PipeWire when ClearCast AI noise
