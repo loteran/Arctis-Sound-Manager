@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.54" date="2026-06-03">
+      <description>
+        <p>Arctis GameBuds / GameBuds X support — initial device support for the Arctis GameBuds (PS5/PC, 0x230a) and GameBuds X for Xbox (0x2317) via their 2.4 GHz USB dongle. Supported controls: mic volume, sidetone (Off/Low/Medium/High), noise cancelling mode (Off/Transparency/ANC), ANC/transparency level, volume limiter, wear sense, and auto power-off (up to 90 min). Protocol reverse-engineered from a USB capture; battery level and connection status are not yet available (status protocol unknown).</p>
+      </description>
+    </release>
     <release version="1.1.53" date="2026-06-02">
       <description>
         <p>Left-click the tray icon to open the window — a single left-click on the Arctis Sound Manager system-tray icon now opens the main window (launching it the first time, raising and focusing it afterwards). Previously the window could only be reached through the tray's right-click context menu. Right-click still shows the context menu.</p>
@@ -199,11 +204,6 @@
     <release version="1.0.81" date="2026-04-26">
       <description>
         <p>Runtime "Apply now" popup on USB EACCES — restores the v1.0.71 behaviour lost during the v1.0.79 merge. The existing startup dialog only fires when the udev rules file is missing/incomplete on disk, but if the rules are correct AND the headset was plugged in before they took effect (typical after a paru -Syu or dnf upgrade), the daemon used to hit EACCES on kernel_detach and the GUI was silent. Users had to figure out replug or sudo asm-cli udev reload-rules on their own. Now CoreEngine.kernel_detach flags permission_error=True per-interface on errno 13, the daemon exposes that flag through GetSettings, and the GUI opens UdevRulesDialog(mode="reload") automatically — one click runs asm-cli udev reload-rules with a single pkexec prompt and the device becomes accessible without unplugging. UdevRulesDialog two modes: write (existing — install missing rules) and reload (new — re-trigger udev on the currently-attached device). Both share the same one-prompt elevation flow. debian/build-deb.sh referenced stale unit paths (debian/*.service) that had moved to systemd/*.service in v1.0.79. The .deb job in release.yaml failed at build, which cascade-skipped aur-update and copr-build, leaving AUR / COPR users on v1.0.78 even though the v1.0.79 / v1.0.80 tags were pushed. Updated to use the canonical systemd/ paths.</p>
-      </description>
-    </release>
-    <release version="1.0.80" date="2026-04-26">
-      <description>
-        <p>scripts/uninstall.sh — dedicated uninstaller. Detects every install method on the system (rpm / pacman / apt / pipx) and lets the user pick which one(s) to remove. When both pipx and a distro package coexist, offers a 1/2/3 menu (pipx only / distro only / both). --purge wipes settings, PipeWire configs, HRIR data, user systemd units and the manually-written udev rules in /etc, but preserves audio profiles (~/.config/arctis_manager/profiles/ and the active-profile pointer) so a future reinstall picks them right back up. A separate explicit confirm offers to delete the profiles too. Profiles capture DAC tab settings — audio profiles now snapshot and restore the full DAC state in addition to EQ/macros/spatial/volumes: OLED brightness, screen timeout, scroll speed, custom-display toggle, show-element toggles, display order, per-element font sizes, weather configuration. Older profile files (pre-v1.0.80) load with an empty DAC block — restoring them is a no-op for the DAC side, exactly as before. scripts/check-packaging-drift.py — CI-enforced drift detector. Runs on every PR/push across the 8-distro matrix and fails the build if pyproject.toml / PKGBUILD / .SRCINFO / RPM spec are out of sync, if any generator (udev rules, AppStream metainfo, debian/changelog) produces output that differs from the committed file, or if a pyproject dep is missing from PKGBUILD depends, the spec's Requires: lines, or debian/control Depends:. Closes the class of bug that left AppStream stuck at v1.0.4 and debian/changelog at v1.0.27 for months.</p>
       </description>
     </release>
   </releases>
