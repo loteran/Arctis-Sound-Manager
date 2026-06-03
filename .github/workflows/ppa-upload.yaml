@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        series: [noble]
+        series: [noble, questing, resolute]
 
     steps:
       - uses: actions/checkout@v4
