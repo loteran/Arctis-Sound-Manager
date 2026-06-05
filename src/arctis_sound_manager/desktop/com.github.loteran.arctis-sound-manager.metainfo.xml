@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.55" date="2026-06-06">
+      <description>
+        <p>Arctis Nova Pro Omni support — added product ID 0x2290 to the Arctis Nova Pro Wireless device profile. Audio routing (Game/Chat/Media mixer, HeSuVi spatial surround, Sonar EQ) and HID controls are enabled by reusing the Nova Pro Wireless DAC protocol. The status protocol is assumed identical and not yet confirmed by a USB capture, so some reported status values may be inaccurate until verified.</p>
+      </description>
+    </release>
     <release version="1.1.54" date="2026-06-03">
       <description>
         <p>Arctis GameBuds / GameBuds X support — initial device support for the Arctis GameBuds (PS5/PC, 0x230a) and GameBuds X for Xbox (0x2317) via their 2.4 GHz USB dongle. Supported controls: mic volume, sidetone (Off/Low/Medium/High), noise cancelling mode (Off/Transparency/ANC), ANC/transparency level, volume limiter, wear sense, and auto power-off (up to 90 min). Protocol reverse-engineered from a USB capture; battery level and connection status are not yet available (status protocol unknown).</p>
@@ -199,11 +204,6 @@
     <release version="1.0.82" date="2026-04-26">
       <description>
         <p>Multi-device routing (issue #20) — on systems with several audio outputs (Logitech G560, Razer Kiyo, internal speakers, etc.) plus an Arctis headset, apps that were already running when ASM started used to stay glued to their previous sink because _auto_route() only matched a hardcoded list of browser/game/chat app names. Now video_router.py adopts any orphan stream onto Arctis_Media when Arctis is the default sink — Spotify, VLC, Steam and friends finally end up in the headset on first launch. Streams already on an Arctis sink (virtual or filter-chain) are left untouched, and the adoption is saved as a routing override so manual KDE-mixer placements take over from there. Same logic applied to native PipeWire streams (mpv, haruna).</p>
-      </description>
-    </release>
-    <release version="1.0.81" date="2026-04-26">
-      <description>
-        <p>Runtime "Apply now" popup on USB EACCES — restores the v1.0.71 behaviour lost during the v1.0.79 merge. The existing startup dialog only fires when the udev rules file is missing/incomplete on disk, but if the rules are correct AND the headset was plugged in before they took effect (typical after a paru -Syu or dnf upgrade), the daemon used to hit EACCES on kernel_detach and the GUI was silent. Users had to figure out replug or sudo asm-cli udev reload-rules on their own. Now CoreEngine.kernel_detach flags permission_error=True per-interface on errno 13, the daemon exposes that flag through GetSettings, and the GUI opens UdevRulesDialog(mode="reload") automatically — one click runs asm-cli udev reload-rules with a single pkexec prompt and the device becomes accessible without unplugging. UdevRulesDialog two modes: write (existing — install missing rules) and reload (new — re-trigger udev on the currently-attached device). Both share the same one-prompt elevation flow. debian/build-deb.sh referenced stale unit paths (debian/*.service) that had moved to systemd/*.service in v1.0.79. The .deb job in release.yaml failed at build, which cascade-skipped aur-update and copr-build, leaving AUR / COPR users on v1.0.78 even though the v1.0.79 / v1.0.80 tags were pushed. Updated to use the canonical systemd/ paths.</p>
       </description>
     </release>
   </releases>
