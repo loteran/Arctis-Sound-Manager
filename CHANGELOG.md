@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.55] - 6 June 2026
+
+### Added
+
+- **Arctis Nova Pro Omni support** — added product ID `0x2290` to the Arctis Nova Pro Wireless device profile. Audio routing (Game/Chat/Media mixer, HeSuVi spatial surround, Sonar EQ) and HID controls are enabled by reusing the Nova Pro Wireless DAC protocol. The status protocol is assumed identical and not yet confirmed by a USB capture, so some reported status values may be inaccurate until verified.
+
 ## [1.1.54] - 3 June 2026
 
 ### Added
