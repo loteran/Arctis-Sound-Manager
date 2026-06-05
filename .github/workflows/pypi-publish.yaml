@@ -57,3 +57,8 @@ jobs:
         with:
           packages-dir: dist/
           skip-existing: true
+          # Disabled: when release.yaml calls this as a reusable workflow, the
+          # PEP 740 attestation certificate records the *caller* (release.yaml)
+          # as its Build Config URI, which PyPI rejects against the Trusted
+          # Publisher (pypi-publish.yaml). OIDC auth still matches correctly.
+          attestations: false
