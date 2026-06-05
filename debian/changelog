@@ -1,3 +1,14 @@
+arctis-sound-manager (1.1.55-1) noble; urgency=medium
+
+  * Arctis Nova Pro Omni support — added product ID 0x2290 to the Arctis
+    Nova Pro Wireless device profile. Audio routing (Game/Chat/Media mixer,
+    HeSuVi spatial surround, Sonar EQ) and HID controls are enabled by
+    reusing the Nova Pro Wireless DAC protocol. The status protocol is
+    assumed identical and not yet confirmed by a USB capture, so some
+    reported status values may be inaccurate until verified.
+
+ -- loteran <axel.valadon@gmail.com>  Sat, 06 Jun 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.54-1) noble; urgency=medium
 
   * Arctis GameBuds / GameBuds X support — initial device support for the
