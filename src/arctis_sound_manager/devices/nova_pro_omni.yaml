@@ -18,7 +18,8 @@
 # wIndex 3) leading with **report id 0x01** — NOT 0x06 (Nova Pro Wireless) and
 # NOT 0x07 (the value earlier sources suggested). The opcodes after the report id
 # are byte-for-byte identical to the Nova Pro Wireless DAC protocol (verified in
-# the capture: 0x27=gain, 0x37=mic vol, 0x39=sidetone, 0xbf=mic LED, 0xbd=ANC,
+# the capture: 0x27=gain (values 0x00 low / 0x01 high — shifted vs Wireless),
+# 0x37=mic vol, 0x18=sidetone (NOT 0x39 — the Omni ignores 0x39), 0xbf=mic LED, 0xbd=ANC,
 # 0xb9=transparency, 0xc1=auto-off, 0xc3=wireless mode, 0xb2/0xb3=Bluetooth …).
 # The status poll is request 0x01b0 with the main reply prefixed 0x01b0; the
 # push-notification frames keep the 0x07 prefix (0x0725/0x0731/0x0745/0x07bd/0x07b9).
@@ -72,7 +73,7 @@ device:
     - [0x01, 0xbd, 'settings.noise_cancelling']
     - [0x01, 0x27, 'settings.gain']               # Audio Gain (0x01: low, 0x02: high)
     - [0x01, 0xb3, 0x00]
-    - [0x01, 0x39, 'settings.mic_side_tone']      # Set the sidetone to 0 (off) -> possible values: 0 (off 1 (low 2 (medium 3 (high)
+    - [0x01, 0x18, 'settings.mic_side_tone']      # Omni sidetone opcode is 0x18 (NOT 0x39); values 0 (off) 1 (low) 2 (medium) 3 (high)
     - [0x01, 0xbf, 'settings.mic_led_brightness'] # Mute mic led brightness (out of 10)
     - [0x01, 0x43, 0x01]
     - [0x01, 0x69, 0x00]
@@ -156,11 +157,11 @@ device:
       gain:
         type: toggle
         values:
-          off: 0x01
-          on: 0x02
+          off: 0x00
+          on: 0x01
           off_label: low
           on_label: high
-        default: 0x02 # high
+        default: 0x01 # high
         update_sequence: [0x01, 0x27, 'value']
     microphone:
       mic_volume:
@@ -180,7 +181,7 @@ device:
           0x02: medium
           0x03: high
         default: 0x00 # off
-        update_sequence: [0x01, 0x39, 'value']
+        update_sequence: [0x01, 0x18, 'value']
       mic_led_brightness:
         type: slider
         min: 0x01
