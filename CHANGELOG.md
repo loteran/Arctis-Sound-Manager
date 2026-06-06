@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.56] - 6 June 2026
+
+### Fixed
+
+- **Arctis Nova Pro Omni controls** — the Omni (`0x2290`) now has its own device profile targeting the correct USB layout: control interface `3` (the 64-byte HID endpoint) with HID `SET_REPORT` transport. In 1.1.55 it reused the Nova Pro Wireless profile (interface `4` with an interrupt-OUT endpoint the Omni does not expose), so the UI appeared but the controls had no effect. DAC command opcodes are still assumed identical to the Nova Pro Wireless, pending confirmation.
+
 ## [1.1.55] - 6 June 2026
 
 ### Added
