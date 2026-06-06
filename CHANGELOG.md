@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.57] - 6 June 2026
+
+### Fixed
+
+- **OLED weather (and all custom-display content) could vanish after the DAC re-enumerated** — the Arctis Nova Pro Wireless re-enumerates on the USB bus at boot, wake and replug. The daemon overwrote its libusb handle without releasing the previous one, so the stale handle kept the interface claimed and every later transfer failed with `EBUSY` (Resource busy), blanking the custom OLED display and blocking device commands. The handle is now fully released (`dispose_resources`) before re-claiming on same-device re-enumeration.
+- **"Show city" weather toggle on the DAC tab could not be turned off** — `oled_show_weather_city` had no matching configuration entry, so the D-Bus `SetSetting` call was rejected and the toggle snapped back to on. Added the missing entry.
+- **Vertical OLED scroll no longer triggers when the content essentially fits** — the layout height was over-counted (separator double-count plus excess weather padding); the natural height now mirrors the real render and a small scroll deadzone was added, so a near-full screen stays still instead of jittering.
+
+### Changed
+
+- **OLED EQ-mode badge** — the Sonar / Custom-EQ indicator next to the clock is now a bold "S" / "C" without the surrounding box.
+- **Per-channel output dropdown** — the default (follow-system) option is now labelled "Headset" instead of "Default".
+
+### Added
+
+- **Reverse-engineering tooling** — a Windows USB capture script and a SteelSeries capture parser under `scripts/reverse-engineering/` to help decode opcodes for new DACs (Nova Pro Omni).
+
 ## [1.1.56] - 6 June 2026
 
 ### Fixed
