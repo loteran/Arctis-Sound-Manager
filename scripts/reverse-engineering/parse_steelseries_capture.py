@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
 # Copyright (C) 2026 loteran — SPDX-License-Identifier: GPL-3.0-or-later
 """
-Decode a USBPcap capture of SteelSeries GG and extract the HID control commands
-it sent to the headset, correlated with the timestamped action log produced by
+Decode a USBPcap capture of SteelSeries GG and map each setting change to the
+exact HID command bytes, using the timestamped action log from
 capture-omni-windows.ps1.
 
 Usage:
-    python3 parse_steelseries_capture.py omni.pcapng [omni-actions.txt]
+    python3 parse_steelseries_capture.py omni.pcapng omni-actions.txt
     python3 parse_steelseries_capture.py omni.pcapng --pid 0x2290
 
 Requires `tshark` (Arch/CachyOS: `sudo pacman -S wireshark-cli`).
 
-SteelSeries Arctis DAC commands are HID reports whose first byte is the report
-id 0x06. This script pulls every host->device payload, keeps the 0x06… ones,
-groups them by opcode (the 2nd byte), and — if the action log is given — shows
-which command(s) were sent right after each thing you changed in GG. That maps
-"EQ band up" / "ANC on" / … to the exact bytes ASM must send.
+Method (differential):
+  • Each action line is timestamped when the user pressed Enter, AFTER making the
+    change, so the command for action i is in the window (t[i-1], t[i]].
+  • The BASELINE = idle window teaches us the constant background poll commands
+    (e.g. 06 b0 status reads); those, plus any command seen in most windows, are
+    treated as noise and filtered out.
+  • Settings are taken to several known values; the decoder groups actions by
+    setting name (text before " = ") and shows, per opcode, how the parameter
+    byte changes between values — that is the update_sequence for the YAML.
 """
 from __future__ import annotations
 
@@ -23,21 +27,17 @@ import argparse
 import shutil
 import subprocess
 import sys
-from datetime import datetime, timezone
+from collections import Counter, defaultdict
+from datetime import datetime
 
 
 def run_tshark(pcap: str) -> list[tuple[float, str]]:
-    """Return [(epoch, hexpayload), …] for every host->device USB OUT payload."""
     if not shutil.which("tshark"):
         sys.exit("tshark not found — install it (Arch/CachyOS: sudo pacman -S wireshark-cli).")
-    # Pull several possible data fields; USBPcap puts SET_REPORT / interrupt-OUT
-    # bytes in usb.capdata, sometimes usbhid.data or usb.control.Data.
     fields = ["frame.time_epoch", "usb.capdata", "usbhid.data", "usb.control.Data"]
     cmd = ["tshark", "-r", pcap,
-           "-Y", "usb.endpoint_address.direction == 0",  # 0 = OUT (host->device)
-           "-T", "fields"]
-    for f in fields:
-        cmd += ["-e", f]
+           "-Y", "usb.endpoint_address.direction == 0",  # host -> device
+           "-T", "fields"] + sum((["-e", f] for f in fields), [])
     out = subprocess.run(cmd, capture_output=True, text=True)
     if out.returncode != 0:
         sys.exit(f"tshark failed:\n{out.stderr}")
@@ -50,9 +50,7 @@ def run_tshark(pcap: str) -> list[tuple[float, str]]:
             ts = float(parts[0])
         except ValueError:
             continue
-        # first non-empty data field wins; normalise "aa:bb" / "aabb" -> "aabb"
-        payload = next((p for p in parts[1:] if p), "")
-        payload = payload.replace(":", "").replace(" ", "").lower()
+        payload = next((p for p in parts[1:] if p), "").replace(":", "").replace(" ", "").lower()
         if payload:
             rows.append((ts, payload))
     return rows
@@ -65,67 +63,97 @@ def load_actions(path: str) -> list[tuple[float, str]]:
             line = line.rstrip("\n")
             if not line or line.startswith("#"):
                 continue
-            # "2026-06-06 14:03:12.345  EQ: select preset 'Flat'"
             try:
                 stamp, label = line.split("  ", 1)
                 dt = datetime.strptime(stamp.strip(), "%Y-%m-%d %H:%M:%S.%f")
-                # actions.txt is local time; convert to epoch (assume local tz)
                 actions.append((dt.astimezone().timestamp(), label.strip()))
             except ValueError:
                 continue
     return actions
 
 
-def fmt(payload: str, maxbytes: int = 16) -> str:
+def fmt(payload: str, maxbytes: int = 20) -> str:
     b = [payload[i:i + 2] for i in range(0, len(payload), 2)]
-    shown = " ".join(b[:maxbytes])
-    return shown + (" …" if len(b) > maxbytes else "")
+    return " ".join(b[:maxbytes]) + (" …" if len(b) > maxbytes else "")
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__)
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("pcap")
     ap.add_argument("actions", nargs="?", help="omni-actions.txt from the capture script")
-    ap.add_argument("--report-id", default="06",
-                    help="HID report id prefix to keep (default 06 = SteelSeries Arctis)")
+    ap.add_argument("--report-id", default="06", help="HID report id prefix (default 06)")
     args = ap.parse_args()
 
-    rows = run_tshark(args.pcap)
     rid = args.report_id.lower()
-    cmds = [(ts, p) for ts, p in rows if p.startswith(rid)]
+    rows = [(t, p) for t, p in run_tshark(args.pcap) if p.startswith(rid)]
+    print(f"{len(rows)} host->device commands starting with 0x{rid}\n")
 
-    print(f"OUT payloads: {len(rows)} total, {len(cmds)} starting with 0x{rid}\n")
-
-    # ── Grouped by opcode (byte after the report id) ─────────────────────────
-    groups: dict[str, list[str]] = {}
-    for _, p in cmds:
-        opcode = p[2:4] if len(p) >= 4 else "??"
-        groups.setdefault(opcode, [])
-        if p not in groups[opcode]:
-            groups[opcode].append(p)
-    print("== Unique commands grouped by opcode (06 XX …) ==")
-    for opcode in sorted(groups):
-        print(f"\n  opcode 0x{opcode}:")
-        for p in groups[opcode]:
-            print(f"    {fmt(p)}")
-
-    # ── Correlated with the action log ───────────────────────────────────────
-    if args.actions:
-        actions = load_actions(args.actions)
-        if not actions:
-            print("\n(could not read any timestamped actions)")
-            return
-        print("\n\n== Commands sent after each action ==")
-        for i, (ts, label) in enumerate(actions):
-            nxt = actions[i + 1][0] if i + 1 < len(actions) else float("inf")
-            window = [p for cts, p in cmds if ts - 0.3 <= cts < nxt]
-            uniq = list(dict.fromkeys(window))
-            print(f"\n• {label}")
-            for p in uniq:
+    if not args.actions:
+        # No log: just list unique commands grouped by opcode.
+        groups: dict[str, list[str]] = defaultdict(list)
+        for _, p in rows:
+            op = p[2:4] if len(p) >= 4 else "??"
+            if p not in groups[op]:
+                groups[op].append(p)
+        for op in sorted(groups):
+            print(f"opcode 0x{op}:")
+            for p in groups[op]:
                 print(f"    {fmt(p)}")
-        print("\nTip: the byte(s) that change between two values of the same "
-              "setting are the parameter; the leading 06 XX is the opcode for "
-              "that setting's update_sequence in the device YAML.")
+        return
+
+    actions = load_actions(args.actions)
+    if not actions:
+        sys.exit("Could not read any timestamped actions from the log.")
+
+    # Window (t[i-1], t[i]] per action; first window starts a bit before t[0].
+    windows: list[tuple[str, list[str]]] = []
+    prev = actions[0][0] - 5.0
+    for ts, label in actions:
+        cmds = [p for ct, p in rows if prev < ct <= ts]
+        windows.append((label, cmds))
+        prev = ts
+
+    # Noise = commands in the BASELINE window, or present in most windows.
+    baseline = {p for label, cmds in windows if label.lower().startswith("baseline") for p in cmds}
+    freq = Counter(p for _, cmds in windows for p in set(cmds))
+    n = len(windows)
+    noise = baseline | {p for p, c in freq.items() if c >= max(2, n // 2)}
+
+    print("== Background/noise commands (filtered out) ==")
+    for p in sorted(noise):
+        print(f"    {fmt(p)}   (seen in {freq[p]}/{n} windows)")
+
+    # Per-action signal commands.
+    print("\n== Setting → command(s) ==")
+    by_setting: dict[str, list[tuple[str, list[str]]]] = defaultdict(list)
+    for label, cmds in windows:
+        if label.lower().startswith("baseline"):
+            continue
+        sig = list(dict.fromkeys(p for p in cmds if p not in noise))
+        print(f"\n• {label}")
+        for p in sig:
+            print(f"    {fmt(p)}")
+        setting = label.split("=")[0].strip()
+        by_setting[setting].append((label, sig))
+
+    # Differential view: per setting, the opcode whose param byte changes.
+    print("\n\n== Differential summary (opcode = stable byte, param = changing byte) ==")
+    for setting, items in by_setting.items():
+        opcodes = defaultdict(list)   # opcode -> [(value_label, payload)]
+        for label, sig in items:
+            value = label.split("=", 1)[1].strip() if "=" in label else label
+            for p in sig:
+                opcodes[p[2:4]].append((value, p))
+        # The opcode that appears across the setting's values is the candidate.
+        best = sorted(opcodes.items(), key=lambda kv: -len({v for v, _ in kv[1]}))
+        print(f"\n{setting}:")
+        if not best:
+            print("    (no distinct command captured — recheck this one)")
+        for op, vals in best[:2]:
+            print(f"    opcode 0x{op}:")
+            for value, p in vals:
+                print(f"        {value:<22} -> {fmt(p)}")
 
 
 if __name__ == "__main__":

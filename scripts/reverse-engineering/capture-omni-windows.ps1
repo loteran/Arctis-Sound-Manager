@@ -71,36 +71,50 @@ Start-Process -FilePath $usbpcap
 Read-Host "When the capture window says it is capturing, come back here and press Enter"
 
 # --- Guided actions -----------------------------------------------------------
+# IMPORTANT: make the change in GG FIRST, then press Enter. The timestamp is
+# written on Enter, so each command lands in the window (previous Enter, this
+# Enter]. Each setting is taken to several KNOWN values so the decoder can spot
+# the opcode by the byte that changes between them.
 function Do-Action($label) {
-    Read-Host ">> In SteelSeries GG: $label  — then press Enter"
+    Read-Host ">> Make this change in GG, THEN press Enter:  $label"
     $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss.fff')
     "$ts  $label" | Add-Content $actions
-    Start-Sleep -Milliseconds 400
 }
 
 Write-Host ""
-Write-Host "STEP 2 — Toggle settings ONE AT A TIME (go slowly, wait ~1s each)" -ForegroundColor Cyan
-Write-Host "Open SteelSeries GG (the Engine/Sonar view for the Omni) next to this window."
+Write-Host "STEP 2 — Change settings ONE AT A TIME, IN THIS ORDER." -ForegroundColor Cyan
+Write-Host "For each line: do the change in SteelSeries GG, WAIT ~1s, then press Enter here."
+Write-Host "Change ONLY the one thing asked — nothing else." -ForegroundColor Yellow
+Write-Host "Open SteelSeries GG (Engine/Sonar view for the Omni) next to this window."
 Read-Host "Press Enter when GG is open and showing the Omni"
 
-Do-Action "EQ: select preset 'Flat' (or band 1)"
-Do-Action "EQ: select preset 'Bass Boost'"
-Do-Action "EQ: select preset 'Smiley' / another preset"
-Do-Action "EQ: drag ONE band fully UP (max gain)"
-Do-Action "EQ: drag the SAME band fully DOWN (min gain)"
-Do-Action "Sidetone (mic monitoring): set to OFF"
-Do-Action "Sidetone: set to HIGH"
-Do-Action "Active Noise Cancelling: set to OFF"
-Do-Action "Active Noise Cancelling: set to ON"
-Do-Action "Active Noise Cancelling: set to TRANSPARENCY"
-Do-Action "Volume: set to 50%"
-Do-Action "Volume: set to 100%"
-Do-Action "Gain / Output: set to LOW (16 ohm)"
-Do-Action "Gain / Output: set to HIGH (32 ohm)"
-Do-Action "Mic volume: set to 50%"
-Do-Action "Mic volume: set to 100%"
-Do-Action "Game/Chat mix: full GAME"
-Do-Action "Game/Chat mix: full CHAT"
+# Baseline: learn the constant background polling (change nothing)
+Read-Host ">> Do NOTHING for ~5 seconds (baseline), then press Enter"
+"$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss.fff'))  BASELINE = idle" | Add-Content $actions
+
+# Each setting at >=2 known values (so the changing byte = the parameter).
+Do-Action "Gain = LOW (16 ohm / high-impedance OFF)"
+Do-Action "Gain = HIGH (32 ohm / high-impedance ON)"
+Do-Action "Sidetone = OFF"
+Do-Action "Sidetone = LOW"
+Do-Action "Sidetone = HIGH"
+Do-Action "ANC = OFF"
+Do-Action "ANC = ON"
+Do-Action "ANC = TRANSPARENCY"
+Do-Action "Volume = 25 percent"
+Do-Action "Volume = 75 percent"
+Do-Action "MicVolume = 25 percent"
+Do-Action "MicVolume = 100 percent"
+Do-Action "MicLed = 0 percent"
+Do-Action "MicLed = 100 percent"
+Do-Action "Mix = full GAME"
+Do-Action "Mix = full CHAT"
+Do-Action "EqPreset = Flat"
+Do-Action "EqPreset = Bass Boost"
+Do-Action "EqBand1 = +10 dB (drag the FIRST/lowest band fully up)"
+Do-Action "EqBand1 = -10 dB (drag the SAME first band fully down)"
+Do-Action "EqBand5 = +10 dB (drag a MIDDLE band fully up)"
+Do-Action "EqBand5 = -10 dB (drag the SAME middle band fully down)"
 
 Write-Host ""
 Write-Host "STEP 3 — Stop the capture" -ForegroundColor Cyan
