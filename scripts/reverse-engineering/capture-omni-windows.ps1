@@ -85,31 +85,57 @@ Write-Host ""
 Write-Host "STEP 2 — Change settings ONE AT A TIME, IN THIS ORDER." -ForegroundColor Cyan
 Write-Host "For each line: do the change in SteelSeries GG, WAIT ~1s, then press Enter here."
 Write-Host "Change ONLY the one thing asked — nothing else." -ForegroundColor Yellow
-Write-Host "Open SteelSeries GG (Engine/Sonar view for the Omni) next to this window."
-Read-Host "Press Enter when GG is open and showing the Omni"
+Write-Host ""
+Write-Host "IMPORTANT: make sure SteelSeries GG is CLOSED right now." -ForegroundColor Yellow
+Read-Host "GG closed? Press Enter, then OPEN SteelSeries GG (this records the device init)"
+Do-Action "GgStartup = opened SteelSeries GG (device initialization handshake)"
+Read-Host "Wait until GG fully shows the Omni, then press Enter"
 
 # Baseline: learn the constant background polling (change nothing)
 Read-Host ">> Do NOTHING for ~5 seconds (baseline), then press Enter"
 "$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss.fff'))  BASELINE = idle" | Add-Content $actions
 
-# Each setting at >=2 known values (so the changing byte = the parameter).
+# Each setting is taken to >=2 known values so the changing byte = the
+# parameter. This list mirrors every function the Nova Pro Wireless DAC exposes
+# (see src/arctis_sound_manager/devices/nova_pro_wireless.yaml) so we get the
+# full opcode map for the Omni.
+
+# -- Headset output --
 Do-Action "Gain = LOW (16 ohm / high-impedance OFF)"
 Do-Action "Gain = HIGH (32 ohm / high-impedance ON)"
-Do-Action "Sidetone = OFF"
-Do-Action "Sidetone = LOW"
-Do-Action "Sidetone = HIGH"
-Do-Action "ANC = OFF"
-Do-Action "ANC = ON"
-Do-Action "ANC = TRANSPARENCY"
 Do-Action "Volume = 25 percent"
 Do-Action "Volume = 75 percent"
+
+# -- Active Noise Cancelling + Transparency --
+Do-Action "ANC = OFF"
+Do-Action "ANC = ON (full ANC)"
+Do-Action "ANC = TRANSPARENCY"
+Do-Action "TransparencyLevel = LOW (with ANC on Transparency, slider near min)"
+Do-Action "TransparencyLevel = HIGH (slider near max)"
+
+# -- Microphone --
 Do-Action "MicVolume = 25 percent"
 Do-Action "MicVolume = 100 percent"
+Do-Action "MicMute = MUTED"
+Do-Action "MicMute = UNMUTED"
+Do-Action "Sidetone = OFF"
+Do-Action "Sidetone = LOW"
+Do-Action "Sidetone = MEDIUM"
+Do-Action "Sidetone = HIGH"
 Do-Action "MicLed = 0 percent"
 Do-Action "MicLed = 100 percent"
+
+# -- Game/Chat mixer --
 Do-Action "Mix = full GAME"
 Do-Action "Mix = full CHAT"
-# --- EQ: mode/source switch FIRST, then presets and band edits ---
+
+# -- Power management / wireless --
+Do-Action "AutoOff = 10 minutes (Auto Shut-Off)"
+Do-Action "AutoOff = 60 minutes"
+Do-Action "WirelessMode = Speed (low latency)"
+Do-Action "WirelessMode = Range"
+
+# -- Equalizer: source switch, presets, bands --
 Do-Action "EqMode = Engine Custom EQ (turn the Engine EQ ON / select Custom)"
 Do-Action "EqPreset = Flat"
 Do-Action "EqPreset = Bass Boost"
@@ -121,6 +147,12 @@ Do-Action "EqBand5 = -10 dB (drag the SAME middle band fully down)"
 # both directions so we get the opcode that selects the active EQ source.
 Do-Action "EqSource = Sonar EQ (switch the active EQ from Custom to Sonar)"
 Do-Action "EqSource = Custom EQ (switch the active EQ back from Sonar to Custom)"
+
+# -- Bluetooth (Omni/Nova Pro has BT; capture for completeness) --
+Do-Action "BtPowerUp = OFF (Bluetooth power-up state)"
+Do-Action "BtPowerUp = ON"
+Do-Action "BtAutoMute = OFF"
+Do-Action "BtAutoMute = ON"
 
 Write-Host ""
 Write-Host "STEP 3 — Stop the capture" -ForegroundColor Cyan
