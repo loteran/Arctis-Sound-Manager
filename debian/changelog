@@ -1,3 +1,32 @@
+arctis-sound-manager (1.1.57-1) noble; urgency=medium
+
+  * OLED weather (and all custom-display content) could vanish after the DAC
+    re-enumerated — the Arctis Nova Pro Wireless re-enumerates on the USB
+    bus at boot, wake and replug. The daemon overwrote its libusb handle
+    without releasing the previous one, so the stale handle kept the
+    interface claimed and every later transfer failed with EBUSY (Resource
+    busy), blanking the custom OLED display and blocking device commands.
+    The handle is now fully released (dispose_resources) before re-claiming
+    on same-device re-enumeration.
+  * "Show city" weather toggle on the DAC tab could not be turned off —
+    oled_show_weather_city had no matching configuration entry, so the D-Bus
+    SetSetting call was rejected and the toggle snapped back to on. Added
+    the missing entry.
+  * Vertical OLED scroll no longer triggers when the content essentially
+    fits — the layout height was over-counted (separator double-count plus
+    excess weather padding); the natural height now mirrors the real render
+    and a small scroll deadzone was added, so a near-full screen stays still
+    instead of jittering.
+  * OLED EQ-mode badge — the Sonar / Custom-EQ indicator next to the clock
+    is now a bold "S" / "C" without the surrounding box.
+  * Per-channel output dropdown — the default (follow-system) option is now
+    labelled "Headset" instead of "Default".
+  * Reverse-engineering tooling — a Windows USB capture script and a
+    SteelSeries capture parser under scripts/reverse-engineering/ to help
+    decode opcodes for new DACs (Nova Pro Omni).
+
+ -- loteran <axel.valadon@gmail.com>  Sat, 06 Jun 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.56-1) noble; urgency=medium
 
   * Arctis Nova Pro Omni controls — the Omni (0x2290) now has its own device
