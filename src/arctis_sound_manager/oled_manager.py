@@ -36,6 +36,10 @@ _OLED_INTERFACE = 4
 _OLED_WVALUE = 0x0300
 _SCROLL_PAUSE_TOP_S = 5.0       # seconds to pause at top before scrolling
 _SCROLL_PAUSE_BOTTOM_S = 3.0    # seconds to pause at bottom before resetting
+# Don't start the vertical marquee for a tiny overflow — a few px past the
+# panel are bottom padding, not content. Avoids pointless jitter when the
+# layout essentially fits.
+_SCROLL_VERTICAL_DEADZONE_PX = 3
 _EQ_SCROLL_PAUSE_START_S = 2.0  # pause before EQ marquee starts (readability)
 _EQ_SCROLL_PAUSE_END_S = 2.0    # pause at end before snapping back
 
@@ -514,7 +518,7 @@ class OledManager:
                 with self._image_lock:
                     img = self._current_image
                 overflow = (img.height - self._renderer.HEIGHT) if img is not None else 0
-                if overflow <= 0:
+                if overflow <= _SCROLL_VERTICAL_DEADZONE_PX:
                     if self._scroll_wait(0.5):
                         continue
                     continue
