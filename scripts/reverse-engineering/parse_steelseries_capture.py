@@ -34,7 +34,7 @@ from datetime import datetime
 def run_tshark(pcap: str) -> list[tuple[float, str]]:
     if not shutil.which("tshark"):
         sys.exit("tshark not found — install it (Arch/CachyOS: sudo pacman -S wireshark-cli).")
-    fields = ["frame.time_epoch", "usb.capdata", "usbhid.data", "usb.control.Data"]
+    fields = ["frame.time_epoch", "usb.capdata", "usbhid.data", "usb.data_fragment"]
     cmd = ["tshark", "-r", pcap,
            "-Y", "usb.endpoint_address.direction == 0",  # host -> device
            "-T", "fields"] + sum((["-e", f] for f in fields), [])
