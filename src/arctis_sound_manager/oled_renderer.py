@@ -125,20 +125,17 @@ class OledRenderer:
     def _draw_eq_mode_icon(
         draw: "ImageDraw.ImageDraw", x: int, y: int, eq_mode: str, size: int = 12
     ) -> int:
-        """Boxed 'S' (sonar) or 'C' (custom EQ). Returns width used."""
+        """Bold 'S' (Sonar) or 'C' (Custom EQ), no surrounding box.
+
+        Returns the pixel width consumed."""
         letter = "S" if eq_mode == "sonar" else "C"
-        font_sz = max(6, size - 2)
-        font = ImageFont.load_default(size=font_sz)
+        font = ImageFont.load_default(size=size)
         lw = int(math.ceil(font.getlength(letter)))
-        box_w = lw + 4
-        box_h = size
-        draw.rounded_rectangle(
-            [x, y, x + box_w - 1, y + box_h - 1], radius=2, outline=1, fill=0
-        )
-        lx = x + (box_w - lw) // 2
-        ly = y + max(0, (box_h - font_sz) // 2) - 1
-        draw.text((lx, ly), letter, font=font, fill=1)
-        return box_w
+        # Fake-bold on the 1-bit panel: stamp the glyph with 1px offsets so the
+        # strokes thicken without needing a dedicated bold font file.
+        for ox, oy in ((0, 0), (1, 0), (0, 1), (1, 1)):
+            draw.text((x + ox, y - 1 + oy), letter, font=font, fill=1)
+        return lw + 1
 
     def _draw_bar(
         self, draw: ImageDraw.ImageDraw, x: int, y: int, width: int, height: int, percent: int
@@ -370,7 +367,7 @@ class OledRenderer:
                         draw.text((city_x, y + sz_weather_tmp - 8), city, font=font_small, fill=1)
                     else:
                         draw.text((_ICON_SIZE + 4, y + sz_weather_tmp + 2), city, font=font_small, fill=1)
-                y += icon_h + 4
+                y += icon_h + 1
             elif element == 'sonar_mode':
                 # The EQ-mode badge is now drawn on the time row (right of the
                 # clock), not as its own body row — nothing to do here.
@@ -395,7 +392,9 @@ class OledRenderer:
         y = 1
         if show_time or show_battery:
             top_row = sz_time + 2 if show_time else sz_battery + 2
-            y += top_row + 1 + 3
+            # Mirror render_status_image exactly: time row + 3px separator zone.
+            # (The 1px separator line is drawn inside that 3px gap, not on top.)
+            y += top_row + 3
         order = display_order if display_order is not None else self._DEFAULT_DISPLAY_ORDER
         for element in order:
             if element == 'profile' and show_profile:
@@ -403,7 +402,7 @@ class OledRenderer:
             elif element == 'eq' and show_eq:
                 y += sz_eq + 3
             elif element == 'weather' and weather is not None:
-                y += 2 + max(_ICON_SIZE, sz_weather_tmp) + 4
+                y += 2 + max(_ICON_SIZE, sz_weather_tmp) + 1
             elif element == 'sonar_mode':
                 # Drawn on the time row now — adds no body height.
                 pass
