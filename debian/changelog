@@ -1,3 +1,15 @@
+arctis-sound-manager (1.1.56-1) noble; urgency=medium
+
+  * Arctis Nova Pro Omni controls — the Omni (0x2290) now has its own device
+    profile targeting the correct USB layout: control interface 3 (the
+    64-byte HID endpoint) with HID SET_REPORT transport. In 1.1.55 it reused
+    the Nova Pro Wireless profile (interface 4 with an interrupt-OUT
+    endpoint the Omni does not expose), so the UI appeared but the controls
+    had no effect. DAC command opcodes are still assumed identical to the
+    Nova Pro Wireless, pending confirmation.
+
+ -- loteran <axel.valadon@gmail.com>  Sat, 06 Jun 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.55-1) noble; urgency=medium
 
   * Arctis Nova Pro Omni support — added product ID 0x2290 to the Arctis
