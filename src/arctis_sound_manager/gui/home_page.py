@@ -1198,7 +1198,7 @@ class HomePage(QWidget):
             if s.name.startswith("alsa_output")
             and "SteelSeries" not in s.name
         ]
-        default_label = I18n.translate("ui", "default_output")
+        default_label = I18n.translate("ui", "headset_output")
         options = [("", default_label)] + [
             (s.name, s.proplist.get("node.description") or s.proplist.get("node.nick") or s.name)
             for s in physical
