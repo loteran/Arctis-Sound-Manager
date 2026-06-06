@@ -16,7 +16,7 @@ def test_config_parse():
 
     assert config.name == "SteelSeries Arctis Nova Pro Wireless"
     assert config.vendor_id == 0x1038
-    assert config.product_ids == [0x12e0, 0x12e5, 0x2290]
+    assert config.product_ids == [0x12e0, 0x12e5]
 
     assert config.command_interface_index == [4, 0]
     assert config.listen_interface_indexes == [4]

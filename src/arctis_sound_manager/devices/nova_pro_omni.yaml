@@ -1,18 +1,49 @@
+# ── Arctis Nova Pro Omni (0x2290) — SKELETON, pending USB confirmation ────────
+#
+# This profile is a copy of nova_pro_wireless.yaml. The Omni is a newer,
+# multi-console base station, so its USB topology and/or control protocol may
+# differ from the Nova Pro Wireless. v1.1.55 first added 0x2290 to the Nova Pro
+# Wireless profile assuming interface 4 == control; a user reported the UI shows
+# up but controls have no effect — the classic symptom of writing commands to
+# the wrong interface (or wrong transport).
+#
+# TO CONFIRM on the Omni (run on the user's machine, headset powered on):
+#   asm-cli tools arctis-devices
+#   lsusb -v -d 1038:2290 2>/dev/null | grep -E "bInterfaceNumber|bInterfaceClass|bEndpointAddress|Interrupt|wMaxPacketSize"
+#
+# Then fill in below, by comparison with the Nova Pro Wireless reference
+# (interface 4: IN 0x84 + OUT 0x04, both 64-byte Interrupt):
+#   • command_interface_index → bInterfaceNumber of the control HID interface
+#     (the one exposing a 64-byte Interrupt endpoint).
+#   • listen_interface_indexes → same interface (for status reads).
+#   • command_transport → if that interface has NO Interrupt OUT endpoint
+#     (only IN), uncomment `command_transport: ctrl_output` so commands are sent
+#     via HID SET_REPORT instead (same mechanism as the Nova Pro Wired).
+#
+# The DAC opcodes (device_init / settings / status) are assumed identical to the
+# Nova Pro Wireless. If, once the interface/transport are correct, controls
+# still have no effect, the opcodes differ and a Windows USB capture
+# (SteelSeries GG + USBPcap/Wireshark) will be needed to map them.
+# ──────────────────────────────────────────────────────────────────────────────
 device:
-  name: SteelSeries Arctis Nova Pro Wireless
+  name: SteelSeries Arctis Nova Pro Omni
   vendor_id: 0x1038
   product_ids:
-    - 0x12e0 # SteelSeries Arctis Nova Pro Wireless
-    - 0x12e5 # SteelSeries Arctis Nova Pro Wireless X
-    # 0x2290 (Nova Pro Omni) moved to its own profile (nova_pro_omni.yaml) — its
-    # USB control interface/transport needs confirmation; see that file.
+    - 0x2290 # SteelSeries Arctis Nova Pro Omni
   command_padding:
     length: 64
     position: end
     filler: 0x00
 
+  # TODO(omni): confirm via `asm-cli tools arctis-devices`. Placeholder = Nova
+  # Pro Wireless layout (interface 4). Change if the Omni's control interface
+  # differs.
   command_interface_index: [4, 0] # bInterfaceNumber, bAlternateSetting
-  listen_interface_indexes: [4] # bInterfaceNumber
+  listen_interface_indexes: [4]   # bInterfaceNumber
+
+  # TODO(omni): uncomment if the control interface has no Interrupt OUT endpoint
+  # (commands then go via HID SET_REPORT, like the Nova Pro Wired).
+  # command_transport: ctrl_output
 
   device_init:
     - [0x06, 0x20]
@@ -112,7 +143,7 @@ device:
       wireless:
         - wireless_mode
         - wireless_pairing
-  
+
   online_status:
     status_variable: headset_power_status
     online_value: online
