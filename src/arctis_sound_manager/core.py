@@ -439,8 +439,15 @@ class CoreEngine:
             return
         
         if self.device_config is not None and self.device_config != device_config:
-            # Reset the previous device first
+            # Different device — full teardown of the previous one.
             self.teardown()
+        elif self.usb_device is not None:
+            # Same device re-enumerated (the Nova Pro Wireless does this on boot,
+            # wake and replug). Release the stale libusb handle before claiming a
+            # fresh one — otherwise the old handle keeps the interface claimed and
+            # every later transfer fails with EBUSY (Resource busy), killing the
+            # OLED display and all device commands.
+            self._release_usb_handle()
         
         with self._device_lock:
             self.usb_device = cast(TypedDevice, usb_device)
@@ -1029,6 +1036,46 @@ class CoreEngine:
         except asyncio.CancelledError:
             raise
 
+    def _release_usb_handle(self) -> None:
+        """Release the current libusb handle without performing a full teardown.
+
+        Called when the same device re-enumerates on the USB bus (e.g. the
+        Nova Pro Wireless DAC on boot, wake or replug). Without this, the
+        stale handle keeps every interface claimed and subsequent transfers
+        on the fresh handle fail with EBUSY (errno 16) indefinitely.
+        """
+        if self.usb_device is None:
+            return
+
+        # Stop the OLED manager first: it runs background threads that write
+        # to the handle and would race with dispose_resources().
+        if self.oled_manager is not None:
+            self.logger.info("Stopping OLED manager before releasing stale USB handle")
+            self.oled_manager.stop()
+            self.oled_manager = None
+
+        if self.device_config is not None:
+            for interface in self._all_used_interfaces(self.device_config):
+                try:
+                    usb.util.release_interface(self.usb_device, interface)
+                except usb.core.USBError:
+                    pass  # interface may already be released or device gone
+
+            # Return the kernel driver so the OS does not see a dangling claim.
+            try:
+                if usb.core.find(idVendor=self.device_config.vendor_id):
+                    self.kernel_attach(self.usb_device, self.device_config)
+            except usb.core.USBError as e:
+                self.logger.warning(f"Could not re-attach kernel driver on handle release: {e}")
+
+        # This is the critical call: it closes the underlying libusb file
+        # descriptor and frees the interface claim so the next open succeeds.
+        try:
+            usb.util.dispose_resources(self.usb_device)
+            self.logger.info("Stale USB handle released via dispose_resources")
+        finally:
+            self.usb_device = None
+
     def teardown(self) -> None:
         if self.usb_device:
             try:
@@ -1058,6 +1105,11 @@ class CoreEngine:
             self.oled_manager = None
 
         with self._device_lock:
+            if self.usb_device is not None:
+                try:
+                    usb.util.dispose_resources(self.usb_device)
+                except usb.core.USBError as e:
+                    self.logger.warning(f"Error disposing USB resources on teardown: {e}")
             self.usb_device = None
             self.device_config = None
             self.device_status = None
