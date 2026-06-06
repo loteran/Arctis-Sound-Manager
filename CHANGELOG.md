@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.58] - 6 June 2026
+
+### Fixed
+
+- **Arctis Nova Pro Omni controls had no effect** — a real Windows USB capture of SteelSeries GG driving the Omni (firmware 1.32.0) revealed its HID control commands lead with report id `0x01`, not `0x06` (Nova Pro Wireless) nor `0x07` (previously inferred from third-party OLED drivers). The device profile now leads every command with `0x01` and polls status with `0x01b0`; the per-setting opcodes are byte-for-byte identical to the Nova Pro Wireless. Gain, mic, sidetone, EQ, ANC and the other controls should now take effect on the Omni. (#70)
+
 ## [1.1.57] - 6 June 2026
 
 ### Fixed
