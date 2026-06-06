@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.58" date="2026-06-06">
+      <description>
+        <p>Arctis Nova Pro Omni controls had no effect — a real Windows USB capture of SteelSeries GG driving the Omni (firmware 1.32.0) revealed its HID control commands lead with report id 0x01, not 0x06 (Nova Pro Wireless) nor 0x07 (previously inferred from third-party OLED drivers). The device profile now leads every command with 0x01 and polls status with 0x01b0; the per-setting opcodes are byte-for-byte identical to the Nova Pro Wireless. Gain, mic, sidetone, EQ, ANC and the other controls should now take effect on the Omni. (#70)</p>
+      </description>
+    </release>
     <release version="1.1.57" date="2026-06-06">
       <description>
         <p>OLED weather (and all custom-display content) could vanish after the DAC re-enumerated — the Arctis Nova Pro Wireless re-enumerates on the USB bus at boot, wake and replug. The daemon overwrote its libusb handle without releasing the previous one, so the stale handle kept the interface claimed and every later transfer failed with EBUSY (Resource busy), blanking the custom OLED display and blocking device commands. The handle is now fully released (dispose_resources) before re-claiming on same-device re-enumeration. "Show city" weather toggle on the DAC tab could not be turned off — oled_show_weather_city had no matching configuration entry, so the D-Bus SetSetting call was rejected and the toggle snapped back to on. Added the missing entry. Vertical OLED scroll no longer triggers when the content essentially fits — the layout height was over-counted (separator double-count plus excess weather padding); the natural height now mirrors the real render and a small scroll deadzone was added, so a near-full screen stays still instead of jittering.</p>
@@ -199,11 +204,6 @@
     <release version="1.0.85" date="2026-04-27">
       <description>
         <p>Sonar Output preset switch dropped Firefox / Arctis_Media routing (issue #22) — restarting the PipeWire filter-chain to apply a new Output EQ preset (e.g. *Music – Punchy*) tears down the Arctis_Game/Chat/Media virtual sinks momentarily. The stream-restore loop only waited for the EQ filter node to reappear before re-issuing pactl move-sink-input, so when the Arctis virtual sinks were not yet back the moves silently failed and streams stayed orphaned on the system default. The apply worker now waits up to 4 s per saved Arctis_* target sink before issuing the move-back commands. asm-cli arctis-usb-info traceback on EACCES (issue #22) — when udev rules were missing or not yet applied to the currently-attached dongle, reading device.manufacturer raised usb.core.USBError: [Errno 13] Access denied and aborted the diagnostic. Now wrapped with try/except; prints (no permission) with a hint to run asm-setup instead of crashing the whole CLI report.</p>
-      </description>
-    </release>
-    <release version="1.0.84" date="2026-04-27">
-      <description>
-        <p>TypeError crash in on_settings_received when the daemon flagged a USB EACCES (issue #22) — UdevRulesDialog(parent=self, ...) was called from QMainApp, which inherits from QObject, not QWidget, so QDialog.__init__ rejected the parent and the GUI tracebacked instead of opening the "Apply now" dialog. Pass self.main_window (the actual QMainWindow) so the runtime fix-permissions flow shipped in v1.0.81 finally fires on Nobara/Fedora setups where the dongle was plugged in before the udev rules took effect.</p>
       </description>
     </release>
   </releases>
