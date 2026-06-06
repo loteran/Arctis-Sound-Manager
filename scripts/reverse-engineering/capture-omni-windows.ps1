@@ -109,12 +109,18 @@ Do-Action "MicLed = 0 percent"
 Do-Action "MicLed = 100 percent"
 Do-Action "Mix = full GAME"
 Do-Action "Mix = full CHAT"
+# --- EQ: mode/source switch FIRST, then presets and band edits ---
+Do-Action "EqMode = Engine Custom EQ (turn the Engine EQ ON / select Custom)"
 Do-Action "EqPreset = Flat"
 Do-Action "EqPreset = Bass Boost"
 Do-Action "EqBand1 = +10 dB (drag the FIRST/lowest band fully up)"
 Do-Action "EqBand1 = -10 dB (drag the SAME first band fully down)"
 Do-Action "EqBand5 = +10 dB (drag a MIDDLE band fully up)"
 Do-Action "EqBand5 = -10 dB (drag the SAME middle band fully down)"
+# The switch between the hardware Custom EQ and Sonar's software EQ — capture
+# both directions so we get the opcode that selects the active EQ source.
+Do-Action "EqSource = Sonar EQ (switch the active EQ from Custom to Sonar)"
+Do-Action "EqSource = Custom EQ (switch the active EQ back from Sonar to Custom)"
 
 Write-Host ""
 Write-Host "STEP 3 — Stop the capture" -ForegroundColor Cyan
