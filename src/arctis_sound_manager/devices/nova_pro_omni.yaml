@@ -12,10 +12,18 @@
 # OUT endpoint, commands go via HID SET_REPORT over the control endpoint
 # (command_transport: ctrl_output), the same mechanism as the Nova Pro Wired.
 #
-# The DAC opcodes (device_init / settings / status) are assumed identical to the
-# Nova Pro Wireless. If controls still have no effect with the interface/
-# transport below, the opcodes differ and a Windows USB capture (SteelSeries GG
-# + USBPcap/Wireshark) will be needed to map them.
+# HID report id: the Omni's vendor control collection (usage page 0xFF00) lives
+# on interface 3 with **report id 0x07**, whereas the Nova Pro Wireless uses
+# report id 0x06 on interface 4. Confirmed independently by two working OLED
+# drivers (pozitronik/steelclock-go, JerwuQu/ggoled#33 HID descriptor:
+# "interface 3, collection 2, usage page ff00, report id 0x07"). So every command
+# below leads with 0x07 (not 0x06); the opcodes after it are assumed identical to
+# the Nova Pro Wireless DAC protocol.
+#
+# STILL UNVERIFIED on real hardware: that the opcodes are byte-for-byte the same,
+# and that the transport is output (not feature) report. If controls still have
+# no effect, try `command_transport: ctrl_feature`, then fall back to a Windows
+# USB capture of SteelSeries GG (see scripts/reverse-engineering/, issue #70).
 # ──────────────────────────────────────────────────────────────────────────────
 device:
   name: SteelSeries Arctis Nova Pro Omni
@@ -37,49 +45,49 @@ device:
   command_transport: ctrl_output
 
   device_init:
-    - [0x06, 0x20]
-    - [0x06, 0x20]
-    - [0x06, 0x10]
-    - [0x06, 0x10]
-    - [0x06, 0x10]
-    - [0x06, 0x3b] # Correction?
-    - [0x06, 0x8d, 0x01]
-    - [0x06, 0x20]
-    - [0x06, 0x20]
-    - [0x06, 0x20]
-    - [0x06, 0x80]
-    - [0x06, 0x3b] # Correction?
+    - [0x07, 0x20]
+    - [0x07, 0x20]
+    - [0x07, 0x10]
+    - [0x07, 0x10]
+    - [0x07, 0x10]
+    - [0x07, 0x3b] # Correction?
+    - [0x07, 0x8d, 0x01]
+    - [0x07, 0x20]
+    - [0x07, 0x20]
+    - [0x07, 0x20]
+    - [0x07, 0x80]
+    - [0x07, 0x3b] # Correction?
     # Burst of commands (device init?)
-    - [0x06, 0x8d, 0x01]
-    - [0x06, 0x33, 0x14, 0x14, 0x14]              # Equalizer with 3 bands
-    - [0x06, 0xc3, 'settings.wireless_mode']      # 2.4G mode (0x00: speed, 0x01: range)
-    - [0x06, 0x2e, 0x00]                          # Set equalizer preset (0)
-    - [0x06, 0xc1, 'settings.pm_shutdown']        # Set inactive time (to 30 minutes, see INACTIVE_TIME_MINUTES)
-    - [0x06, 0xb9, 'settings.transparent_level']
-    - [0x06, 0x37, 'settings.mic_volume']         # Mic volume 100% (01 (mute) - a0 (100%))
-    - [0x06, 0xb2]
-    - [0x06, 0x47, 0x64, 0x00, 0x64]
-    - [0x06, 0x83, 0x01]
-    - [0x06, 0xbd, 'settings.noise_cancelling']
-    - [0x06, 0x27, 'settings.gain']               # Audio Gain (0x01: low, 0x02: high)
-    - [0x06, 0xb3, 0x00]
-    - [0x06, 0x39, 'settings.mic_side_tone']      # Set the sidetone to 0 (off) -> possible values: 0 (off 1 (low 2 (medium 3 (high)
-    - [0x06, 0xbf, 'settings.mic_led_brightness'] # Mute mic led brightness (out of 10)
-    - [0x06, 0x43, 0x01]
-    - [0x06, 0x69, 0x00]
-    - [0x06, 0x3b, 0x00]
-    - [0x06, 0x8d, 0x01]
-    - [0x06, 0x49, 0x01]
-    - [0x06, 0xb7, 0x00]
+    - [0x07, 0x8d, 0x01]
+    - [0x07, 0x33, 0x14, 0x14, 0x14]              # Equalizer with 3 bands
+    - [0x07, 0xc3, 'settings.wireless_mode']      # 2.4G mode (0x00: speed, 0x01: range)
+    - [0x07, 0x2e, 0x00]                          # Set equalizer preset (0)
+    - [0x07, 0xc1, 'settings.pm_shutdown']        # Set inactive time (to 30 minutes, see INACTIVE_TIME_MINUTES)
+    - [0x07, 0xb9, 'settings.transparent_level']
+    - [0x07, 0x37, 'settings.mic_volume']         # Mic volume 100% (01 (mute) - a0 (100%))
+    - [0x07, 0xb2]
+    - [0x07, 0x47, 0x64, 0x00, 0x64]
+    - [0x07, 0x83, 0x01]
+    - [0x07, 0xbd, 'settings.noise_cancelling']
+    - [0x07, 0x27, 'settings.gain']               # Audio Gain (0x01: low, 0x02: high)
+    - [0x07, 0xb3, 0x00]
+    - [0x07, 0x39, 'settings.mic_side_tone']      # Set the sidetone to 0 (off) -> possible values: 0 (off 1 (low 2 (medium 3 (high)
+    - [0x07, 0xbf, 'settings.mic_led_brightness'] # Mute mic led brightness (out of 10)
+    - [0x07, 0x43, 0x01]
+    - [0x07, 0x69, 0x00]
+    - [0x07, 0x3b, 0x00]
+    - [0x07, 0x8d, 0x01]
+    - [0x07, 0x49, 0x01]
+    - [0x07, 0xb7, 0x00]
 
     # Another series of queries (perhaps for confirmation?)
-    - [0x06, 0xb7, 0x00]
-    - [0x06, 0xb7, 0x00]
+    - [0x07, 0xb7, 0x00]
+    - [0x07, 0xb7, 0x00]
     - ['status.request']  # Get device status
-    - [0x06, 0x20, 0x00]
-    - [0x06, 0xb7, 0x00]
+    - [0x07, 0x20, 0x00]
+    - [0x07, 0xb7, 0x00]
   status:
-    request: 0x06b0
+    request: 0x07b0
     response_mapping:
       - starts_with: 0x0725
         station_volume: 0x02
@@ -98,7 +106,7 @@ device:
       - starts_with: 0x07b9
         transparent_noise_cancelling_level: 0x02
 
-      - starts_with: 0x06b0
+      - starts_with: 0x07b0
         bluetooth_powerup_state: 0x02
         bluetooth_auto_mute: 0x03
         bluetooth_power_status: 0x04
@@ -152,7 +160,7 @@ device:
           off_label: low
           on_label: high
         default: 0x02 # high
-        update_sequence: [0x06, 0x27, 'value']
+        update_sequence: [0x07, 0x27, 'value']
     microphone:
       mic_volume:
         type: slider
@@ -162,7 +170,7 @@ device:
         min_label: mic_muted
         max_label: perc_100
         default: 0x0a # 100%
-        update_sequence: [0x06, 0x37, 'value']
+        update_sequence: [0x07, 0x37, 'value']
       mic_side_tone:
         type: button_group
         values_mapping:
@@ -171,7 +179,7 @@ device:
           0x02: medium
           0x03: high
         default: 0x00 # off
-        update_sequence: [0x06, 0x39, 'value']
+        update_sequence: [0x07, 0x39, 'value']
       mic_led_brightness:
         type: slider
         min: 0x01
@@ -180,7 +188,7 @@ device:
         min_label: perc_10
         max_label: perc_100
         default: 0x0a # 100%
-        update_sequence: [0x06, 0xbf, 'value']
+        update_sequence: [0x07, 0xbf, 'value']
     power_management:
       pm_shutdown:
         type: slider
@@ -198,7 +206,7 @@ device:
           0x05: 30_minutes
           0x06: 60_minutes
         default: 0x05 # 30 minutes
-        update_sequence: [0x06, 0xc1, 'value']
+        update_sequence: [0x07, 0xc1, 'value']
     wireless:
       wireless_mode:
         type: toggle
@@ -208,7 +216,7 @@ device:
           off_label: speed
           on_label: range
         default: 0x00 # speed
-        update_sequence: [0x06, 0xc3, 'value']
+        update_sequence: [0x07, 0xc3, 'value']
     audio:
       noise_cancelling:
         type: slider
@@ -217,7 +225,7 @@ device:
         max: 0x02
         step: 1
         default: 0x00 # off
-        update_sequence: [0x06, 0xbd, 'value']
+        update_sequence: [0x07, 0xbd, 'value']
       transparent_level:
         type: slider
         hidden: true
@@ -225,7 +233,7 @@ device:
         max: 0x0a
         step: 1
         default: 0x05
-        update_sequence: [0x06, 0xb9, 'value']
+        update_sequence: [0x07, 0xb9, 'value']
 
   status_parse:
     station_volume:
