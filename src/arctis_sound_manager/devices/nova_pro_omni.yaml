@@ -1,29 +1,21 @@
-# ── Arctis Nova Pro Omni (0x2290) — SKELETON, pending USB confirmation ────────
+# ── Arctis Nova Pro Omni (0x2290) ─────────────────────────────────────────────
 #
-# This profile is a copy of nova_pro_wireless.yaml. The Omni is a newer,
-# multi-console base station, so its USB topology and/or control protocol may
-# differ from the Nova Pro Wireless. v1.1.55 first added 0x2290 to the Nova Pro
-# Wireless profile assuming interface 4 == control; a user reported the UI shows
-# up but controls have no effect — the classic symptom of writing commands to
-# the wrong interface (or wrong transport).
+# Copy of nova_pro_wireless.yaml, adjusted for the Omni's USB layout (confirmed
+# from a user's `asm-cli tools arctis-devices` + `lsusb -v` capture, issue #70).
 #
-# TO CONFIRM on the Omni (run on the user's machine, headset powered on):
-#   asm-cli tools arctis-devices
-#   lsusb -v -d 1038:2290 2>/dev/null | grep -E "bInterfaceNumber|bInterfaceClass|bEndpointAddress|Interrupt|wMaxPacketSize"
+# The Omni's HID interfaces differ from the Nova Pro Wireless:
+#   • Nova Pro Wireless — interface 4: EP 0x84 IN (64B) + EP 0x04 OUT (64B).
+#   • Nova Pro Omni     — interface 3: EP 0x83 IN (64B), and NO Interrupt OUT.
+#                         interface 4 only carries a 2-byte IN (consumer keys).
 #
-# Then fill in below, by comparison with the Nova Pro Wireless reference
-# (interface 4: IN 0x84 + OUT 0x04, both 64-byte Interrupt):
-#   • command_interface_index → bInterfaceNumber of the control HID interface
-#     (the one exposing a 64-byte Interrupt endpoint).
-#   • listen_interface_indexes → same interface (for status reads).
-#   • command_transport → if that interface has NO Interrupt OUT endpoint
-#     (only IN), uncomment `command_transport: ctrl_output` so commands are sent
-#     via HID SET_REPORT instead (same mechanism as the Nova Pro Wired).
+# So the control/data interface is 3 (not 4), and since there is no Interrupt
+# OUT endpoint, commands go via HID SET_REPORT over the control endpoint
+# (command_transport: ctrl_output), the same mechanism as the Nova Pro Wired.
 #
 # The DAC opcodes (device_init / settings / status) are assumed identical to the
-# Nova Pro Wireless. If, once the interface/transport are correct, controls
-# still have no effect, the opcodes differ and a Windows USB capture
-# (SteelSeries GG + USBPcap/Wireshark) will be needed to map them.
+# Nova Pro Wireless. If controls still have no effect with the interface/
+# transport below, the opcodes differ and a Windows USB capture (SteelSeries GG
+# + USBPcap/Wireshark) will be needed to map them.
 # ──────────────────────────────────────────────────────────────────────────────
 device:
   name: SteelSeries Arctis Nova Pro Omni
@@ -35,15 +27,14 @@ device:
     position: end
     filler: 0x00
 
-  # TODO(omni): confirm via `asm-cli tools arctis-devices`. Placeholder = Nova
-  # Pro Wireless layout (interface 4). Change if the Omni's control interface
-  # differs.
-  command_interface_index: [4, 0] # bInterfaceNumber, bAlternateSetting
-  listen_interface_indexes: [4]   # bInterfaceNumber
+  # Control/data interface = 3 (64-byte Interrupt IN on EP 0x83); interface 4 is
+  # the 2-byte consumer-control endpoint. Confirmed via asm-cli tools arctis-devices.
+  command_interface_index: [3, 0] # bInterfaceNumber, bAlternateSetting
+  listen_interface_indexes: [3]   # bInterfaceNumber (status read on EP 0x83)
 
-  # TODO(omni): uncomment if the control interface has no Interrupt OUT endpoint
-  # (commands then go via HID SET_REPORT, like the Nova Pro Wired).
-  # command_transport: ctrl_output
+  # No Interrupt OUT endpoint on the HID interfaces → commands via HID SET_REPORT
+  # (control transfer to interface 3), like the Nova Pro Wired.
+  command_transport: ctrl_output
 
   device_init:
     - [0x06, 0x20]
