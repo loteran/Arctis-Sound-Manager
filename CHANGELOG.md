@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.59] - 7 June 2026
+
+### Fixed
+
+- **Arctis Nova Pro Omni: gain and mic sidetone now work** — re-analysing the USB capture by opcode showed the Omni uses opcode `0x18` for sidetone (not `0x39`, which it ignores) and shifted gain values (`low=0x00`/`high=0x01` instead of `0x01`/`0x02`). The device profile is corrected accordingly. (#70)
+
+### Added
+
+- **Arctis Nova Pro Omni: OLED screen support** — the OLED driver is now parameterised per device (HID interface, report id, SET_REPORT wValue, dimensions) instead of being hard-coded for the Nova Pro Wireless. The Omni's screen is driven on interface 3 with report id `0x01` / wValue `0x0200`, which also stops the `OLED Resource busy` errors it was logging. The Nova Pro Wireless path is unchanged.
+
 ## [1.1.58] - 6 June 2026
 
 ### Fixed
