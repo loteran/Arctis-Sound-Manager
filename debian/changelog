@@ -1,3 +1,19 @@
+arctis-sound-manager (1.1.59-1) noble; urgency=medium
+
+  * Arctis Nova Pro Omni: gain and mic sidetone now work — re-analysing the
+    USB capture by opcode showed the Omni uses opcode 0x18 for sidetone (not
+    0x39, which it ignores) and shifted gain values (low=0x00/high=0x01
+    instead of 0x01/0x02). The device profile is corrected accordingly.
+    (#70)
+  * Arctis Nova Pro Omni: OLED screen support — the OLED driver is now
+    parameterised per device (HID interface, report id, SET_REPORT wValue,
+    dimensions) instead of being hard-coded for the Nova Pro Wireless. The
+    Omni's screen is driven on interface 3 with report id 0x01 / wValue
+    0x0200, which also stops the OLED Resource busy errors it was logging.
+    The Nova Pro Wireless path is unchanged.
+
+ -- loteran <axel.valadon@gmail.com>  Sun, 07 Jun 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.58-1) noble; urgency=medium
 
   * Arctis Nova Pro Omni controls had no effect — a real Windows USB capture
