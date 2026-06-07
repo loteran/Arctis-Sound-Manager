@@ -32,8 +32,15 @@ def _active_eq_preset(channel: str) -> str:
 
 _REFRESH_INTERVAL_S = 5.0
 _SPLASH_DURATION_S = 3.0
-_OLED_INTERFACE = 4
-_OLED_WVALUE = 0x0300
+# Fallback OLED transport parameters for devices that carry no ``oled:``
+# section in their YAML.  These values match the Nova Pro Wireless defaults
+# and keep backwards-compatibility for any device that previously relied on
+# the former module-level constants.
+_OLED_INTERFACE_DEFAULT = 4
+_OLED_WVALUE_DEFAULT = 0x0300
+_OLED_REPORT_ID_DEFAULT = 0x06
+_OLED_WIDTH_DEFAULT = 128
+_OLED_HEIGHT_DEFAULT = 64
 _SCROLL_PAUSE_TOP_S = 5.0       # seconds to pause at top before scrolling
 _SCROLL_PAUSE_BOTTOM_S = 3.0    # seconds to pause at bottom before resetting
 # Don't start the vertical marquee for a tiny overflow — a few px past the
@@ -64,7 +71,18 @@ logger = logging.getLogger(__name__)
 class OledManager:
     def __init__(self, core: CoreEngine) -> None:
         self._core = core
-        self._protocol = OledProtocol()
+
+        # Resolve per-device OLED transport parameters from the device YAML.
+        # Fall back to the former hard-coded Wireless values so devices without
+        # an ``oled:`` section keep identical byte-for-byte behaviour.
+        oled_cfg = core.device_config.oled if core.device_config is not None else None
+        self._oled_interface: int = oled_cfg.interface if oled_cfg is not None else _OLED_INTERFACE_DEFAULT
+        self._oled_wvalue: int = oled_cfg.wvalue if oled_cfg is not None else _OLED_WVALUE_DEFAULT
+        _report_id: int = oled_cfg.report_id if oled_cfg is not None else _OLED_REPORT_ID_DEFAULT
+        _width: int = oled_cfg.width if oled_cfg is not None else _OLED_WIDTH_DEFAULT
+        _height: int = oled_cfg.height if oled_cfg is not None else _OLED_HEIGHT_DEFAULT
+
+        self._protocol = OledProtocol(report_id=_report_id, width=_width, height=_height)
         self._renderer = OledRenderer()
         self._weather = WeatherService()
         self._stop_event = threading.Event()
@@ -305,7 +323,11 @@ class OledManager:
             if usb_device is None:
                 return
             try:
-                usb_device.ctrl_transfer(bmRequestType, 0x09, _OLED_WVALUE, _OLED_INTERFACE, packet)
+                usb_device.ctrl_transfer(
+                    bmRequestType, 0x09,
+                    self._oled_wvalue, self._oled_interface,
+                    packet,
+                )
             except usb.core.USBError as e:
                 logger.warning("OLED USB error: %s", e)
 
