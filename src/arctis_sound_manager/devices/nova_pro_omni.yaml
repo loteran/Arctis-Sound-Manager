@@ -152,6 +152,17 @@ device:
   audio:
     spatial_engine: hesuvi
 
+  # OLED screen transport parameters confirmed from a real Windows USBPcap
+  # capture of SteelSeries GG driving the Omni (issue #70).
+  # The Omni uses HID interface 3 (no Interrupt OUT), report id 0x01, and
+  # SET_REPORT with wValue 0x0200 (Output report, not Feature).
+  oled:
+    interface: 3       # HID interface carrying the OLED control endpoint
+    report_id: 0x01    # First byte of every HID report sent to the OLED
+    wvalue: 0x0200     # SET_REPORT wValue: 0x0200 = HID Output report
+    width: 128         # Panel width in pixels (assumed identical to Wireless)
+    height: 64         # Panel height in pixels (assumed identical to Wireless)
+
   settings:
     headset:
       gain:

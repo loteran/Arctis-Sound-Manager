@@ -112,6 +112,22 @@ class ConfigPadding:
         self.position = PaddingPosition(self.position)
 
 @dataclass
+class OledConfig:
+    """Per-device OLED transport parameters parsed from the ``oled:`` YAML section.
+
+    Devices that do not have an OLED screen leave this field ``None`` on
+    ``DeviceConfiguration``.  When the section is present but individual
+    keys are missing, the defaults match the original Nova Pro Wireless
+    hard-coded values so older YAMLs keep identical behaviour.
+    """
+    interface: int = 4         # HID interface number for OLED packets
+    report_id: int = 0x06      # First byte of every HID report
+    wvalue: int = 0x0300       # SET_REPORT wValue (0x0300 feature / 0x0200 output)
+    width: int = 128           # Screen width in pixels
+    height: int = 64           # Screen height in pixels
+
+
+@dataclass
 class ConfigStatus:
     request: int
     response_mapping: list[ConfigStatusResponseMapping]
@@ -145,6 +161,7 @@ class DeviceConfiguration:
     status_parse: dict[str, ConfigStatusParser]
     online_status: OnlineStatusConfig | None
     settings: dict[str, list[ConfigSetting]]
+    oled: OledConfig | None  # None for screenless devices
 
     def __init__(self, raw_configuration: dict[str, Any]):
         raw_config: dict[str, Any] | None = raw_configuration.get('device', None)
@@ -214,6 +231,18 @@ class DeviceConfiguration:
 
         raw_audio = raw_config.get('audio', {})
         self.spatial_engine: str = raw_audio.get('spatial_engine', 'hesuvi')
+
+        raw_oled = raw_config.get('oled', None)
+        if raw_oled is not None:
+            self.oled: OledConfig | None = OledConfig(
+                interface=raw_oled.get('interface', 4),
+                report_id=raw_oled.get('report_id', 0x06),
+                wvalue=raw_oled.get('wvalue', 0x0300),
+                width=raw_oled.get('width', 128),
+                height=raw_oled.get('height', 64),
+            )
+        else:
+            self.oled = None
 
         _cfg_logger = logging.getLogger(__name__)
         raw_settings: dict[str, dict[str, Any]] = raw_config.get('settings', {})

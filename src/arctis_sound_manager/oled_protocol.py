@@ -5,20 +5,47 @@ from __future__ import annotations
 
 import math
 
+# Default OLED parameters (Nova Pro Wireless values, kept as module-level
+# constants so external code that reads them directly is not broken).
+_DEFAULT_REPORT_ID = 0x06
+_DEFAULT_DISPLAY_WIDTH = 128
+_DEFAULT_DISPLAY_HEIGHT = 64
+
 
 class OledProtocol:
-    DISPLAY_WIDTH = 128
-    DISPLAY_HEIGHT = 64
+    # Class-level constants that are device-independent or purely structural.
     REPORT_SIZE = 1024
-    OLED_INTERFACE = 4
-
-    REPORT_ID = 0x06
     CMD_SCREEN = 0x93
     CMD_BRIGHTNESS = 0x85
     CMD_RETURN_UI = 0x95
     HEADER_SIZE = 6
     MAX_STRIP_WIDTH = 64
     MAX_BRIGHTNESS = 10
+
+    def __init__(
+        self,
+        report_id: int = _DEFAULT_REPORT_ID,
+        width: int = _DEFAULT_DISPLAY_WIDTH,
+        height: int = _DEFAULT_DISPLAY_HEIGHT,
+    ) -> None:
+        """Initialise the protocol with per-device parameters.
+
+        Args:
+            report_id: HID report identifier prepended to every packet.
+                       Nova Pro Wireless = 0x06, Nova Pro Omni = 0x01.
+            width:     OLED panel width in pixels (default 128).
+            height:    OLED panel height in pixels (default 64).
+        """
+        self.report_id = report_id
+        self.DISPLAY_WIDTH = width
+        self.DISPLAY_HEIGHT = height
+
+    # ------------------------------------------------------------------
+    # Legacy class-attribute aliases so callers that access REPORT_ID as
+    # a class attribute (e.g. OledProtocol.REPORT_ID) still get the
+    # default value and don't break.  Instance attribute takes precedence
+    # for instantiated objects.
+    REPORT_ID = _DEFAULT_REPORT_ID
 
     def build_frame_packets(
         self, pixel_data: bytes, width: int, height: int
@@ -33,7 +60,7 @@ class OledProtocol:
                 pixel_data, width, height, padded_height, src_x, strip_width
             )
             header = [
-                self.REPORT_ID,
+                self.report_id,
                 self.CMD_SCREEN,
                 src_x,
                 0,
@@ -47,11 +74,11 @@ class OledProtocol:
 
     def build_brightness_packet(self, level: int) -> list[int]:
         clamped = max(0, min(self.MAX_BRIGHTNESS, level))
-        header = [self.REPORT_ID, self.CMD_BRIGHTNESS, clamped, 0, 0, 0]
+        header = [self.report_id, self.CMD_BRIGHTNESS, clamped, 0, 0, 0]
         return self._build_packet(header, [])
 
     def build_return_to_ui_packet(self) -> list[int]:
-        header = [self.REPORT_ID, self.CMD_RETURN_UI, 0, 0, 0, 0]
+        header = [self.report_id, self.CMD_RETURN_UI, 0, 0, 0, 0]
         return self._build_packet(header, [])
 
     def _pad_height(self, height: int) -> int:
