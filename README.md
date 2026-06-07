@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/images/asm-logo.png" alt="Arctis Sound Manager logo" width="150">
+</p>
+
 # Arctis Sound Manager
 
 [![Latest release](https://img.shields.io/github/v/release/loteran/Arctis-Sound-Manager)](https://github.com/loteran/Arctis-Sound-Manager/releases/latest)
@@ -48,7 +52,6 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
     - [CLI equivalents](#cli-equivalents)
     - [Tips for a good report](#tips-for-a-good-report)
   - [Development](#development)
-  - [©️ Credits](#️-credits)
   - [💬 Share your experience](#-share-your-experience)
 
 ---
@@ -621,33 +624,43 @@ src/arctis_sound_manager/
 │   ├── video_router.py    # asm-router: media auto-routing service
 │   ├── cli.py             # asm-cli: setup utilities (udev, desktop, tools)
 │   └── setup.py           # asm-setup: post-install automation
-├── gui/
-│   ├── home_page.py            # Audio mixer (Game/Chat/Media/Output cards)
-│   ├── headset_page.py         # Device info and live status
-│   ├── device_page.py          # General settings (startup toggle, language)
-│   ├── equalizer_page.py       # EQ mode toggle (Custom / Sonar) + 10-band sliders
-│   ├── sonar_page.py           # Sonar EQ (Game/Chat/Micro tabs, presets, Spatial Audio, Boost)
-│   ├── eq_curve_widget.py      # Interactive parametric EQ curve (biquad RBJ)
-│   ├── anc_widget.py           # ANC / Transparent mode indicator
-│   ├── settings_widget.py      # Per-device settings panel (D-Bus backed)
-│   ├── profile_bar.py          # Profile chip bar + SaveProfileDialog
-│   ├── help_page.py            # Built-in user manual (EN/FR/ES)
-│   ├── presets/                # 334 bundled Sonar presets (312 Game, 8 Chat, 14 Mic)
-│   └── theme.py                # Color constants
-├── lang/                  # Translation files (.ini, one per language)
-├── lang_updater.py        # Background GitHub translation checker
-├── i18n.py                # Translation singleton with EN fallback
+├── gui/                   # PySide6 UI
+│   ├── main_app.py            # Main window + sidebar navigation
+│   ├── home_page.py           # Audio mixer (Game/Chat/Media/Output cards)
+│   ├── headset_page.py        # Device info and live status
+│   ├── device_page.py         # General settings (startup toggle, language)
+│   ├── equalizer_page.py      # EQ mode toggle (Custom / Sonar) + 10-band sliders
+│   ├── sonar_page.py          # Sonar EQ (Game/Chat/Micro tabs, presets, Spatial Audio)
+│   ├── dac_page.py            # GameDAC OLED screen settings (clock, weather, EQ)
+│   ├── eq_curve_widget.py     # Interactive parametric EQ curve (biquad RBJ)
+│   ├── anc_widget.py          # ANC / Transparent mode control
+│   ├── help_page.py           # Built-in user manual (EN/FR/ES)
+│   ├── systray_app.py         # System tray icon + single-instance IPC
+│   ├── presets/               # Bundled Sonar presets (Game/Chat/Mic)
+│   ├── theme.py               # Color constants
+│   └── …                      # dialogs, reusable widgets, D-Bus wrapper
+├── core.py                # CoreEngine: USB lifecycle, status polling, device init
+├── config.py              # Device YAML parsing + settings definitions
+├── pactl.py               # PulseAudio/PipeWire sink management
+├── loopback_manager.py    # Dynamic pw-loopback virtual sinks (Game/Chat/Media)
+├── sonar_to_pipewire.py   # PipeWire filter-chain (EQ) config generator
+├── device_state.py        # Shared physical-node state for routing
+├── dbus_service.py        # D-Bus interfaces (Settings / Status / Config)
 ├── profile_manager.py     # Audio profile: snapshot, save/load/apply
-├── sonar_to_pipewire.py   # PipeWire filter-chain config generator
 ├── oled_renderer.py       # OLED screen image renderer (PIL)
-├── oled_manager.py        # OLED scroll/animation loop
+├── oled_protocol.py       # OLED HID framing (per-device interface/report id)
+├── oled_manager.py        # OLED scroll/animation loop + weather
+├── weather_service.py     # Weather fetch for the OLED (Open-Meteo)
+├── i18n.py                # Translation singleton with EN fallback
+├── lang/                  # Translation files (.ini, one per language)
 └── devices/               # Per-device configuration YAMLs
 
 scripts/
 ├── install.sh             # Main installer (source installs)
 ├── distrobox/             # Distrobox installers (Bazzite, SteamOS, Silverblue)
-├── setup-surround.sh      # Standalone virtual surround setup
-└── pipewire/              # PipeWire config templates
+├── reverse-engineering/   # USB capture + opcode-decode helpers (new devices)
+├── pipewire/              # PipeWire config templates
+└── setup-surround.sh      # Standalone virtual surround setup
 ```
 </details>
 
