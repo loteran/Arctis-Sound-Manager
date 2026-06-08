@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Tests for system_deps_checker — Phase 2 of ASM_PLAN_DEPS_CHECK.
 
 Strategy: every check function is a thin wrapper around a system call
