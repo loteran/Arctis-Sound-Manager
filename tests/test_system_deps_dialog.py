@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Tests for the pure-Python helpers in system_deps_dialog.
 
 The Qt widget itself needs a live QApplication + event loop to test
