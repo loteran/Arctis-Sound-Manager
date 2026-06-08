@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Tests for sonar_to_pipewire — filter-chain config generation."""
 
 from pathlib import Path
