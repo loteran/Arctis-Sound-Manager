@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 #!/usr/bin/env python
 """
 Capture one screenshot per sidebar page and save to docs/images/.
