@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QPushButton,
 from arctis_sound_manager.config import ConfigSetting, SettingType
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
 from arctis_sound_manager.gui.qt_widgets.q_dual_state import QDualState
+import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.i18n import I18n
 
 
@@ -167,27 +168,28 @@ class QSettingsWidget(QWidget):
             widget_layout.setSpacing(4)
             widget.setLayout(widget_layout)
 
-            btn_qss = """
-                QPushButton {
-                    background-color: #2D363E;
-                    color: #AAAAAA;
-                    border: 1px solid #3A4550;
+            btn_qss = f"""
+                QPushButton {{
+                    background-color: {_theme.c('BG_BUTTON')};
+                    color: {_theme.c('TEXT_SECONDARY')};
+                    border: 1px solid {_theme.c('BG_BUTTON_HOVER')};
                     border-radius: 6px;
                     padding: 5px 12px;
                     font-size: 10pt;
-                }
-                QPushButton[active=true] {
-                    background-color: #FF4500;
+                }}
+                QPushButton[active=true] {{
+                    background-color: {_theme.c('ACCENT')};
                     color: #FFFFFF;
-                    border: 1px solid #FF4500;
-                }
-                QPushButton:hover {
-                    background-color: #3A4550;
-                    color: #FFFFFF;
-                }
-                QPushButton[active=true]:hover {
-                    background-color: #FF6A28;
-                }
+                    border: 1px solid {_theme.c('ACCENT')};
+                }}
+                QPushButton:hover {{
+                    background-color: {_theme.c('BG_BUTTON_HOVER')};
+                    color: {_theme.c('TEXT_PRIMARY')};
+                }}
+                QPushButton[active=true]:hover {{
+                    background-color: {_theme.c('ACCENT')};
+                    opacity: 0.85;
+                }}
             """
 
             values_mapping: dict = getattr(config, 'values_mapping', {})

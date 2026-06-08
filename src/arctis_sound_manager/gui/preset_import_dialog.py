@@ -39,14 +39,7 @@ from arctis_sound_manager.gui.preset_share import (
     sanitize_filename,
     virtual_device_to_tag,
 )
-from arctis_sound_manager.gui.theme import (
-    ACCENT,
-    BG_BUTTON,
-    BG_MAIN,
-    BORDER,
-    TEXT_PRIMARY,
-    TEXT_SECONDARY,
-)
+import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.i18n import I18n
 
 _PRESETS_DIR = Path.home() / ".config" / "arctis_manager" / "sonar_presets"
@@ -104,7 +97,9 @@ class PresetImportDialog(QDialog):
 
         self.setWindowTitle(_t("import_preset"))
         self.setMinimumWidth(480)
-        self.setStyleSheet(f"background-color: {BG_MAIN}; color: {TEXT_PRIMARY};")
+        self.setStyleSheet(
+            f"background-color: {_theme.c('BG_MAIN')}; color: {_theme.c('TEXT_PRIMARY')};"
+        )
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 20)
@@ -112,23 +107,23 @@ class PresetImportDialog(QDialog):
 
         layout.addWidget(QLabel(
             _t("import_preset_label"),
-            styleSheet=f"color: {TEXT_PRIMARY}; font-size: 11pt; background: transparent;"
+            styleSheet=f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 11pt; background: transparent;"
         ))
 
         self._url_edit = QLineEdit()
         self._url_edit.setPlaceholderText(_t("import_url_placeholder"))
         self._url_edit.setStyleSheet(
-            f"QLineEdit {{ background: {BG_BUTTON}; border: 1px solid {BORDER}; "
-            f"border-radius: 6px; color: {TEXT_PRIMARY}; padding: 6px 10px; font-size: 10pt; }}"
-            f"QLineEdit:focus {{ border-color: {ACCENT}; }}"
+            f"QLineEdit {{ background: {_theme.c('BG_BUTTON')}; border: 1px solid {_theme.c('BORDER')}; "
+            f"border-radius: 6px; color: {_theme.c('TEXT_PRIMARY')}; padding: 6px 10px; font-size: 10pt; }}"
+            f"QLineEdit:focus {{ border-color: {_theme.c('ACCENT')}; }}"
         )
         layout.addWidget(self._url_edit)
 
         self._browse_file_btn = QPushButton(_t("import_from_file"))
         self._browse_file_btn.setStyleSheet(
-            f"QPushButton {{ background: {BG_BUTTON}; border: 1px solid {BORDER}; "
-            f"border-radius: 6px; color: {TEXT_PRIMARY}; padding: 6px 14px; font-size: 10pt; }}"
-            f"QPushButton:hover {{ background: {ACCENT}33; }}"
+            f"QPushButton {{ background: {_theme.c('BG_BUTTON')}; border: 1px solid {_theme.c('BORDER')}; "
+            f"border-radius: 6px; color: {_theme.c('TEXT_PRIMARY')}; padding: 6px 14px; font-size: 10pt; }}"
+            f"QPushButton:hover {{ background: {_theme.c('ACCENT')}33; }}"
         )
         self._browse_file_btn.clicked.connect(self._on_browse_file)
         layout.addWidget(self._browse_file_btn)
@@ -136,31 +131,31 @@ class PresetImportDialog(QDialog):
         self._status = QLabel("")
         self._status.setWordWrap(True)
         self._status.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 10pt; background: transparent;"
         )
         layout.addWidget(self._status)
 
         self._import_btn = QPushButton(_t("import_preset"))
         self._import_btn.setStyleSheet(f"""
             QPushButton {{
-                background: {ACCENT};
+                background: {_theme.c('ACCENT')};
                 border: none;
                 border-radius: 6px;
                 color: #fff;
                 padding: 8px 20px;
                 font-size: 11pt;
             }}
-            QPushButton:hover {{ background: {ACCENT}cc; }}
-            QPushButton:disabled {{ background: {BG_BUTTON}; color: {TEXT_SECONDARY}; }}
+            QPushButton:hover {{ background: {_theme.c('ACCENT')}cc; }}
+            QPushButton:disabled {{ background: {_theme.c('BG_BUTTON')}; color: {_theme.c('TEXT_SECONDARY')}; }}
         """)
         self._import_btn.clicked.connect(self._on_import)
         layout.addWidget(self._import_btn)
 
         self._browse_community_btn = QPushButton(_t("browse_community"))
         self._browse_community_btn.setStyleSheet(
-            f"QPushButton {{ background: {BG_BUTTON}; border: 1px solid {BORDER}; "
-            f"border-radius: 6px; color: {TEXT_PRIMARY}; padding: 6px 14px; font-size: 10pt; }}"
-            f"QPushButton:hover {{ background: {ACCENT}33; }}"
+            f"QPushButton {{ background: {_theme.c('BG_BUTTON')}; border: 1px solid {_theme.c('BORDER')}; "
+            f"border-radius: 6px; color: {_theme.c('TEXT_PRIMARY')}; padding: 6px 14px; font-size: 10pt; }}"
+            f"QPushButton:hover {{ background: {_theme.c('ACCENT')}33; }}"
         )
         self._browse_community_btn.clicked.connect(self._on_browse_community)
         layout.addWidget(self._browse_community_btn)

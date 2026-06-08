@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.gui.theme import (
     ACCENT,
     BG_BUTTON,
@@ -111,10 +112,10 @@ class SidebarButton(QPushButton):
         self._label_text = label
         self._active = False
 
-        self._bg_hover = BG_BUTTON_HOVER
-        self._bg_active = "#262B30"
-        self._text_primary = TEXT_PRIMARY
-        self._text_secondary = TEXT_SECONDARY
+        self._bg_hover = _theme.c("BG_BUTTON_HOVER")
+        self._bg_active = _theme.c("BG_SIDEBAR_ACTIVE")
+        self._text_primary = _theme.c("TEXT_PRIMARY")
+        self._text_secondary = _theme.c("TEXT_SECONDARY")
 
         # Inner layout: icon + label
         layout = QVBoxLayout(self)
@@ -129,7 +130,7 @@ class SidebarButton(QPushButton):
         self._label_widget.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._label_widget.setWordWrap(True)
         self._label_widget.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 10pt; background: transparent;"
         )
         layout.addWidget(self._label_widget)
 
@@ -224,7 +225,7 @@ class DividerLine(QWidget):
         super().__init__(parent)
         self.setFixedHeight(1)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.setStyleSheet(f"background-color: {BORDER};")
+        self.setStyleSheet(f"background-color: {_theme.c('BORDER')};")
 
 
 # ── RoundedButton ──────────────────────────────────────────────────────────────

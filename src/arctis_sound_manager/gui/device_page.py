@@ -420,12 +420,14 @@ class DevicePage(QWidget):
                 QLabel {{ background-color: transparent; color: {_theme.c('TEXT_PRIMARY')}; font-size: 11pt; }}
             """)
 
-        # ANC widget background
+        # ANC widget background + pill colors
         if hasattr(self, "_anc_widget"):
             self._anc_widget.setStyleSheet(f"""
                 QWidget {{ background-color: {_theme.c('BG_MAIN')}; color: {_theme.c('TEXT_PRIMARY')}; }}
                 QLabel  {{ background-color: transparent; color: {_theme.c('TEXT_PRIMARY')}; font-size: 11pt; }}
             """)
+            if hasattr(self._anc_widget, "apply_theme"):
+                self._anc_widget.apply_theme(t)
 
         # Language combo
         if hasattr(self, "_lang_combo"):
