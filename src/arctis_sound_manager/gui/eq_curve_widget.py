@@ -36,7 +36,9 @@ from PySide6.QtWidgets import (
 )
 
 from arctis_sound_manager.eq_types import EqBand, PW_LABEL  # noqa: F401 — re-exported for back-compat
-from arctis_sound_manager.gui.theme import ACCENT, BG_CARD, BORDER, TEXT_PRIMARY, TEXT_SECONDARY
+import arctis_sound_manager.gui.theme as theme
+# NOTE: ACCENT/BG_CARD/etc. frozen constants are NOT imported here for painting —
+# use theme.c() so colors update when the active theme changes.
 
 # ── Data ──────────────────────────────────────────────────────────────────────
 
@@ -201,6 +203,11 @@ class EqCurveWidget(QWidget):
         self._extra_bands = bands
         self.update()
 
+    def apply_theme(self, t=None) -> None:
+        """Repaint with the current active theme colors (called by main_app)."""
+        self._inspector._refresh_inspector_style()
+        self.update()
+
     def get_bands(self) -> list[EqBand]:
         return [EqBand(b.freq, b.gain, b.q, b.type, b.enabled) for b in self._bands]
 
@@ -238,15 +245,21 @@ class EqCurveWidget(QWidget):
         c = self._canvas()
         cr = c.rect
 
-        # Background
-        p.fillRect(self.rect(), QColor(BG_CARD))
+        # Background — pulled from the active theme
+        p.fillRect(self.rect(), QColor(theme.c("BG_CARD")))
 
         small_font = QFont()
         small_font.setPixelSize(10)
         p.setFont(small_font)
 
-        # Zone labels
-        p.setPen(QColor("#2C3340"))
+        # Derive subtle grid colors from the active theme's BORDER.
+        # The zone labels use a slightly lighter shade; the grid lines use
+        # the border color itself; the frequency/gain labels use TEXT_SECONDARY.
+        border_color   = theme.c("BORDER")
+        text_secondary = theme.c("TEXT_SECONDARY")
+
+        # Zone labels (very faint — use border color)
+        p.setPen(QColor(border_color))
         for freq, label in _ZONE_LABELS:
             x = c.freq_to_x(freq)
             if cr.left() <= x <= cr.right():
@@ -255,11 +268,11 @@ class EqCurveWidget(QWidget):
         # Freq grid + labels
         for freq in _GRID_FREQS:
             x = c.freq_to_x(freq)
-            p.setPen(QPen(QColor("#232A33"), 1))
+            p.setPen(QPen(QColor(border_color), 1))
             p.drawLine(QPointF(x, cr.top()), QPointF(x, cr.bottom()))
             lbl = _FREQ_LABELS[freq]
             fm = p.fontMetrics()
-            p.setPen(QColor("#4A5568"))
+            p.setPen(QColor(text_secondary))
             p.drawText(int(x - fm.horizontalAdvance(lbl) / 2), self.height() - 4, lbl)
 
         # Gain grid + labels
@@ -267,15 +280,16 @@ class EqCurveWidget(QWidget):
         for gain in _GAIN_LABELS:
             y = c.gain_to_y(gain)
             is_zero = gain == 0
-            p.setPen(QPen(QColor("#3A4255") if is_zero else QColor("#232A33"),
-                          1.5 if is_zero else 1))
+            # Zero line gets the accent color for visibility; others use border
+            line_color = theme.c("ACCENT") if is_zero else border_color
+            p.setPen(QPen(QColor(line_color), 1.5 if is_zero else 1))
             p.drawLine(QPointF(cr.left(), y), QPointF(cr.right(), y))
             lbl = f"+{gain}" if gain > 0 else str(gain)
-            p.setPen(QColor("#4A5568"))
+            p.setPen(QColor(text_secondary))
             p.drawText(int(_ML - fm.horizontalAdvance(lbl) - 4),
                        int(y + fm.height() / 3), lbl)
 
-        # Curve
+        # Curve — drawn in the active theme's ACCENT color
         gains = self._curve()
         path = QPainterPath()
         moved = False
@@ -286,7 +300,7 @@ class EqCurveWidget(QWidget):
                 path.moveTo(x, y); moved = True
             else:
                 path.lineTo(x, y)
-        p.setPen(QPen(QColor("#FFFFFF"), 2))
+        p.setPen(QPen(QColor(theme.c("ACCENT")), 2))
         p.drawPath(path)
 
         # Dots
@@ -437,33 +451,44 @@ class _BandInspector(QWidget):
         self._band: EqBand | None = None
         self._updating = False
 
+        self._refresh_inspector_style()
+        self.setAutoFillBackground(True)
+
+        self._build_layout()
+
+    def _refresh_inspector_style(self) -> None:
+        """Rebuild the inspector stylesheet from the current active theme."""
+        bg = theme.c("BG_CARD")
+        border = theme.c("BORDER")
+        text = theme.c("TEXT_PRIMARY")
+        accent = theme.c("ACCENT")
         self.setStyleSheet(f"""
             _BandInspector, QWidget#inspector {{
-                background-color: #1E242D;
-                border: 1px solid {BORDER};
+                background-color: {bg};
+                border: 1px solid {border};
                 border-radius: 8px;
             }}
             QLabel  {{ background: transparent; border: none; }}
             QLineEdit {{
-                background: {BG_CARD};
-                border: 1px solid {BORDER};
+                background: {bg};
+                border: 1px solid {border};
                 border-radius: 4px;
-                color: {TEXT_PRIMARY};
+                color: {text};
                 padding: 2px 4px;
                 font-size: 10pt;
             }}
-            QLineEdit:focus {{ border-color: {ACCENT}; }}
+            QLineEdit:focus {{ border-color: {accent}; }}
             QComboBox {{
-                background: {BG_CARD};
-                border: 1px solid {BORDER};
+                background: {bg};
+                border: 1px solid {border};
                 border-radius: 4px;
-                color: {TEXT_PRIMARY};
+                color: {text};
                 padding: 2px 6px;
                 font-size: 10pt;
             }}
         """)
-        self.setAutoFillBackground(True)
 
+    def _build_layout(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(10, 8, 10, 8)
         root.setSpacing(6)
@@ -472,7 +497,7 @@ class _BandInspector(QWidget):
         header = QHBoxLayout()
         header.setSpacing(8)
         self._status = QLabel("● Enabled")
-        self._status.setStyleSheet(f"font-size: 10pt; color: {TEXT_PRIMARY};")
+        self._status.setStyleSheet(f"font-size: 10pt; color: {theme.c('TEXT_PRIMARY')};")
         header.addWidget(self._status)
 
         self._type_combo = QComboBox()
@@ -510,7 +535,7 @@ class _BandInspector(QWidget):
         caption = f"{label} ({unit})" if unit else label
         lbl = QLabel(caption)
         lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt;")
+        lbl.setStyleSheet(f"color: {theme.c('TEXT_SECONDARY')}; font-size: 9pt;")
         vl.addWidget(edit)
         vl.addWidget(lbl)
         return edit, w

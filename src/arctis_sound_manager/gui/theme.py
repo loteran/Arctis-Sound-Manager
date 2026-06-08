@@ -49,6 +49,27 @@ THEMES_LABELS = {
     "arctic": "Arctic",
 }
 
+# ── Active theme state ────────────────────────────────────────────────────────
+
+_ACTIVE_THEME = "steelseries"
+
+
+def set_active_theme(name: str) -> None:
+    """Set the globally active theme by name (falls back to 'steelseries')."""
+    global _ACTIVE_THEME
+    _ACTIVE_THEME = name if name in THEMES else "steelseries"
+
+
+def active_theme() -> dict:
+    """Return the color dict for the currently active theme."""
+    return THEMES.get(_ACTIVE_THEME, THEMES["steelseries"])
+
+
+def c(key: str) -> str:
+    """Return color `key` for the currently active theme (falls back to steelseries)."""
+    return active_theme().get(key, THEMES["steelseries"].get(key, "#000000"))
+
+
 # ── Backward-compat constants (pointing at steelseries theme) ──────────────────
 BG_MAIN          = THEMES["steelseries"]["BG_MAIN"]
 BG_SIDEBAR       = THEMES["steelseries"]["BG_SIDEBAR"]
