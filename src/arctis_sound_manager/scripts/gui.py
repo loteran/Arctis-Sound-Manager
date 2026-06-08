@@ -227,6 +227,19 @@ def main():
             SystemDepsDialog().exec()
     QTimer.singleShot(2500, _check_deps)
 
+    # ── Preset sync (new Sonar presets added since install) ───────────────────
+    def _sync_presets():
+        from arctis_sound_manager.preset_sync import PresetSyncWorker
+        w = PresetSyncWorker()
+        w.new_presets_added.connect(
+            lambda n: log.info("Preset sync: %d new preset(s) available.", n)
+        )
+        w.finished.connect(w.deleteLater)
+        _sync_presets._worker = w  # prevent GC until thread finishes
+        w.start()
+
+    QTimer.singleShot(6000, _sync_presets)
+
     # Open the window once the event loop is running.
     if args.url:
         _url_to_handle = args.url
