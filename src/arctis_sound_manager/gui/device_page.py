@@ -8,7 +8,7 @@ Matches the ref_settingsPage.png design.
 import shutil
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import (
@@ -41,6 +41,8 @@ from arctis_sound_manager.gui.theme import (
     BORDER,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
+    THEMES,
+    THEMES_LABELS,
 )
 
 _SERVICE = "arctis-manager.service"
@@ -140,11 +142,14 @@ class DevicePage(QWidget):
     """
     Settings page with:
     - Title "Arctis Sound Manager" bold + subtitle "Device Settings"
+    - Theme selector chips
     - "General Settings" section title (gray ~20pt)
     - Settings form rows (labels + controls)
     - Horizontal divider
     - "Devices" section with a card showing connected headset
     """
+
+    sig_theme_changed = Signal(str)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -224,6 +229,36 @@ class DevicePage(QWidget):
         title_row.addLayout(lang_row)
         content_layout.addLayout(title_row)
         content_layout.addSpacing(8)
+
+        # ── Theme selector ────────────────────────────────────────────────────
+        from arctis_sound_manager.settings import GeneralSettings
+        current_theme = GeneralSettings.read_from_file().theme
+
+        theme_title = SectionTitle("Interface Theme")
+        content_layout.addWidget(theme_title)
+        content_layout.addSpacing(6)
+
+        theme_row = QWidget()
+        theme_row_layout = QHBoxLayout(theme_row)
+        theme_row_layout.setContentsMargins(0, 0, 0, 0)
+        theme_row_layout.setSpacing(8)
+
+        self._theme_buttons: dict[str, QPushButton] = {}
+        for theme_id, label in THEMES_LABELS.items():
+            btn = QPushButton(f"● {label}")
+            btn.setObjectName("themeChip")
+            btn.setProperty("active", theme_id == current_theme)
+            btn.setCheckable(False)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda checked=False, tid=theme_id: self._on_theme_selected(tid))
+            theme_row_layout.addWidget(btn)
+            self._theme_buttons[theme_id] = btn
+
+        theme_row_layout.addStretch(1)
+        content_layout.addWidget(theme_row)
+        content_layout.addSpacing(12)
+        content_layout.addWidget(DividerLine())
+        content_layout.addSpacing(12)
 
         # ── ANC / Transparent section ─────────────────────────────────────────
         anc_title = SectionTitle(I18n.translate("ui", "noise_cancelling"))
@@ -360,6 +395,15 @@ class DevicePage(QWidget):
 
         scroll.setWidget(content)
         outer.addWidget(scroll)
+
+    # ── Theme selector ────────────────────────────────────────────────────────
+
+    def _on_theme_selected(self, theme_id: str) -> None:
+        for tid, btn in self._theme_buttons.items():
+            btn.setProperty("active", tid == theme_id)
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+        self.sig_theme_changed.emit(theme_id)
 
     # ── Signal forwarding ─────────────────────────────────────────────────────
 
