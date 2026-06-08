@@ -49,6 +49,7 @@ from arctis_sound_manager.gui.theme import (
     TEXT_SECONDARY,
     THEMES,
     build_qss,
+    set_active_theme,
 )
 from arctis_sound_manager.gui.ui_utils import get_icon_pixmap
 from arctis_sound_manager.i18n import I18n
@@ -74,6 +75,8 @@ class QMainApp(QBaseDesktopApp):
         # Load general settings (needed for theme before building window)
         self._general_settings = GeneralSettings.read_from_file()
 
+        # Activate saved theme in the theme module so c() is correct from the start
+        set_active_theme(self._general_settings.theme)
         # Apply global dark stylesheet with saved theme
         app.setStyleSheet(build_qss(self._general_settings.theme))
 
@@ -127,10 +130,24 @@ class QMainApp(QBaseDesktopApp):
     # ── Theme ─────────────────────────────────────────────────────────────────
 
     def _apply_theme(self, theme_name: str, save: bool = True) -> None:
+        # Update the active theme state first so c() returns the right colors
+        # during all subsequent restyle calls.
+        set_active_theme(theme_name)
         t = THEMES.get(theme_name, THEMES["steelseries"])
         self.app.setStyleSheet(build_qss(theme_name))
         for btn in self._sidebar_buttons:
             btn.update_colors(t)
+        # Propagate to every page that implements apply_theme
+        for page in (
+            self._home_page,
+            self._equalizer_page,
+            self._headset_page,
+            self._dac_page,
+            self._device_page,
+            self._help_page,
+        ):
+            if hasattr(page, "apply_theme"):
+                page.apply_theme(t)
         self._switch_page(self._stack.currentIndex())
         if save:
             self._general_settings.theme = theme_name
