@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 #!/usr/bin/env python3
 """Fail loudly if the codebase grew a new external dep without registering
 it in `system_deps_checker._build_checks()`.
