@@ -7,6 +7,10 @@ PKG  = arctis-sound-manager
 DEST = debian/$(PKG)
 PYLIB = $(DEST)/usr/lib/python3/dist-packages
 
+# python3-dbus-next is in Debian and recent Ubuntu but not older Ubuntu.
+# Depend on it when the build series ships it; otherwise bundle the wheel.
+DBUS_NEXT_PKG := $(shell apt-cache show python3-dbus-next 2>/dev/null | grep -q '^Package:' && echo python3-dbus-next)
+
 %:
 	dh $@
 
@@ -25,15 +29,17 @@ override_dh_auto_build:
 	else \
 	    mkdir -p debian/wheels; \
 	    python3 -m pip wheel --no-deps --wheel-dir=debian/wheels .; \
-	    python3 -m pip download --no-deps --dest=debian/wheels dbus-next; \
+	    if [ -z "$(DBUS_NEXT_PKG)" ]; then python3 -m pip download --no-deps --dest=debian/wheels dbus-next; fi; \
 	fi
 
 override_dh_auto_install:
 	# ── Python package ──────────────────────────────────────
 	mkdir -p $(PYLIB) $(DEST)/usr/bin
 	python3 -m pip install --target=$(PYLIB) --no-deps debian/wheels/arctis_sound_manager-*.whl
-	# Bundle dbus-next (not in Ubuntu repos)
-	python3 -m pip install --target=$(PYLIB) --no-deps debian/wheels/dbus_next-*.whl
+	# Bundle dbus-next only when this series' repos don't ship python3-dbus-next (issue #73)
+	if [ -z "$(DBUS_NEXT_PKG)" ]; then \
+	    python3 -m pip install --target=$(PYLIB) --no-deps debian/wheels/dbus_next-*.whl ; \
+	fi
 	# Clean bytecode (dpkg handles recompilation)
 	find $(PYLIB) -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 
@@ -86,6 +92,9 @@ override_dh_auto_install:
 	install -d $(DEST)/usr/share/$(PKG)/devices
 	install -Dm644 src/arctis_sound_manager/devices/*.yaml \
 	    -t $(DEST)/usr/share/$(PKG)/devices/
+
+override_dh_gencontrol:
+	dh_gencontrol -- -V'dbus-next:Depends=$(if $(DBUS_NEXT_PKG),python3-dbus-next,)'
 
 override_dh_auto_test:
 	@true

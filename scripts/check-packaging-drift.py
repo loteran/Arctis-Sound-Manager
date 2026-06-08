@@ -43,7 +43,7 @@ DEB_CHANGELOG = ROOT / "debian" / "changelog"
 # packager's metadata. `bundled` skips the check (the wheel ships the dep).
 DEPS_MAP: dict[str, dict[str, list[str] | str]] = {
     "babel":       {"arch": ["python-babel"],  "fedora": ["python3-babel"], "debian": ["python3-babel"]},
-    "dbus-next":   {"arch": "bundled",         "fedora": "bundled",         "debian": "bundled"},
+    "dbus-next":   {"arch": "bundled",         "fedora": ["python3-dbus-next"], "debian": "bundled"},  # debian: conditional via debian/rules substvar (can't detect statically)
     "pillow":      {"arch": ["python-pillow"], "fedora": ["python3-pillow"], "debian": ["python3-pil", "python3-pillow"]},
     "pulsectl":    {"arch": "bundled",         "fedora": ["python3-pulsectl"], "debian": ["python3-pulsectl"]},
     "pyside6":     {"arch": ["pyside6"],       "fedora": ["python3-pyside6"], "debian": ["python3-pyside6.qtwidgets", "python3-pyside6", "pyside6"]},
