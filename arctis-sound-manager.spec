@@ -8,11 +8,22 @@ Summary:        Linux GUI for SteelSeries Arctis headsets
 # explicit Requires: lines below instead.
 %global __requires_exclude python3[0-9.]*dist\\((ruamel-yaml|pyudev)\\)
 
+# python3-dbus-next entered the Fedora repos in F40. On F40+ depend on the
+# system package; on older Fedora (or non-Fedora rebuilds) bundle the wheel.
+# Bundling on F40+ collides with python3-dbus-next's files (issue #73).
+%if 0%{?fedora} && 0%{?fedora} < 40
+%global bundle_dbus_next 1
+%else
+%global bundle_dbus_next 0
+%endif
+
 License:        GPL-3.0-or-later
 URL:            https://github.com/loteran/Arctis-Sound-Manager
 Source0:        %{url}/archive/refs/tags/v%{version}.tar.gz
 Source1:        arctis_sound_manager-%{version}-py3-none-any.whl
+%if %{bundle_dbus_next}
 Source2:        dbus_next-0.2.3-py3-none-any.whl
+%endif
 
 BuildArch:      noarch
 BuildRequires:  python3-devel
@@ -52,6 +63,9 @@ Requires:       curl
 # initial install, so existing users would otherwise stay broken until
 # they ran `dnf reinstall arctis-sound-manager` manually.
 Requires:       ladspa-swh-plugins
+%if ! %{bundle_dbus_next}
+Requires:       python3-dbus-next
+%endif
 # rnnoise LADSPA plugin for ClearCast mic noise suppression.
 # noise-suppression-for-voice is NOT in the official Fedora repos — it lives in
 # the uriesk/noise-suppression-for-voice COPR. The repo file is written and the
@@ -72,8 +86,10 @@ ANC/Transparent mode control, and device management via PipeWire.
 %install
 python3 -m installer --destdir=%{buildroot} %{SOURCE1}
 
-# Bundle dbus-next (not in Fedora repos — pre-downloaded in Source2)
+%if %{bundle_dbus_next}
+# Bundle dbus-next (older Fedora repos lack python3-dbus-next)
 python3 -m installer --destdir=%{buildroot} %{SOURCE2}
+%endif
 
 # udev rules — generated from device YAMLs at build time (single source of truth)
 install -Dm644 /dev/null %{buildroot}%{_udevrulesdir}/91-steelseries-arctis.rules
@@ -227,8 +243,10 @@ fi
 %doc README.md CHANGELOG.md
 %{python3_sitelib}/arctis_sound_manager/
 %{python3_sitelib}/arctis_sound_manager-*.dist-info/
+%if %{bundle_dbus_next}
 %{python3_sitelib}/dbus_next/
 %{python3_sitelib}/dbus_next-*.dist-info/
+%endif
 %{_bindir}/asm-daemon
 %{_bindir}/asm-gui
 %{_bindir}/asm-cli
