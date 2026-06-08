@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-# Copyright (C) 2026 loteran — SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 Decode a USBPcap capture of SteelSeries GG and map each setting change to the
 exact HID command bytes, using the timestamped action log from
