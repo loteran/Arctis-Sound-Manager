@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Tests for redirect_audio_on_disconnect() and redirect_audio() — issue #50.
 
 User reported "Log is redirecting but I need to change in Channels to get
