@@ -1,3 +1,20 @@
+arctis-sound-manager (1.1.61-1) noble; urgency=medium
+
+  * Automatic Sonar preset sync — ASM now downloads new SteelSeries Sonar
+    presets automatically at startup (once per 24 h). A lists all official
+    presets; the new fetches it, detects missing presets, and downloads them
+    silently in background to .
+  * 3 new Sonar game presets: Forza Horizon 6, Lineage 2, Deep Rock
+    Galactic: Rogue Core.
+  * GitHub Action — auto-regenerates whenever preset files are pushed to or
+    .
+  * GPL-3.0 licence headers — added missing headers to all 26 files in and ;
+    corrected inline format in .
+  * Preset file naming — removed 52 duplicate preset files using the old
+    separator convention; the canonical variant is kept in all cases.
+
+ -- loteran <axel.valadon@gmail.com>  Mon, 08 Jun 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.60-1) noble; urgency=medium
 
   * Fedora COPR install failed with a python3-dbus-next file conflict — the

@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.61" date="2026-06-08">
+      <description>
+        <p>Automatic Sonar preset sync — ASM now downloads new SteelSeries Sonar presets automatically at startup (once per 24 h). A  lists all official presets; the new  fetches it, detects missing presets, and downloads them silently in background to . 3 new Sonar game presets: Forza Horizon 6, Lineage 2, Deep Rock Galactic: Rogue Core. GitHub Action —  auto-regenerates  whenever preset files are pushed to  or .</p>
+      </description>
+    </release>
     <release version="1.1.60" date="2026-06-08">
       <description>
         <p>Fedora COPR install failed with a python3-dbus-next file conflict — the RPM bundled the dbus_next module, which collides with Fedora's own python3-dbus-next package (shipped since F40). ASM now bundles dbus-next only on distros whose repos don't provide it, and depends on the system package otherwise: Fedora ≥ 40 use python3-dbus-next, older Fedora still bundle, and the Debian/Ubuntu build auto-detects availability per series. (#73)</p>
@@ -199,11 +204,6 @@
     <release version="1.0.95" date="2026-05-04">
       <description>
         <p>OLED horizontal marquee for EQ preset name — when the EQ preset name overflows the 128 px display width, the text now scrolls left pixel-by-pixel. It pauses 2 s at the start (readability), scrolls to the end, pauses 2 s, then snaps back. Speed is controlled by the new Scroll Speed (Horizontal) slider (0 = disabled, 1–5 = slow to fast). OLED horizontal marquee for Profile name — same marquee behaviour applied to the active profile name line. DAC tab — Scroll Speed (Horizontal) slider — new oled_eq_scroll_speed setting controls the horizontal marquee speed for both EQ preset and profile name lines. The existing scroll slider is renamed to Scroll Speed (Vertical).</p>
-      </description>
-    </release>
-    <release version="1.0.94" date="2026-05-04">
-      <description>
-        <p>Arctis 7 2019 (0x12ad) failed to initialize — no battery, no chatmix (issue #28) — arctis_7.yaml was missing command_transport: ctrl_output, the field that tells the HID layer to use SET_REPORT on the control endpoint. All four product IDs sharing that YAML (0x1260, 0x12ad, 0x1252, 0x1280) were affected. Adding ctrl_output aligns the Arctis 7 family with every other device YAML in the codebase (Arctis 7+, Arctis 9, Nova 3/5/7). Virtual sinks (Arctis_Game / Arctis_Chat / Arctis_Media) routed to system default instead of Sonar EQ nodes (issue #28) — the bundled 10-arctis-virtual-sinks.conf installed by install.sh / asm-setup had no node.target in its playback.props blocks. PipeWire therefore routed all three loopback outputs to the default sink, bypassing the Sonar EQ filter-chain entirely and breaking chatmix separation. Each sink now points to its Sonar EQ input node (effect_input.sonar-game-eq / effect_input.sonar-chat-eq). Virtual Surround sink silent on fresh install — can't start graph: No such file or directory (issue #28) — sink-virtual-surround-7.1-hesuvi.conf referenced the HRIR WAV as the relative path hrir_hesuvi/hrir.wav. PipeWire instantiates filter-chains without a stable working directory, so the file was never found. The template now uses the placeholder ${HRIR_DIR}, which install.sh, setup-surround.sh, and asm-setup substitute with the absolute path ~/.local/share/pipewire/hrir_hesuvi at deploy time — the same directory the installer downloads the WAV to.</p>
       </description>
     </release>
   </releases>
