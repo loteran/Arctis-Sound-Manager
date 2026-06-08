@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.61] - 8 June 2026
+
+### Added
+
+- **Automatic Sonar preset sync** — ASM now downloads new SteelSeries Sonar presets automatically at startup (once per 24 h). A  lists all official presets; the new  fetches it, detects missing presets, and downloads them silently in background to .
+- **3 new Sonar game presets**: Forza Horizon 6, Lineage 2, Deep Rock Galactic: Rogue Core.
+- **GitHub Action** —  auto-regenerates  whenever preset files are pushed to  or .
+
+### Fixed
+
+- **GPL-3.0 licence headers** — added missing headers to all 26 files in  and ; corrected inline format in .
+
+### Changed
+
+- **Preset file naming** — removed 52 duplicate preset files using the old  separator convention; the canonical  variant is kept in all cases.
+
 ## [1.1.60] - 8 June 2026
 
 ### Fixed
