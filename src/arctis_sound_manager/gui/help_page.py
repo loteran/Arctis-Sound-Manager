@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 from arctis_sound_manager.gui.components import DividerLine
 from arctis_sound_manager.gui.report_dialog import ReportBugDialog
 from arctis_sound_manager.i18n import I18n
+import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.gui.theme import (
     ACCENT,
     BG_BUTTON,
@@ -1229,6 +1230,26 @@ class HelpPage(QWidget):
         self._set_language(I18n.current_lang())
         I18n.on_language_changed(lambda: self._set_language(I18n.current_lang()))
 
+        # Apply the currently-active theme on first paint.
+        self.apply_theme()
+
+    # ── Theme propagation ─────────────────────────────────────────────────────
+
+    def apply_theme(self, t=None) -> None:
+        """Restyle the help page for the current active theme."""
+        self.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+
+        self._title_label.setStyleSheet(
+            f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 28pt; font-weight: bold; background: transparent;"
+        )
+        self._subtitle_label.setStyleSheet(
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 11pt; background: transparent;"
+        )
+        self._content_widget.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+
+        # Rebuild the content section cards with the new theme colors
+        self._set_language(self._current_lang)
+
     # ── Language switching ─────────────────────────────────────────────────
 
     def _set_language(self, lang: str) -> None:
@@ -1252,33 +1273,41 @@ class HelpPage(QWidget):
                 item.widget().deleteLater()
 
     def _add_section(self, heading: str, body: str) -> None:
-        # Section card
+        # Section card — uses active-theme colors so apply_theme rebuilds correctly
+        accent_link = _theme.c("ACCENT")
         card = QWidget()
         card.setStyleSheet(
-            f"background-color: {BG_CARD}; border-radius: 10px; border: 1px solid {BORDER};"
+            f"background-color: {_theme.c('BG_CARD')}; border-radius: 10px; "
+            f"border: 1px solid {_theme.c('BORDER')};"
         )
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(20, 16, 20, 16)
         card_layout.setSpacing(8)
 
         h_label = QLabel(heading)
-        h_label.setStyleSheet(_HEADING_STYLE)
+        h_label.setStyleSheet(
+            f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 14pt; font-weight: bold; "
+            "background: transparent; padding: 0;"
+        )
         card_layout.addWidget(h_label)
 
         sep = QWidget()
         sep.setFixedHeight(1)
-        sep.setStyleSheet(f"background-color: {BORDER};")
+        sep.setStyleSheet(f"background-color: {_theme.c('BORDER')};")
         card_layout.addWidget(sep)
 
         import re as _re
         html_body = _re.sub(
             r'(https?://[^\s]+)',
-            r'<a href="\1" style="color: #FB4A00;">\1</a>',
+            rf'<a href="\1" style="color: {accent_link};">\1</a>',
             body.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>"),
         )
         b_label = QLabel(html_body)
         b_label.setWordWrap(True)
-        b_label.setStyleSheet(_BODY_STYLE)
+        b_label.setStyleSheet(
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 11pt; background: transparent; "
+            "padding: 0; line-height: 1.5;"
+        )
         b_label.setTextFormat(Qt.TextFormat.RichText)
         b_label.setOpenExternalLinks(True)
         b_label.setTextInteractionFlags(

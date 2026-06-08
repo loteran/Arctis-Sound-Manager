@@ -22,6 +22,7 @@ from arctis_sound_manager.gui.components import SectionTitle
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
 from arctis_sound_manager.gui.home_page import ToggleSwitch
 from arctis_sound_manager.gui.settings_widget import QSettingsWidget
+import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.gui.theme import (
     ACCENT,
     BG_BUTTON,
@@ -133,6 +134,92 @@ class DacPage(QWidget):
 
         scroll.setWidget(content)
         outer.addWidget(scroll)
+
+        # Apply the currently-active theme on first paint.
+        self.apply_theme()
+
+    # ── Theme propagation ─────────────────────────────────────────────────────
+
+    def apply_theme(self, t=None) -> None:
+        """Restyle the DAC page for the current active theme."""
+        self.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+
+        # Rebuild the string-template card styles used during construction.
+        _card_style = (
+            f"background-color: {_theme.c('BG_CARD')}; "
+            f"border-radius: 8px; border: 1px solid {_theme.c('BORDER')};"
+        )
+        _lbl_style = f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 11pt; background: transparent; border: none;"
+        _hint_style = f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; background: transparent; border: none;"
+
+        # Custom display card
+        if hasattr(self, "_custom_display_hint"):
+            self._custom_display_hint.setStyleSheet(_hint_style)
+
+        # DAC settings widget background
+        if hasattr(self, "_dac_widget"):
+            self._dac_widget.setStyleSheet(f"""
+                QWidget {{ background-color: {_theme.c('BG_MAIN')}; color: {_theme.c('TEXT_PRIMARY')}; }}
+                QLabel {{ background-color: transparent; color: {_theme.c('TEXT_PRIMARY')}; font-size: 11pt; }}
+            """)
+
+        # Weather status label
+        if hasattr(self, "_weather_status"):
+            self._weather_status.setStyleSheet(_hint_style)
+
+        # City input
+        if hasattr(self, "_city_input"):
+            self._city_input.setStyleSheet(f"""
+                QLineEdit {{
+                    background-color: {_theme.c('BG_BUTTON')}; color: {_theme.c('TEXT_PRIMARY')};
+                    border: 1px solid {_theme.c('BORDER')}; border-radius: 6px;
+                    padding: 6px 10px; font-size: 10pt;
+                }}
+                QLineEdit:focus {{ border-color: {_theme.c('ACCENT')}; }}
+            """)
+
+        # Weather save button
+        if hasattr(self, "_weather_save_btn"):
+            self._weather_save_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {_theme.c('ACCENT')}; color: #fff; border: none;
+                    border-radius: 6px; padding: 6px 14px; font-size: 10pt;
+                }}
+                QPushButton:hover {{ background-color: {_theme.c('BG_BUTTON_HOVER')}; }}
+                QPushButton:disabled {{ background-color: {_theme.c('BG_BUTTON')}; color: {_theme.c('TEXT_SECONDARY')}; }}
+            """)
+
+        # Unit buttons — re-apply via existing method to pick the active state
+        if hasattr(self, "_weather_units"):
+            if hasattr(self, "_unit_btn_celsius"):
+                self._unit_btn_celsius.setStyleSheet(
+                    self._unit_btn_style(self._weather_units == "celsius")
+                )
+            if hasattr(self, "_unit_btn_fahrenheit"):
+                self._unit_btn_fahrenheit.setStyleSheet(
+                    self._unit_btn_style(self._weather_units == "fahrenheit")
+                )
+
+        # Checkbox and spinbox styles — rebuild dynamic style strings
+        _cb_style = self._checkbox_style()
+        _sp_style = self._spinbox_style()
+        for cb in self._display_checkboxes.values():
+            cb.setStyleSheet(_cb_style)
+        for sp in self._font_spinboxes.values():
+            sp.setStyleSheet(_sp_style)
+
+        # Orderable row up/down buttons
+        from PySide6.QtWidgets import QPushButton as _QPB
+        _btn_style = (
+            f"QPushButton {{ background: {_theme.c('BG_BUTTON')}; color: {_theme.c('TEXT_PRIMARY')}; "
+            f"border: 1px solid {_theme.c('BORDER')}; border-radius: 4px; "
+            f"font-size: 9pt; min-width: 22px; max-width: 22px; "
+            f"min-height: 20px; max-height: 20px; padding: 0; }}"
+            f"QPushButton:hover {{ background: {_theme.c('BG_BUTTON_HOVER')}; }}"
+        )
+        for row_w in self._orderable_rows.values():
+            for btn in row_w.findChildren(_QPB):
+                btn.setStyleSheet(_btn_style)
 
     # ── Builder helpers ────────────────────────────────────────────────────────
 
@@ -309,20 +396,20 @@ class DacPage(QWidget):
 
     def _spinbox_style(self) -> str:
         return (
-            f"QSpinBox {{ background: {BG_BUTTON}; color: {TEXT_PRIMARY}; "
-            f"border: 1px solid {BORDER}; border-radius: 4px; "
+            f"QSpinBox {{ background: {_theme.c('BG_BUTTON')}; color: {_theme.c('TEXT_PRIMARY')}; "
+            f"border: 1px solid {_theme.c('BORDER')}; border-radius: 4px; "
             f"padding: 2px 4px; font-size: 9pt; }}"
-            f"QSpinBox:focus {{ border-color: {ACCENT}; }}"
+            f"QSpinBox:focus {{ border-color: {_theme.c('ACCENT')}; }}"
             f"QSpinBox::up-button, QSpinBox::down-button {{ width: 16px; }}"
         )
 
     def _checkbox_style(self) -> str:
         return (
-            f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 11pt; "
+            f"QCheckBox {{ color: {_theme.c('TEXT_PRIMARY')}; font-size: 11pt; "
             f"background: transparent; spacing: 8px; padding: 6px 0px; }}"
             f"QCheckBox::indicator {{ width: 18px; height: 18px; "
-            f"border: 1px solid {BORDER}; border-radius: 4px; background-color: {BG_BUTTON}; }}"
-            f"QCheckBox::indicator:checked {{ background-color: {ACCENT}; border-color: {ACCENT}; }}"
+            f"border: 1px solid {_theme.c('BORDER')}; border-radius: 4px; background-color: {_theme.c('BG_BUTTON')}; }}"
+            f"QCheckBox::indicator:checked {{ background-color: {_theme.c('ACCENT')}; border-color: {_theme.c('ACCENT')}; }}"
         )
 
     def _build_weather_card(self) -> QWidget:
@@ -414,12 +501,12 @@ class DacPage(QWidget):
         return card
 
     def _unit_btn_style(self, active: bool) -> str:
-        bg = ACCENT if active else BG_BUTTON
-        color = "#fff" if active else TEXT_PRIMARY
+        bg = _theme.c('ACCENT') if active else _theme.c('BG_BUTTON')
+        color = "#fff" if active else _theme.c('TEXT_PRIMARY')
         return (
-            f"QPushButton {{ background-color: {bg}; color: {color}; border: 1px solid {BORDER}; "
+            f"QPushButton {{ background-color: {bg}; color: {color}; border: 1px solid {_theme.c('BORDER')}; "
             f"border-radius: 6px; padding: 4px 12px; font-size: 10pt; }}"
-            f"QPushButton:hover {{ background-color: {BG_BUTTON_HOVER}; color: {TEXT_PRIMARY}; }}"
+            f"QPushButton:hover {{ background-color: {_theme.c('BG_BUTTON_HOVER')}; color: {_theme.c('TEXT_PRIMARY')}; }}"
         )
 
     # ── Slots ──────────────────────────────────────────────────────────────────

@@ -33,6 +33,7 @@ from arctis_sound_manager.gui.sonar_page import SonarPage
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
 from arctis_sound_manager.i18n import I18n
 from arctis_sound_manager.sonar_to_pipewire import ensure_sonar_eq_configs
+import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.gui.theme import (
     ACCENT,
     BG_CARD,
@@ -736,6 +737,34 @@ class EqualizerPage(QWidget):
         self._poll_timer = QTimer(self)
         self._poll_timer.setInterval(500)
         self._poll_timer.timeout.connect(lambda: DbusWrapper.get_eq_bands(self._sig_eq_bands))
+
+        # Apply the currently-active theme so a saved non-default theme renders
+        # correctly on first paint (before _apply_theme() is called from main_app).
+        self.apply_theme()
+
+    # ── Theme propagation ─────────────────────────────────────────────────────
+
+    def apply_theme(self, t=None) -> None:
+        """Restyle the equalizer page for the current active theme."""
+        self.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+
+        self._card.setStyleSheet(f"""
+            QWidget#eqCard {{
+                background-color: {_theme.c('BG_CARD')};
+                border: 1px solid {_theme.c('BORDER')};
+                border-radius: 12px;
+            }}
+        """)
+        self._eq_card.setStyleSheet(f"""
+            QWidget#eqSlidersCard {{
+                background-color: {_theme.c('BG_CARD')};
+                border: 1px solid {_theme.c('BORDER')};
+                border-radius: 12px;
+            }}
+        """)
+
+        # Propagate into the sonar page (which owns the EQ curve widget)
+        self._sonar_page.apply_theme(t)
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
