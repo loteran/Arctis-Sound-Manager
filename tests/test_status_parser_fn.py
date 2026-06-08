@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 from arctis_sound_manager.status_parser_fn import int_int_mapping, int_str_mapping, on_off, percentage
 
 
