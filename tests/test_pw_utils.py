@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Tests for pw_utils — native PipeWire stream detection and routing."""
 
 from arctis_sound_manager.pw_utils import (
