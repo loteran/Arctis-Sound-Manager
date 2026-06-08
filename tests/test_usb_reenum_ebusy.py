@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Tests for the EBUSY fix: stale libusb handle released on same-device re-enumeration.
 
 The Nova Pro Wireless DAC re-enumerates on boot, wake and replug. The old
