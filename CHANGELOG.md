@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.60] - 8 June 2026
+
+### Fixed
+
+- **Fedora COPR install failed with a `python3-dbus-next` file conflict** — the RPM bundled the `dbus_next` module, which collides with Fedora's own `python3-dbus-next` package (shipped since F40). ASM now bundles `dbus-next` only on distros whose repos don't provide it, and depends on the system package otherwise: Fedora ≥ 40 use `python3-dbus-next`, older Fedora still bundle, and the Debian/Ubuntu build auto-detects availability per series. (#73)
+
 ## [1.1.59] - 7 June 2026
 
 ### Fixed
