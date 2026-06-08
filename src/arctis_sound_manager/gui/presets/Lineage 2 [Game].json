@@ -1,0 +1,275 @@
+{
+  "id": "f5f5e499-0f3a-4f23-be0b-51dc30e10175",
+  "name": "Lineage 2",
+  "createdAt": "2026-06-08T13:04:26",
+  "updatedAt": "2026-06-08T13:04:26",
+  "virtualAudioDevice": "game",
+  "data": {
+    "bassBoostState": {
+      "enabled": true,
+      "value": 0
+    },
+    "trebleBoostState": {
+      "enabled": true,
+      "value": 0
+    },
+    "voiceClarityState": {
+      "enabled": true,
+      "value": 0
+    },
+    "smartVolume": {
+      "enabled": false,
+      "volumeLevel": 0,
+      "loudness": "balanced"
+    },
+    "generalGain": 0,
+    "parametricEQ": {
+      "enabled": true,
+      "filter1": {
+        "enabled": true,
+        "qFactor": 0.707,
+        "frequency": 20.0,
+        "gain": 0.0,
+        "type": "highPass"
+      },
+      "filter2": {
+        "enabled": true,
+        "qFactor": 1.0,
+        "frequency": 70.0,
+        "gain": 6.0,
+        "type": "peakingEQ"
+      },
+      "filter3": {
+        "enabled": true,
+        "qFactor": 0.707,
+        "frequency": 320.0,
+        "gain": 5.0,
+        "type": "peakingEQ"
+      },
+      "filter4": {
+        "enabled": true,
+        "qFactor": 5.0,
+        "frequency": 500.0,
+        "gain": 2.0,
+        "type": "peakingEQ"
+      },
+      "filter5": {
+        "enabled": true,
+        "qFactor": 5.0,
+        "frequency": 650.0,
+        "gain": 2.0,
+        "type": "peakingEQ"
+      },
+      "filter6": {
+        "enabled": true,
+        "qFactor": 5.0,
+        "frequency": 2650.0,
+        "gain": 4.0,
+        "type": "peakingEQ"
+      },
+      "filter7": {
+        "enabled": false,
+        "qFactor": 0.707,
+        "frequency": 10000,
+        "gain": 0,
+        "type": "peakingEQ"
+      },
+      "filter8": {
+        "enabled": false,
+        "qFactor": 0.707,
+        "frequency": 10000,
+        "gain": 0,
+        "type": "peakingEQ"
+      },
+      "filter9": {
+        "enabled": false,
+        "qFactor": 0.707,
+        "frequency": 10000,
+        "gain": 0,
+        "type": "peakingEQ"
+      },
+      "filter10": {
+        "enabled": false,
+        "qFactor": 0.707,
+        "frequency": 10000,
+        "gain": 0,
+        "type": "peakingEQ"
+      }
+    },
+    "virtualSurroundState": false,
+    "virtualSurroundChannels": {
+      "frontLeft": {
+        "position": 30,
+        "gain": 0
+      },
+      "frontRight": {
+        "position": -30,
+        "gain": 0
+      },
+      "center": {
+        "position": 0,
+        "gain": 0
+      },
+      "subWoofer": {
+        "position": 0,
+        "gain": 0
+      },
+      "rearLeft": {
+        "position": 150,
+        "gain": 0
+      },
+      "rearRight": {
+        "position": -150,
+        "gain": 0
+      },
+      "sideLeft": {
+        "position": 90,
+        "gain": 0
+      },
+      "sideRight": {
+        "position": -90,
+        "gain": 0
+      }
+    },
+    "reverbGainDB": -6,
+    "formFactor": "headphones",
+    "globalEnableState": true
+  },
+  "schemaVersion": 5,
+  "isPreset": true,
+  "defaultData": {
+    "bassBoostState": {
+      "enabled": true,
+      "value": 0
+    },
+    "trebleBoostState": {
+      "enabled": true,
+      "value": 0
+    },
+    "voiceClarityState": {
+      "enabled": true,
+      "value": 0
+    },
+    "smartVolume": {
+      "enabled": false,
+      "volumeLevel": 0,
+      "loudness": "balanced"
+    },
+    "generalGain": 0,
+    "parametricEQ": {
+      "enabled": true,
+      "filter1": {
+        "enabled": true,
+        "qFactor": 0.707,
+        "frequency": 20.0,
+        "gain": 0.0,
+        "type": "highPass"
+      },
+      "filter2": {
+        "enabled": true,
+        "qFactor": 1.0,
+        "frequency": 70.0,
+        "gain": 6.0,
+        "type": "peakingEQ"
+      },
+      "filter3": {
+        "enabled": true,
+        "qFactor": 0.707,
+        "frequency": 320.0,
+        "gain": 5.0,
+        "type": "peakingEQ"
+      },
+      "filter4": {
+        "enabled": true,
+        "qFactor": 5.0,
+        "frequency": 500.0,
+        "gain": 2.0,
+        "type": "peakingEQ"
+      },
+      "filter5": {
+        "enabled": true,
+        "qFactor": 5.0,
+        "frequency": 650.0,
+        "gain": 2.0,
+        "type": "peakingEQ"
+      },
+      "filter6": {
+        "enabled": true,
+        "qFactor": 5.0,
+        "frequency": 2650.0,
+        "gain": 4.0,
+        "type": "peakingEQ"
+      },
+      "filter7": {
+        "enabled": false,
+        "qFactor": 0.707,
+        "frequency": 10000,
+        "gain": 0,
+        "type": "peakingEQ"
+      },
+      "filter8": {
+        "enabled": false,
+        "qFactor": 0.707,
+        "frequency": 10000,
+        "gain": 0,
+        "type": "peakingEQ"
+      },
+      "filter9": {
+        "enabled": false,
+        "qFactor": 0.707,
+        "frequency": 10000,
+        "gain": 0,
+        "type": "peakingEQ"
+      },
+      "filter10": {
+        "enabled": false,
+        "qFactor": 0.707,
+        "frequency": 10000,
+        "gain": 0,
+        "type": "peakingEQ"
+      }
+    },
+    "virtualSurroundState": false,
+    "virtualSurroundChannels": {
+      "frontLeft": {
+        "position": 30,
+        "gain": 0
+      },
+      "frontRight": {
+        "position": -30,
+        "gain": 0
+      },
+      "center": {
+        "position": 0,
+        "gain": 0
+      },
+      "subWoofer": {
+        "position": 0,
+        "gain": 0
+      },
+      "rearLeft": {
+        "position": 150,
+        "gain": 0
+      },
+      "rearRight": {
+        "position": -150,
+        "gain": 0
+      },
+      "sideLeft": {
+        "position": 90,
+        "gain": 0
+      },
+      "sideRight": {
+        "position": -90,
+        "gain": 0
+      }
+    },
+    "reverbGainDB": -6,
+    "formFactor": "headphones",
+    "globalEnableState": true
+  },
+  "image": "sonar.svg",
+  "isFavorite": false,
+  "favoritePosition": -1,
+  "releaseVersion": "1.95.0"
+}
