@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Tests for utils — ObservableDict, JsonSerializable, project_version."""
 
 from arctis_sound_manager.utils import ObservableDict, project_version
