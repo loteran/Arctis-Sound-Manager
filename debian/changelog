@@ -1,3 +1,15 @@
+arctis-sound-manager (1.1.60-1) noble; urgency=medium
+
+  * Fedora COPR install failed with a python3-dbus-next file conflict — the
+    RPM bundled the dbus_next module, which collides with Fedora's own
+    python3-dbus-next package (shipped since F40). ASM now bundles dbus-next
+    only on distros whose repos don't provide it, and depends on the system
+    package otherwise: Fedora ≥ 40 use python3-dbus-next, older Fedora still
+    bundle, and the Debian/Ubuntu build auto-detects availability per
+    series. (#73)
+
+ -- loteran <axel.valadon@gmail.com>  Mon, 08 Jun 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.59-1) noble; urgency=medium
 
   * Arctis Nova Pro Omni: gain and mic sidetone now work — re-analysing the
