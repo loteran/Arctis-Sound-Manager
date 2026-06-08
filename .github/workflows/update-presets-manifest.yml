@@ -1,0 +1,36 @@
+name: Update presets manifest
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'src/arctis_sound_manager/gui/presets/**'
+    # Ignore commits that are themselves manifest regenerations
+    # to avoid infinite loop.
+
+jobs:
+  update-manifest:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 1
+
+      - name: Regenerate presets_manifest.json
+        run: python3 scripts/generate_presets_manifest.py
+
+      - name: Commit if changed
+        run: |
+          git config user.name "loteran"
+          git config user.email "axel.valadon@gmail.com"
+          git add presets_manifest.json
+          git diff --cached --quiet && echo "Manifest already up to date." && exit 0
+          git commit -m "chore: regenerate presets_manifest.json [skip ci]"
+          git push
