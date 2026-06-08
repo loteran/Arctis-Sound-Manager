@@ -1,3 +1,6 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Tests for CoreEngine.is_device_online() — specifically the on/off ↔ online/offline aliasing
 that fixes the silent-bug affecting 8 devices (Nova 5, Nova 7, Arctis 7+, Arctis 9, Arctis 1 W)."""
 
