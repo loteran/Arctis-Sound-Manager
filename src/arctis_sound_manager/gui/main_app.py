@@ -44,13 +44,15 @@ from arctis_sound_manager.gui.theme import (
     ACCENT,
     APP_QSS,
     BG_MAIN,
-    BG_SIDEBAR,
     BORDER,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
+    THEMES,
+    build_qss,
 )
 from arctis_sound_manager.gui.ui_utils import get_icon_pixmap
 from arctis_sound_manager.i18n import I18n
+from arctis_sound_manager.settings import GeneralSettings
 
 
 # ── Main application window ───────────────────────────────────────────────────
@@ -69,8 +71,11 @@ class QMainApp(QBaseDesktopApp):
         self.settings: dict = {}
         self.status: dict = {}
 
-        # Apply global dark stylesheet
-        app.setStyleSheet(APP_QSS)
+        # Load general settings (needed for theme before building window)
+        self._general_settings = GeneralSettings.read_from_file()
+
+        # Apply global dark stylesheet with saved theme
+        app.setStyleSheet(build_qss(self._general_settings.theme))
 
         # D-Bus wrapper
         self.dbus_wrapper = DbusWrapper()
@@ -80,6 +85,9 @@ class QMainApp(QBaseDesktopApp):
 
         # Build window
         self.main_window = self._build_window()
+
+        # Wire theme change signal
+        self._device_page.sig_theme_changed.connect(self._apply_theme)
 
         # Wire D-Bus signals to pages
         self.dbus_wrapper.sig_status.connect(self._home_page.update_status)
@@ -116,6 +124,18 @@ class QMainApp(QBaseDesktopApp):
         self.destroyed.connect(self.sig_stop)
         self.main_window.visibilityChanged.connect(self._on_visibility_changed)
 
+    # ── Theme ─────────────────────────────────────────────────────────────────
+
+    def _apply_theme(self, theme_name: str, save: bool = True) -> None:
+        t = THEMES.get(theme_name, THEMES["steelseries"])
+        self.app.setStyleSheet(build_qss(theme_name))
+        for btn in self._sidebar_buttons:
+            btn.update_colors(t)
+        self._switch_page(self._stack.currentIndex())
+        if save:
+            self._general_settings.theme = theme_name
+            self._general_settings.write_to_file()
+
     # ── Visibility ────────────────────────────────────────────────────────────
 
     def _on_visibility_changed(self, visible: bool):
@@ -135,7 +155,6 @@ class QMainApp(QBaseDesktopApp):
         window.setWindowTitle("Arctis Sound Manager")
         window.setWindowIcon(QIcon(get_icon_pixmap()))
         window.setMinimumSize(900, 650)
-        window.setStyleSheet(f"background-color: {BG_MAIN};")
 
         available = window.screen().availableGeometry()
         window.resize(
@@ -151,20 +170,21 @@ class QMainApp(QBaseDesktopApp):
         sidebar = QWidget()
         sidebar.setObjectName("sidebar")
         sidebar.setFixedWidth(150)
-        sidebar.setStyleSheet(
-            f"QWidget#sidebar {{ background-color: {BG_SIDEBAR}; border-right: 1px solid {BORDER}; }}"
-        )
         sidebar_layout = QVBoxLayout(sidebar)
         sidebar_layout.setContentsMargins(15, 16, 15, 16)
         sidebar_layout.setSpacing(8)
 
+        # Resolve current theme accent color for icon
+        current_theme = THEMES.get(self._general_settings.theme, THEMES["steelseries"])
+        current_accent = current_theme["ACCENT"]
+
         # Top navigation buttons: Home, Equalizer, Headset, DAC, Settings
         top_pages_def = [
-            (HOME_ICON,      I18n.translate('ui', 'channels'),  ACCENT),
-            (EQUALIZER_ICON, I18n.translate('ui', 'equalizer'), ACCENT),
-            (HEADPHONE_ICON, I18n.translate('ui', 'headset'),   ACCENT),
-            (GAMEDAC_ICON,   I18n.translate('ui', 'dac'),       ACCENT),
-            (SETTINGS_ICON,  I18n.translate('ui', 'settings'),  ACCENT),
+            (HOME_ICON,      I18n.translate('ui', 'channels'),  current_accent),
+            (EQUALIZER_ICON, I18n.translate('ui', 'equalizer'), current_accent),
+            (HEADPHONE_ICON, I18n.translate('ui', 'headset'),   current_accent),
+            (GAMEDAC_ICON,   I18n.translate('ui', 'dac'),       current_accent),
+            (SETTINGS_ICON,  I18n.translate('ui', 'settings'),  current_accent),
         ]
 
         self._sidebar_buttons: list[SidebarButton] = []
@@ -172,7 +192,7 @@ class QMainApp(QBaseDesktopApp):
             btn = SidebarButton(
                 svg_path=svg_path,
                 label=label,
-                icon_color_inactive=TEXT_SECONDARY,
+                icon_color_inactive=current_theme["TEXT_SECONDARY"],
                 icon_color_active=color_active,
                 parent=sidebar,
             )
@@ -187,8 +207,8 @@ class QMainApp(QBaseDesktopApp):
         help_btn = SidebarButton(
             svg_path=HELP_ICON,
             label=I18n.translate('ui', 'help'),
-            icon_color_inactive=TEXT_SECONDARY,
-            icon_color_active=ACCENT,
+            icon_color_inactive=current_theme["TEXT_SECONDARY"],
+            icon_color_active=current_accent,
             parent=sidebar,
         )
         help_idx = len(self._sidebar_buttons)
@@ -200,11 +220,7 @@ class QMainApp(QBaseDesktopApp):
 
         # GitHub link
         gh_btn = QPushButton(I18n.translate('ui', 'github_repo'))
-        gh_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; border: none; color: {TEXT_SECONDARY}; "
-            f"font-size: 8pt; text-decoration: underline; padding: 4px 0; }}"
-            f"QPushButton:hover {{ color: {ACCENT}; }}"
-        )
+        gh_btn.setObjectName("ghLink")
         gh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         gh_btn.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl("https://github.com/loteran/Arctis-Sound-Manager"))
@@ -214,9 +230,7 @@ class QMainApp(QBaseDesktopApp):
         # Version label
         from arctis_sound_manager.utils import project_version
         ver_label = QLabel(f"v{project_version()}")
-        ver_label.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 8pt; background: transparent; padding: 2px 0;"
-        )
+        ver_label.setObjectName("versionLabel")
         ver_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         sidebar_layout.addWidget(ver_label, alignment=Qt.AlignmentFlag.AlignHCenter)
 
@@ -224,14 +238,12 @@ class QMainApp(QBaseDesktopApp):
 
         # ── Content area ──────────────────────────────────────────────────────
         content_wrapper = QWidget()
-        content_wrapper.setStyleSheet(f"background-color: {BG_MAIN};")
         content_layout = QVBoxLayout(content_wrapper)
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(0)
 
         # Stacked pages
         self._stack = QStackedWidget()
-        self._stack.setStyleSheet(f"background-color: {BG_MAIN};")
 
         self._home_page      = HomePage()
         self._equalizer_page = EqualizerPage()
