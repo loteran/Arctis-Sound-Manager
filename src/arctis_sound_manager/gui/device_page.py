@@ -33,6 +33,7 @@ from arctis_sound_manager.gui.components import (
 )
 from arctis_sound_manager.gui.settings_widget import QSettingsWidget
 from arctis_sound_manager.autostart import active_backend_name, autostart_enabled, set_autostart
+import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.gui.theme import (
     ACCENT,
     BG_BUTTON,
@@ -123,15 +124,15 @@ def _styled_button(text: str) -> QPushButton:
     btn.setStyleSheet(
         f"""
         QPushButton {{
-            background-color: {BG_BUTTON};
-            color: {TEXT_PRIMARY};
+            background-color: {_theme.c('BG_BUTTON')};
+            color: {_theme.c('TEXT_PRIMARY')};
             border: none;
             border-radius: 6px;
             font-size: 11pt;
             padding: 0 16px;
         }}
         QPushButton:hover {{
-            background-color: {BG_BUTTON_HOVER};
+            background-color: {_theme.c('BG_BUTTON_HOVER')};
         }}
         """
     )
@@ -395,6 +396,88 @@ class DevicePage(QWidget):
 
         scroll.setWidget(content)
         outer.addWidget(scroll)
+
+        # Apply the currently-active theme on first paint.
+        self.apply_theme()
+
+    # ── Theme propagation ─────────────────────────────────────────────────────
+
+    def apply_theme(self, t=None) -> None:
+        """Restyle the device/settings page for the current active theme."""
+        self.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+
+        # Device settings widget
+        if hasattr(self, "_device_widget"):
+            self._device_widget.setStyleSheet(f"""
+                QWidget {{ background-color: {_theme.c('BG_MAIN')}; color: {_theme.c('TEXT_PRIMARY')}; }}
+                QLabel {{ background-color: transparent; color: {_theme.c('TEXT_PRIMARY')}; font-size: 11pt; }}
+            """)
+
+        # General settings widget
+        if hasattr(self, "_general_widget"):
+            self._general_widget.setStyleSheet(f"""
+                QWidget {{ background-color: {_theme.c('BG_MAIN')}; color: {_theme.c('TEXT_PRIMARY')}; }}
+                QLabel {{ background-color: transparent; color: {_theme.c('TEXT_PRIMARY')}; font-size: 11pt; }}
+            """)
+
+        # ANC widget background
+        if hasattr(self, "_anc_widget"):
+            self._anc_widget.setStyleSheet(f"""
+                QWidget {{ background-color: {_theme.c('BG_MAIN')}; color: {_theme.c('TEXT_PRIMARY')}; }}
+                QLabel  {{ background-color: transparent; color: {_theme.c('TEXT_PRIMARY')}; font-size: 11pt; }}
+            """)
+
+        # Language combo
+        if hasattr(self, "_lang_combo"):
+            self._lang_combo.setStyleSheet(f"""
+                QComboBox {{
+                    background-color: {_theme.c('BG_BUTTON')};
+                    color: {_theme.c('TEXT_PRIMARY')};
+                    border: 1px solid {_theme.c('BORDER')};
+                    border-radius: 6px;
+                    padding: 4px 10px;
+                    font-size: 10pt;
+                    min-width: 120px;
+                }}
+                QComboBox:hover {{ background-color: {_theme.c('BG_BUTTON_HOVER')}; }}
+                QComboBox::drop-down {{ border: none; }}
+                QComboBox QAbstractItemView {{
+                    background-color: {_theme.c('BG_BUTTON')};
+                    color: {_theme.c('TEXT_PRIMARY')};
+                    selection-background-color: {_theme.c('ACCENT')};
+                    selection-color: #ffffff;
+                    border: 1px solid {_theme.c('BORDER')};
+                }}
+            """)
+
+        # Update status label
+        if hasattr(self, "_update_status_lbl"):
+            self._update_status_lbl.setStyleSheet(
+                f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 10pt; background: transparent;"
+            )
+
+        # Check-for-updates button — restyle via factory function
+        if hasattr(self, "_check_update_btn"):
+            self._check_update_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {_theme.c('BG_BUTTON')};
+                    color: {_theme.c('TEXT_PRIMARY')};
+                    border: none;
+                    border-radius: 6px;
+                    font-size: 11pt;
+                    padding: 0 16px;
+                }}
+                QPushButton:hover {{ background-color: {_theme.c('BG_BUTTON_HOVER')}; }}
+            """)
+
+        # Theme chip buttons: each shows its own accent color (that's intentional),
+        # but background/border/text colors should follow the active theme.
+        # The active state border/highlight comes from the global QSS themeChip rule,
+        # so we just trigger a polish pass to pick up the updated QSS.
+        if hasattr(self, "_theme_buttons"):
+            for btn in self._theme_buttons.values():
+                btn.style().unpolish(btn)
+                btn.style().polish(btn)
 
     # ── Theme selector ────────────────────────────────────────────────────────
 
