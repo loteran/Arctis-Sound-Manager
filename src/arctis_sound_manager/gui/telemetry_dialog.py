@@ -20,25 +20,17 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from arctis_sound_manager.gui.theme import (
-    ACCENT,
-    BG_BUTTON,
-    BG_BUTTON_HOVER,
-    BG_CARD,
-    BG_MAIN,
-    BORDER,
-    TEXT_PRIMARY,
-    TEXT_SECONDARY,
-)
+import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.i18n import I18n
 
 _APP_NAME = "Arctis Sound Manager"
 
-_BTN = (
-    "QPushButton {{ background-color: {bg}; color: {fg}; border: 1px solid {border}; "
-    "border-radius: 6px; padding: 8px 22px; font-size: 10pt; }}"
-    "QPushButton:hover {{ background-color: {hover}; }}"
-)
+def _btn_ss(bg: str, fg: str, border: str, hover: str) -> str:
+    return (
+        f"QPushButton {{ background-color: {bg}; color: {fg}; border: 1px solid {border}; "
+        f"border-radius: 6px; padding: 8px 22px; font-size: 10pt; }}"
+        f"QPushButton:hover {{ background-color: {hover}; }}"
+    )
 
 
 class TelemetryConsentDialog(QDialog):
@@ -51,7 +43,9 @@ class TelemetryConsentDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(f"{_APP_NAME} — Anonymous statistics")
         self.setMinimumSize(500, 300)
-        self.setStyleSheet(f"background-color: {BG_MAIN}; color: {TEXT_PRIMARY};")
+        self.setStyleSheet(
+            f"background-color: {_theme.c('BG_MAIN')}; color: {_theme.c('TEXT_PRIMARY')};"
+        )
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 28, 28, 22)
@@ -60,14 +54,14 @@ class TelemetryConsentDialog(QDialog):
         # Title
         title = QLabel(I18n.translate('ui', 'telemetry_title'))
         title.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 15pt; font-weight: bold; background: transparent;"
+            f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 15pt; font-weight: bold; background: transparent;"
         )
         layout.addWidget(title)
 
         # Body
         body = QLabel(I18n.translate('ui', 'telemetry_body'))
         body.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 10pt; background: transparent;"
         )
         body.setWordWrap(True)
         body.setTextFormat(Qt.TextFormat.RichText)
@@ -76,7 +70,7 @@ class TelemetryConsentDialog(QDialog):
         # Note about changing preference
         note = QLabel(I18n.translate('ui', 'telemetry_note'))
         note.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;"
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; background: transparent;"
         )
         note.setTextFormat(Qt.TextFormat.RichText)
         layout.addWidget(note)
@@ -89,7 +83,10 @@ class TelemetryConsentDialog(QDialog):
         no_btn = QPushButton(I18n.translate('ui', 'no_thanks'))
         no_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         no_btn.setStyleSheet(
-            _BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, border=BORDER, hover=BG_BUTTON_HOVER)
+            _btn_ss(
+                _theme.c('BG_BUTTON'), _theme.c('TEXT_PRIMARY'),
+                _theme.c('BORDER'), _theme.c('BG_BUTTON_HOVER'),
+            )
         )
         no_btn.clicked.connect(self.reject)
         btn_row.addWidget(no_btn)
@@ -97,7 +94,10 @@ class TelemetryConsentDialog(QDialog):
         yes_btn = QPushButton(I18n.translate('ui', 'yes_share'))
         yes_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         yes_btn.setStyleSheet(
-            _BTN.format(bg=ACCENT, fg="#ffffff", border=ACCENT, hover=BG_BUTTON_HOVER)
+            _btn_ss(
+                _theme.c('ACCENT'), "#ffffff",
+                _theme.c('ACCENT'), _theme.c('BG_BUTTON_HOVER'),
+            )
         )
         yes_btn.clicked.connect(self.accept)
         btn_row.addWidget(yes_btn)

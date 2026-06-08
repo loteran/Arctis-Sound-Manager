@@ -18,21 +18,15 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from arctis_sound_manager.gui.theme import (
-    ACCENT,
-    BG_BUTTON,
-    BG_BUTTON_HOVER,
-    BG_MAIN,
-    TEXT_PRIMARY,
-    TEXT_SECONDARY,
-)
+import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.i18n import I18n
 
-_BTN = (
-    "QPushButton {{ background-color: {bg}; color: {fg}; border: none; "
-    "border-radius: 6px; padding: 8px 18px; font-size: 10pt; }}"
-    "QPushButton:hover {{ background-color: {hover}; }}"
-)
+def _btn_ss(bg: str, fg: str, hover: str) -> str:
+    return (
+        f"QPushButton {{ background-color: {bg}; color: {fg}; border: none; "
+        f"border-radius: 6px; padding: 8px 18px; font-size: 10pt; }}"
+        f"QPushButton:hover {{ background-color: {hover}; }}"
+    )
 
 _APP_NAME = "Arctis Sound Manager"
 
@@ -58,7 +52,9 @@ class UdevRulesDialog(QDialog):
 
         self.setWindowTitle(f"USB permissions — {_APP_NAME}")
         self.setMinimumSize(540, 300)
-        self.setStyleSheet(f"background-color: {BG_MAIN}; color: {TEXT_PRIMARY};")
+        self.setStyleSheet(
+            f"background-color: {_theme.c('BG_MAIN')}; color: {_theme.c('TEXT_PRIMARY')};"
+        )
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 28, 28, 20)
@@ -66,20 +62,20 @@ class UdevRulesDialog(QDialog):
 
         title_lbl = QLabel(title)
         title_lbl.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 15pt; font-weight: bold; background: transparent;"
+            f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 15pt; font-weight: bold; background: transparent;"
         )
         layout.addWidget(title_lbl)
 
         sub_lbl = QLabel(body)
         sub_lbl.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 10pt; background: transparent;"
         )
         sub_lbl.setWordWrap(True)
         layout.addWidget(sub_lbl, stretch=1)
 
         self._status_lbl = QLabel("")
         self._status_lbl.setStyleSheet(
-            f"color: {ACCENT}; font-size: 9pt; background: transparent;"
+            f"color: {_theme.c('ACCENT')}; font-size: 9pt; background: transparent;"
         )
         self._status_lbl.setWordWrap(True)
         layout.addWidget(self._status_lbl)
@@ -90,13 +86,17 @@ class UdevRulesDialog(QDialog):
 
         ignore_btn = QPushButton(I18n.translate('ui', 'ignore'))
         ignore_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        ignore_btn.setStyleSheet(_BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, hover=BG_BUTTON_HOVER))
+        ignore_btn.setStyleSheet(
+            _btn_ss(_theme.c('BG_BUTTON'), _theme.c('TEXT_PRIMARY'), _theme.c('BG_BUTTON_HOVER'))
+        )
         ignore_btn.clicked.connect(self.reject)
         btn_row.addWidget(ignore_btn)
 
         self._action_btn = QPushButton(btn_label)
         self._action_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._action_btn.setStyleSheet(_BTN.format(bg=ACCENT, fg="#ffffff", hover=BG_BUTTON_HOVER))
+        self._action_btn.setStyleSheet(
+            _btn_ss(_theme.c('ACCENT'), "#ffffff", _theme.c('BG_BUTTON_HOVER'))
+        )
         self._action_btn.clicked.connect(self._run)
         btn_row.addWidget(self._action_btn)
 

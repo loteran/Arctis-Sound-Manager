@@ -8,8 +8,8 @@ Sends USB commands to change mode and transparent level via D-Bus.
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget
 
+import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
-from arctis_sound_manager.gui.theme import ACCENT, BG_BUTTON, BG_CARD, BORDER, TEXT_PRIMARY, TEXT_SECONDARY
 
 
 _MODE_LABELS = {
@@ -32,14 +32,14 @@ class _Pill(QPushButton):
         self._active = active
         if active:
             self.setStyleSheet(
-                f"QPushButton {{ border: 1px solid {ACCENT}; border-radius: 6px; padding: 4px 14px;"
-                f"font-size: 10pt; background-color: {ACCENT}; color: #ffffff; font-weight: bold; }}"
+                f"QPushButton {{ border: 1px solid {_theme.c('ACCENT')}; border-radius: 6px; padding: 4px 14px;"
+                f"font-size: 10pt; background-color: {_theme.c('ACCENT')}; color: #ffffff; font-weight: bold; }}"
             )
         else:
             self.setStyleSheet(
-                f"QPushButton {{ border: 1px solid {BORDER}; border-radius: 6px; padding: 4px 14px;"
-                f"font-size: 10pt; background-color: {BG_CARD}; color: {TEXT_SECONDARY}; }}"
-                f"QPushButton:hover {{ border-color: {ACCENT}; color: {TEXT_PRIMARY}; }}"
+                f"QPushButton {{ border: 1px solid {_theme.c('BORDER')}; border-radius: 6px; padding: 4px 14px;"
+                f"font-size: 10pt; background-color: {_theme.c('BG_CARD')}; color: {_theme.c('TEXT_SECONDARY')}; }}"
+                f"QPushButton:hover {{ border-color: {_theme.c('ACCENT')}; color: {_theme.c('TEXT_PRIMARY')}; }}"
             )
 
 
@@ -81,37 +81,51 @@ class QAncWidget(QWidget):
         level_layout.setContentsMargins(4, 0, 0, 0)
         level_layout.setSpacing(10)
 
-        level_title = QLabel("Level:")
-        level_title.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;")
-        level_layout.addWidget(level_title)
+        self._level_title = QLabel("Level:")
+        level_layout.addWidget(self._level_title)
 
         self._level_slider = QSlider(Qt.Orientation.Horizontal)
         self._level_slider.setMinimum(1)
         self._level_slider.setMaximum(10)
         self._level_slider.setValue(5)
         self._level_slider.setFixedWidth(160)
-        self._level_slider.setStyleSheet(f"""
-            QSlider::groove:horizontal {{
-                height: 4px; background: {BG_BUTTON}; border-radius: 2px;
-            }}
-            QSlider::handle:horizontal {{
-                background: {ACCENT}; width: 14px; height: 14px;
-                margin: -5px 0; border-radius: 7px;
-            }}
-            QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 2px; }}
-        """)
         self._level_slider.valueChanged.connect(self._on_level_changed)
         level_layout.addWidget(self._level_slider)
 
         self._level_label = QLabel("50%")
         self._level_label.setFixedWidth(36)
         self._level_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self._level_label.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 10pt; background: transparent;")
         level_layout.addWidget(self._level_label)
         level_layout.addStretch(1)
 
         layout.addWidget(self._level_row)
         self._level_row.setVisible(False)
+
+        self.apply_theme()
+
+    # ── Theme ─────────────────────────────────────────────────────────────────
+
+    def apply_theme(self, t=None) -> None:
+        """Restyle all inline colors to the currently active theme."""
+        self._level_title.setStyleSheet(
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 10pt; background: transparent;"
+        )
+        self._level_label.setStyleSheet(
+            f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 10pt; background: transparent;"
+        )
+        self._level_slider.setStyleSheet(f"""
+            QSlider::groove:horizontal {{
+                height: 4px; background: {_theme.c('BG_BUTTON')}; border-radius: 2px;
+            }}
+            QSlider::handle:horizontal {{
+                background: {_theme.c('ACCENT')}; width: 14px; height: 14px;
+                margin: -5px 0; border-radius: 7px;
+            }}
+            QSlider::sub-page:horizontal {{ background: {_theme.c('ACCENT')}; border-radius: 2px; }}
+        """)
+        # Refresh pill colors to match the new theme
+        for key, pill in self._pills.items():
+            pill._set_active(key == self._current_mode)
 
     # ── Public API ────────────────────────────────────────────────────────────
 

@@ -148,6 +148,9 @@ class QMainApp(QBaseDesktopApp):
         ):
             if hasattr(page, "apply_theme"):
                 page.apply_theme(t)
+        # Propagate to the profile bar (lives in home_page, outside the stack layout)
+        if hasattr(self._home_page, "profile_bar"):
+            self._home_page.profile_bar.apply_theme(t)
         self._switch_page(self._stack.currentIndex())
         if save:
             self._general_settings.theme = theme_name

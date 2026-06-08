@@ -30,14 +30,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import QTimer
 
-from arctis_sound_manager.gui.theme import (
-    ACCENT,
-    BG_BUTTON,
-    BG_MAIN,
-    BORDER,
-    TEXT_PRIMARY,
-    TEXT_SECONDARY,
-)
+import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.i18n import I18n
 
 
@@ -63,7 +56,9 @@ class PresetExportDialog(QDialog):
 
         self.setWindowTitle(_t("export_dialog_title"))
         self.setMinimumWidth(520)
-        self.setStyleSheet(f"background-color: {BG_MAIN}; color: {TEXT_PRIMARY};")
+        self.setStyleSheet(
+            f"background-color: {_theme.c('BG_MAIN')}; color: {_theme.c('TEXT_PRIMARY')};"
+        )
 
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 20, 24, 20)
@@ -72,7 +67,7 @@ class PresetExportDialog(QDialog):
         # ── Header ────────────────────────────────────────────────────────────
         header = QLabel(f"{_t('export_dialog_title')}: <b>{preset_name}</b>")
         header.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 11pt; background: transparent;"
+            f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 11pt; background: transparent;"
         )
         root.addWidget(header)
 
@@ -120,7 +115,7 @@ class PresetExportDialog(QDialog):
         community_desc = QLabel(_t("share_community_desc"))
         community_desc.setWordWrap(True)
         community_desc.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;"
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; background: transparent;"
         )
         root.addWidget(community_desc)
 
@@ -138,7 +133,7 @@ class PresetExportDialog(QDialog):
         # ── Status label ──────────────────────────────────────────────────────
         self._status = QLabel("")
         self._status.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;"
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; background: transparent;"
         )
         root.addWidget(self._status)
 
@@ -152,7 +147,7 @@ class PresetExportDialog(QDialog):
     def _section_label(self, text: str) -> QLabel:
         lbl = QLabel(text)
         lbl.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 9pt; font-weight: bold;"
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; font-weight: bold;"
             f" text-transform: uppercase; background: transparent;"
         )
         return lbl
@@ -160,15 +155,15 @@ class PresetExportDialog(QDialog):
     def _input_ss(self) -> str:
         return (
             f"QLineEdit {{"
-            f"  background: {BG_BUTTON}; border: 1px solid {BORDER};"
-            f"  border-radius: 6px; color: {TEXT_PRIMARY}; padding: 6px 10px; font-size: 9pt;"
+            f"  background: {_theme.c('BG_BUTTON')}; border: 1px solid {_theme.c('BORDER')};"
+            f"  border-radius: 6px; color: {_theme.c('TEXT_PRIMARY')}; padding: 6px 10px; font-size: 9pt;"
             f"}}"
         )
 
     def _btn_ss(self, *, accent: bool = False) -> str:
-        bg = ACCENT if accent else BG_BUTTON
-        fg = "#fff" if accent else TEXT_PRIMARY
-        border = "none" if accent else f"1px solid {BORDER}"
+        bg = _theme.c('ACCENT') if accent else _theme.c('BG_BUTTON')
+        fg = "#fff" if accent else _theme.c('TEXT_PRIMARY')
+        border = "none" if accent else f"1px solid {_theme.c('BORDER')}"
         return (
             f"QPushButton {{"
             f"  background: {bg}; border: {border}; border-radius: 6px;"
