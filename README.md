@@ -2,9 +2,7 @@
   <img src="docs/images/asm-logo.png" alt="Arctis Sound Manager logo" width="150">
 </p>
 
-<p align="center">
-# Arctis Sound Manager
-</p>
+<h1 align="center">Arctis Sound Manager</h1>
 
 <p align="center"><a href="https://ko-fi.com/W7W31VXIVC"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="ko-fi"></a></p>
 
