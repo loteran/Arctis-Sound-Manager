@@ -223,7 +223,7 @@ If the ASM interface shows only squares instead of text, your fontconfig cache i
 rm -rf ~/.cache/fontconfig/*
 fc-cache -f -v
 ```
-Then restart ASM.
+Then restart ASM. *(Thanks to [H0DG3](https://github.com/H0DG3) for identifying this fix!)*
 </details>
 
 <details>
