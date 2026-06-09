@@ -15,6 +15,10 @@ _DEFAULT_DISPLAY_HEIGHT = 64
 class OledProtocol:
     # Class-level constants that are device-independent or purely structural.
     REPORT_SIZE = 1024
+    # Brightness and return-to-ui commands are sent as Output reports (64 bytes)
+    # matching ggoled behaviour — the Wired GameDAC Gen 2 rejects 1024-byte
+    # control packets for these commands (issue #76).
+    CONTROL_REPORT_SIZE = 64
     CMD_SCREEN = 0x93
     CMD_BRIGHTNESS = 0x85
     CMD_RETURN_UI = 0x95
@@ -75,11 +79,13 @@ class OledProtocol:
     def build_brightness_packet(self, level: int) -> list[int]:
         clamped = max(0, min(self.MAX_BRIGHTNESS, level))
         header = [self.report_id, self.CMD_BRIGHTNESS, clamped, 0, 0, 0]
-        return self._build_packet(header, [])
+        # 64-byte Output report — matches ggoled; Wired GameDAC rejects 1024 bytes here.
+        return self._build_packet(header, [], size=self.CONTROL_REPORT_SIZE)
 
     def build_return_to_ui_packet(self) -> list[int]:
         header = [self.report_id, self.CMD_RETURN_UI, 0, 0, 0, 0]
-        return self._build_packet(header, [])
+        # 64-byte Output report — same rationale as build_brightness_packet.
+        return self._build_packet(header, [], size=self.CONTROL_REPORT_SIZE)
 
     def _pad_height(self, height: int) -> int:
         return math.ceil(height / 8) * 8
@@ -118,9 +124,12 @@ class OledProtocol:
 
         return body
 
-    def _build_packet(self, header: list[int], body: list[int]) -> list[int]:
+    def _build_packet(
+        self, header: list[int], body: list[int], size: int | None = None
+    ) -> list[int]:
+        target = size if size is not None else self.REPORT_SIZE
         payload = header + body
-        padding = self.REPORT_SIZE - len(payload)
+        padding = target - len(payload)
         if padding > 0:
             payload.extend([0] * padding)
-        return payload[: self.REPORT_SIZE]
+        return payload[:target]

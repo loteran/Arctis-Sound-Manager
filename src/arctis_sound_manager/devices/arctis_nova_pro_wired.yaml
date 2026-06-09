@@ -61,6 +61,16 @@ device:
   audio:
     spatial_engine: hesuvi
 
+  # OLED screen transport parameters — explicit values keep the config
+  # self-documenting and let oled_manager.py fall back cleanly for devices
+  # that omit this section.
+  oled:
+    interface: 4       # HID interface carrying the OLED control endpoint
+    report_id: 0x06    # First byte of every HID report sent to the OLED
+    wvalue: 0x0300     # SET_REPORT wValue base: high byte = report type (0x03 Feature)
+    width: 128         # Panel width in pixels
+    height: 64         # Panel height in pixels
+
   settings:
     headset:
       gain:

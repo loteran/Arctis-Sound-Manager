@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -41,6 +42,11 @@ _OLED_WVALUE_DEFAULT = 0x0300
 _OLED_REPORT_ID_DEFAULT = 0x06
 _OLED_WIDTH_DEFAULT = 128
 _OLED_HEIGHT_DEFAULT = 64
+# HID SET_REPORT type codes (USB spec 9.3.1 / HID 1.11 §7.2.2).
+# Frame packets use Feature (0x03); brightness/return-to-ui use Output (0x02)
+# because that is what ggoled does and the Wired GameDAC requires (issue #76).
+_OLED_REPORT_TYPE_FEATURE = 0x03
+_OLED_REPORT_TYPE_OUTPUT = 0x02
 _SCROLL_PAUSE_TOP_S = 5.0       # seconds to pause at top before scrolling
 _SCROLL_PAUSE_BOTTOM_S = 3.0    # seconds to pause at bottom before resetting
 # Don't start the vertical marquee for a tiny overflow — a few px past the
@@ -68,6 +74,15 @@ _SPEED_TO_INTERVAL: dict[int, float] = {
 logger = logging.getLogger(__name__)
 
 
+def _compute_wvalue(report_type: int, report_id: int) -> int:
+    """Return the HID SET_REPORT wValue for a given report type and id.
+
+    wValue = (report_type << 8) | (report_id & 0xFF) per USB HID spec §7.2.
+    Extracted as a pure helper so it can be unit-tested without USB hardware.
+    """
+    return (report_type << 8) | (report_id & 0xFF)
+
+
 class OledManager:
     def __init__(self, core: CoreEngine) -> None:
         self._core = core
@@ -81,6 +96,12 @@ class OledManager:
         _report_id: int = oled_cfg.report_id if oled_cfg is not None else _OLED_REPORT_ID_DEFAULT
         _width: int = oled_cfg.width if oled_cfg is not None else _OLED_WIDTH_DEFAULT
         _height: int = oled_cfg.height if oled_cfg is not None else _OLED_HEIGHT_DEFAULT
+
+        self._oled_report_id: int = _report_id
+        # Derive the frame report type from the high byte of the YAML wvalue
+        # (0x0300 → 0x03 Feature; 0x0200 → 0x02 Output).  The actual wValue
+        # passed to ctrl_transfer is recomputed per-packet in _send_oled_packet.
+        self._oled_frame_report_type: int = (self._oled_wvalue >> 8) & 0xFF
 
         self._protocol = OledProtocol(report_id=_report_id, width=_width, height=_height)
         self._renderer = OledRenderer()
@@ -165,11 +186,11 @@ class OledManager:
 
     def set_brightness(self, level: int) -> None:
         packet = self._protocol.build_brightness_packet(level)
-        self._send_oled_packet(packet)
+        self._send_oled_packet(packet, control=True)
 
     def set_custom_display(self, enabled: bool) -> None:
         if not enabled:
-            self._send_oled_packet(self._protocol.build_return_to_ui_packet())
+            self._send_oled_packet(self._protocol.build_return_to_ui_packet(), control=True)
         else:
             self._reset_scroll()
             self.update_display(activity=True)
@@ -312,24 +333,47 @@ class OledManager:
         for packet in packets:
             self._send_oled_packet(packet)
 
-    def _send_oled_packet(self, packet: list[int]) -> None:
+    def _send_oled_packet(self, packet: list[int], *, control: bool = False) -> None:
+        """Send one HID SET_REPORT packet to the OLED controller.
+
+        Args:
+            packet:  Raw byte list (first byte is the report id).
+            control: True for brightness/return-to-ui (Output report, type 0x02);
+                     False (default) for image frames (Feature report, type 0x03).
+                     The distinction is required by the Wired GameDAC Gen 2 firmware
+                     (issue #76, derived from ggoled reference implementation).
+        """
+        # wValue = (report_type << 8) | report_id — correct HID SET_REPORT semantics.
+        report_type = _OLED_REPORT_TYPE_OUTPUT if control else self._oled_frame_report_type
+        wvalue = _compute_wvalue(report_type, self._oled_report_id)
+
         bmRequestType = usb.util.build_request_type(
             direction=usb.util.CTRL_OUT,
             type=usb.util.CTRL_TYPE_CLASS,
             recipient=usb.util.CTRL_RECIPIENT_INTERFACE,
         )
-        with self._core._usb_write_lock:
-            usb_device = self._core.usb_device
-            if usb_device is None:
-                return
-            try:
-                usb_device.ctrl_transfer(
-                    bmRequestType, 0x09,
-                    self._oled_wvalue, self._oled_interface,
-                    packet,
-                )
-            except usb.core.USBError as e:
-                logger.warning("OLED USB error: %s", e)
+
+        _MAX_ATTEMPTS = 5
+        last_err: usb.core.USBError | None = None
+        for attempt in range(_MAX_ATTEMPTS):
+            with self._core._usb_write_lock:
+                usb_device = self._core.usb_device
+                if usb_device is None:
+                    return
+                try:
+                    usb_device.ctrl_transfer(
+                        bmRequestType, 0x09,
+                        wvalue, self._oled_interface,
+                        packet,
+                    )
+                    return
+                except usb.core.USBError as e:
+                    last_err = e
+            # Back-off outside the lock so other USB users are not blocked.
+            if attempt + 1 < _MAX_ATTEMPTS:
+                time.sleep(min((attempt + 1) ** 2, 50) / 1000.0)
+
+        logger.warning("OLED USB error after %d attempts: %s", _MAX_ATTEMPTS, last_err)
 
     def _advance_burn_in(self) -> None:
         now = datetime.now().timestamp()
@@ -350,12 +394,12 @@ class OledManager:
                     elapsed = datetime.now().timestamp() - self._last_update_time
                     if elapsed >= timeout:
                         self._screen_off = True
-                        self._send_oled_packet(self._protocol.build_brightness_packet(0))
+                        self._send_oled_packet(self._protocol.build_brightness_packet(0), control=True)
                         continue
 
                 if not self._screen_off:
                     if not gs.oled_custom_display:
-                        self._send_oled_packet(self._protocol.build_return_to_ui_packet())
+                        self._send_oled_packet(self._protocol.build_return_to_ui_packet(), control=True)
                         # timeout=0 means "never sleep": re-assert brightness every cycle
                         # to prevent the DAC firmware's own ~60s screen-off from firing.
                         if timeout == 0:
