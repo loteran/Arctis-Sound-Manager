@@ -1,3 +1,27 @@
+arctis-sound-manager (1.1.63-1) noble; urgency=medium
+
+  * Arctis Nova Pro Wired — OLED screen never updated and the daemon spammed
+    OLED USB error: [Errno 110] Operation timed out — the GameDAC Gen 2
+    firmware validates the HID SET_REPORT wValue strictly, but ASM sent
+    report id 0 in its low byte, so the base station rejected every OLED
+    transfer. The wValue is now built as (report_type << 8) | report_id
+    (0x0306 for image frames, 0x0206 for brightness/return-to-UI), matching
+    the protocol proven by working third-party tools. (#76)
+  * Arctis Nova Pro Wired — headset not detected after boot/login until
+    audio activity (e.g. joining a call) woke the device — a device already
+    plugged in at startup fires no udev add event, so a single failed
+    initial scan was never retried. The daemon now re-scans periodically
+    until the device is fully configured instead of waiting for a hotplug or
+    USB wake event. (#76)
+  * Arctis Nova Pro Wired — audio near-inaudible unless volume was cranked
+    to ~95% — control-transfer device commands carried the same incorrect
+    wValue, so the high-gain initialisation never reached the GameDAC.
+    Commands now embed the correct report id in the wValue for devices that
+    require it, opt-in per device so the Nova 7 family and others are
+    unaffected. (#76)
+
+ -- loteran <axel.valadon@gmail.com>  Tue, 09 Jun 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.62-1) noble; urgency=medium
 
   * Font rendering on Bazzite/Linux — all text displayed as blocks — Qt's
