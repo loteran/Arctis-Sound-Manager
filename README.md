@@ -4,7 +4,8 @@
 
 <p align="center">
 # Arctis Sound Manager
-
+</p>
+<p align="center">
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/W7W31VXIVC)
 </p>
 
