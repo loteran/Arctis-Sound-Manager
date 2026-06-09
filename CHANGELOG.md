@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.63] - 9 June 2026
+
+### Fixed
+
+- **Arctis Nova Pro Wired — OLED screen never updated and the daemon spammed `OLED USB error: [Errno 110] Operation timed out`** — the GameDAC Gen 2 firmware validates the HID SET_REPORT `wValue` strictly, but ASM sent report id 0 in its low byte, so the base station rejected every OLED transfer. The `wValue` is now built as `(report_type << 8) | report_id` (0x0306 for image frames, 0x0206 for brightness/return-to-UI), matching the protocol proven by working third-party tools. (#76)
+- **Arctis Nova Pro Wired — headset not detected after boot/login until audio activity (e.g. joining a call) woke the device** — a device already plugged in at startup fires no udev `add` event, so a single failed initial scan was never retried. The daemon now re-scans periodically until the device is fully configured instead of waiting for a hotplug or USB wake event. (#76)
+- **Arctis Nova Pro Wired — audio near-inaudible unless volume was cranked to ~95%** — control-transfer device commands carried the same incorrect `wValue`, so the high-gain initialisation never reached the GameDAC. Commands now embed the correct report id in the `wValue` for devices that require it, opt-in per device so the Nova 7 family and others are unaffected. (#76)
+
 ## [1.1.62] - 9 June 2026
 
 ### Fixed
