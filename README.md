@@ -13,7 +13,7 @@
 
 A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio mixer (Game / Chat / Media / Output), automatic media routing, and a full **Sonar EQ** system powered by PipeWire filter-chain.
 
-**Supported Arctis headsets on Linux:** Arctis Nova Pro Wireless, Arctis Nova Pro Wired, Arctis Nova Elite, Arctis Nova 7 (Gen 1 & Gen 2), Arctis Nova 7P, Arctis Nova 5 / 5X, Arctis Nova 3 / 3P / 3X, Arctis 7, Arctis 7+, Arctis 9 Wireless, Arctis Pro Wireless, Arctis 1 / 7X / 7P Wireless, and Arctis GameBuds / GameBuds X — full list with Product IDs in [Supported devices](#supported-devices).
+**Supported Arctis headsets on Linux:** Arctis Nova Pro Wireless, Arctis Nova Pro Wired, Arctis Nova Pro Omni, Arctis Nova Elite, Arctis Nova 7 (Gen 1 & Gen 2), Arctis Nova 7P, Arctis Nova 5 / 5X, Arctis Nova 3 / 3P / 3X, Arctis 7, Arctis 7+, Arctis 9 Wireless, Arctis Pro Wireless, Arctis 1 / 7X / 7P Wireless, and Arctis GameBuds / GameBuds X — full list with Product IDs in [Supported devices](#supported-devices).
 
 > 🎚️ **[ASM Presets](https://loteran.github.io/asm-presets/)** — browse and share community EQ presets!
 > 💬 **[Join the Discord](https://discord.gg/f7CcrFHFA)** — chat, share presets and get help from the community!
@@ -131,6 +131,7 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
 | Arctis Pro Wireless | ✅ | 7 | $\color{royalblue}{\textbf{1290}}$, $\color{royalblue}{\textbf{1294}}$ |
 | Arctis Nova Pro Wireless / X | ✅ | 37 | $\color{royalblue}{\textbf{12e0}}$, $\color{royalblue}{\textbf{12e5}}$ |
 | Arctis Nova Pro Wired / Xbox Wired | ✅ | 5 | $\color{royalblue}{\textbf{12cb}}$, 12cd |
+| Arctis Nova Pro Omni | ✅ | 1 | $\color{royalblue}{\textbf{2290}}$ |
 | Arctis Nova 3 | ✅ | 6 | $\color{royalblue}{\textbf{12ec}}$ |
 | Arctis Nova 3P / 3X Wireless | ✅ | 6 | $\color{royalblue}{\textbf{2269}}$, 226d |
 | Arctis Nova 5 / 5X | ✅ | 6 | $\color{royalblue}{\textbf{2232}}$, 2253, $\color{royalblue}{\textbf{2255}}$ |
