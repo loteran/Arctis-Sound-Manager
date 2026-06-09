@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.62] - 9 June 2026
+
+### Fixed
+
+- **Font rendering on Bazzite/Linux — all text displayed as blocks** — Qt's QSS parser does not support the CSS Level 4 `system-ui` keyword; it treated it as a literal font name, found nothing, and fell back to a font rendering all glyphs as tofu squares. Replaced with `sans-serif`, which Qt resolves correctly via fontconfig on all Linux distributions.
+
 ## [1.1.61] - 8 June 2026
 
 ### Added
