@@ -215,6 +215,15 @@ bash <(curl -fsSL https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager
 ```
 
 Each script is idempotent. Flags: `--reinstall` (rebuild container), `--no-services` (skip systemd).
+
+**Troubleshooting — text displays as blocks (font rendering issue)**
+
+If the ASM interface shows only squares instead of text, your fontconfig cache is likely corrupted. Run inside the Distrobox container:
+```bash
+rm -rf ~/.cache/fontconfig/*
+fc-cache -f -v
+```
+Then restart ASM.
 </details>
 
 <details>
