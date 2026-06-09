@@ -56,6 +56,7 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
     - [Tips for a good report](#tips-for-a-good-report)
   - [Development](#development)
   - [💬 Share your experience](#-share-your-experience)
+  - [Contributors](#contributors)
 
 ---
 
