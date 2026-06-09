@@ -24,7 +24,7 @@ APP_QSS = f"""
 QWidget {{
     background-color: {BG_MAIN};
     color: {TEXT_PRIMARY};
-    font-family: system-ui, sans-serif;
+    font-family: sans-serif;
     font-size: 11pt;
 }}
 
