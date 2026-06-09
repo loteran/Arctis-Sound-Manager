@@ -205,29 +205,29 @@ class AudioCard(QWidget):
         outer.addSpacing(8)
 
         # ── Applications section ───────────────────────────────────────────────
-        apps_widget = QWidget()
-        apps_widget.setObjectName("appsWidget")
-        apps_widget.setStyleSheet(
-            "QWidget#appsWidget { background-color: #13161A; border-radius: 12px; }"
+        self._apps_widget = QWidget()
+        self._apps_widget.setObjectName("appsWidget")
+        self._apps_widget.setStyleSheet(
+            f"QWidget#appsWidget {{ background-color: {_theme.c('BG_MAIN')}; border-radius: 12px; }}"
         )
-        apps_layout = QVBoxLayout(apps_widget)
+        apps_layout = QVBoxLayout(self._apps_widget)
         apps_layout.setContentsMargins(12, 10, 12, 10)
         apps_layout.setSpacing(6)
 
-        apps_title = QLabel(I18n.translate("ui", "applications"))
-        apps_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        apps_title.setStyleSheet(
+        self._apps_title = QLabel(I18n.translate("ui", "applications"))
+        self._apps_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._apps_title.setStyleSheet(
             f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 9pt; font-weight: bold; background: transparent;"
         )
-        apps_layout.addWidget(apps_title)
+        apps_layout.addWidget(self._apps_title)
 
         self._apps_area = QVBoxLayout()
         self._apps_area.setSpacing(4)
         apps_layout.addLayout(self._apps_area)
         apps_layout.addStretch(1)
 
-        apps_widget.setFixedHeight(100)
-        outer.addWidget(apps_widget)
+        self._apps_widget.setFixedHeight(100)
+        outer.addWidget(self._apps_widget)
 
         # Device combo (routing output) — always in layout to keep cards aligned;
         # contents are hidden until set_device_options() is called.
@@ -294,6 +294,15 @@ class AudioCard(QWidget):
         self._pct_label.setStyleSheet(
             f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 18pt; font-weight: bold; background: transparent;"
         )
+        # Applications section background and title
+        if hasattr(self, "_apps_widget"):
+            self._apps_widget.setStyleSheet(
+                f"QWidget#appsWidget {{ background-color: {_theme.c('BG_MAIN')}; border-radius: 12px; }}"
+            )
+        if hasattr(self, "_apps_title"):
+            self._apps_title.setStyleSheet(
+                f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 9pt; font-weight: bold; background: transparent;"
+            )
         # Device combo
         self._device_combo.setStyleSheet(
             f"QComboBox {{ background: {_theme.c('BG_BUTTON')}; border: 1px solid {_theme.c('BORDER')}; "
@@ -534,6 +543,21 @@ class _Pill(QWidget):
             f"border: 1px solid {color}; }}"
         )
 
+    def apply_theme(self, t=None) -> None:
+        self._text.setStyleSheet(
+            f"background: transparent; font-size: 11pt; font-weight: bold; color: {_theme.c('TEXT_PRIMARY')}; border: none;"
+        )
+        # Re-apply the pill background; preserve the current border color from the dot style
+        dot_style = self._dot.styleSheet()
+        # Extract current dot color for the border
+        color = "#8D96AA"
+        for part in dot_style.split(";"):
+            part = part.strip()
+            if part.startswith("color:"):
+                color = part.split(":", 1)[1].strip()
+                break
+        self._update_style(color)
+
     def set_visible(self, visible: bool):
         self.setVisible(visible)
 
@@ -559,6 +583,10 @@ class _DeviceStatusBar(QWidget):
         layout.addWidget(self._dac_bat_pill)
 
         self.set_no_device()
+
+    def apply_theme(self, t=None) -> None:
+        for pill in (self._conn_pill, self._headset_bat_pill, self._dac_bat_pill):
+            pill.apply_theme()
 
     def set_no_device(self):
         self._conn_pill.set_value("No device detected", "#8D96AA")
@@ -622,12 +650,12 @@ class HomePage(QWidget):
         root.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         # ── App title ─────────────────────────────────────────────────────────
-        app_title = QLabel("Arctis Sound Manager")
-        app_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        app_title.setStyleSheet(
+        self._app_title = QLabel("Arctis Sound Manager")
+        self._app_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._app_title.setStyleSheet(
             f"color: {TEXT_PRIMARY}; font-size: 28pt; font-weight: bold; background: transparent;"
         )
-        root.addWidget(app_title)
+        root.addWidget(self._app_title)
         root.addSpacing(8)
 
         # ── Update banner (hidden by default) ─────────────────────────────────
@@ -670,15 +698,15 @@ class HomePage(QWidget):
         self._update_install_btn.hide()
         banner_layout.addWidget(self._update_install_btn)
 
-        dismiss_btn = QPushButton("\u2715")
-        dismiss_btn.setFixedSize(20, 20)
-        dismiss_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        dismiss_btn.setStyleSheet(
+        self._dismiss_btn = QPushButton("\u2715")
+        self._dismiss_btn.setFixedSize(20, 20)
+        self._dismiss_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._dismiss_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; border: none; color: {TEXT_SECONDARY}; font-size: 12pt; }}"
             f"QPushButton:hover {{ color: {TEXT_PRIMARY}; }}"
         )
-        dismiss_btn.clicked.connect(self._update_banner.hide)
-        banner_layout.addWidget(dismiss_btn)
+        self._dismiss_btn.clicked.connect(self._update_banner.hide)
+        banner_layout.addWidget(self._dismiss_btn)
 
         self._update_banner.hide()
         root.addWidget(self._update_banner)
@@ -696,11 +724,11 @@ class HomePage(QWidget):
         toggle_layout.setContentsMargins(0, 0, 0, 0)
         toggle_layout.setSpacing(16)
 
-        toggle_lbl = QLabel(I18n.translate("ui", "enable_volume_sliders"))
-        toggle_lbl.setStyleSheet(
+        self._toggle_lbl = QLabel(I18n.translate("ui", "enable_volume_sliders"))
+        self._toggle_lbl.setStyleSheet(
             f"color: {TEXT_PRIMARY}; font-size: 11pt; background: transparent;"
         )
-        toggle_layout.addWidget(toggle_lbl)
+        toggle_layout.addWidget(self._toggle_lbl)
 
         self._toggle = ToggleSwitch()
         self._toggle.set_checked(True)
@@ -858,6 +886,58 @@ class HomePage(QWidget):
         # Update page background
         self.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
         self._cards_widget.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+
+        # App title
+        if hasattr(self, "_app_title"):
+            self._app_title.setStyleSheet(
+                f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 28pt; font-weight: bold; background: transparent;"
+            )
+
+        # Update banner widgets
+        if hasattr(self, "_update_banner"):
+            self._update_banner.setStyleSheet(f"""
+                QWidget#updateBanner {{
+                    background-color: {_theme.c('BG_CARD')};
+                    border: 1px solid {_theme.c('ACCENT')};
+                    border-radius: 8px;
+                    padding: 4px 12px;
+                }}
+            """)
+        if hasattr(self, "_update_label"):
+            self._update_label.setStyleSheet(
+                f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 10pt; background: transparent; border: none;"
+            )
+        if hasattr(self, "_update_link_btn"):
+            self._update_link_btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; border: none; color: {_theme.c('ACCENT')}; "
+                f"font-size: 10pt; text-decoration: underline; }}"
+                f"QPushButton:hover {{ color: #FF6A28; }}"
+            )
+        if hasattr(self, "_update_install_btn"):
+            self._update_install_btn.setStyleSheet(
+                f"QPushButton {{ background: {_theme.c('ACCENT')}; border: none; border-radius: 4px; "
+                f"color: #fff; font-size: 10pt; padding: 3px 12px; }}"
+                f"QPushButton:hover {{ background: #FF6A28; }}"
+            )
+        if hasattr(self, "_dismiss_btn"):
+            self._dismiss_btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; border: none; color: {_theme.c('TEXT_SECONDARY')}; font-size: 12pt; }}"
+                f"QPushButton:hover {{ color: {_theme.c('TEXT_PRIMARY')}; }}"
+            )
+
+        # Toggle label and disconnected label
+        if hasattr(self, "_toggle_lbl"):
+            self._toggle_lbl.setStyleSheet(
+                f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 11pt; background: transparent;"
+            )
+        if hasattr(self, "_disconnected_label"):
+            self._disconnected_label.setStyleSheet(
+                f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 14pt; font-style: italic; background: transparent;"
+            )
+
+        # Status bar pills
+        if hasattr(self, "_status_bar"):
+            self._status_bar.apply_theme()
 
         # Pull fresh per-channel accent colors from the active theme
         color_game = _theme.c("COLOR_GAME")

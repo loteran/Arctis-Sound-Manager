@@ -98,18 +98,20 @@ class DacPage(QWidget):
         layout.setContentsMargins(36, 28, 36, 36)
         layout.setSpacing(0)
 
-        app_title = QLabel("Arctis Sound Manager")
-        app_title.setStyleSheet(
+        self._app_title = QLabel("Arctis Sound Manager")
+        self._app_title.setStyleSheet(
             f"color: {TEXT_PRIMARY}; font-size: 28pt; font-weight: bold; background: transparent;"
         )
-        layout.addWidget(app_title)
+        layout.addWidget(self._app_title)
         layout.addSpacing(28)
 
-        layout.addWidget(SectionTitle(I18n.translate("ui", "dac_settings")))
+        self._section_dac = SectionTitle(I18n.translate("ui", "dac_settings"))
+        layout.addWidget(self._section_dac)
         layout.addSpacing(12)
 
         # ── Custom display toggle ──────────────────────────────────────────────
-        layout.addWidget(self._build_custom_display_card())
+        self._custom_display_card = self._build_custom_display_card()
+        layout.addWidget(self._custom_display_card)
         layout.addSpacing(16)
 
         # ── Brightness / Timeout sliders ───────────────────────────────────────
@@ -122,15 +124,19 @@ class DacPage(QWidget):
         layout.addSpacing(24)
 
         # ── Display elements ───────────────────────────────────────────────────
-        layout.addWidget(SectionTitle(I18n.translate("ui", "oled_display_elements")))
+        self._section_display = SectionTitle(I18n.translate("ui", "oled_display_elements"))
+        layout.addWidget(self._section_display)
         layout.addSpacing(12)
-        layout.addWidget(self._build_display_elements_card())
+        self._display_elements_card = self._build_display_elements_card()
+        layout.addWidget(self._display_elements_card)
         layout.addSpacing(24)
 
         # ── Weather section ────────────────────────────────────────────────────
-        layout.addWidget(SectionTitle(I18n.translate("ui", "weather_settings")))
+        self._section_weather = SectionTitle(I18n.translate("ui", "weather_settings"))
+        layout.addWidget(self._section_weather)
         layout.addSpacing(12)
-        layout.addWidget(self._build_weather_card())
+        self._weather_card = self._build_weather_card()
+        layout.addWidget(self._weather_card)
 
         layout.addStretch(1)
 
@@ -155,6 +161,36 @@ class DacPage(QWidget):
         )
         _lbl_style = f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 11pt; background: transparent; border: none;"
         _hint_style = f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; background: transparent; border: none;"
+
+        # App title
+        if hasattr(self, "_app_title"):
+            self._app_title.setStyleSheet(
+                f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 28pt; font-weight: bold; background: transparent;"
+            )
+
+        # Section titles
+        for attr in ("_section_dac", "_section_display", "_section_weather"):
+            if hasattr(self, attr):
+                getattr(self, attr).apply_theme()
+
+        # Card backgrounds
+        for attr in ("_custom_display_card", "_display_elements_card", "_weather_card"):
+            if hasattr(self, attr):
+                getattr(self, attr).setStyleSheet(_card_style)
+
+        # In-card labels
+        if hasattr(self, "_custom_display_lbl"):
+            self._custom_display_lbl.setStyleSheet(_lbl_style)
+        if hasattr(self, "_weather_lbl_enable"):
+            self._weather_lbl_enable.setStyleSheet(_lbl_style)
+        if hasattr(self, "_weather_lbl_units"):
+            self._weather_lbl_units.setStyleSheet(_lbl_style)
+
+        # Separator in display elements card
+        if hasattr(self, "_display_sep"):
+            self._display_sep.setStyleSheet(
+                f"color: {_theme.c('BORDER')}; background: {_theme.c('BORDER')}; max-height: 1px;"
+            )
 
         # Custom display card
         if hasattr(self, "_custom_display_hint"):
@@ -236,6 +272,7 @@ class DacPage(QWidget):
 
         lbl = QLabel(I18n.translate("settings", "oled_custom_display"))
         lbl.setStyleSheet(_LBL_STYLE.format(color=TEXT_PRIMARY))
+        self._custom_display_lbl = lbl
         row.addWidget(lbl, stretch=1)
 
         self._custom_display_hint = QLabel()
@@ -283,6 +320,7 @@ class DacPage(QWidget):
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
         sep.setStyleSheet(f"color: {BORDER}; background: {BORDER}; max-height: 1px;")
+        self._display_sep = sep
         col.addWidget(sep)
         col.addSpacing(4)
 
@@ -431,6 +469,7 @@ class DacPage(QWidget):
         r1.setSpacing(12)
         lbl_enable = QLabel(I18n.translate("settings", "weather_enabled"))
         lbl_enable.setStyleSheet(_LBL_STYLE.format(color=TEXT_PRIMARY))
+        self._weather_lbl_enable = lbl_enable
         r1.addWidget(lbl_enable, stretch=1)
         self._weather_toggle = ToggleSwitch()
         self._weather_toggle.set_checked(False)
@@ -481,6 +520,7 @@ class DacPage(QWidget):
 
         lbl_units = QLabel(I18n.translate("settings", "weather_units"))
         lbl_units.setStyleSheet(_LBL_STYLE.format(color=TEXT_PRIMARY))
+        self._weather_lbl_units = lbl_units
         r3.addWidget(lbl_units, stretch=1)
 
         for unit, label in [("celsius", "°C"), ("fahrenheit", "°F")]:
@@ -532,7 +572,7 @@ class DacPage(QWidget):
     def _on_weather_save(self) -> None:
         self._weather_save_btn.setEnabled(False)
         self._weather_status.setText(I18n.translate("settings", "weather_searching"))
-        self._weather_status.setStyleSheet(_HINT_STYLE.format(color=TEXT_SECONDARY))
+        self._weather_status.setStyleSheet(_HINT_STYLE.format(color=_theme.c('TEXT_SECONDARY')))
         self._save_weather_settings()
 
     def _save_weather_settings(self) -> None:
@@ -557,7 +597,7 @@ class DacPage(QWidget):
             city = result.get("city", "")
             msg = I18n.translate("settings", "weather_found").format(city=city) if city else \
                   I18n.translate("settings", "weather_saved")
-            self._weather_status.setStyleSheet(_HINT_STYLE.format(color=ACCENT))
+            self._weather_status.setStyleSheet(_HINT_STYLE.format(color=_theme.c('ACCENT')))
             self._weather_status.setText(msg)
         else:
             err = result.get("error", "Unknown error")
@@ -611,7 +651,7 @@ class DacPage(QWidget):
             self._city_input.setText(dac.get('weather_location', ''))
         city_display = dac.get('weather_city_display', '')
         if city_display:
-            self._weather_status.setStyleSheet(_HINT_STYLE.format(color=ACCENT))
+            self._weather_status.setStyleSheet(_HINT_STYLE.format(color=_theme.c('ACCENT')))
             self._weather_status.setText(
                 I18n.translate("settings", "weather_found").format(city=city_display)
             )

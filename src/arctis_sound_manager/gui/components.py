@@ -211,8 +211,11 @@ class SectionTitle(QLabel):
 
     def __init__(self, text: str, parent=None):
         super().__init__(text, parent)
+        self.apply_theme()
+
+    def apply_theme(self, t=None) -> None:
         self.setStyleSheet(
-            "color: #666666; font-size: 20pt; font-weight: bold; background: transparent;"
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 20pt; font-weight: bold; background: transparent;"
         )
 
 
