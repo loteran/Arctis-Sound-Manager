@@ -13,6 +13,8 @@ device:
   # No interrupt OUT endpoint present — commands are sent via HID SET_REPORT (ctrl_output).
   # MaxPacketSize for IN endpoints is 16 bytes on both interface 3 and 4.
   command_transport: ctrl_output
+  command_report_id: 0x06   # commands are prefixed with report id 0x06; the GameDAC
+                            # firmware validates the SET_REPORT wValue strictly (#76)
   command_interface_index: [4, 0]
   listen_interface_indexes: [4]
 

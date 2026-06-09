@@ -908,7 +908,16 @@ class CoreEngine:
                         type=usb.util.CTRL_TYPE_CLASS,
                         recipient=usb.util.CTRL_RECIPIENT_INTERFACE
                     )
-                    wValue = 0x0300 if self.device_config.command_transport == CommandTransport.CTRL_FEATURE else 0x0200
+                    # wValue = (report_type << 8) | report_id, per HID SET_REPORT.
+                    # report_id defaults to 0 (unnumbered reports — unchanged for the
+                    # Nova 7 family etc.); devices with a real report-id prefix declare
+                    # command_report_id so the wValue low byte matches. The Nova Pro
+                    # Wired GameDAC rejects a mismatched wValue → commands silently
+                    # fail (e.g. high-gain never applied, hence near-inaudible output
+                    # until cranked to ~95%). (issue #76)
+                    report_type = 0x03 if self.device_config.command_transport == CommandTransport.CTRL_FEATURE else 0x02
+                    report_id = self.device_config.command_report_id or 0
+                    wValue = (report_type << 8) | (report_id & 0xFF)
                     wIndex = self.device_config.command_interface_index[0]
                     self.usb_device.ctrl_transfer(bmRequestType, 0x09, wValue, wIndex, command_lst)
         except usb.core.USBError as e:

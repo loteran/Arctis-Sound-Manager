@@ -152,6 +152,12 @@ class DeviceConfiguration:
     product_ids: list[int]
     command_interface_index: list[int]
     command_transport: CommandTransport
+    # HID report id carried by control-transfer commands (ctrl_output / ctrl_feature).
+    # None ⇒ unnumbered reports: SET_REPORT wValue low byte stays 0 (legacy behaviour
+    # for the Nova 7 family etc.). Set it (e.g. 0x06) for devices whose commands are
+    # prefixed with a real report id and whose firmware validates the wValue strictly
+    # — the Nova Pro Wired GameDAC rejects a mismatched wValue. (issue #76)
+    command_report_id: int | None
     listen_interface_indexes: list[int]
     dial_interface_index: int
     dial_interface_candidates: list[int]
@@ -173,6 +179,7 @@ class DeviceConfiguration:
         self.product_ids = raw_config.get('product_ids', [])
         self.command_interface_index = raw_config.get('command_interface_index', (-1, -1))
         self.command_transport = CommandTransport(raw_config.get('command_transport', 'interrupt'))
+        self.command_report_id = raw_config.get('command_report_id', None)
         self.listen_interface_indexes = raw_config.get('listen_interface_indexes', [])
         self.dial_interface_candidates = raw_config.get('dial_interface_candidates', [])
         # Default dial interface = first listen interface if not specified
