@@ -18,7 +18,7 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
 > 🎚️ **[ASM Presets](https://loteran.github.io/asm-presets/)** — browse and share community EQ presets!
 > 💬 **[Join the Discord](https://discord.gg/f7CcrFHFA)** — chat, share presets and get help from the community!
 > 📝 **[Share your experience in Discussions](https://github.com/loteran/Arctis-Sound-Manager/discussions)** — feedback helps improve compatibility for everyone!
-> [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/W7W31VXIVC)
+<p align="center"><a href="https://ko-fi.com/W7W31VXIVC"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="ko-fi"></a></p>
 
 ---
 
