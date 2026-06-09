@@ -690,6 +690,17 @@ Your feedback helps improve compatibility for everyone — especially for headse
 
 ---
 
+## Contributors
+
+Thanks to everyone who has contributed code, fixes, or community support:
+
+| Contributor | Contribution |
+|---|---|
+| [Michsior14](https://github.com/Michsior14) | Fix Arctis 7+ power status recognition ([#67](https://github.com/loteran/Arctis-Sound-Manager/pull/67)) |
+| [H0DG3](https://github.com/H0DG3) | Identified the fontconfig cache fix for font rendering on Bazzite/Distrobox |
+
+---
+
 ## License
 
 This project is licensed under the [GNU General Public License v3.0](LICENSE).
