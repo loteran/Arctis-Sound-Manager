@@ -28,6 +28,12 @@ from arctis_sound_manager.usb_devices_monitor import USBDevicesMonitor
 from arctis_sound_manager.utils import ObservableDict
 from arctis_sound_manager.oled_manager import OledManager
 
+# How often (in seconds) the loop retries detection when the device was not
+# ready during the initial scan. A device present at boot fires no udev 'add'
+# event, so without this retry it would never be picked up until a replug or
+# USB autosuspend resume. (issue #76)
+RESCAN_INTERVAL_S: float = 3.0
+
 
 class TypedDevice(Device):
     idVendor: int
@@ -78,6 +84,14 @@ class CoreEngine:
         # Dynamic loopback manager: owns the pw-loopback child processes for
         # Arctis_Game / Arctis_Chat / Arctis_Media virtual sinks.
         self.loopback_manager = LoopbackManager()
+
+        # Readiness tracking for the periodic re-scan (issue #76).
+        # A device present at boot fires no udev 'add' event; these flags let
+        # loop() retry detection until the USB/ALSA stack is fully ready.
+        self._device_ready: bool = False
+        self._detect_lock = threading.Lock()   # serialises detection attempts
+        self._rescan_in_flight: bool = False
+        self._logged_no_device: bool = False   # throttle the "no device" warning
 
         self.reload_device_configurations()
         self.usb_devices_monitor.register_on_connect(self.on_device_connected)
@@ -337,8 +351,9 @@ class CoreEngine:
     async def loop(self):
         listen_coroutines: list[asyncio.Task] = []
         poll_task: asyncio.Task | None = None
+        last_rescan: float = 0.0
         while not self._stopping:
-            if not self.usb_device:
+            if not self._device_ready:
                 # Cancel any leftover tasks from a previous connection
                 for task in listen_coroutines:
                     task.cancel()
@@ -346,6 +361,18 @@ class CoreEngine:
                 if poll_task is not None:
                     poll_task.cancel()
                     poll_task = None
+
+                # Periodically retry detection for devices present at boot.
+                # Such devices fire no udev 'add' event, so without this retry
+                # they would only appear after a replug or USB autosuspend
+                # resume. (issue #76)
+                event_loop = asyncio.get_event_loop()
+                now = event_loop.time()
+                if not self._rescan_in_flight and (now - last_rescan) >= RESCAN_INTERVAL_S:
+                    last_rescan = now
+                    self._rescan_in_flight = True
+                    event_loop.run_in_executor(None, self._rescan_for_device)
+
                 await asyncio.sleep(0.1)
                 continue
 
@@ -363,6 +390,21 @@ class CoreEngine:
             task.cancel()
         if poll_task is not None:
             poll_task.cancel()
+
+    def _rescan_for_device(self) -> None:
+        """Re-attempt detection for a device present at boot but not yet ready.
+
+        A device already plugged in at startup fires no udev 'add' event, so
+        without this retry it would never be picked up until a manual replug or
+        a USB wake event. Called from loop() via run_in_executor. (issue #76)
+        """
+        try:
+            if not self._device_ready:
+                self.configure_virtual_sinks()
+        except Exception as e:
+            self.logger.warning("Periodic device re-scan failed: %r", e)
+        finally:
+            self._rescan_in_flight = False
 
     def on_device_connected(self, vendor_id: int, product_id: int) -> None:
         for device_config in self.device_configurations:
@@ -426,135 +468,145 @@ class CoreEngine:
         self.configure_virtual_sinks()
     
     def configure_virtual_sinks(self) -> None:
-        usb_device: Device | Any | None = None
-        device_config: DeviceConfiguration | None = None
+        with self._detect_lock:
+            usb_device: Device | Any | None = None
+            device_config: DeviceConfiguration | None = None
 
-        for device_config in self.device_configurations:
-            usb_device = self._find_hid_device(device_config.vendor_id, device_config.product_ids)
-            if usb_device is not None:
-                break
+            for device_config in self.device_configurations:
+                usb_device = self._find_hid_device(device_config.vendor_id, device_config.product_ids)
+                if usb_device is not None:
+                    break
 
-        if not device_config or not usb_device:
-            self.logger.warning("No supported device connected, skipping virtual sink setup")
-            return
-        
-        if self.device_config is not None and self.device_config != device_config:
-            # Different device — full teardown of the previous one.
-            self.teardown()
-        elif self.usb_device is not None:
-            # Same device re-enumerated (the Nova Pro Wireless does this on boot,
-            # wake and replug). Release the stale libusb handle before claiming a
-            # fresh one — otherwise the old handle keeps the interface claimed and
-            # every later transfer fails with EBUSY (Resource busy), killing the
-            # OLED display and all device commands.
-            self._release_usb_handle()
-        
-        with self._device_lock:
-            self.usb_device = cast(TypedDevice, usb_device)
-            self.device_config = device_config
-            self.device_status = self.new_device_status()
-            self.device_settings = DeviceSettings(self.usb_device.idVendor, self.usb_device.idProduct)
-
-        # Load defaults
-        for _, section in self.device_config.settings.items():
-            for setting in section:
-                setattr(self.device_settings, setting.name, setting.default_value)
-        # Load user settings
-        self.device_settings.read_from_file()
-
-        # Setup settings observer
-        self.device_settings.settings.add_observer(self.on_setting_changed)
-
-        # Compute which extra (non-status) interfaces to listen on for the dial
-        self._update_active_dial_interfaces()
-
-        if self.usb_device is not None:
-            self.logger.info(f"Found device {self.usb_device.idProduct:04x}:{self.usb_device.idVendor:04x} ({self.device_config.name})")
-            if not self.kernel_detach(self.usb_device, self.device_config):
-                # USB permission error — message already logged with remediation
-                # steps. Bail out so the daemon stays alive instead of crashing.
+            if not device_config or not usb_device:
+                # Log only on the first miss to avoid spamming every re-scan cycle.
+                if not self._logged_no_device:
+                    self.logger.warning("No supported device connected, skipping virtual sink setup")
+                    self._logged_no_device = True
                 return
 
-        # Discover ALSA nodes for this device and update shared device state
-        physical_out_game, physical_out_chat, physical_in = self._discover_physical_nodes(
-            device_config.vendor_id,
-            self.usb_device.idProduct if self.usb_device else None,
-        )
+            # Device found — reset the log-throttle flag so a future disconnect logs again.
+            self._logged_no_device = False
 
-        if physical_out_game is None and physical_out_chat is None:
-            self.logger.error(
-                "No physical ALSA sink found for %s (0x%04x:0x%04x) after retries. "
-                "Virtual sinks will NOT be configured — audio routing skipped. "
-                "Check that PipeWire exposes the device: "
-                "`pactl list sinks short | grep -i arctis`. "
-                "If missing, replug the dongle and restart asm-daemon.",
-                device_config.name,
+            if self.device_config is not None and self.device_config != device_config:
+                # Different device — full teardown of the previous one.
+                self.teardown()
+            elif self.usb_device is not None:
+                # Same device re-enumerated (the Nova Pro Wireless does this on boot,
+                # wake and replug). Release the stale libusb handle before claiming a
+                # fresh one — otherwise the old handle keeps the interface claimed and
+                # every later transfer fails with EBUSY (Resource busy), killing the
+                # OLED display and all device commands.
+                self._release_usb_handle()
+
+            with self._device_lock:
+                self.usb_device = cast(TypedDevice, usb_device)
+                self.device_config = device_config
+                self.device_status = self.new_device_status()
+                self.device_settings = DeviceSettings(self.usb_device.idVendor, self.usb_device.idProduct)
+
+            # Load defaults
+            for _, section in self.device_config.settings.items():
+                for setting in section:
+                    setattr(self.device_settings, setting.name, setting.default_value)
+            # Load user settings
+            self.device_settings.read_from_file()
+
+            # Setup settings observer
+            self.device_settings.settings.add_observer(self.on_setting_changed)
+
+            # Compute which extra (non-status) interfaces to listen on for the dial
+            self._update_active_dial_interfaces()
+
+            if self.usb_device is not None:
+                self.logger.info(f"Found device {self.usb_device.idProduct:04x}:{self.usb_device.idVendor:04x} ({self.device_config.name})")
+                if not self.kernel_detach(self.usb_device, self.device_config):
+                    # USB permission error — message already logged with remediation
+                    # steps. Bail out so the daemon stays alive instead of crashing.
+                    return
+
+            # Discover ALSA nodes for this device and update shared device state
+            physical_out_game, physical_out_chat, physical_in = self._discover_physical_nodes(
                 device_config.vendor_id,
-                self.usb_device.idProduct if self.usb_device else 0,
+                self.usb_device.idProduct if self.usb_device else None,
             )
-            return
 
-        fallback = physical_out_game or physical_out_chat or ""
-        device_state.set_current_device(
-            physical_out_game=physical_out_game or fallback,
-            physical_out_chat=physical_out_chat or fallback,
-            physical_in=physical_in or fallback,
-            spatial_engine=device_config.spatial_engine,
-            device_name=device_config.name,
-        )
+            if physical_out_game is None and physical_out_chat is None:
+                self.logger.error(
+                    "No physical ALSA sink found for %s (0x%04x:0x%04x) after retries. "
+                    "Virtual sinks will NOT be configured — audio routing skipped. "
+                    "Check that PipeWire exposes the device: "
+                    "`pactl list sinks short | grep -i arctis`. "
+                    "If missing, replug the dongle and restart asm-daemon.",
+                    device_config.name,
+                    device_config.vendor_id,
+                    self.usb_device.idProduct if self.usb_device else 0,
+                )
+                return
 
-        # Repair stale PipeWire configs at daemon startup (issue #23).
-        #
-        # Without this call, the static `10-arctis-virtual-sinks.conf` shipped
-        # by `asm-setup` lacks a `node.target` for the Game/Chat sinks, so
-        # WirePlumber connects them straight to the physical output and audio
-        # bypasses the Sonar EQ + HeSuVi surround chain entirely. The check
-        # was previously only run when the user opened the Sonar page in the
-        # GUI — users running headless (or never opening that page) saw the
-        # bug forever.
-        #
-        # As of the dynamic-loopbacks migration: check_and_fix_stale_configs
-        # now removes the legacy 10-arctis-virtual-sinks.conf and signals a
-        # one-shot PipeWire restart.  After the restart the daemon creates the
-        # loopbacks dynamically via setup_loopbacks() below.
-        try:
-            from arctis_sound_manager.sonar_to_pipewire import check_and_fix_stale_configs
-            fixed, needs_pw_restart = check_and_fix_stale_configs()
-            if fixed:
-                from arctis_sound_manager import service_control as sc
-                if needs_pw_restart:
-                    self.logger.info("Stale PipeWire configs migrated — restarting PipeWire")
-                    sc.restart("pipewire", "wireplumber", "pipewire-pulse", timeout=20)
-                    sc.restart("filter-chain", timeout=20)
-                else:
-                    self.logger.info("Stale Sonar configs fixed — restarting filter-chain")
-                    sc.restart("filter-chain", timeout=15)
-        except Exception as exc:
-            # Never let a config-repair failure block device init.
-            self.logger.warning(f"check_and_fix_stale_configs failed: {exc!r}")
+            fallback = physical_out_game or physical_out_chat or ""
+            device_state.set_current_device(
+                physical_out_game=physical_out_game or fallback,
+                physical_out_chat=physical_out_chat or fallback,
+                physical_in=physical_in or fallback,
+                spatial_engine=device_config.spatial_engine,
+                device_name=device_config.name,
+            )
 
-        # Create dynamic loopbacks (Arctis_Game / Arctis_Chat / Arctis_Media).
-        # device_state is already populated above, so make_specs can resolve
-        # targets.  The EQ nodes (effect_input.sonar-*-eq) are created by
-        # filter-chain; node.target by name binds when the node appears, so
-        # the ordering here is tolerant of filter-chain not being up yet.
-        self.setup_loopbacks()
+            # Repair stale PipeWire configs at daemon startup (issue #23).
+            #
+            # Without this call, the static `10-arctis-virtual-sinks.conf` shipped
+            # by `asm-setup` lacks a `node.target` for the Game/Chat sinks, so
+            # WirePlumber connects them straight to the physical output and audio
+            # bypasses the Sonar EQ + HeSuVi surround chain entirely. The check
+            # was previously only run when the user opened the Sonar page in the
+            # GUI — users running headless (or never opening that page) saw the
+            # bug forever.
+            #
+            # As of the dynamic-loopbacks migration: check_and_fix_stale_configs
+            # now removes the legacy 10-arctis-virtual-sinks.conf and signals a
+            # one-shot PipeWire restart.  After the restart the daemon creates the
+            # loopbacks dynamically via setup_loopbacks() below.
+            try:
+                from arctis_sound_manager.sonar_to_pipewire import check_and_fix_stale_configs
+                fixed, needs_pw_restart = check_and_fix_stale_configs()
+                if fixed:
+                    from arctis_sound_manager import service_control as sc
+                    if needs_pw_restart:
+                        self.logger.info("Stale PipeWire configs migrated — restarting PipeWire")
+                        sc.restart("pipewire", "wireplumber", "pipewire-pulse", timeout=20)
+                        sc.restart("filter-chain", timeout=20)
+                    else:
+                        self.logger.info("Stale Sonar configs fixed — restarting filter-chain")
+                        sc.restart("filter-chain", timeout=15)
+            except Exception as exc:
+                # Never let a config-repair failure block device init.
+                self.logger.warning(f"check_and_fix_stale_configs failed: {exc!r}")
 
-        # Configure the device
-        self.init_device()
+            # Create dynamic loopbacks (Arctis_Game / Arctis_Chat / Arctis_Media).
+            # device_state is already populated above, so make_specs can resolve
+            # targets.  The EQ nodes (effect_input.sonar-*-eq) are created by
+            # filter-chain; node.target by name binds when the node appears, so
+            # the ordering here is tolerant of filter-chain not being up yet.
+            self.setup_loopbacks()
 
-        if self.oled_manager is not None:
-            self.oled_manager.stop()
-            self.oled_manager = None
-        has_oled = (
-            device_config.status is not None
-            and 'gamedac' in device_config.status.representation
-        )
-        if has_oled:
-            self.oled_manager = OledManager(self)
-            self.oled_manager.start()
+            # Configure the device
+            self.init_device()
 
-        self.redirect_to_media_sink()
+            if self.oled_manager is not None:
+                self.oled_manager.stop()
+                self.oled_manager = None
+            has_oled = (
+                device_config.status is not None
+                and 'gamedac' in device_config.status.representation
+            )
+            if has_oled:
+                self.oled_manager = OledManager(self)
+                self.oled_manager.start()
+
+            self.redirect_to_media_sink()
+            # Reached only when the full pipeline was configured without an early
+            # return; mark the device as ready so loop() stops re-scanning.
+            self._device_ready = True
 
     def _discover_physical_nodes(
         self,
@@ -1114,3 +1166,4 @@ class CoreEngine:
             self.device_config = None
             self.device_status = None
             self._active_extra_dial_interfaces = []
+        self._device_ready = False
