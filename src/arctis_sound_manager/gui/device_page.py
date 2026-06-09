@@ -165,11 +165,13 @@ class DevicePage(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setStyleSheet(
-            f"QScrollArea {{ background-color: {BG_MAIN}; border: none; }}"
+            f"QScrollArea {{ background-color: {_theme.c('BG_MAIN')}; border: none; }}"
         )
+        self._scroll = scroll
 
         content = QWidget()
-        content.setStyleSheet(f"background-color: {BG_MAIN};")
+        content.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+        self._content = content
         content_layout = QVBoxLayout(content)
         content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         content_layout.setContentsMargins(36, 12, 36, 12)
@@ -405,6 +407,8 @@ class DevicePage(QWidget):
     def apply_theme(self, t=None) -> None:
         """Restyle the device/settings page for the current active theme."""
         self.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+        self._scroll.setStyleSheet(f"QScrollArea {{ background-color: {_theme.c('BG_MAIN')}; border: none; }}")
+        self._content.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
 
         # Device settings widget
         if hasattr(self, "_device_widget"):

@@ -87,10 +87,12 @@ class DacPage(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet(f"QScrollArea {{ background-color: {BG_MAIN}; border: none; }}")
+        scroll.setStyleSheet(f"QScrollArea {{ background-color: {_theme.c('BG_MAIN')}; border: none; }}")
+        self._scroll = scroll
 
         content = QWidget()
-        content.setStyleSheet(f"background-color: {BG_MAIN};")
+        content.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+        self._content = content
         layout = QVBoxLayout(content)
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setContentsMargins(36, 28, 36, 36)
@@ -143,6 +145,8 @@ class DacPage(QWidget):
     def apply_theme(self, t=None) -> None:
         """Restyle the DAC page for the current active theme."""
         self.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+        self._scroll.setStyleSheet(f"QScrollArea {{ background-color: {_theme.c('BG_MAIN')}; border: none; }}")
+        self._content.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
 
         # Rebuild the string-template card styles used during construction.
         _card_style = (
