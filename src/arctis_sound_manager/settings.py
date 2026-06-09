@@ -117,6 +117,7 @@ class GeneralSettings(JsonSerializable):
     oled_show_sonar_mode: bool = True
     oled_show_eq_chat: bool = False
     oled_show_weather_city: bool = True
+    oled_show_now_playing: bool = False
 
     # Display order for orderable elements below the time/battery row
     oled_display_order: list = None  # type: ignore — set per-instance in __init__
@@ -130,6 +131,7 @@ class GeneralSettings(JsonSerializable):
     oled_font_eq_chat: int = 8
     oled_font_sonar_mode: int = 8
     oled_font_weather_temp: int = 20
+    oled_font_now_playing: int = 8
 
     # Weather module
     weather_enabled: bool = False
@@ -164,9 +166,10 @@ class GeneralSettings(JsonSerializable):
         ConfigSetting('oled_show_sonar_mode', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('oled_show_eq_chat', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('oled_show_weather_city', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
+        ConfigSetting('oled_show_now_playing', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
     ]
 
-    _DEFAULT_DISPLAY_ORDER = ['sonar_mode', 'profile', 'eq', 'eq_chat', 'weather']
+    _DEFAULT_DISPLAY_ORDER = ['sonar_mode', 'profile', 'eq', 'eq_chat', 'weather', 'now_playing']
 
     def __init__(self, **kwargs):
         self.oled_display_order = list(self._DEFAULT_DISPLAY_ORDER)

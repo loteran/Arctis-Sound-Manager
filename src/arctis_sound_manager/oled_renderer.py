@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 if TYPE_CHECKING:
     from arctis_sound_manager.weather_service import WeatherData
+    from arctis_sound_manager.mpris_watcher import NowPlaying
 
 _LINE_H = 11
 _BAR_H = 9
@@ -183,7 +184,7 @@ class OledRenderer:
             pts = [(cx + 2, cy + 3), (cx - 3, cy + 9), (cx + 1, cy + 9), (cx - 4, y + s - 1)]
             draw.line(pts, fill=1, width=3)
 
-    _DEFAULT_DISPLAY_ORDER = ['sonar_mode', 'profile', 'eq', 'eq_chat', 'weather']
+    _DEFAULT_DISPLAY_ORDER = ['sonar_mode', 'profile', 'eq', 'eq_chat', 'weather', 'now_playing']
 
     @staticmethod
     def _measure_text_pixels(font: "ImageFont.FreeTypeFont", text: str) -> int:
@@ -219,6 +220,11 @@ class OledRenderer:
         font = ImageFont.load_default(size=max(7, min(30, sz_eq_chat)))
         return self._measure_text_pixels(font, f"Chat: {eq_chat_preset}")
 
+    def measure_now_playing_text(self, text: str, sz: int) -> int:
+        """Return pixel width of the now-playing line at the given font size."""
+        font = ImageFont.load_default(size=max(7, min(30, sz)))
+        return self._measure_text_pixels(font, text)
+
     def render_status_image(
         self,
         battery_percent: int,
@@ -245,6 +251,9 @@ class OledRenderer:
         font_sizes: "dict[str, int] | None" = None,
         eq_scroll_offset: int = 0,
         profile_scroll_offset: int = 0,
+        now_playing: "NowPlaying | None" = None,
+        show_now_playing: bool = False,
+        now_playing_scroll_offset: int = 0,
     ) -> "tuple[Image.Image, int]":
         """Render all content at natural height.
 
@@ -260,8 +269,9 @@ class OledRenderer:
         sz_profile     = max(7, min(30, fs.get('profile', 8)))
         sz_eq          = max(7, min(30, fs.get('eq', 8)))
         sz_weather_tmp = max(7, min(30, fs.get('weather_temp', _FONT_BIG_SIZE)))
-        sz_eq_chat    = max(7, min(30, fs.get('eq_chat',      8)))
-        sz_sonar_mode = max(7, min(30, fs.get('sonar_mode',    8)))
+        sz_eq_chat     = max(7, min(30, fs.get('eq_chat',      8)))
+        sz_sonar_mode  = max(7, min(30, fs.get('sonar_mode',   8)))
+        sz_now_playing = max(7, min(30, fs.get('now_playing',  8)))
 
         font_time    = ImageFont.load_default(size=sz_time)
         font_battery = ImageFont.load_default(size=sz_battery)
@@ -278,6 +288,8 @@ class OledRenderer:
             sz_time=sz_time, sz_battery=sz_battery, sz_profile=sz_profile,
             sz_eq=sz_eq, sz_weather_tmp=sz_weather_tmp,
             sz_sonar_mode=sz_sonar_mode, sz_eq_chat=sz_eq_chat,
+            show_now_playing=show_now_playing, now_playing=now_playing,
+            sz_now_playing=sz_now_playing,
             display_order=order,
         )
         buf_h = max(self.HEIGHT, natural_h)
@@ -375,8 +387,19 @@ class OledRenderer:
             elif element == 'eq_chat' and show_eq_chat and eq_chat_preset:
                 draw.text((1 - eq_chat_scroll_offset, y), f"Chat: {eq_chat_preset}", font=font_eq_chat, fill=1)
                 y += sz_eq_chat + 3
+            elif element == 'now_playing' and show_now_playing and now_playing is not None:
+                font_np = ImageFont.load_default(size=sz_now_playing)
+                np_text = self._now_playing_text(now_playing)
+                draw.text((1 - now_playing_scroll_offset, y), np_text, font=font_np, fill=1)
+                y += sz_now_playing + 3
 
         return image, header_h
+
+    @staticmethod
+    def _now_playing_text(now_playing: "NowPlaying") -> str:
+        if now_playing.artist:
+            return f"{now_playing.artist} - {now_playing.title}"
+        return now_playing.title
 
     def _natural_height(
         self,
@@ -387,6 +410,8 @@ class OledRenderer:
         sz_time: int = _FONT_BIG_SIZE, sz_battery: int = _FONT_MED_SIZE,
         sz_profile: int = 8, sz_eq: int = 8, sz_weather_tmp: int = _FONT_BIG_SIZE,
         sz_sonar_mode: int = 8, sz_eq_chat: int = 8,
+        show_now_playing: bool = False, now_playing: "NowPlaying | None" = None,
+        sz_now_playing: int = 8,
         display_order: "list[str] | None" = None,
     ) -> int:
         y = 1
@@ -408,6 +433,8 @@ class OledRenderer:
                 pass
             elif element == 'eq_chat' and show_eq_chat and eq_chat_preset:
                 y += sz_eq_chat + 3
+            elif element == 'now_playing' and show_now_playing and now_playing is not None:
+                y += sz_now_playing + 3
         return y
 
     def render_splash_image(self) -> bytes:

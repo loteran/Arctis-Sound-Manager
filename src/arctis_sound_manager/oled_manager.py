@@ -20,6 +20,7 @@ from PIL import Image
 from arctis_sound_manager.oled_protocol import OledProtocol
 from arctis_sound_manager.oled_renderer import OledRenderer
 from arctis_sound_manager.weather_service import WeatherData, WeatherService
+from arctis_sound_manager.mpris_watcher import MprisWatcher
 from arctis_sound_manager.config import parsed_status
 from arctis_sound_manager import profile_manager
 
@@ -85,6 +86,7 @@ class OledManager:
         self._protocol = OledProtocol(report_id=_report_id, width=_width, height=_height)
         self._renderer = OledRenderer()
         self._weather = WeatherService()
+        self._mpris = MprisWatcher()
         self._stop_event = threading.Event()
         self._reset_scroll_event = threading.Event()
         self._thread: threading.Thread | None = None
@@ -111,6 +113,9 @@ class OledManager:
         self._eq_chat_scroll_offset: int = 0
         self._eq_chat_reset_event = threading.Event()
         self._eq_chat_scroll_thread: threading.Thread | None = None
+        self._now_playing_scroll_offset: int = 0
+        self._now_playing_reset_event = threading.Event()
+        self._now_playing_scroll_thread: threading.Thread | None = None
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -145,11 +150,18 @@ class OledManager:
             name="OledEqChatScroll",
             daemon=True,
         )
+        self._now_playing_scroll_thread = threading.Thread(
+            target=self._now_playing_scroll_loop,
+            name="OledNowPlayingScroll",
+            daemon=True,
+        )
         self._thread.start()
         self._scroll_thread.start()
         self._eq_scroll_thread.start()
         self._profile_scroll_thread.start()
         self._eq_chat_scroll_thread.start()
+        self._now_playing_scroll_thread.start()
+        self._mpris.start()
         self.set_brightness(self._core.general_settings.oled_brightness)
         self._show_splash()
         logger.info("OledManager started (interval=%.1fs)", _REFRESH_INTERVAL_S)
@@ -194,6 +206,10 @@ class OledManager:
         if self._eq_chat_scroll_thread is not None:
             self._eq_chat_scroll_thread.join(timeout=2.0)
             self._eq_chat_scroll_thread = None
+        if self._now_playing_scroll_thread is not None:
+            self._now_playing_scroll_thread.join(timeout=2.0)
+            self._now_playing_scroll_thread = None
+        self._mpris.stop()
         logger.info("OledManager stopped")
 
     def _reset_scroll(self) -> None:
@@ -201,10 +217,12 @@ class OledManager:
         self._eq_scroll_offset = 0
         self._profile_scroll_offset = 0
         self._eq_chat_scroll_offset = 0
+        self._now_playing_scroll_offset = 0
         self._reset_scroll_event.set()
         self._eq_reset_event.set()
         self._profile_reset_event.set()
         self._eq_chat_reset_event.set()
+        self._now_playing_reset_event.set()
 
     def update_display(self, activity: bool = True) -> None:
         if datetime.now().timestamp() < self._splash_until:
@@ -249,6 +267,8 @@ class OledManager:
                 gs.weather_units, gs.weather_city_display or gs.weather_location,
             )
 
+        now_playing = self._mpris.get_now_playing() if gs.oled_show_now_playing else None
+
         self._last_render_params = dict(
             battery_percent=battery,
             charging=charging,
@@ -266,6 +286,8 @@ class OledManager:
             show_sonar_mode=gs.oled_show_sonar_mode,
             show_eq_chat=gs.oled_show_eq_chat,
             show_weather_city=gs.oled_show_weather_city,
+            show_now_playing=gs.oled_show_now_playing,
+            now_playing=now_playing,
             mic_status=mic_status,
             eq_mode=eq_mode,
             eq_chat_preset=eq_chat_preset,
@@ -279,6 +301,7 @@ class OledManager:
                 'eq_chat':      gs.oled_font_eq_chat,
                 'sonar_mode':   gs.oled_font_sonar_mode,
                 'weather_temp': gs.oled_font_weather_temp,
+                'now_playing':  gs.oled_font_now_playing,
             },
         )
         image, header_h = self._renderer.render_status_image(
@@ -286,6 +309,7 @@ class OledManager:
             eq_scroll_offset=self._eq_scroll_offset,
             profile_scroll_offset=self._profile_scroll_offset,
             eq_chat_scroll_offset=self._eq_chat_scroll_offset,
+            now_playing_scroll_offset=self._now_playing_scroll_offset,
         )
 
         with self._image_lock:
@@ -376,6 +400,7 @@ class OledManager:
             eq_scroll_offset=self._eq_scroll_offset,
             profile_scroll_offset=self._profile_scroll_offset,
             eq_chat_scroll_offset=self._eq_chat_scroll_offset,
+            now_playing_scroll_offset=self._now_playing_scroll_offset,
         )
         with self._image_lock:
             self._current_image = image
@@ -633,4 +658,68 @@ class OledManager:
 
             except Exception as e:
                 logger.warning("OLED EQ Chat scroll error: %s", e)
+                self._stop_event.wait(0.5)
+
+    def _now_playing_scroll_wait(self, seconds: float) -> bool:
+        deadline = datetime.now().timestamp() + seconds
+        while True:
+            if self._stop_event.is_set():
+                return True
+            if self._now_playing_reset_event.is_set():
+                return True
+            remaining = deadline - datetime.now().timestamp()
+            if remaining <= 0:
+                return False
+            self._stop_event.wait(min(remaining, 0.05))
+
+    def _now_playing_scroll_loop(self) -> None:
+        """Horizontal marquee thread for the Now Playing line when it overflows 128px."""
+        while not self._stop_event.is_set():
+            try:
+                self._now_playing_reset_event.clear()
+                self._now_playing_scroll_offset = 0
+
+                gs = self._core.general_settings
+                speed = gs.oled_eq_scroll_speed
+                if not gs.oled_show_now_playing or not gs.oled_custom_display or speed == 0:
+                    if self._now_playing_scroll_wait(0.5):
+                        continue
+                    continue
+
+                np = self._mpris.get_now_playing()
+                if np is None:
+                    if self._now_playing_scroll_wait(0.5):
+                        continue
+                    continue
+
+                from arctis_sound_manager.oled_renderer import OledRenderer
+                np_text = OledRenderer._now_playing_text(np)
+                text_w = self._renderer.measure_now_playing_text(np_text, gs.oled_font_now_playing)
+                max_offset = text_w - (self._renderer.WIDTH - 1)
+
+                if max_offset <= 0:
+                    if self._now_playing_scroll_wait(0.5):
+                        continue
+                    continue
+
+                if self._now_playing_scroll_wait(_EQ_SCROLL_PAUSE_START_S):
+                    continue
+
+                interval = _SPEED_TO_INTERVAL.get(speed, 0.2)
+                while self._now_playing_scroll_offset < max_offset:
+                    if self._stop_event.is_set() or self._now_playing_reset_event.is_set():
+                        break
+                    self._now_playing_scroll_offset += 1
+                    self._update_scroll_frame()
+                    if self._now_playing_scroll_wait(interval):
+                        break
+                    interval = _SPEED_TO_INTERVAL.get(gs.oled_eq_scroll_speed, 0.2)
+                else:
+                    if self._now_playing_scroll_wait(_EQ_SCROLL_PAUSE_END_S):
+                        continue
+                    self._now_playing_scroll_offset = 0
+                    self._update_scroll_frame()
+
+            except Exception as e:
+                logger.warning("OLED Now Playing scroll error: %s", e)
                 self._stop_event.wait(0.5)

@@ -55,6 +55,7 @@ _ORDERABLE_ITEMS = [
     ('eq',          'oled_show_eq',          'oled_show_eq',          'oled_font_eq',             8),
     ('eq_chat',     'oled_show_eq_chat',     'oled_show_eq_chat',     'oled_font_eq_chat',        8),
     ('weather',     'weather_enabled',       'weather_enabled',       'oled_font_weather_temp',  20),
+    ('now_playing', 'oled_show_now_playing', 'oled_show_now_playing', 'oled_font_now_playing',    8),
 ]
 
 _DAC_WIDGET_EXCLUDE = {
