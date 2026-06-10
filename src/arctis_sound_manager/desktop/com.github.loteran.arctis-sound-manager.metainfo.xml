@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.65" date="2026-06-10">
+      <description>
+        <p>OLED splash screen persisted over custom display on devices without a live PipeWire session — the refresh loop slept for the full 5 s REFRESH_INTERVAL even when the 3 s splash had already expired, leaving a ~2 s gap where the device firmware reclaimed the OLED and showed its native UI alongside ASM's splash content. The loop now wakes immediately at splash expiry so the first custom-display frame is pushed without delay. (#76). No interrupt OUT endpoint warning flooded the journal every 2 s — for devices without an interrupt OUT endpoint on their command interface (e.g. Arctis 1 Wireless), ASM correctly falls back to HID SET_REPORT but was logging a WARNING on every status poll. The warning is now emitted once per device attach; subsequent occurrences are downgraded to DEBUG. The flag is reset on teardown so the warning reappears on reconnect. (#74). recreate_loopbacks storm when filter-chain.service crashed repeatedly — if the SteelSeries Sonar filter-chain service crashed and restarted every few seconds (common in Distrobox), each pw-loopback exit triggered a D-Bus RecreateLoopbacks call, causing a rapid stop/start cycle with no net benefit. Calls are now debounced to at most once per 5 s; legitimate Sonar ↔ simple mode switches are unaffected. (#74).</p>
+      </description>
+    </release>
     <release version="1.1.64" date="2026-06-10">
       <description>
         <p>Multi-theme support — ASM now ships 5 built-in colour themes (SteelSeries, Dark, Light, Ocean, Forest). The active theme is persisted in settings and can be switched live from the device page without restarting the application; every page, dialog and tray menu follows the change immediately. Enhanced bug report diagnostics — PipeWire / container runtime — the automatic bug report now collects the data needed to diagnose audio-routing failures in Distrobox and other container environments: $PIPEWIRE_RUNTIME_DIR, $PULSE_SERVER, container type (Distrobox / Flatpak / Snap / Docker / native), status of pipewire, pipewire-pulse, wireplumber and filter-chain user services, Arctis-filtered PipeWire nodes from pw-dump (with pactl fallback), PipeWire sources, and the last journal entries for pipewire and filter-chain. A missing or empty Arctis-nodes section in a report is now a direct indicator that PipeWire cannot see the device — eliminating the back-and-forth follow-up that issue #74 required.</p>
@@ -199,11 +204,6 @@
     <release version="1.0.99" date="2026-05-06">
       <description>
         <p>Adaptive multi-DE autostart — Hyprland, Sway, XDG, systemd, dinit — the "Launch at startup" toggle now automatically selects the right method for the detected desktop environment / init system. On Hyprland it writes exec-once = asm-gui --systray into ~/.config/hypr/hyprland.conf (using a comment marker for clean enable/disable). On Sway it writes exec asm-gui --systray into ~/.config/sway/config. On dinit systems the existing dinitctl enable calls are used. On systemd-based DEs (GNOME, KDE, XFCE, …) the arctis-gui.service approach is kept. Any other setup (i3, unknown, non-systemd distros) falls back to an XDG .desktop file in ~/.config/autostart/. Switching DEs cleans up stale entries from the previous method. Fixes the issue reported by users running Hyprland/CachyOS where the toggle had no effect (closes #30).</p>
-      </description>
-    </release>
-    <release version="1.0.98" date="2026-05-05">
-      <description>
-        <p>Distrobox hot-plug (issue #26) — the headset can now be plugged in *after* the container is created without requiring --reinstall. A new udev rule (90-asm-hidraw-symlink.rules) maintains /run/asm-hidraw/ as a stable directory of symlinks to SteelSeries hidraw nodes; the container mounts this directory with rslave propagation so additions and removals on the host are immediately visible inside. libusb / PyUSB access from container — /dev/bus/usb is now bind-mounted into the container (rslave), giving PyUSB full access to the USB device tree. Previously only /dev/hidraw* was passed, which blocked the libusb backend entirely. Fedora Silverblue/Kinoite variants auto-detected — distrobox-install.sh now correctly routes Bluefin, Aurora, Sericea, Onyx, and Cosmic Atomic to silverblue.sh (Fedora COPR container) instead of incorrectly using the Arch/AUR container.</p>
       </description>
     </release>
   </releases>
