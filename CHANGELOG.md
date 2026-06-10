@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.64] - 10 June 2026
+
+### Added
+
+- **Multi-theme support** — ASM now ships 5 built-in colour themes (SteelSeries, Dark, Light, Ocean, Forest). The active theme is persisted in settings and can be switched live from the device page without restarting the application; every page, dialog and tray menu follows the change immediately.
+- **Enhanced bug report diagnostics — PipeWire / container runtime** — the automatic bug report now collects the data needed to diagnose audio-routing failures in Distrobox and other container environments: `$PIPEWIRE_RUNTIME_DIR`, `$PULSE_SERVER`, container type (Distrobox / Flatpak / Snap / Docker / native), status of `pipewire`, `pipewire-pulse`, `wireplumber` and `filter-chain` user services, Arctis-filtered PipeWire nodes from `pw-dump` (with `pactl` fallback), PipeWire sources, and the last journal entries for `pipewire` and `filter-chain`. A missing or empty Arctis-nodes section in a report is now a direct indicator that PipeWire cannot see the device — eliminating the back-and-forth follow-up that issue #74 required.
+
 ## [1.1.63] - 9 June 2026
 
 ### Fixed
