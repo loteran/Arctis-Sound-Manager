@@ -22,6 +22,7 @@ from arctis_sound_manager.gui.components import SectionTitle
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
 from arctis_sound_manager.gui.home_page import ToggleSwitch
 from arctis_sound_manager.gui.settings_widget import QSettingsWidget
+import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.gui.theme import (
     ACCENT,
     BG_BUTTON,
@@ -86,27 +87,31 @@ class DacPage(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet(f"QScrollArea {{ background-color: {BG_MAIN}; border: none; }}")
+        scroll.setStyleSheet(f"QScrollArea {{ background-color: {_theme.c('BG_MAIN')}; border: none; }}")
+        self._scroll = scroll
 
         content = QWidget()
-        content.setStyleSheet(f"background-color: {BG_MAIN};")
+        content.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+        self._content = content
         layout = QVBoxLayout(content)
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setContentsMargins(36, 28, 36, 36)
         layout.setSpacing(0)
 
-        app_title = QLabel("Arctis Sound Manager")
-        app_title.setStyleSheet(
+        self._app_title = QLabel("Arctis Sound Manager")
+        self._app_title.setStyleSheet(
             f"color: {TEXT_PRIMARY}; font-size: 28pt; font-weight: bold; background: transparent;"
         )
-        layout.addWidget(app_title)
+        layout.addWidget(self._app_title)
         layout.addSpacing(28)
 
-        layout.addWidget(SectionTitle(I18n.translate("ui", "dac_settings")))
+        self._section_dac = SectionTitle(I18n.translate("ui", "dac_settings"))
+        layout.addWidget(self._section_dac)
         layout.addSpacing(12)
 
         # ── Custom display toggle ──────────────────────────────────────────────
-        layout.addWidget(self._build_custom_display_card())
+        self._custom_display_card = self._build_custom_display_card()
+        layout.addWidget(self._custom_display_card)
         layout.addSpacing(16)
 
         # ── Brightness / Timeout sliders ───────────────────────────────────────
@@ -119,20 +124,142 @@ class DacPage(QWidget):
         layout.addSpacing(24)
 
         # ── Display elements ───────────────────────────────────────────────────
-        layout.addWidget(SectionTitle(I18n.translate("ui", "oled_display_elements")))
+        self._section_display = SectionTitle(I18n.translate("ui", "oled_display_elements"))
+        layout.addWidget(self._section_display)
         layout.addSpacing(12)
-        layout.addWidget(self._build_display_elements_card())
+        self._display_elements_card = self._build_display_elements_card()
+        layout.addWidget(self._display_elements_card)
         layout.addSpacing(24)
 
         # ── Weather section ────────────────────────────────────────────────────
-        layout.addWidget(SectionTitle(I18n.translate("ui", "weather_settings")))
+        self._section_weather = SectionTitle(I18n.translate("ui", "weather_settings"))
+        layout.addWidget(self._section_weather)
         layout.addSpacing(12)
-        layout.addWidget(self._build_weather_card())
+        self._weather_card = self._build_weather_card()
+        layout.addWidget(self._weather_card)
 
         layout.addStretch(1)
 
         scroll.setWidget(content)
         outer.addWidget(scroll)
+
+        # Apply the currently-active theme on first paint.
+        self.apply_theme()
+
+    # ── Theme propagation ─────────────────────────────────────────────────────
+
+    def apply_theme(self, t=None) -> None:
+        """Restyle the DAC page for the current active theme."""
+        self.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+        self._scroll.setStyleSheet(f"QScrollArea {{ background-color: {_theme.c('BG_MAIN')}; border: none; }}")
+        self._content.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+
+        # Rebuild the string-template card styles used during construction.
+        _card_style = (
+            f"background-color: {_theme.c('BG_CARD')}; "
+            f"border-radius: 8px; border: 1px solid {_theme.c('BORDER')};"
+        )
+        _lbl_style = f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 11pt; background: transparent; border: none;"
+        _hint_style = f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; background: transparent; border: none;"
+
+        # App title
+        if hasattr(self, "_app_title"):
+            self._app_title.setStyleSheet(
+                f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 28pt; font-weight: bold; background: transparent;"
+            )
+
+        # Section titles
+        for attr in ("_section_dac", "_section_display", "_section_weather"):
+            if hasattr(self, attr):
+                getattr(self, attr).apply_theme()
+
+        # Card backgrounds
+        for attr in ("_custom_display_card", "_display_elements_card", "_weather_card"):
+            if hasattr(self, attr):
+                getattr(self, attr).setStyleSheet(_card_style)
+
+        # In-card labels
+        if hasattr(self, "_custom_display_lbl"):
+            self._custom_display_lbl.setStyleSheet(_lbl_style)
+        if hasattr(self, "_weather_lbl_enable"):
+            self._weather_lbl_enable.setStyleSheet(_lbl_style)
+        if hasattr(self, "_weather_lbl_units"):
+            self._weather_lbl_units.setStyleSheet(_lbl_style)
+
+        # Separator in display elements card
+        if hasattr(self, "_display_sep"):
+            self._display_sep.setStyleSheet(
+                f"color: {_theme.c('BORDER')}; background: {_theme.c('BORDER')}; max-height: 1px;"
+            )
+
+        # Custom display card
+        if hasattr(self, "_custom_display_hint"):
+            self._custom_display_hint.setStyleSheet(_hint_style)
+
+        # DAC settings widget background
+        if hasattr(self, "_dac_widget"):
+            self._dac_widget.setStyleSheet(f"""
+                QWidget {{ background-color: {_theme.c('BG_MAIN')}; color: {_theme.c('TEXT_PRIMARY')}; }}
+                QLabel {{ background-color: transparent; color: {_theme.c('TEXT_PRIMARY')}; font-size: 11pt; }}
+            """)
+
+        # Weather status label
+        if hasattr(self, "_weather_status"):
+            self._weather_status.setStyleSheet(_hint_style)
+
+        # City input
+        if hasattr(self, "_city_input"):
+            self._city_input.setStyleSheet(f"""
+                QLineEdit {{
+                    background-color: {_theme.c('BG_BUTTON')}; color: {_theme.c('TEXT_PRIMARY')};
+                    border: 1px solid {_theme.c('BORDER')}; border-radius: 6px;
+                    padding: 6px 10px; font-size: 10pt;
+                }}
+                QLineEdit:focus {{ border-color: {_theme.c('ACCENT')}; }}
+            """)
+
+        # Weather save button
+        if hasattr(self, "_weather_save_btn"):
+            self._weather_save_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {_theme.c('ACCENT')}; color: #fff; border: none;
+                    border-radius: 6px; padding: 6px 14px; font-size: 10pt;
+                }}
+                QPushButton:hover {{ background-color: {_theme.c('BG_BUTTON_HOVER')}; }}
+                QPushButton:disabled {{ background-color: {_theme.c('BG_BUTTON')}; color: {_theme.c('TEXT_SECONDARY')}; }}
+            """)
+
+        # Unit buttons — re-apply via existing method to pick the active state
+        if hasattr(self, "_weather_units"):
+            if hasattr(self, "_unit_btn_celsius"):
+                self._unit_btn_celsius.setStyleSheet(
+                    self._unit_btn_style(self._weather_units == "celsius")
+                )
+            if hasattr(self, "_unit_btn_fahrenheit"):
+                self._unit_btn_fahrenheit.setStyleSheet(
+                    self._unit_btn_style(self._weather_units == "fahrenheit")
+                )
+
+        # Checkbox and spinbox styles — rebuild dynamic style strings
+        _cb_style = self._checkbox_style()
+        _sp_style = self._spinbox_style()
+        for cb in self._display_checkboxes.values():
+            cb.setStyleSheet(_cb_style)
+        for sp in self._font_spinboxes.values():
+            sp.setStyleSheet(_sp_style)
+
+        # Orderable row up/down buttons
+        from PySide6.QtWidgets import QPushButton as _QPB
+        _btn_style = (
+            f"QPushButton {{ background: {_theme.c('BG_BUTTON')}; color: {_theme.c('TEXT_PRIMARY')}; "
+            f"border: 1px solid {_theme.c('BORDER')}; border-radius: 4px; "
+            f"font-size: 9pt; min-width: 22px; max-width: 22px; "
+            f"min-height: 20px; max-height: 20px; padding: 0; }}"
+            f"QPushButton:hover {{ background: {_theme.c('BG_BUTTON_HOVER')}; }}"
+        )
+        for row_w in self._orderable_rows.values():
+            for btn in row_w.findChildren(_QPB):
+                btn.setStyleSheet(_btn_style)
 
     # ── Builder helpers ────────────────────────────────────────────────────────
 
@@ -145,6 +272,7 @@ class DacPage(QWidget):
 
         lbl = QLabel(I18n.translate("settings", "oled_custom_display"))
         lbl.setStyleSheet(_LBL_STYLE.format(color=TEXT_PRIMARY))
+        self._custom_display_lbl = lbl
         row.addWidget(lbl, stretch=1)
 
         self._custom_display_hint = QLabel()
@@ -192,6 +320,7 @@ class DacPage(QWidget):
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
         sep.setStyleSheet(f"color: {BORDER}; background: {BORDER}; max-height: 1px;")
+        self._display_sep = sep
         col.addWidget(sep)
         col.addSpacing(4)
 
@@ -309,20 +438,20 @@ class DacPage(QWidget):
 
     def _spinbox_style(self) -> str:
         return (
-            f"QSpinBox {{ background: {BG_BUTTON}; color: {TEXT_PRIMARY}; "
-            f"border: 1px solid {BORDER}; border-radius: 4px; "
+            f"QSpinBox {{ background: {_theme.c('BG_BUTTON')}; color: {_theme.c('TEXT_PRIMARY')}; "
+            f"border: 1px solid {_theme.c('BORDER')}; border-radius: 4px; "
             f"padding: 2px 4px; font-size: 9pt; }}"
-            f"QSpinBox:focus {{ border-color: {ACCENT}; }}"
+            f"QSpinBox:focus {{ border-color: {_theme.c('ACCENT')}; }}"
             f"QSpinBox::up-button, QSpinBox::down-button {{ width: 16px; }}"
         )
 
     def _checkbox_style(self) -> str:
         return (
-            f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 11pt; "
+            f"QCheckBox {{ color: {_theme.c('TEXT_PRIMARY')}; font-size: 11pt; "
             f"background: transparent; spacing: 8px; padding: 6px 0px; }}"
             f"QCheckBox::indicator {{ width: 18px; height: 18px; "
-            f"border: 1px solid {BORDER}; border-radius: 4px; background-color: {BG_BUTTON}; }}"
-            f"QCheckBox::indicator:checked {{ background-color: {ACCENT}; border-color: {ACCENT}; }}"
+            f"border: 1px solid {_theme.c('BORDER')}; border-radius: 4px; background-color: {_theme.c('BG_BUTTON')}; }}"
+            f"QCheckBox::indicator:checked {{ background-color: {_theme.c('ACCENT')}; border-color: {_theme.c('ACCENT')}; }}"
         )
 
     def _build_weather_card(self) -> QWidget:
@@ -340,6 +469,7 @@ class DacPage(QWidget):
         r1.setSpacing(12)
         lbl_enable = QLabel(I18n.translate("settings", "weather_enabled"))
         lbl_enable.setStyleSheet(_LBL_STYLE.format(color=TEXT_PRIMARY))
+        self._weather_lbl_enable = lbl_enable
         r1.addWidget(lbl_enable, stretch=1)
         self._weather_toggle = ToggleSwitch()
         self._weather_toggle.set_checked(False)
@@ -390,6 +520,7 @@ class DacPage(QWidget):
 
         lbl_units = QLabel(I18n.translate("settings", "weather_units"))
         lbl_units.setStyleSheet(_LBL_STYLE.format(color=TEXT_PRIMARY))
+        self._weather_lbl_units = lbl_units
         r3.addWidget(lbl_units, stretch=1)
 
         for unit, label in [("celsius", "°C"), ("fahrenheit", "°F")]:
@@ -414,12 +545,12 @@ class DacPage(QWidget):
         return card
 
     def _unit_btn_style(self, active: bool) -> str:
-        bg = ACCENT if active else BG_BUTTON
-        color = "#fff" if active else TEXT_PRIMARY
+        bg = _theme.c('ACCENT') if active else _theme.c('BG_BUTTON')
+        color = "#fff" if active else _theme.c('TEXT_PRIMARY')
         return (
-            f"QPushButton {{ background-color: {bg}; color: {color}; border: 1px solid {BORDER}; "
+            f"QPushButton {{ background-color: {bg}; color: {color}; border: 1px solid {_theme.c('BORDER')}; "
             f"border-radius: 6px; padding: 4px 12px; font-size: 10pt; }}"
-            f"QPushButton:hover {{ background-color: {BG_BUTTON_HOVER}; color: {TEXT_PRIMARY}; }}"
+            f"QPushButton:hover {{ background-color: {_theme.c('BG_BUTTON_HOVER')}; color: {_theme.c('TEXT_PRIMARY')}; }}"
         )
 
     # ── Slots ──────────────────────────────────────────────────────────────────
@@ -441,7 +572,7 @@ class DacPage(QWidget):
     def _on_weather_save(self) -> None:
         self._weather_save_btn.setEnabled(False)
         self._weather_status.setText(I18n.translate("settings", "weather_searching"))
-        self._weather_status.setStyleSheet(_HINT_STYLE.format(color=TEXT_SECONDARY))
+        self._weather_status.setStyleSheet(_HINT_STYLE.format(color=_theme.c('TEXT_SECONDARY')))
         self._save_weather_settings()
 
     def _save_weather_settings(self) -> None:
@@ -466,7 +597,7 @@ class DacPage(QWidget):
             city = result.get("city", "")
             msg = I18n.translate("settings", "weather_found").format(city=city) if city else \
                   I18n.translate("settings", "weather_saved")
-            self._weather_status.setStyleSheet(_HINT_STYLE.format(color=ACCENT))
+            self._weather_status.setStyleSheet(_HINT_STYLE.format(color=_theme.c('ACCENT')))
             self._weather_status.setText(msg)
         else:
             err = result.get("error", "Unknown error")
@@ -520,7 +651,7 @@ class DacPage(QWidget):
             self._city_input.setText(dac.get('weather_location', ''))
         city_display = dac.get('weather_city_display', '')
         if city_display:
-            self._weather_status.setStyleSheet(_HINT_STYLE.format(color=ACCENT))
+            self._weather_status.setStyleSheet(_HINT_STYLE.format(color=_theme.c('ACCENT')))
             self._weather_status.setText(
                 I18n.translate("settings", "weather_found").format(city=city_display)
             )

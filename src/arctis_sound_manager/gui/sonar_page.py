@@ -73,6 +73,7 @@ class _NoWheelSlider(QSlider):
         event.ignore()
 from arctis_sound_manager.gui.qt_widgets.q_toggle import QToggle
 from arctis_sound_manager.system_deps_checker import _find_ladspa_plugin
+import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.gui.theme import (
     ACCENT,
     BG_BUTTON,
@@ -1259,6 +1260,33 @@ class _MacroSliders(QWidget):
         _save_macro(self._channel, values)
         self.macros_changed.emit(values["basses"], values["voix"], values["aigus"])
 
+    def apply_theme(self, t=None) -> None:
+        """Restyle macro sliders for the active theme."""
+        _slider_qss = f"""
+            QSlider::groove:horizontal {{
+                height: 4px;
+                background: {_theme.c('BG_BUTTON')};
+                border-radius: 2px;
+            }}
+            QSlider::handle:horizontal {{
+                background: {_theme.c('ACCENT')};
+                width: 14px;
+                height: 14px;
+                margin: -5px 0;
+                border-radius: 7px;
+            }}
+            QSlider::sub-page:horizontal {{
+                background: {_theme.c('ACCENT')};
+                border-radius: 2px;
+            }}
+        """
+        for slider in self._sliders.values():
+            slider.setStyleSheet(_slider_qss)
+        for lbl in self._labels.values():
+            lbl.setStyleSheet(
+                f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 10pt; font-weight: bold;"
+            )
+
     def get_values(self) -> tuple[float, float, float]:
         return (
             self._sliders["basses"].value() / 10.0,
@@ -1433,6 +1461,9 @@ class SonarChannelWidget(QWidget):
         # Load initial preset
         self._load_initial()
 
+        # Apply the currently-active theme on first paint.
+        self.apply_theme()
+
     def _card(self) -> QWidget:
         w = QWidget()
         w.setObjectName("sonarCard")
@@ -1444,6 +1475,68 @@ class SonarChannelWidget(QWidget):
             }}
         """)
         return w
+
+    def apply_theme(self, t=None) -> None:
+        """Restyle this channel widget for the active theme."""
+        self.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+
+        # Restyle all sonarCard widgets (preset card, eq card, settings card)
+        for w in self.findChildren(QWidget, "sonarCard"):
+            w.setStyleSheet(f"""
+                QWidget#sonarCard {{
+                    background-color: {_theme.c('BG_CARD')};
+                    border: 1px solid {_theme.c('BORDER')};
+                    border-radius: 12px;
+                }}
+            """)
+
+        # Restyle settings card variants (settingsCard, microSettingsCard)
+        for obj_name in ("settingsCard", "microSettingsCard"):
+            for w in self.findChildren(QWidget, obj_name):
+                w.setStyleSheet(f"""
+                    QWidget#{obj_name} {{
+                        background-color: {_theme.c('BG_CARD')};
+                        border: 1px solid {_theme.c('BORDER')};
+                        border-radius: 12px;
+                    }}
+                """)
+
+        # Macro sliders — rebuild their QSS
+        if hasattr(self, "_macros"):
+            self._macros.apply_theme(t)
+
+        # SpatialAudio / BoostVolume / SmartVolume sub-widgets
+        if hasattr(self, "_spatial"):
+            self._spatial.apply_theme(t)
+        if hasattr(self, "_boost"):
+            self._boost.apply_theme(t)
+        if hasattr(self, "_smart"):
+            self._smart.apply_theme(t)
+
+        # EQ curve widget (already self-themed via paintEvent, just repaint)
+        if hasattr(self, "_eq_widget"):
+            self._eq_widget.apply_theme(t)
+
+        # Apply button
+        if hasattr(self, "_apply_btn"):
+            self._apply_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: {_theme.c('ACCENT')};
+                    color: #fff;
+                    border: none;
+                    border-radius: 6px;
+                    padding: 4px 14px;
+                    font-size: 10pt;
+                    font-weight: bold;
+                }}
+                QPushButton:hover {{ background: {_theme.c('BG_BUTTON_HOVER')}; }}
+            """)
+
+        # Status label
+        if hasattr(self, "_status_lbl"):
+            self._status_lbl.setStyleSheet(
+                f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt;"
+            )
 
     def _load_initial(self):
         name = _active_preset_name(self._channel)
@@ -1738,6 +1831,21 @@ class SpatialAudioWidget(QWidget):
             lbl.setText(str(value))
         self.state_changed.emit()
 
+    def apply_theme(self, t=None) -> None:
+        """Restyle spatial audio widget sliders for the active theme."""
+        _slider_qss = f"""
+            QLabel {{ background: transparent; border: none; }}
+            QSlider::groove:horizontal {{
+                height: 4px; background: {_theme.c('BG_BUTTON')}; border-radius: 2px;
+            }}
+            QSlider::handle:horizontal {{
+                background: {_theme.c('ACCENT')}; width: 14px; height: 14px;
+                margin: -5px 0; border-radius: 7px;
+            }}
+            QSlider::sub-page:horizontal {{ background: {_theme.c('ACCENT')}; border-radius: 2px; }}
+        """
+        self.setStyleSheet(_slider_qss)
+
     def get_state(self) -> dict:
         return dict(self._state)
 
@@ -1832,6 +1940,24 @@ class BoostVolumeWidget(QWidget):
         root.addWidget(self._detail)
 
         self._detail.setVisible(self._state["enabled"])
+
+    def apply_theme(self, t=None) -> None:
+        """Restyle boost volume widget for the active theme."""
+        _slider_qss = f"""
+            QLabel {{ background: transparent; border: none; }}
+            QSlider::groove:horizontal {{
+                height: 4px; background: {_theme.c('BG_BUTTON')}; border-radius: 2px;
+            }}
+            QSlider::handle:horizontal {{
+                background: {_theme.c('ACCENT')}; width: 14px; height: 14px;
+                margin: -5px 0; border-radius: 7px;
+            }}
+            QSlider::sub-page:horizontal {{ background: {_theme.c('ACCENT')}; border-radius: 2px; }}
+        """
+        self.setStyleSheet(_slider_qss)
+        self._db_label.setStyleSheet(
+            f"font-size: 11pt; font-weight: bold; color: {_theme.c('ACCENT')}; min-width: 60px;"
+        )
 
     def _fmt(self, db: float) -> str:
         return f"+{db:.1f} dB" if db > 0 else "0 dB"
@@ -1962,15 +2088,31 @@ class SmartVolumeWidget(QWidget):
         root.addWidget(self._detail)
         self._detail.setVisible(self._state["enabled"])
 
+    def apply_theme(self, t=None) -> None:
+        """Restyle smart volume widget for the active theme."""
+        _slider_qss = f"""
+            QLabel {{ background: transparent; border: none; }}
+            QSlider::groove:horizontal {{
+                height: 4px; background: {_theme.c('BG_BUTTON')}; border-radius: 2px;
+            }}
+            QSlider::handle:horizontal {{
+                background: {_theme.c('ACCENT')}; width: 14px; height: 14px;
+                margin: -5px 0; border-radius: 7px;
+            }}
+            QSlider::sub-page:horizontal {{ background: {_theme.c('ACCENT')}; border-radius: 2px; }}
+        """
+        self.setStyleSheet(_slider_qss)
+        self._refresh_loudness()
+
     def _refresh_loudness(self):
         active = self._state.get("loudness", "balanced")
         for value, btn in self._loudness_btns.items():
             selected = value == active
             btn.setStyleSheet(f"""
                 QPushButton {{
-                    background: {ACCENT if selected else BG_BUTTON};
-                    color: {"#fff" if selected else TEXT_SECONDARY};
-                    border: 1px solid {ACCENT if selected else BORDER};
+                    background: {_theme.c('ACCENT') if selected else _theme.c('BG_BUTTON')};
+                    color: {"#fff" if selected else _theme.c('TEXT_SECONDARY')};
+                    border: 1px solid {_theme.c('ACCENT') if selected else _theme.c('BORDER')};
                     border-radius: 6px; padding: 0 12px; font-size: 10pt;
                 }}
             """)
@@ -2614,6 +2756,10 @@ class SonarPage(QWidget):
         self._chat_widget._boost.state_changed.connect(self._on_boost_changed)
         self._chat_widget._smart.state_changed.connect(self._on_smart_changed)
 
+        # Apply the currently-active theme so a saved non-default theme renders
+        # correctly on first paint.
+        self.apply_theme()
+
     def _load_output_target(self):
         """Read external_output_device from settings and set it on the output widget.
 
@@ -2667,6 +2813,41 @@ class SonarPage(QWidget):
         self._game_widget._schedule_apply()
         self._media_widget._schedule_apply()
         self._chat_widget._schedule_apply()
+
+    def apply_theme(self, t=None) -> None:
+        """Restyle the Sonar page and all its channel widgets for the active theme."""
+        self.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+
+        self._tabs.setStyleSheet(f"""
+            QTabWidget::pane {{
+                border: none;
+                background: transparent;
+            }}
+            QTabBar::tab {{
+                background: {_theme.c('BG_BUTTON')};
+                color: {_theme.c('TEXT_SECONDARY')};
+                border: 1px solid {_theme.c('BORDER')};
+                border-bottom: none;
+                border-radius: 6px 6px 0 0;
+                padding: 7px 22px;
+                margin-right: 3px;
+                font-size: 11pt;
+            }}
+            QTabBar::tab:selected {{
+                background: {_theme.c('BG_CARD')};
+                color: {_theme.c('TEXT_PRIMARY')};
+                border-color: {_theme.c('BORDER')};
+            }}
+            QTabBar::tab:hover {{
+                background: {_theme.c('BG_BUTTON_HOVER')};
+                color: {_theme.c('TEXT_PRIMARY')};
+            }}
+        """)
+
+        # Propagate to each channel widget (they own cards, macro sliders, etc.)
+        for widget in (self._game_widget, self._media_widget, self._chat_widget,
+                       self._micro_widget, self._output_widget):
+            widget.apply_theme(t)
 
     def apply_all_from_files(self) -> None:
         """Re-apply all 3 EQ channels from current config files (used by profile system)."""

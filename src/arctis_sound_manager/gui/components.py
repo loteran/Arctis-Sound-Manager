@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.gui.theme import (
     ACCENT,
     BG_BUTTON,
@@ -85,35 +86,6 @@ class SvgIconWidget(QLabel):
 
 # ── SidebarButton ──────────────────────────────────────────────────────────────
 
-_BTN_BASE_QSS = f"""
-    QPushButton#sidebarBtn {{
-        background-color: transparent;
-        color: {TEXT_SECONDARY};
-        border: none;
-        border-radius: 16px;
-        font-size: 10pt;
-        text-align: center;
-        padding: 0;
-    }}
-    QPushButton#sidebarBtn:hover {{
-        background-color: {BG_BUTTON_HOVER};
-        color: {TEXT_PRIMARY};
-    }}
-"""
-
-_BTN_ACTIVE_QSS = f"""
-    QPushButton#sidebarBtn {{
-        background-color: #262B30;
-        color: {TEXT_PRIMARY};
-        border: none;
-        border-radius: 16px;
-        font-size: 10pt;
-        text-align: center;
-        padding: 0;
-    }}
-"""
-
-
 class SidebarButton(QPushButton):
     """
     120x130 px sidebar button: SVG icon on top + text label below.
@@ -140,6 +112,11 @@ class SidebarButton(QPushButton):
         self._label_text = label
         self._active = False
 
+        self._bg_hover = _theme.c("BG_BUTTON_HOVER")
+        self._bg_active = _theme.c("BG_SIDEBAR_ACTIVE")
+        self._text_primary = _theme.c("TEXT_PRIMARY")
+        self._text_secondary = _theme.c("TEXT_SECONDARY")
+
         # Inner layout: icon + label
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 14, 8, 14)
@@ -153,23 +130,42 @@ class SidebarButton(QPushButton):
         self._label_widget.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._label_widget.setWordWrap(True)
         self._label_widget.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 10pt; background: transparent;"
         )
         layout.addWidget(self._label_widget)
 
-        self.setStyleSheet(_BTN_BASE_QSS)
+        self.setStyleSheet(self._get_base_qss())
+
+    def _get_base_qss(self) -> str:
+        return (
+            f"QPushButton#sidebarBtn {{ background: transparent; color: {self._text_secondary}; "
+            f"border: none; border-radius: 16px; font-size: 10pt; text-align: center; padding: 0; }}\n"
+            f"QPushButton#sidebarBtn:hover {{ background: {self._bg_hover}; color: {self._text_primary}; }}"
+        )
+
+    def _get_active_qss(self) -> str:
+        return (
+            f"QPushButton#sidebarBtn {{ background: {self._bg_active}; color: {self._text_primary}; "
+            f"border: none; border-radius: 16px; font-size: 10pt; text-align: center; padding: 0; }}"
+        )
+
+    def update_colors(self, theme: dict) -> None:
+        self._color_inactive = theme["TEXT_SECONDARY"]
+        self._color_active = theme["ACCENT"]
+        self._bg_hover = theme["BG_BUTTON_HOVER"]
+        self._bg_active = theme["BG_SIDEBAR_ACTIVE"]
+        self._text_primary = theme["TEXT_PRIMARY"]
+        self._text_secondary = theme["TEXT_SECONDARY"]
+        self.set_active(self._active)
 
     def set_active(self, active: bool):
         self._active = active
         if active:
-            self.setStyleSheet(_BTN_ACTIVE_QSS)
+            self.setStyleSheet(self._get_active_qss())
             self._label_widget.setStyleSheet(
-                f"color: {TEXT_PRIMARY}; font-size: 10pt; background: transparent;"
+                f"color: {self._text_primary}; font-size: 10pt; background: transparent;"
             )
             # Reload icon with active color
-            self._icon_widget._load(self._svg_path, self._color_active, 50)
-            self._icon_widget.setPixmap(self._icon_widget.pixmap())
-            # Re-render
             pix = QPixmap(50, 50)
             pix.fill(QColor(0, 0, 0, 0))
             try:
@@ -186,9 +182,9 @@ class SidebarButton(QPushButton):
                 pass
             self._icon_widget.setPixmap(pix)
         else:
-            self.setStyleSheet(_BTN_BASE_QSS)
+            self.setStyleSheet(self._get_base_qss())
             self._label_widget.setStyleSheet(
-                f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
+                f"color: {self._text_secondary}; font-size: 10pt; background: transparent;"
             )
             # Reload icon with inactive color
             pix = QPixmap(50, 50)
@@ -215,8 +211,11 @@ class SectionTitle(QLabel):
 
     def __init__(self, text: str, parent=None):
         super().__init__(text, parent)
+        self.apply_theme()
+
+    def apply_theme(self, t=None) -> None:
         self.setStyleSheet(
-            "color: #666666; font-size: 20pt; font-weight: bold; background: transparent;"
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 20pt; font-weight: bold; background: transparent;"
         )
 
 
@@ -229,7 +228,7 @@ class DividerLine(QWidget):
         super().__init__(parent)
         self.setFixedHeight(1)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.setStyleSheet(f"background-color: {BORDER};")
+        self.setStyleSheet(f"background-color: {_theme.c('BORDER')};")
 
 
 # ── RoundedButton ──────────────────────────────────────────────────────────────
@@ -239,21 +238,7 @@ class RoundedButton(QPushButton):
 
     def __init__(self, text: str, parent=None):
         super().__init__(text, parent)
-        self.setStyleSheet(
-            f"""
-            QPushButton {{
-                background-color: {BG_BUTTON};
-                color: {TEXT_PRIMARY};
-                border: none;
-                border-radius: 8px;
-                padding: 8px 20px;
-                font-size: 11pt;
-            }}
-            QPushButton:hover {{
-                background-color: {BG_BUTTON_HOVER};
-            }}
-            """
-        )
+        self.setObjectName("roundedBtn")
 
 
 # ── AccentButton ───────────────────────────────────────────────────────────────
@@ -263,28 +248,6 @@ class AccentButton(QPushButton):
 
     def __init__(self, text: str, parent=None):
         super().__init__(text, parent)
+        self.setObjectName("accentBtn")
         self.setFixedHeight(42)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.setStyleSheet(
-            f"""
-            QPushButton {{
-                background-color: {ACCENT};
-                color: #FFFFFF;
-                border: none;
-                border-radius: 8px;
-                font-size: 12pt;
-                font-weight: bold;
-                padding: 0 20px;
-            }}
-            QPushButton:hover {{
-                background-color: #FF6A28;
-            }}
-            QPushButton:pressed {{
-                background-color: #CC3A00;
-            }}
-            QPushButton:disabled {{
-                background-color: #5C3020;
-                color: #AA8070;
-            }}
-            """
-        )

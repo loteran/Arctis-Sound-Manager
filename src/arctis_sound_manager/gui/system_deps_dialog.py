@@ -40,14 +40,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from arctis_sound_manager.gui.theme import (
-    ACCENT,
-    BG_BUTTON,
-    BG_BUTTON_HOVER,
-    BG_MAIN,
-    TEXT_PRIMARY,
-    TEXT_SECONDARY,
-)
+import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.i18n import I18n
 from arctis_sound_manager.system_deps_checker import (
     CheckResult,
@@ -63,12 +56,13 @@ log = logging.getLogger(__name__)
 
 _SKIP_MARKER = Path.home() / ".config" / "arctis_manager" / ".skip_deps_check"
 
-_BTN = (
-    "QPushButton {{ background-color: {bg}; color: {fg}; border: none; "
-    "border-radius: 6px; padding: 6px 14px; font-size: 9pt; }}"
-    "QPushButton:hover {{ background-color: {hover}; }}"
-    "QPushButton:disabled {{ background-color: #4a4a4a; color: #888; }}"
-)
+def _btn_ss(bg: str, fg: str, hover: str) -> str:
+    return (
+        f"QPushButton {{ background-color: {bg}; color: {fg}; border: none; "
+        f"border-radius: 6px; padding: 6px 14px; font-size: 9pt; }}"
+        f"QPushButton:hover {{ background-color: {hover}; }}"
+        f"QPushButton:disabled {{ background-color: #4a4a4a; color: #888; }}"
+    )
 
 # Severity → (badge text, badge bg colour) for the per-row tag
 _SEVERITY_BADGE = {
@@ -135,11 +129,11 @@ class _DepRow(QFrame):
         text_col.setSpacing(2)
         name_lbl = QLabel(result.check.name)
         name_lbl.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 10pt; font-weight: bold; background: transparent;"
+            f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 10pt; font-weight: bold; background: transparent;"
         )
         feature_lbl = QLabel(I18n.translate('ui', 'dep_breaks').format(feature=result.check.feature))
         feature_lbl.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;"
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; background: transparent;"
         )
         feature_lbl.setWordWrap(True)
         text_col.addWidget(name_lbl)
@@ -147,7 +141,7 @@ class _DepRow(QFrame):
         if result.check.user_action:
             note_lbl = QLabel(I18n.translate('ui', 'dep_note').format(note=result.check.user_action))
             note_lbl.setStyleSheet(
-                f"color: {ACCENT}; font-size: 8pt; background: transparent; font-style: italic;"
+                f"color: {_theme.c('ACCENT')}; font-size: 8pt; background: transparent; font-style: italic;"
             )
             note_lbl.setWordWrap(True)
             text_col.addWidget(note_lbl)
@@ -158,7 +152,9 @@ class _DepRow(QFrame):
             label = I18n.translate('ui', 'run') if argv[0] in ("asm-setup", "asm-cli", "systemctl") else I18n.translate('ui', 'install')
             self.action_btn = QPushButton(label)
             self.action_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            self.action_btn.setStyleSheet(_BTN.format(bg=ACCENT, fg="#ffffff", hover=BG_BUTTON_HOVER))
+            self.action_btn.setStyleSheet(
+                _btn_ss(_theme.c('ACCENT'), "#ffffff", _theme.c('BG_BUTTON_HOVER'))
+            )
             self.action_btn.clicked.connect(lambda: self.install_requested.emit(result))
             layout.addWidget(self.action_btn)
         else:
@@ -166,14 +162,16 @@ class _DepRow(QFrame):
             no_path_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             no_path_lbl.setWordWrap(True)
             no_path_lbl.setStyleSheet(
-                f"color: {TEXT_SECONDARY}; font-size: 8pt; background: transparent; font-style: italic;"
+                f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 8pt; background: transparent; font-style: italic;"
             )
             layout.addWidget(no_path_lbl)
             self.action_btn = None
 
         copy_btn = QPushButton(I18n.translate('ui', 'copy_cmd'))
         copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        copy_btn.setStyleSheet(_BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, hover=BG_BUTTON_HOVER))
+        copy_btn.setStyleSheet(
+            _btn_ss(_theme.c('BG_BUTTON'), _theme.c('TEXT_PRIMARY'), _theme.c('BG_BUTTON_HOVER'))
+        )
         copy_btn.setEnabled(argv is not None)
         copy_btn.clicked.connect(lambda: self._copy_command(argv))
         layout.addWidget(copy_btn)
@@ -197,7 +195,9 @@ class SystemDepsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("System dependencies — Arctis Sound Manager")  # brand name stays fixed
         self.setMinimumSize(720, 520)
-        self.setStyleSheet(f"background-color: {BG_MAIN}; color: {TEXT_PRIMARY};")
+        self.setStyleSheet(
+            f"background-color: {_theme.c('BG_MAIN')}; color: {_theme.c('TEXT_PRIMARY')};"
+        )
 
         self._results: list[CheckResult] = []
         self._row_widgets: list[_DepRow] = []
@@ -209,13 +209,13 @@ class SystemDepsDialog(QDialog):
 
         header = QLabel(I18n.translate('ui', 'sysdeps_header'))
         header.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 15pt; font-weight: bold; background: transparent;"
+            f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 15pt; font-weight: bold; background: transparent;"
         )
         outer.addWidget(header)
 
         sub = QLabel(I18n.translate('ui', 'sysdeps_sub').format(distro=detect_distro()))
         sub.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 10pt; background: transparent;"
         )
         sub.setWordWrap(True)
         outer.addWidget(sub)
@@ -235,7 +235,7 @@ class SystemDepsDialog(QDialog):
 
         self._status_lbl = QLabel("")
         self._status_lbl.setStyleSheet(
-            f"color: {ACCENT}; font-size: 9pt; background: transparent;"
+            f"color: {_theme.c('ACCENT')}; font-size: 9pt; background: transparent;"
         )
         self._status_lbl.setWordWrap(True)
         outer.addWidget(self._status_lbl)
@@ -246,26 +246,32 @@ class SystemDepsDialog(QDialog):
 
         self._skip_checkbox = QCheckBox(I18n.translate('ui', 'skip_until_upgrade'))
         self._skip_checkbox.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;"
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; background: transparent;"
         )
         bottom.addWidget(self._skip_checkbox)
         bottom.addStretch()
 
         self._refresh_btn = QPushButton(I18n.translate('ui', 'recheck'))
         self._refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._refresh_btn.setStyleSheet(_BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, hover=BG_BUTTON_HOVER))
+        self._refresh_btn.setStyleSheet(
+            _btn_ss(_theme.c('BG_BUTTON'), _theme.c('TEXT_PRIMARY'), _theme.c('BG_BUTTON_HOVER'))
+        )
         self._refresh_btn.clicked.connect(self._refresh)
         bottom.addWidget(self._refresh_btn)
 
         self._install_all_btn = QPushButton(I18n.translate('ui', 'install_all_missing'))
         self._install_all_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._install_all_btn.setStyleSheet(_BTN.format(bg=ACCENT, fg="#ffffff", hover=BG_BUTTON_HOVER))
+        self._install_all_btn.setStyleSheet(
+            _btn_ss(_theme.c('ACCENT'), "#ffffff", _theme.c('BG_BUTTON_HOVER'))
+        )
         self._install_all_btn.clicked.connect(self._install_all)
         bottom.addWidget(self._install_all_btn)
 
         self._close_btn = QPushButton(I18n.translate('ui', 'close'))
         self._close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._close_btn.setStyleSheet(_BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, hover=BG_BUTTON_HOVER))
+        self._close_btn.setStyleSheet(
+            _btn_ss(_theme.c('BG_BUTTON'), _theme.c('TEXT_PRIMARY'), _theme.c('BG_BUTTON_HOVER'))
+        )
         self._close_btn.clicked.connect(self._on_close)
         bottom.addWidget(self._close_btn)
 

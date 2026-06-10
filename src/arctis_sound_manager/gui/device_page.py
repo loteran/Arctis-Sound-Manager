@@ -8,7 +8,7 @@ Matches the ref_settingsPage.png design.
 import shutil
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import (
@@ -33,6 +33,7 @@ from arctis_sound_manager.gui.components import (
 )
 from arctis_sound_manager.gui.settings_widget import QSettingsWidget
 from arctis_sound_manager.autostart import active_backend_name, autostart_enabled, set_autostart
+import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.gui.theme import (
     ACCENT,
     BG_BUTTON,
@@ -41,6 +42,8 @@ from arctis_sound_manager.gui.theme import (
     BORDER,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
+    THEMES,
+    THEMES_LABELS,
 )
 
 _SERVICE = "arctis-manager.service"
@@ -121,15 +124,15 @@ def _styled_button(text: str) -> QPushButton:
     btn.setStyleSheet(
         f"""
         QPushButton {{
-            background-color: {BG_BUTTON};
-            color: {TEXT_PRIMARY};
+            background-color: {_theme.c('BG_BUTTON')};
+            color: {_theme.c('TEXT_PRIMARY')};
             border: none;
             border-radius: 6px;
             font-size: 11pt;
             padding: 0 16px;
         }}
         QPushButton:hover {{
-            background-color: {BG_BUTTON_HOVER};
+            background-color: {_theme.c('BG_BUTTON_HOVER')};
         }}
         """
     )
@@ -140,11 +143,14 @@ class DevicePage(QWidget):
     """
     Settings page with:
     - Title "Arctis Sound Manager" bold + subtitle "Device Settings"
+    - Theme selector chips
     - "General Settings" section title (gray ~20pt)
     - Settings form rows (labels + controls)
     - Horizontal divider
     - "Devices" section with a card showing connected headset
     """
+
+    sig_theme_changed = Signal(str)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -159,11 +165,13 @@ class DevicePage(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setStyleSheet(
-            f"QScrollArea {{ background-color: {BG_MAIN}; border: none; }}"
+            f"QScrollArea {{ background-color: {_theme.c('BG_MAIN')}; border: none; }}"
         )
+        self._scroll = scroll
 
         content = QWidget()
-        content.setStyleSheet(f"background-color: {BG_MAIN};")
+        content.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+        self._content = content
         content_layout = QVBoxLayout(content)
         content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         content_layout.setContentsMargins(36, 12, 36, 12)
@@ -224,6 +232,36 @@ class DevicePage(QWidget):
         title_row.addLayout(lang_row)
         content_layout.addLayout(title_row)
         content_layout.addSpacing(8)
+
+        # ── Theme selector ────────────────────────────────────────────────────
+        from arctis_sound_manager.settings import GeneralSettings
+        current_theme = GeneralSettings.read_from_file().theme
+
+        theme_title = SectionTitle("Interface Theme")
+        content_layout.addWidget(theme_title)
+        content_layout.addSpacing(6)
+
+        theme_row = QWidget()
+        theme_row_layout = QHBoxLayout(theme_row)
+        theme_row_layout.setContentsMargins(0, 0, 0, 0)
+        theme_row_layout.setSpacing(8)
+
+        self._theme_buttons: dict[str, QPushButton] = {}
+        for theme_id, label in THEMES_LABELS.items():
+            btn = QPushButton(f"● {label}")
+            btn.setObjectName("themeChip")
+            btn.setProperty("active", theme_id == current_theme)
+            btn.setCheckable(False)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda checked=False, tid=theme_id: self._on_theme_selected(tid))
+            theme_row_layout.addWidget(btn)
+            self._theme_buttons[theme_id] = btn
+
+        theme_row_layout.addStretch(1)
+        content_layout.addWidget(theme_row)
+        content_layout.addSpacing(12)
+        content_layout.addWidget(DividerLine())
+        content_layout.addSpacing(12)
 
         # ── ANC / Transparent section ─────────────────────────────────────────
         anc_title = SectionTitle(I18n.translate("ui", "noise_cancelling"))
@@ -360,6 +398,101 @@ class DevicePage(QWidget):
 
         scroll.setWidget(content)
         outer.addWidget(scroll)
+
+        # Apply the currently-active theme on first paint.
+        self.apply_theme()
+
+    # ── Theme propagation ─────────────────────────────────────────────────────
+
+    def apply_theme(self, t=None) -> None:
+        """Restyle the device/settings page for the current active theme."""
+        self.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+        self._scroll.setStyleSheet(f"QScrollArea {{ background-color: {_theme.c('BG_MAIN')}; border: none; }}")
+        self._content.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+
+        # Device settings widget
+        if hasattr(self, "_device_widget"):
+            self._device_widget.setStyleSheet(f"""
+                QWidget {{ background-color: {_theme.c('BG_MAIN')}; color: {_theme.c('TEXT_PRIMARY')}; }}
+                QLabel {{ background-color: transparent; color: {_theme.c('TEXT_PRIMARY')}; font-size: 11pt; }}
+            """)
+
+        # General settings widget
+        if hasattr(self, "_general_widget"):
+            self._general_widget.setStyleSheet(f"""
+                QWidget {{ background-color: {_theme.c('BG_MAIN')}; color: {_theme.c('TEXT_PRIMARY')}; }}
+                QLabel {{ background-color: transparent; color: {_theme.c('TEXT_PRIMARY')}; font-size: 11pt; }}
+            """)
+
+        # ANC widget background + pill colors
+        if hasattr(self, "_anc_widget"):
+            self._anc_widget.setStyleSheet(f"""
+                QWidget {{ background-color: {_theme.c('BG_MAIN')}; color: {_theme.c('TEXT_PRIMARY')}; }}
+                QLabel  {{ background-color: transparent; color: {_theme.c('TEXT_PRIMARY')}; font-size: 11pt; }}
+            """)
+            if hasattr(self._anc_widget, "apply_theme"):
+                self._anc_widget.apply_theme(t)
+
+        # Language combo
+        if hasattr(self, "_lang_combo"):
+            self._lang_combo.setStyleSheet(f"""
+                QComboBox {{
+                    background-color: {_theme.c('BG_BUTTON')};
+                    color: {_theme.c('TEXT_PRIMARY')};
+                    border: 1px solid {_theme.c('BORDER')};
+                    border-radius: 6px;
+                    padding: 4px 10px;
+                    font-size: 10pt;
+                    min-width: 120px;
+                }}
+                QComboBox:hover {{ background-color: {_theme.c('BG_BUTTON_HOVER')}; }}
+                QComboBox::drop-down {{ border: none; }}
+                QComboBox QAbstractItemView {{
+                    background-color: {_theme.c('BG_BUTTON')};
+                    color: {_theme.c('TEXT_PRIMARY')};
+                    selection-background-color: {_theme.c('ACCENT')};
+                    selection-color: #ffffff;
+                    border: 1px solid {_theme.c('BORDER')};
+                }}
+            """)
+
+        # Update status label
+        if hasattr(self, "_update_status_lbl"):
+            self._update_status_lbl.setStyleSheet(
+                f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 10pt; background: transparent;"
+            )
+
+        # Check-for-updates button — restyle via factory function
+        if hasattr(self, "_check_update_btn"):
+            self._check_update_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {_theme.c('BG_BUTTON')};
+                    color: {_theme.c('TEXT_PRIMARY')};
+                    border: none;
+                    border-radius: 6px;
+                    font-size: 11pt;
+                    padding: 0 16px;
+                }}
+                QPushButton:hover {{ background-color: {_theme.c('BG_BUTTON_HOVER')}; }}
+            """)
+
+        # Theme chip buttons: each shows its own accent color (that's intentional),
+        # but background/border/text colors should follow the active theme.
+        # The active state border/highlight comes from the global QSS themeChip rule,
+        # so we just trigger a polish pass to pick up the updated QSS.
+        if hasattr(self, "_theme_buttons"):
+            for btn in self._theme_buttons.values():
+                btn.style().unpolish(btn)
+                btn.style().polish(btn)
+
+    # ── Theme selector ────────────────────────────────────────────────────────
+
+    def _on_theme_selected(self, theme_id: str) -> None:
+        for tid, btn in self._theme_buttons.items():
+            btn.setProperty("active", tid == theme_id)
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+        self.sig_theme_changed.emit(theme_id)
 
     # ── Signal forwarding ─────────────────────────────────────────────────────
 

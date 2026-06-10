@@ -56,7 +56,7 @@ class DeviceSettings(JsonSerializable):
             return
 
         self.settings[name] = int(value)
-    
+
     def get(self, name: str, default: int = 0) -> int:
         return self.settings.get(name, default)
 
@@ -73,7 +73,7 @@ class DeviceSettings(JsonSerializable):
     def write_to_file(self):
         settings_file = self._settings_file()
         settings_file.parent.mkdir(parents=True, exist_ok=True)
-        
+
         yaml = YAML(typ='safe')
         yaml.dump(self.settings.to_dict(), settings_file)
 
@@ -138,6 +138,9 @@ class GeneralSettings(JsonSerializable):
     weather_lon: float = 0.0
     weather_units: str = "celsius"   # "celsius" | "fahrenheit"
     weather_city_display: str = ""   # short name returned by geocoding
+
+    # UI theme
+    theme: str = "steelseries"
 
     settings_config: list[ConfigSetting] = [
         ConfigSetting('redirect_audio_on_connect', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),

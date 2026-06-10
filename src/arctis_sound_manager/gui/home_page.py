@@ -66,6 +66,7 @@ from arctis_sound_manager.gui.components import (
     MEDIA_ICON,
     SvgIconWidget,
 )
+import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.gui.theme import (
     ACCENT,
     BG_CARD,
@@ -91,11 +92,17 @@ SINK_MEDIA = "Arctis_Media"
 STEELSERIES_VENDOR_ID = "0x1038"
 
 
-def _make_vertical_slider_qss(accent_color: str) -> str:
+def _make_vertical_slider_qss(accent_color: str, groove_color: str | None = None) -> str:
+    """Build the QSS for a vertical channel-volume slider.
+
+    accent_color  — the per-channel accent (add-page / filled area above handle)
+    groove_color  — the empty-groove color; defaults to BG_BUTTON from the active theme
+    """
+    groove = groove_color or _theme.c("BG_BUTTON")
     return f"""
         QSlider::groove:vertical {{
             width: 6px;
-            background: #2D363E;
+            background: {groove};
             border-radius: 3px;
         }}
         QSlider::handle:vertical {{
@@ -177,7 +184,7 @@ class AudioCard(QWidget):
         self._pct_label = QLabel("—")
         self._pct_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._pct_label.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 18pt; font-weight: bold; background: transparent;"
+            f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 18pt; font-weight: bold; background: transparent;"
         )
         top_layout.addWidget(self._pct_label)
 
@@ -198,29 +205,29 @@ class AudioCard(QWidget):
         outer.addSpacing(8)
 
         # ── Applications section ───────────────────────────────────────────────
-        apps_widget = QWidget()
-        apps_widget.setObjectName("appsWidget")
-        apps_widget.setStyleSheet(
-            "QWidget#appsWidget { background-color: #13161A; border-radius: 12px; }"
+        self._apps_widget = QWidget()
+        self._apps_widget.setObjectName("appsWidget")
+        self._apps_widget.setStyleSheet(
+            f"QWidget#appsWidget {{ background-color: {_theme.c('BG_MAIN')}; border-radius: 12px; }}"
         )
-        apps_layout = QVBoxLayout(apps_widget)
+        apps_layout = QVBoxLayout(self._apps_widget)
         apps_layout.setContentsMargins(12, 10, 12, 10)
         apps_layout.setSpacing(6)
 
-        apps_title = QLabel(I18n.translate("ui", "applications"))
-        apps_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        apps_title.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 9pt; font-weight: bold; background: transparent;"
+        self._apps_title = QLabel(I18n.translate("ui", "applications"))
+        self._apps_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._apps_title.setStyleSheet(
+            f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 9pt; font-weight: bold; background: transparent;"
         )
-        apps_layout.addWidget(apps_title)
+        apps_layout.addWidget(self._apps_title)
 
         self._apps_area = QVBoxLayout()
         self._apps_area.setSpacing(4)
         apps_layout.addLayout(self._apps_area)
         apps_layout.addStretch(1)
 
-        apps_widget.setFixedHeight(100)
-        outer.addWidget(apps_widget)
+        self._apps_widget.setFixedHeight(100)
+        outer.addWidget(self._apps_widget)
 
         # Device combo (routing output) — always in layout to keep cards aligned;
         # contents are hidden until set_device_options() is called.
@@ -232,14 +239,14 @@ class AudioCard(QWidget):
         _dr_layout.setSpacing(6)
         self._dr_lbl = QLabel(I18n.translate("ui", "output_device"))
         self._dr_lbl.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;"
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; background: transparent;"
         )
         self._dr_lbl.setVisible(False)
         _dr_layout.addWidget(self._dr_lbl)
         self._device_combo = QComboBox()
         self._device_combo.setStyleSheet(
-            f"QComboBox {{ background: #1e2530; border: 1px solid {BORDER}; "
-            f"border-radius: 4px; color: {TEXT_PRIMARY}; font-size: 9pt; padding: 2px 6px; }}"
+            f"QComboBox {{ background: {_theme.c('BG_BUTTON')}; border: 1px solid {_theme.c('BORDER')}; "
+            f"border-radius: 4px; color: {_theme.c('TEXT_PRIMARY')}; font-size: 9pt; padding: 2px 6px; }}"
             f"QComboBox::drop-down {{ border: none; width: 16px; }}"
         )
         self._device_combo.setVisible(False)
@@ -259,8 +266,8 @@ class AudioCard(QWidget):
         self.setStyleSheet(
             f"""
             QWidget#audioCard {{
-                background-color: {BG_CARD};
-                border: 1px solid {BORDER};
+                background-color: {_theme.c("BG_CARD")};
+                border: 1px solid {_theme.c("BORDER")};
                 border-radius: 12px;
             }}
             """
@@ -270,11 +277,41 @@ class AudioCard(QWidget):
         self.setStyleSheet(
             f"""
             QWidget#audioCard {{
-                background-color: {BG_CARD};
+                background-color: {_theme.c("BG_CARD")};
                 border: 2px solid {self._accent};
                 border-radius: 12px;
             }}
             """
+        )
+
+    def apply_theme(self, t=None) -> None:
+        """Restyle all dynamic-color elements using the current active theme."""
+        # Card background / border
+        self._apply_normal_style()
+        # Slider groove color follows the theme; accent stays per-channel
+        self._slider.setStyleSheet(_make_vertical_slider_qss(self._accent))
+        # Volume label text color
+        self._pct_label.setStyleSheet(
+            f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 18pt; font-weight: bold; background: transparent;"
+        )
+        # Applications section background and title
+        if hasattr(self, "_apps_widget"):
+            self._apps_widget.setStyleSheet(
+                f"QWidget#appsWidget {{ background-color: {_theme.c('BG_MAIN')}; border-radius: 12px; }}"
+            )
+        if hasattr(self, "_apps_title"):
+            self._apps_title.setStyleSheet(
+                f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 9pt; font-weight: bold; background: transparent;"
+            )
+        # Device combo
+        self._device_combo.setStyleSheet(
+            f"QComboBox {{ background: {_theme.c('BG_BUTTON')}; border: 1px solid {_theme.c('BORDER')}; "
+            f"border-radius: 4px; color: {_theme.c('TEXT_PRIMARY')}; font-size: 9pt; padding: 2px 6px; }}"
+            f"QComboBox::drop-down {{ border: none; width: 16px; }}"
+        )
+        # Output-device row label
+        self._dr_lbl.setStyleSheet(
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; background: transparent;"
         )
 
     def set_highlight(self, active: bool):
@@ -488,7 +525,7 @@ class _Pill(QWidget):
 
         self._text = QLabel("—")
         self._text.setStyleSheet(
-            f"background: transparent; font-size: 11pt; font-weight: bold; color: {TEXT_PRIMARY}; border: none;"
+            f"background: transparent; font-size: 11pt; font-weight: bold; color: {_theme.c('TEXT_PRIMARY')}; border: none;"
         )
         layout.addWidget(self._text)
         self._update_style("#8D96AA")
@@ -502,9 +539,24 @@ class _Pill(QWidget):
 
     def _update_style(self, color: str):
         self.setStyleSheet(
-            f"QWidget#pill {{ background-color: {BG_CARD}; border-radius: 14px; "
+            f"QWidget#pill {{ background-color: {_theme.c('BG_CARD')}; border-radius: 14px; "
             f"border: 1px solid {color}; }}"
         )
+
+    def apply_theme(self, t=None) -> None:
+        self._text.setStyleSheet(
+            f"background: transparent; font-size: 11pt; font-weight: bold; color: {_theme.c('TEXT_PRIMARY')}; border: none;"
+        )
+        # Re-apply the pill background; preserve the current border color from the dot style
+        dot_style = self._dot.styleSheet()
+        # Extract current dot color for the border
+        color = "#8D96AA"
+        for part in dot_style.split(";"):
+            part = part.strip()
+            if part.startswith("color:"):
+                color = part.split(":", 1)[1].strip()
+                break
+        self._update_style(color)
 
     def set_visible(self, visible: bool):
         self.setVisible(visible)
@@ -531,6 +583,10 @@ class _DeviceStatusBar(QWidget):
         layout.addWidget(self._dac_bat_pill)
 
         self.set_no_device()
+
+    def apply_theme(self, t=None) -> None:
+        for pill in (self._conn_pill, self._headset_bat_pill, self._dac_bat_pill):
+            pill.apply_theme()
 
     def set_no_device(self):
         self._conn_pill.set_value("No device detected", "#8D96AA")
@@ -594,12 +650,12 @@ class HomePage(QWidget):
         root.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         # ── App title ─────────────────────────────────────────────────────────
-        app_title = QLabel("Arctis Sound Manager")
-        app_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        app_title.setStyleSheet(
+        self._app_title = QLabel("Arctis Sound Manager")
+        self._app_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._app_title.setStyleSheet(
             f"color: {TEXT_PRIMARY}; font-size: 28pt; font-weight: bold; background: transparent;"
         )
-        root.addWidget(app_title)
+        root.addWidget(self._app_title)
         root.addSpacing(8)
 
         # ── Update banner (hidden by default) ─────────────────────────────────
@@ -642,15 +698,15 @@ class HomePage(QWidget):
         self._update_install_btn.hide()
         banner_layout.addWidget(self._update_install_btn)
 
-        dismiss_btn = QPushButton("\u2715")
-        dismiss_btn.setFixedSize(20, 20)
-        dismiss_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        dismiss_btn.setStyleSheet(
+        self._dismiss_btn = QPushButton("\u2715")
+        self._dismiss_btn.setFixedSize(20, 20)
+        self._dismiss_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._dismiss_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; border: none; color: {TEXT_SECONDARY}; font-size: 12pt; }}"
             f"QPushButton:hover {{ color: {TEXT_PRIMARY}; }}"
         )
-        dismiss_btn.clicked.connect(self._update_banner.hide)
-        banner_layout.addWidget(dismiss_btn)
+        self._dismiss_btn.clicked.connect(self._update_banner.hide)
+        banner_layout.addWidget(self._dismiss_btn)
 
         self._update_banner.hide()
         root.addWidget(self._update_banner)
@@ -668,11 +724,11 @@ class HomePage(QWidget):
         toggle_layout.setContentsMargins(0, 0, 0, 0)
         toggle_layout.setSpacing(16)
 
-        toggle_lbl = QLabel(I18n.translate("ui", "enable_volume_sliders"))
-        toggle_lbl.setStyleSheet(
+        self._toggle_lbl = QLabel(I18n.translate("ui", "enable_volume_sliders"))
+        self._toggle_lbl.setStyleSheet(
             f"color: {TEXT_PRIMARY}; font-size: 11pt; background: transparent;"
         )
-        toggle_layout.addWidget(toggle_lbl)
+        toggle_layout.addWidget(self._toggle_lbl)
 
         self._toggle = ToggleSwitch()
         self._toggle.set_checked(True)
@@ -715,26 +771,26 @@ class HomePage(QWidget):
         self._cards_layout.setSpacing(20)
         self._cards_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Game card
-        self._game_card = AudioCard(I18n.translate("ui", "game"), COLOR_GAME, GAME_ICON)
+        # Game card — use active-theme color at construction time
+        self._game_card = AudioCard(I18n.translate("ui", "game"), _theme.c("COLOR_GAME"), GAME_ICON)
         self._game_card.set_on_change(self._on_media_volume_changed)
         self._game_card.set_on_drop(lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_GAME))
         self._cards_layout.addWidget(self._game_card, stretch=1)
 
         # Chat card (Arctis_Chat sink)
-        self._chat_card = AudioCard(I18n.translate("ui", "chat"), COLOR_CHAT, CHAT_ICON)
+        self._chat_card = AudioCard(I18n.translate("ui", "chat"), _theme.c("COLOR_CHAT"), CHAT_ICON)
         self._chat_card.set_on_change(self._on_chat_volume_changed)
         self._chat_card.set_on_drop(lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_CHAT))
         self._cards_layout.addWidget(self._chat_card, stretch=1)
 
         # Media card (Arctis_Media sink)
-        self._media_card = AudioCard(I18n.translate("ui", "media"), COLOR_AUX, MEDIA_ICON)
+        self._media_card = AudioCard(I18n.translate("ui", "media"), _theme.c("COLOR_AUX"), MEDIA_ICON)
         self._media_card.set_on_change(self._on_aux_volume_changed)
         self._media_card.set_on_drop(lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_MEDIA))
         self._cards_layout.addWidget(self._media_card, stretch=1)
 
         # External output card (HDMI, sound card, USB speakers, etc.)
-        self._ext_card = AudioCard(I18n.translate("ui", "output"), COLOR_HDMI, HDMI_ICON)
+        self._ext_card = AudioCard(I18n.translate("ui", "output"), _theme.c("COLOR_HDMI"), HDMI_ICON)
         self._ext_card.set_on_change(self._on_ext_volume_changed)
         self._cards_layout.addWidget(self._ext_card, stretch=1)
 
@@ -790,11 +846,12 @@ class HomePage(QWidget):
 
         # Register cards so _AppTag inline buttons know where to send streams
         # Format: (short_label, button_color, callback)
+        # Note: apply_theme() rebuilds this registry with fresh colors on every theme change.
         _AppTag._cards_registry = [
-            ("G", COLOR_GAME, lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_GAME)),
-            ("C", COLOR_CHAT, lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_CHAT)),
-            ("M", COLOR_AUX,  lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_MEDIA)),
-            ("O", COLOR_HDMI, lambda si, app, pid: self._on_stream_drop_ext(si, app, pid)),
+            ("G", _theme.c("COLOR_GAME"), lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_GAME)),
+            ("C", _theme.c("COLOR_CHAT"), lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_CHAT)),
+            ("M", _theme.c("COLOR_AUX"),  lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_MEDIA)),
+            ("O", _theme.c("COLOR_HDMI"), lambda si, app, pid: self._on_stream_drop_ext(si, app, pid)),
         ]
 
         # ── Polling timer ─────────────────────────────────────────────────────
@@ -816,6 +873,107 @@ class HomePage(QWidget):
         )
         self._media_card.set_on_device_change(
             lambda s: self._on_channel_output_changed("media", s)
+        )
+
+        # Apply the currently active theme so the initial render is correct
+        # even if a non-default theme was saved in settings.
+        self.apply_theme()
+
+    # ── Theme propagation ──────────────────────────────────────────────────────
+
+    def apply_theme(self, t=None) -> None:
+        """Restyle the home page for the current active theme."""
+        # Update page background
+        self.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+        self._cards_widget.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+
+        # App title
+        if hasattr(self, "_app_title"):
+            self._app_title.setStyleSheet(
+                f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 28pt; font-weight: bold; background: transparent;"
+            )
+
+        # Update banner widgets
+        if hasattr(self, "_update_banner"):
+            self._update_banner.setStyleSheet(f"""
+                QWidget#updateBanner {{
+                    background-color: {_theme.c('BG_CARD')};
+                    border: 1px solid {_theme.c('ACCENT')};
+                    border-radius: 8px;
+                    padding: 4px 12px;
+                }}
+            """)
+        if hasattr(self, "_update_label"):
+            self._update_label.setStyleSheet(
+                f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 10pt; background: transparent; border: none;"
+            )
+        if hasattr(self, "_update_link_btn"):
+            self._update_link_btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; border: none; color: {_theme.c('ACCENT')}; "
+                f"font-size: 10pt; text-decoration: underline; }}"
+                f"QPushButton:hover {{ color: #FF6A28; }}"
+            )
+        if hasattr(self, "_update_install_btn"):
+            self._update_install_btn.setStyleSheet(
+                f"QPushButton {{ background: {_theme.c('ACCENT')}; border: none; border-radius: 4px; "
+                f"color: #fff; font-size: 10pt; padding: 3px 12px; }}"
+                f"QPushButton:hover {{ background: #FF6A28; }}"
+            )
+        if hasattr(self, "_dismiss_btn"):
+            self._dismiss_btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; border: none; color: {_theme.c('TEXT_SECONDARY')}; font-size: 12pt; }}"
+                f"QPushButton:hover {{ color: {_theme.c('TEXT_PRIMARY')}; }}"
+            )
+
+        # Toggle label and disconnected label
+        if hasattr(self, "_toggle_lbl"):
+            self._toggle_lbl.setStyleSheet(
+                f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 11pt; background: transparent;"
+            )
+        if hasattr(self, "_disconnected_label"):
+            self._disconnected_label.setStyleSheet(
+                f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 14pt; font-style: italic; background: transparent;"
+            )
+
+        # Status bar pills
+        if hasattr(self, "_status_bar"):
+            self._status_bar.apply_theme()
+
+        # Pull fresh per-channel accent colors from the active theme
+        color_game = _theme.c("COLOR_GAME")
+        color_chat = _theme.c("COLOR_CHAT")
+        color_aux  = _theme.c("COLOR_AUX")
+        color_hdmi = _theme.c("COLOR_HDMI")
+
+        # Update each card's accent and restyle
+        self._game_card._accent = color_game
+        self._chat_card._accent = color_chat
+        self._media_card._accent = color_aux
+        self._ext_card._accent = color_hdmi
+
+        for card in (self._game_card, self._chat_card, self._media_card, self._ext_card):
+            card.apply_theme(t)
+
+        # Update _AppTag registry with fresh accent colors
+        _AppTag._cards_registry = [
+            ("G", color_game, lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_GAME)),
+            ("C", color_chat, lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_CHAT)),
+            ("M", color_aux,  lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_MEDIA)),
+            ("O", color_hdmi, lambda si, app, pid: self._on_stream_drop_ext(si, app, pid)),
+        ]
+
+        # Update channel-name labels in cards
+        self._game_card._name_lbl.setStyleSheet(
+            f"color: {color_game}; font-size: 14pt; font-weight: normal; background: transparent;"
+        )
+        self._chat_card._name_lbl.setStyleSheet(
+            f"color: {color_chat}; font-size: 14pt; font-weight: normal; background: transparent;"
+        )
+        self._media_card._name_lbl.setStyleSheet(
+            f"color: {color_aux}; font-size: 14pt; font-weight: normal; background: transparent;"
+        )
+        self._ext_card._name_lbl.setStyleSheet(
+            f"color: {color_hdmi}; font-size: 14pt; font-weight: normal; background: transparent;"
         )
 
     # ── Toggle handler ─────────────────────────────────────────────────────────

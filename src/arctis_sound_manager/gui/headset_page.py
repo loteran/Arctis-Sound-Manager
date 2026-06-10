@@ -22,6 +22,7 @@ from arctis_sound_manager.gui.components import (
     SvgIconWidget,
 )
 from arctis_sound_manager.gui.status_widget import QStatusWidget
+import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.gui.theme import (
     ACCENT,
     BG_CARD,
@@ -47,10 +48,12 @@ class HeadsetPage(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet(f"QScrollArea {{ background-color: {BG_MAIN}; border: none; }}")
+        scroll.setStyleSheet(f"QScrollArea {{ background-color: {_theme.c('BG_MAIN')}; border: none; }}")
+        self._scroll = scroll
 
         content = QWidget()
-        content.setStyleSheet(f"background-color: {BG_MAIN};")
+        content.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+        self._content = content
         layout = QVBoxLayout(content)
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setContentsMargins(36, 28, 36, 36)
@@ -126,6 +129,40 @@ class HeadsetPage(QWidget):
 
         scroll.setWidget(content)
         outer.addWidget(scroll)
+
+        # Apply the currently-active theme on first paint.
+        self.apply_theme()
+
+    # ── Theme propagation ─────────────────────────────────────────────────────
+
+    def apply_theme(self, t=None) -> None:
+        """Restyle the headset page for the current active theme."""
+        self.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+        self._scroll.setStyleSheet(f"QScrollArea {{ background-color: {_theme.c('BG_MAIN')}; border: none; }}")
+        self._content.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+
+        self._device_card.setStyleSheet(f"""
+            QWidget#deviceCard {{
+                background-color: {_theme.c('BG_CARD')};
+                border: 1px solid {_theme.c('BORDER')};
+                border-radius: 12px;
+            }}
+        """)
+
+        self._device_name_label.setStyleSheet(
+            f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 12pt; font-weight: bold; background: transparent;"
+        )
+        self._vendor_label.setStyleSheet(
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; background: transparent;"
+        )
+        self._product_label.setStyleSheet(
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; background: transparent;"
+        )
+
+        self._status_widget.setStyleSheet(f"""
+            QWidget {{ background-color: {_theme.c('BG_MAIN')}; color: {_theme.c('TEXT_PRIMARY')}; }}
+            QLabel  {{ background-color: transparent; color: {_theme.c('TEXT_PRIMARY')}; font-size: 11pt; }}
+        """)
 
     @Slot(object)
     def update_status(self, status: dict):

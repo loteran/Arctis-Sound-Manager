@@ -30,22 +30,14 @@ from arctis_sound_manager.bug_reporter import (
     submit_via_gh_cli,
     write_full_report_to_file,
 )
-from arctis_sound_manager.gui.theme import (
-    ACCENT,
-    BG_BUTTON,
-    BG_BUTTON_HOVER,
-    BG_CARD,
-    BG_MAIN,
-    BORDER,
-    TEXT_PRIMARY,
-    TEXT_SECONDARY,
-)
+import arctis_sound_manager.gui.theme as _theme
 
-_BTN = (
-    "QPushButton {{ background-color: {bg}; color: {fg}; border: none; "
-    "border-radius: 6px; padding: 8px 18px; font-size: 10pt; }}"
-    "QPushButton:hover {{ background-color: {hover}; }}"
-)
+def _btn_ss(bg: str, fg: str, hover: str) -> str:
+    return (
+        f"QPushButton {{ background-color: {bg}; color: {fg}; border: none; "
+        f"border-radius: 6px; padding: 8px 18px; font-size: 10pt; }}"
+        f"QPushButton:hover {{ background-color: {hover}; }}"
+    )
 
 
 class ReportBugDialog(QDialog):
@@ -69,7 +61,7 @@ class ReportBugDialog(QDialog):
         self._report_path = None  # set when the user clicks "Open issue"
         self.setWindowTitle("Report a bug — Arctis Sound Manager")  # brand name stays fixed
         self.setMinimumSize(720, 580)
-        self.setStyleSheet(f"background-color: {BG_MAIN}; color: {TEXT_PRIMARY};")
+        self.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')}; color: {_theme.c('TEXT_PRIMARY')};")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 28, 28, 20)
@@ -85,27 +77,29 @@ class ReportBugDialog(QDialog):
 
         title_lbl = QLabel(title_text)
         title_lbl.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 15pt; font-weight: bold; background: transparent;"
+            f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 15pt; font-weight: bold; background: transparent;"
         )
         layout.addWidget(title_lbl)
 
         sub_lbl = QLabel(sub_text)
         sub_lbl.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 10pt; background: transparent;"
         )
         sub_lbl.setWordWrap(True)
         layout.addWidget(sub_lbl)
 
         # ── User description (free-form, prepended to both body + file) ──────
         desc_hint = QLabel(I18n.translate('ui', 'report_desc_hint'))
-        desc_hint.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;")
+        desc_hint.setStyleSheet(
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; background: transparent;"
+        )
         layout.addWidget(desc_hint)
 
         self._description = QPlainTextEdit()
         self._description.setStyleSheet(
             f"QPlainTextEdit {{"
-            f"  background-color: {BG_CARD}; color: {TEXT_PRIMARY};"
-            f"  border: 1px solid {BORDER}; border-radius: 6px;"
+            f"  background-color: {_theme.c('BG_CARD')}; color: {_theme.c('TEXT_PRIMARY')};"
+            f"  border: 1px solid {_theme.c('BORDER')}; border-radius: 6px;"
             f"  font-size: 10pt; padding: 8px;"
             f"}}"
         )
@@ -115,15 +109,17 @@ class ReportBugDialog(QDialog):
 
         # ── Preview of the FULL report (read-only, just for review) ─────────
         hint = QLabel(I18n.translate('ui', 'report_preview_hint'))
-        hint.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;")
+        hint.setStyleSheet(
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; background: transparent;"
+        )
         layout.addWidget(hint)
 
         self._editor = QPlainTextEdit()
         self._editor.setReadOnly(True)
         self._editor.setStyleSheet(
             f"QPlainTextEdit {{"
-            f"  background-color: {BG_CARD}; color: {TEXT_PRIMARY};"
-            f"  border: 1px solid {BORDER}; border-radius: 6px;"
+            f"  background-color: {_theme.c('BG_CARD')}; color: {_theme.c('TEXT_PRIMARY')};"
+            f"  border: 1px solid {_theme.c('BORDER')}; border-radius: 6px;"
             f"  font-family: monospace; font-size: 9pt; padding: 8px;"
             f"}}"
         )
@@ -133,7 +129,7 @@ class ReportBugDialog(QDialog):
         # ── Status line shown after the report file is written ──────────────
         self._status_lbl = QLabel("")
         self._status_lbl.setStyleSheet(
-            f"color: {ACCENT}; font-size: 9pt; background: transparent;"
+            f"color: {_theme.c('ACCENT')}; font-size: 9pt; background: transparent;"
         )
         self._status_lbl.setWordWrap(True)
         layout.addWidget(self._status_lbl)
@@ -144,13 +140,17 @@ class ReportBugDialog(QDialog):
 
         self._copy_btn = QPushButton(I18n.translate('ui', 'copy_full_report'))
         self._copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._copy_btn.setStyleSheet(_BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, hover=BG_BUTTON_HOVER))
+        self._copy_btn.setStyleSheet(
+            _btn_ss(_theme.c('BG_BUTTON'), _theme.c('TEXT_PRIMARY'), _theme.c('BG_BUTTON_HOVER'))
+        )
         self._copy_btn.clicked.connect(self._copy)
         btn_row.addWidget(self._copy_btn)
 
         self._open_folder_btn = QPushButton(I18n.translate('ui', 'open_folder'))
         self._open_folder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._open_folder_btn.setStyleSheet(_BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, hover=BG_BUTTON_HOVER))
+        self._open_folder_btn.setStyleSheet(
+            _btn_ss(_theme.c('BG_BUTTON'), _theme.c('TEXT_PRIMARY'), _theme.c('BG_BUTTON_HOVER'))
+        )
         self._open_folder_btn.clicked.connect(self._open_folder)
         self._open_folder_btn.setEnabled(False)
         btn_row.addWidget(self._open_folder_btn)
@@ -159,7 +159,9 @@ class ReportBugDialog(QDialog):
 
         close_btn = QPushButton(I18n.translate('ui', 'close'))
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_btn.setStyleSheet(_BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, hover=BG_BUTTON_HOVER))
+        close_btn.setStyleSheet(
+            _btn_ss(_theme.c('BG_BUTTON'), _theme.c('TEXT_PRIMARY'), _theme.c('BG_BUTTON_HOVER'))
+        )
         close_btn.clicked.connect(self.accept)
         btn_row.addWidget(close_btn)
 
@@ -176,7 +178,9 @@ class ReportBugDialog(QDialog):
                 "Creates a secret GitHub gist with the full diagnostic, "
                 "then opens a new issue linking to it. Uses your gh CLI auth."
             )
-            self._auto_btn.setStyleSheet(_BTN.format(bg=ACCENT, fg="#ffffff", hover=BG_BUTTON_HOVER))
+            self._auto_btn.setStyleSheet(
+                _btn_ss(_theme.c('ACCENT'), "#ffffff", _theme.c('BG_BUTTON_HOVER'))
+            )
             self._auto_btn.clicked.connect(self._submit_auto)
             btn_row.addWidget(self._auto_btn)
 
@@ -184,9 +188,11 @@ class ReportBugDialog(QDialog):
             I18n.translate('ui', 'open_github_issue') if not self._gh_ready else I18n.translate('ui', 'open_manually')
         )
         self._github_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        gh_bg = BG_BUTTON if self._gh_ready else ACCENT
-        gh_fg = TEXT_PRIMARY if self._gh_ready else "#ffffff"
-        self._github_btn.setStyleSheet(_BTN.format(bg=gh_bg, fg=gh_fg, hover=BG_BUTTON_HOVER))
+        gh_bg = _theme.c('BG_BUTTON') if self._gh_ready else _theme.c('ACCENT')
+        gh_fg = _theme.c('TEXT_PRIMARY') if self._gh_ready else "#ffffff"
+        self._github_btn.setStyleSheet(
+            _btn_ss(gh_bg, gh_fg, _theme.c('BG_BUTTON_HOVER'))
+        )
         self._github_btn.clicked.connect(self._open_github)
         btn_row.addWidget(self._github_btn)
 
