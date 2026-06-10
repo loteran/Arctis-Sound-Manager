@@ -77,8 +77,7 @@
 
     .full-width { grid-column: 1 / -1; }
 
-    canvas { max-height: 280px; }
-    .hbar-wrap { position: relative; width: 100%; }
+    .chart-box { position: relative; width: 100%; height: 280px; }
 
     footer {
       text-align: center;
@@ -136,15 +135,15 @@
   <div class="charts-grid">
     <div class="card full-width">
       <h2>Linux Distributions</h2>
-      <canvas id="chart-distros"></canvas>
+      <div class="chart-box"><canvas id="chart-distros"></canvas></div>
     </div>
     <div class="card full-width">
       <h2>Headsets</h2>
-      <canvas id="chart-headsets"></canvas>
+      <div class="chart-box"><canvas id="chart-headsets"></canvas></div>
     </div>
     <div class="card full-width">
       <h2>ASM Versions</h2>
-      <canvas id="chart-versions"></canvas>
+      <div class="chart-box"><canvas id="chart-versions"></canvas></div>
     </div>
   </div>
 
@@ -198,26 +197,15 @@
     return splitAt === -1 ? label : [label.slice(0, splitAt), label.slice(splitAt + 1)];
   }
 
-  const BAR_H = 22;   // px per bar
-  const BAR_GAP = 14; // px gap above/below each bar
+  const ROW_H = 28;
 
   function mkChart(id, labels, values, type = "bar", extraOpts = {}) {
     const ctx = document.getElementById(id);
     const isHBar = extraOpts.indexAxis === 'y';
 
     if (isHBar) {
-      const h = Math.max(160, labels.length * (BAR_H + BAR_GAP) + 40);
-      const wrap = document.createElement('div');
-      wrap.className = 'hbar-wrap';
-      wrap.style.height = h + 'px';
-      ctx.replaceWith(wrap);
-      wrap.appendChild(ctx);
+      ctx.parentElement.style.height = (labels.length * ROW_H + 40) + 'px';
     }
-
-    const maxLabelLen = isHBar
-      ? labels.reduce((m, l) => Math.max(m, String(l).length), 0)
-      : 0;
-    const labelAreaWidth = Math.min(260, Math.max(100, maxLabelLen * 7.5));
 
     return new Chart(ctx, {
       type,
@@ -225,21 +213,17 @@
         labels,
         datasets: [{
           data: values,
-          backgroundColor: PALETTE.slice(0, labels.length),
+          backgroundColor: labels.map((_, i) => PALETTE[i % PALETTE.length]),
           borderWidth: 0,
           borderRadius: 4,
-          ...(isHBar ? { barThickness: BAR_H } : {}),
         }],
       },
       options: {
         responsive: true,
-        maintainAspectRatio: !isHBar,
+        maintainAspectRatio: false,
         ...extraOpts,
         plugins: {
-          legend: {
-            display: type !== "bar",
-            labels: { color: "#C8C8C8" },
-          },
+          legend: { display: type !== "bar", labels: { color: "#C8C8C8" } },
           tooltip: {
             backgroundColor: "#2A3038",
             titleColor: "#C8C8C8",
@@ -248,16 +232,15 @@
           },
         },
         scales: type === "bar" ? {
-          x: {
-            ticks: { color: "#8D96AA", precision: 0 },
-            grid: { color: "#2A3038" },
-          },
+          x: { ticks: { color: "#8D96AA", precision: 0 }, grid: { color: "#2A3038" } },
           y: {
-            ...(isHBar ? { afterFit: scale => { scale.width = labelAreaWidth; } } : {}),
             ticks: {
               color: "#8D96AA",
               autoSkip: false,
-              ...(isHBar ? {} : { precision: 0 }),
+              ...(isHBar
+                ? { font: { size: 11 },
+                    callback(v) { return wrapLabel(this.getLabelForValue(v), 26); } }
+                : { precision: 0 }),
             },
             grid: { color: "#2A3038" },
           },
