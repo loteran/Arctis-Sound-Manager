@@ -92,6 +92,8 @@ class CoreEngine:
         self._detect_lock = threading.Lock()   # serialises detection attempts
         self._rescan_in_flight: bool = False
         self._logged_no_device: bool = False   # throttle the "no device" warning
+        self._warned_no_out_endpoint: bool = False  # log once per device attach
+        self._last_recreate_loopbacks: float = 0.0  # debounce rapid D-Bus calls
 
         self.reload_device_configurations()
         self.usb_devices_monitor.register_on_connect(self.on_device_connected)
@@ -153,13 +155,30 @@ class CoreEngine:
         except Exception as exc:
             self.logger.error("setup_loopbacks: failed to recreate loopbacks: %r", exc)
 
+    _RECREATE_DEBOUNCE_S = 5.0
+
     def recreate_loopbacks(self) -> None:
         """Public entry point called by the D-Bus ``RecreateLoopbacks`` method.
 
         Re-reads the EQ mode from disk so mode switches (Sonar ↔ simple) are
         picked up, then recreates all loopbacks.  Wrapped in try/except so a
         failure never crashes the daemon.
+
+        Debounced: if filter-chain.service keeps crashing and restarting (which
+        destroys then recreates the Sonar EQ nodes every few seconds), this
+        method would otherwise be called on every loopback exit, causing a
+        recreation storm.  Calls within _RECREATE_DEBOUNCE_S of the previous
+        call are dropped and logged at DEBUG level.
         """
+        now = time.monotonic()
+        elapsed = now - self._last_recreate_loopbacks
+        if elapsed < self._RECREATE_DEBOUNCE_S:
+            self.logger.debug(
+                "recreate_loopbacks: debounced (%.1f s since last call, min %.1f s)",
+                elapsed, self._RECREATE_DEBOUNCE_S,
+            )
+            return
+        self._last_recreate_loopbacks = now
         self.logger.info("recreate_loopbacks: requested via D-Bus")
         try:
             self.setup_loopbacks()
@@ -848,12 +867,20 @@ class CoreEngine:
             # correct path then is HID SET_REPORT over the control endpoint, which
             # send_command() already handles for endpoint 0 (wValue 0x0200, output).
             # Fall back instead of crashing the whole daemon.
-            self.logger.warning(
-                f"No interrupt OUT endpoint on command interface "
-                f"{self.device_config.command_interface_index[0]} for "
-                f"{self.usb_device.idVendor:04x}:{self.usb_device.idProduct:04x}; "
-                f"falling back to HID SET_REPORT (control transfer)."
-            )
+            if not self._warned_no_out_endpoint:
+                self._warned_no_out_endpoint = True
+                self.logger.warning(
+                    f"No interrupt OUT endpoint on command interface "
+                    f"{self.device_config.command_interface_index[0]} for "
+                    f"{self.usb_device.idVendor:04x}:{self.usb_device.idProduct:04x}; "
+                    f"falling back to HID SET_REPORT (control transfer)."
+                )
+            else:
+                self.logger.debug(
+                    "No interrupt OUT endpoint on command interface %d for %04x:%04x (SET_REPORT fallback active).",
+                    self.device_config.command_interface_index[0],
+                    self.usb_device.idVendor, self.usb_device.idProduct,
+                )
             return 0
 
         return endpoint
@@ -1176,3 +1203,4 @@ class CoreEngine:
             self.device_status = None
             self._active_extra_dial_interfaces = []
         self._device_ready = False
+        self._warned_no_out_endpoint = False
