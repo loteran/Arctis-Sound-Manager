@@ -8,6 +8,8 @@ No Qt imports: safe to use in daemon (headless).
 import json
 import os
 import platform
+import re
+import shutil
 import subprocess
 import sys
 import traceback
@@ -98,6 +100,84 @@ def _detect_install_methods() -> list[str]:
     return methods
 
 
+def _run_out(cmd: list[str], timeout: float = 5.0) -> str:
+    """Run *cmd* and return its stdout, stripped.
+
+    Returns '' when the binary is missing, the command times out, or it
+    raises. stdout is returned even on a non-zero exit code because tools
+    like `systemctl is-active` exit non-zero while still printing the state
+    ('inactive', 'failed') we want to report.
+    """
+    if not cmd or not shutil.which(cmd[0]):
+        return ''
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return r.stdout.strip()
+    except Exception:
+        return ''
+
+
+_ARCTIS_PATTERNS = ('arctis', '1038', 'steelseries')
+
+
+def _detect_container_env() -> str:
+    """Distrobox / Flatpak / Snap / docker / native detection.
+
+    Inside a Distrobox the daemon only reaches PipeWire through forwarded
+    sockets — knowing we are in a container is the first question a
+    maintainer asks when virtual outputs are missing (issue #74).
+    """
+    if os.environ.get('FLATPAK_ID'):
+        return f"flatpak (FLATPAK_ID={os.environ['FLATPAK_ID']})"
+    if os.environ.get('SNAP'):
+        return f"snap (SNAP={os.environ['SNAP']})"
+    container = os.environ.get('container', '')
+    if (container == 'distrobox'
+            or os.environ.get('DISTROBOX_ENTER_PATH')
+            or os.environ.get('CONTAINER_ID')):
+        name = os.environ.get('CONTAINER_ID', '?')
+        return f'distrobox (container={container or "?"}, CONTAINER_ID={name})'
+    if container:
+        return f'container ({container})'
+    if Path('/.dockerenv').exists():
+        return 'docker'
+    return 'native'
+
+
+def _arctis_pw_nodes() -> str:
+    """PipeWire objects matching the Arctis (node name, 'steelseries', or
+    vendor id 1038). Empty result while USB sees the device means PipeWire
+    never created the ALSA nodes — the issue #74 Distrobox failure mode.
+
+    Prefers `pw-dump`; falls back to `pactl list sinks` when pipewire-utils
+    is not installed.
+    """
+    if shutil.which('pw-dump'):
+        raw = _run_out(['pw-dump'], timeout=5.0)
+        try:
+            objects = json.loads(raw)
+        except Exception:
+            objects = None
+        if isinstance(objects, list):
+            lines = []
+            for obj in objects:
+                blob = json.dumps(obj).lower()
+                if not any(p in blob for p in _ARCTIS_PATTERNS):
+                    continue
+                props = (obj.get('info') or {}).get('props') or {}
+                lines.append(
+                    f"id={obj.get('id')} "
+                    f"name={props.get('node.name') or props.get('device.name', '?')} "
+                    f"class={props.get('media.class', '?')} "
+                    f"desc={props.get('node.description') or props.get('device.description', '')}"
+                )
+            return '\n'.join(lines)
+    raw = _run_out(['pactl', 'list', 'sinks'], timeout=5.0)
+    blocks = re.split(r'\n(?=Sink #)', raw)
+    kept = [b for b in blocks if any(p in b.lower() for p in _ARCTIS_PATTERNS)]
+    return '\n'.join(kept).strip()
+
+
 def collect_system_info() -> dict:
     info: dict = {}
 
@@ -180,6 +260,33 @@ def collect_system_info() -> dict:
     except Exception:
         info['wpctl'] = ''
 
+    # --- PipeWire runtime / container diagnostics (issue #74) ----------------
+    # When ASM runs inside Distrobox/Flatpak, PipeWire is only reachable
+    # through forwarded sockets. These fields show whether the sockets are
+    # actually passed through and whether PipeWire sees the headset at all.
+    info['pipewire_runtime_dir'] = os.environ.get('PIPEWIRE_RUNTIME_DIR', '<unset>')
+    info['pulse_server'] = os.environ.get('PULSE_SERVER', '<unset>')
+    info['container_env'] = _detect_container_env()
+
+    info['pw_sources'] = _run_out(['pactl', 'list', 'sources', 'short'])
+
+    info['filter_chain_status'] = (
+        _run_out(['systemctl', '--user', 'is-active', 'filter-chain']) or 'unknown'
+    )
+    info['pw_service_status'] = ' '.join(
+        f"{unit}={_run_out(['systemctl', '--user', 'is-active', unit]) or 'unknown'}"
+        for unit in ('pipewire', 'pipewire-pulse')
+    )
+
+    info['pw_arctis_nodes'] = _arctis_pw_nodes()
+
+    info['journalctl_pipewire'] = _run_out(
+        ['journalctl', '--user', '-u', 'pipewire', '-n', '20', '--no-pager'],
+    )
+    info['journalctl_filter_chain'] = _run_out(
+        ['journalctl', '--user', '-u', 'filter-chain', '-n', '30', '--no-pager'],
+    )
+
     # udev rules: which paths exist + the actual content of the active file.
     # The ASM checker's own verdict on whether the rules are valid is also useful.
     try:
@@ -233,6 +340,11 @@ def format_bug_report(traceback_str: Optional[str] = None) -> str:
         f'- **Desktop / Session**: {info.get("desktop", "?")} / {info.get("session_type", "?")}',
         f'- **D-Bus session**: `{info.get("dbus_session", "?")}`',
         f'- **USB monitor backend**: {info.get("usb_monitor_backend", "?")}',
+        f'- **Container environment**: {info.get("container_env", "?")}',
+        f'- **PIPEWIRE_RUNTIME_DIR**: `{info.get("pipewire_runtime_dir", "?")}`',
+        f'- **PULSE_SERVER**: `{info.get("pulse_server", "?")}`',
+        f'- **PipeWire services**: {info.get("pw_service_status", "?")}',
+        f'- **filter-chain.service**: {info.get("filter_chain_status", "?")}',
         '',
     ]
 
@@ -296,6 +408,29 @@ def format_bug_report(traceback_str: Optional[str] = None) -> str:
             '',
         ]
 
+    pw_sources = info.get('pw_sources', '')
+    if pw_sources:
+        lines += [
+            '## PipeWire sources',
+            '```',
+            pw_sources,
+            '```',
+            '',
+        ]
+
+    # Always shown: an EMPTY node list while USB sees the headset is exactly
+    # the signal that PipeWire never created the ALSA nodes (issue #74).
+    lines += [
+        '## PipeWire — Arctis nodes',
+        '<!-- Empty while the USB section above shows the headset = PipeWire',
+        '     does not see the device (common in Distrobox when the PipeWire',
+        '     sockets are not forwarded into the container). -->',
+        '```',
+        info.get('pw_arctis_nodes', '') or '(none — PipeWire does not see any Arctis node)',
+        '```',
+        '',
+    ]
+
     wpctl = info.get('wpctl', '')
     if wpctl:
         lines += [
@@ -326,6 +461,26 @@ def format_bug_report(traceback_str: Optional[str] = None) -> str:
             '## Recent daemon logs',
             '```',
             logs[-4000:],
+            '```',
+            '',
+        ]
+
+    jc_pw = info.get('journalctl_pipewire', '')
+    if jc_pw:
+        lines += [
+            '## PipeWire logs (`journalctl --user -u pipewire`, last 20)',
+            '```',
+            jc_pw[-3000:],
+            '```',
+            '',
+        ]
+
+    jc_fc = info.get('journalctl_filter_chain', '')
+    if jc_fc:
+        lines += [
+            '## filter-chain logs (`journalctl --user -u filter-chain`, last 30)',
+            '```',
+            jc_fc[-3000:],
             '```',
             '',
         ]
@@ -363,6 +518,7 @@ def format_bug_report_short(traceback_str: Optional[str] = None,
         f'- **PipeWire**: {info.get("pipewire", "unknown")}',
         f'- **Desktop / Session**: {info.get("desktop", "?")} / {info.get("session_type", "?")}',
         f'- **USB monitor backend**: {info.get("usb_monitor_backend", "?")}',
+        f'- **Container environment**: {info.get("container_env", "?")}',
         f'- **Install methods**: {", ".join(methods) or "?"}',
         '',
         '## Library versions',
