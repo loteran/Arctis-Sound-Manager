@@ -383,10 +383,15 @@ class OledManager:
             self._burn_in_last = now
 
     def _refresh_loop(self) -> None:
-        while not self._stop_event.wait(timeout=_REFRESH_INTERVAL_S):
+        while not self._stop_event.is_set():
+            remaining_splash = self._splash_until - datetime.now().timestamp()
+            if remaining_splash > 0:
+                self._stop_event.wait(timeout=remaining_splash + 0.05)
+                continue
+            self._stop_event.wait(timeout=_REFRESH_INTERVAL_S)
+            if self._stop_event.is_set():
+                break
             try:
-                if datetime.now().timestamp() < self._splash_until:
-                    continue
                 self._advance_burn_in()
                 gs = self._core.general_settings
                 timeout = gs.oled_screen_timeout

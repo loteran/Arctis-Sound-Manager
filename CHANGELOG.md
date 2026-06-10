@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.65] - 10 June 2026
+
+### Fixed
+
+- **OLED splash screen persisted over custom display on devices without a live PipeWire session** — the refresh loop slept for the full 5 s `REFRESH_INTERVAL` even when the 3 s splash had already expired, leaving a ~2 s gap where the device firmware reclaimed the OLED and showed its native UI alongside ASM's splash content. The loop now wakes immediately at splash expiry so the first custom-display frame is pushed without delay. (#76)
+- **`No interrupt OUT endpoint` warning flooded the journal every 2 s** — for devices without an interrupt OUT endpoint on their command interface (e.g. Arctis 1 Wireless), ASM correctly falls back to HID SET_REPORT but was logging a WARNING on every status poll. The warning is now emitted once per device attach; subsequent occurrences are downgraded to DEBUG. The flag is reset on teardown so the warning reappears on reconnect. (#74)
+- **`recreate_loopbacks` storm when `filter-chain.service` crashed repeatedly** — if the SteelSeries Sonar filter-chain service crashed and restarted every few seconds (common in Distrobox), each `pw-loopback` exit triggered a D-Bus `RecreateLoopbacks` call, causing a rapid stop/start cycle with no net benefit. Calls are now debounced to at most once per 5 s; legitimate Sonar ↔ simple mode switches are unaffected. (#74)
+
 ## [1.1.64] - 10 June 2026
 
 ### Added
