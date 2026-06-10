@@ -198,18 +198,26 @@
     return splitAt === -1 ? label : [label.slice(0, splitAt), label.slice(splitAt + 1)];
   }
 
+  const BAR_H = 22;   // px per bar
+  const BAR_GAP = 14; // px gap above/below each bar
+
   function mkChart(id, labels, values, type = "bar", extraOpts = {}) {
     const ctx = document.getElementById(id);
     const isHBar = extraOpts.indexAxis === 'y';
 
     if (isHBar) {
-      const h = Math.max(240, labels.length * 38);
+      const h = Math.max(160, labels.length * (BAR_H + BAR_GAP) + 40);
       const wrap = document.createElement('div');
       wrap.className = 'hbar-wrap';
       wrap.style.height = h + 'px';
       ctx.replaceWith(wrap);
       wrap.appendChild(ctx);
     }
+
+    const maxLabelLen = isHBar
+      ? labels.reduce((m, l) => Math.max(m, String(l).length), 0)
+      : 0;
+    const labelAreaWidth = Math.min(260, Math.max(100, maxLabelLen * 7.5));
 
     return new Chart(ctx, {
       type,
@@ -220,6 +228,7 @@
           backgroundColor: PALETTE.slice(0, labels.length),
           borderWidth: 0,
           borderRadius: 4,
+          ...(isHBar ? { barThickness: BAR_H } : {}),
         }],
       },
       options: {
@@ -244,6 +253,7 @@
             grid: { color: "#2A3038" },
           },
           y: {
+            ...(isHBar ? { afterFit: scale => { scale.width = labelAreaWidth; } } : {}),
             ticks: {
               color: "#8D96AA",
               autoSkip: false,
