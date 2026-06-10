@@ -78,7 +78,7 @@
     .full-width { grid-column: 1 / -1; }
 
     canvas { max-height: 280px; }
-    #chart-distros, #chart-headsets { max-height: 420px; }
+    .hbar-wrap { position: relative; width: 100%; }
 
     footer {
       text-align: center;
@@ -201,6 +201,16 @@
   function mkChart(id, labels, values, type = "bar", extraOpts = {}) {
     const ctx = document.getElementById(id);
     const isHBar = extraOpts.indexAxis === 'y';
+
+    if (isHBar) {
+      const h = Math.max(240, labels.length * 38);
+      const wrap = document.createElement('div');
+      wrap.className = 'hbar-wrap';
+      wrap.style.height = h + 'px';
+      ctx.replaceWith(wrap);
+      wrap.appendChild(ctx);
+    }
+
     return new Chart(ctx, {
       type,
       data: {
@@ -214,6 +224,7 @@
       },
       options: {
         responsive: true,
+        maintainAspectRatio: !isHBar,
         ...extraOpts,
         plugins: {
           legend: {
@@ -235,6 +246,7 @@
           y: {
             ticks: {
               color: "#8D96AA",
+              autoSkip: false,
               ...(isHBar ? {} : { precision: 0 }),
             },
             grid: { color: "#2A3038" },
