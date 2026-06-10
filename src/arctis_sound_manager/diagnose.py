@@ -173,6 +173,129 @@ def _section_journalctl() -> str:
     return raw
 
 
+_ARCTIS_PATTERNS = ('arctis', '1038', 'steelseries')
+
+
+def _detect_container_env() -> str:
+    """Identify the sandbox/container ASM is running in, if any.
+
+    Distrobox is the interesting case for audio bugs (issue #74): the
+    container only sees PipeWire through forwarded sockets, so a wrong or
+    missing $PIPEWIRE_RUNTIME_DIR / $PULSE_SERVER silently breaks
+    _discover_physical_nodes().
+    """
+    if os.environ.get('FLATPAK_ID'):
+        return f"flatpak (FLATPAK_ID={os.environ['FLATPAK_ID']})"
+    if os.environ.get('SNAP'):
+        return f"snap (SNAP={os.environ['SNAP']})"
+    container = os.environ.get('container', '')
+    if (container == 'distrobox'
+            or os.environ.get('DISTROBOX_ENTER_PATH')
+            or os.environ.get('CONTAINER_ID')):
+        name = os.environ.get('CONTAINER_ID', '?')
+        return f'distrobox (container={container or "?"}, CONTAINER_ID={name})'
+    if container:
+        return f'container ({container})'
+    if Path('/.dockerenv').exists():
+        return 'docker'
+    return 'native'
+
+
+def _filter_arctis_blocks(raw: str, header_prefix: str) -> str:
+    """Keep only the `pactl list <kind>` blocks that mention an Arctis device
+    (by name or by SteelSeries vendor id 0x1038)."""
+    blocks = re.split(rf'\n(?={re.escape(header_prefix)} #)', raw)
+    kept = [b for b in blocks
+            if any(p in b.lower() for p in _ARCTIS_PATTERNS)]
+    return '\n'.join(kept).strip() or f'(no Arctis-related {header_prefix.lower()} found)'
+
+
+def _pw_dump_arctis() -> str:
+    """`pw-dump` filtered to Arctis/SteelSeries objects; falls back to
+    `pactl list sinks` when pw-dump is not installed."""
+    if shutil.which('pw-dump'):
+        raw = _run(['pw-dump'], timeout=5.0)
+        try:
+            objects = json.loads(raw)
+        except Exception as e:
+            return f'(pw-dump output not parseable: {e!r})'
+        lines = []
+        for obj in objects:
+            blob = json.dumps(obj).lower()
+            if not any(p in blob for p in _ARCTIS_PATTERNS):
+                continue
+            props = (obj.get('info') or {}).get('props') or {}
+            lines.append(
+                f"  id={obj.get('id')} type={obj.get('type', '?').rsplit(':', 1)[-1]} "
+                f"name={props.get('node.name') or props.get('device.name', '?')} "
+                f"class={props.get('media.class', '?')} "
+                f"desc={props.get('node.description') or props.get('device.description', '')}"
+            )
+        return ('pw-dump objects matching arctis/1038/steelseries:\n'
+                + ('\n'.join(lines) if lines else '  (none — PipeWire does not see the device!)'))
+    # Fallback for systems without pipewire-utils.
+    raw = _run(['pactl', 'list', 'sinks'], timeout=5.0)
+    return ('(pw-dump not in PATH — falling back to pactl list sinks, Arctis only)\n'
+            + _filter_arctis_blocks(raw, 'Sink'))
+
+
+def _section_pipewire_runtime() -> str:
+    """PipeWire runtime state — sockets, services, nodes, logs.
+
+    Targets the Distrobox failure mode of issue #74: the daemon attaches the
+    USB device fine, but PipeWire inside the container never exposes the ALSA
+    sinks, so loopback creation silently does nothing.
+    """
+    out = io.StringIO()
+
+    out.write('Environment:\n')
+    out.write(f'  container_env:        {_detect_container_env()}\n')
+    for var in ('PIPEWIRE_RUNTIME_DIR', 'PULSE_SERVER', 'PIPEWIRE_REMOTE',
+                'XDG_RUNTIME_DIR'):
+        out.write(f'  {var}: {os.environ.get(var, "<unset>")}\n')
+
+    out.write('\nUser services (systemctl --user is-active):\n')
+    if shutil.which('systemctl'):
+        for unit in ('pipewire', 'pipewire-pulse', 'wireplumber', 'filter-chain'):
+            state = _run(['systemctl', '--user', 'is-active', unit]).strip()
+            out.write(f'  {unit}: {state}\n')
+    else:
+        out.write('  (skipped: systemctl not in PATH)\n')
+
+    out.write('\n--- pactl list sinks short ---\n')
+    out.write(_run(['pactl', 'list', 'sinks', 'short']))
+
+    out.write('\n--- pactl list sources short (Arctis only) ---\n')
+    sources = _run(['pactl', 'list', 'sources', 'short'])
+    if 'skipped' in sources:
+        out.write(sources)
+    else:
+        arctis_sources = [l for l in sources.splitlines()
+                          if any(p in l.lower() for p in _ARCTIS_PATTERNS)]
+        out.write('\n'.join(arctis_sources) or '(no Arctis source)')
+
+    out.write('\n\n--- pactl list sinks (Arctis only, full) ---\n')
+    full_sinks = _run(['pactl', 'list', 'sinks'])
+    out.write(full_sinks if 'skipped' in full_sinks
+              else _filter_arctis_blocks(full_sinks, 'Sink'))
+
+    out.write('\n\n--- pw-dump (Arctis objects) ---\n')
+    out.write(_pw_dump_arctis())
+
+    out.write('\n\n--- wpctl status ---\n')
+    out.write(_run(['wpctl', 'status']))
+
+    out.write('\n\n--- journalctl --user -u pipewire (last 20) ---\n')
+    out.write(_run(['journalctl', '--user', '-u', 'pipewire',
+                    '-n', '20', '--no-pager'], timeout=5.0))
+
+    out.write('\n\n--- journalctl --user -u filter-chain (last 30) ---\n')
+    out.write(_run(['journalctl', '--user', '-u', 'filter-chain',
+                    '-n', '30', '--no-pager'], timeout=5.0))
+
+    return out.getvalue()
+
+
 def _section_settings() -> str:
     out = io.StringIO()
     settings_yaml = SETTINGS_FOLDER.parent / 'general_settings.yaml'
@@ -210,6 +333,7 @@ def diagnose(stream=sys.stdout) -> int:
         ('SteelSeries USB devices (vendor 0x1038)', _section_lsusb),
         ('udev rules', _section_udev),
         ('PulseAudio / PipeWire', _section_pulseaudio),
+        ('PipeWire runtime / container diagnostics', _section_pipewire_runtime),
         ('User device YAML overrides', _section_yamls),
         ('Settings (redacted)', _section_settings),
         ('Journalctl — arctis-manager.service (last 100 lines)', _section_journalctl),
