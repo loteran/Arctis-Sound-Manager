@@ -1,3 +1,24 @@
+arctis-sound-manager (1.1.64-1) noble; urgency=medium
+
+  * Multi-theme support — ASM now ships 5 built-in colour themes
+    (SteelSeries, Dark, Light, Ocean, Forest). The active theme is persisted
+    in settings and can be switched live from the device page without
+    restarting the application; every page, dialog and tray menu follows the
+    change immediately.
+  * Enhanced bug report diagnostics — PipeWire / container runtime — the
+    automatic bug report now collects the data needed to diagnose
+    audio-routing failures in Distrobox and other container environments:
+    $PIPEWIRE_RUNTIME_DIR, $PULSE_SERVER, container type (Distrobox /
+    Flatpak / Snap / Docker / native), status of pipewire, pipewire-pulse,
+    wireplumber and filter-chain user services, Arctis-filtered PipeWire
+    nodes from pw-dump (with pactl fallback), PipeWire sources, and the last
+    journal entries for pipewire and filter-chain. A missing or empty
+    Arctis-nodes section in a report is now a direct indicator that PipeWire
+    cannot see the device — eliminating the back-and-forth follow-up that
+    issue #74 required.
+
+ -- loteran <axel.valadon@gmail.com>  Wed, 10 Jun 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.63-1) noble; urgency=medium
 
   * Arctis Nova Pro Wired — OLED screen never updated and the daemon spammed

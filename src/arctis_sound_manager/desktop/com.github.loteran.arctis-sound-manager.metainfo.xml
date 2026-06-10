@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.64" date="2026-06-10">
+      <description>
+        <p>Multi-theme support — ASM now ships 5 built-in colour themes (SteelSeries, Dark, Light, Ocean, Forest). The active theme is persisted in settings and can be switched live from the device page without restarting the application; every page, dialog and tray menu follows the change immediately. Enhanced bug report diagnostics — PipeWire / container runtime — the automatic bug report now collects the data needed to diagnose audio-routing failures in Distrobox and other container environments: $PIPEWIRE_RUNTIME_DIR, $PULSE_SERVER, container type (Distrobox / Flatpak / Snap / Docker / native), status of pipewire, pipewire-pulse, wireplumber and filter-chain user services, Arctis-filtered PipeWire nodes from pw-dump (with pactl fallback), PipeWire sources, and the last journal entries for pipewire and filter-chain. A missing or empty Arctis-nodes section in a report is now a direct indicator that PipeWire cannot see the device — eliminating the back-and-forth follow-up that issue #74 required.</p>
+      </description>
+    </release>
     <release version="1.1.63" date="2026-06-09">
       <description>
         <p>Arctis Nova Pro Wired — OLED screen never updated and the daemon spammed OLED USB error: [Errno 110] Operation timed out — the GameDAC Gen 2 firmware validates the HID SET_REPORT wValue strictly, but ASM sent report id 0 in its low byte, so the base station rejected every OLED transfer. The wValue is now built as (report_type &lt;&lt; 8) | report_id (0x0306 for image frames, 0x0206 for brightness/return-to-UI), matching the protocol proven by working third-party tools. (#76). Arctis Nova Pro Wired — headset not detected after boot/login until audio activity (e.g. joining a call) woke the device — a device already plugged in at startup fires no udev add event, so a single failed initial scan was never retried. The daemon now re-scans periodically until the device is fully configured instead of waiting for a hotplug or USB wake event. (#76). Arctis Nova Pro Wired — audio near-inaudible unless volume was cranked to ~95% — control-transfer device commands carried the same incorrect wValue, so the high-gain initialisation never reached the GameDAC. Commands now embed the correct report id in the wValue for devices that require it, opt-in per device so the Nova 7 family and others are unaffected. (#76).</p>
@@ -199,11 +204,6 @@
     <release version="1.0.98" date="2026-05-05">
       <description>
         <p>Distrobox hot-plug (issue #26) — the headset can now be plugged in *after* the container is created without requiring --reinstall. A new udev rule (90-asm-hidraw-symlink.rules) maintains /run/asm-hidraw/ as a stable directory of symlinks to SteelSeries hidraw nodes; the container mounts this directory with rslave propagation so additions and removals on the host are immediately visible inside. libusb / PyUSB access from container — /dev/bus/usb is now bind-mounted into the container (rslave), giving PyUSB full access to the USB device tree. Previously only /dev/hidraw* was passed, which blocked the libusb backend entirely. Fedora Silverblue/Kinoite variants auto-detected — distrobox-install.sh now correctly routes Bluefin, Aurora, Sericea, Onyx, and Cosmic Atomic to silverblue.sh (Fedora COPR container) instead of incorrectly using the Arch/AUR container.</p>
-      </description>
-    </release>
-    <release version="1.0.97" date="2026-05-05">
-      <description>
-        <p>Sonar Media tab (issue #29) — new Media EQ tab placed between Game and Chat in the Sonar page. The channel runs through the HeSuVi 7.1 surround pipeline (same routing as Game), giving music and video apps the full spatial-audio treatment. The complete 300+ preset library ([Game] tag — games, music genres, movies, podcasts) is available from day one. Boost Volume and Smart Volume cards are wired up identically to Game and Chat. Arctis_Media → sonar-media-eq — the Media virtual sink now routes through its own dedicated EQ filter-chain node instead of bypassing Sonar entirely. Stream restore after filter-chain restart remaps effect_input.sonar-media-eq ↔ Arctis_Media correctly.</p>
       </description>
     </release>
   </releases>
