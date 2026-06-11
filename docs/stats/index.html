@@ -200,8 +200,10 @@
   const ROW_H = 28;
 
   function mkChart(id, labels, values, type = "bar", extraOpts = {}) {
+    const boldLabels = extraOpts.boldLabels || false;
+    const { boldLabels: _bl, ...chartExtraOpts } = extraOpts;
     const ctx = document.getElementById(id);
-    const isHBar = extraOpts.indexAxis === 'y';
+    const isHBar = chartExtraOpts.indexAxis === 'y';
 
     if (isHBar) {
       ctx.parentElement.style.height = (labels.length * ROW_H + 40) + 'px';
@@ -221,7 +223,7 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        ...extraOpts,
+        ...chartExtraOpts,
         plugins: {
           legend: { display: type !== "bar", labels: { color: "#C8C8C8" } },
           tooltip: {
@@ -238,7 +240,7 @@
               color: "#8D96AA",
               autoSkip: false,
               ...(isHBar
-                ? { font: { size: 11 },
+                ? { font: { size: 11, ...(boldLabels ? { weight: 'bold' } : {}) },
                     callback(v) { return wrapLabel(this.getLabelForValue(v), 26); } }
                 : { precision: 0 }),
             },
@@ -269,8 +271,8 @@
         data.distros.map(r => r.label), data.distros.map(r => r.nb),
         "bar", { indexAxis: 'y' });
       mkChart("chart-headsets",
-        headsets.map(r => r.product_id === "Unknown" ? r.label : r.label + " (0x" + r.product_id + ")"),
-        headsets.map(r => r.nb), "bar", { indexAxis: 'y' });
+        headsets.map(r => r.product_id === "Unknown" ? r.label : r.label + " (0x" + r.product_id.slice(-4) + ")"),
+        headsets.map(r => r.nb), "bar", { indexAxis: 'y', boldLabels: true });
       // Versions: order by version number (descending) instead of user count.
       const versionsByNumber = [...data.versions].sort((a, b) => {
         const pa = String(a.label).split(".").map(n => parseInt(n, 10) || 0);
