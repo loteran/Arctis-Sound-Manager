@@ -19,6 +19,8 @@
 #   curl -fsSL https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/scripts/uninstall.sh | bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # ── Colors ────────────────────────────────────────────────────────────────────
 if [ -t 1 ] && command -v tput >/dev/null 2>&1; then
     BOLD=$(tput bold); DIM=$(tput dim); RESET=$(tput sgr0)
@@ -93,6 +95,16 @@ if command -v pipx >/dev/null 2>&1 && pipx list --short 2>/dev/null | grep -q "^
     info "pipx:   arctis-sound-manager $PIPX_VERSION"
 fi
 
+# Distrobox install (Bazzite, SteamOS, Silverblue…)
+HAS_DISTROBOX=0
+if command -v distrobox >/dev/null 2>&1 && distrobox list 2>/dev/null | grep -qw "arctis-sound-manager"; then
+    HAS_DISTROBOX=1
+    info "distrobox: container 'arctis-sound-manager' found"
+elif [ -f "$HOME/.local/bin/asm-daemon" ] && grep -q "distrobox" "$HOME/.local/bin/asm-daemon" 2>/dev/null; then
+    HAS_DISTROBOX=1
+    info "distrobox: stubs detected in ~/.local/bin (container may be missing)"
+fi
+
 # Orphan binaries in PATH (catches manual `pip install --user` etc.)
 ORPHAN_BINS=$(command -v -a asm-daemon 2>/dev/null || true)
 if [ -n "$ORPHAN_BINS" ]; then
@@ -105,9 +117,23 @@ HAS_PKG=0
 HAS_PIPX=0
 [ -n "$PIPX_VERSION" ] && HAS_PIPX=1
 
-if [ "$HAS_PKG" -eq 0 ] && [ "$HAS_PIPX" -eq 0 ]; then
+if [ "$HAS_PKG" -eq 0 ] && [ "$HAS_PIPX" -eq 0 ] && [ "$HAS_DISTROBOX" -eq 0 ]; then
     ok "No Arctis Sound Manager installation detected — nothing to do."
     exit 0
+fi
+
+# Distrobox install: delegate to the dedicated uninstaller
+if [ "$HAS_DISTROBOX" -eq 1 ] && [ "$HAS_PKG" -eq 0 ] && [ "$HAS_PIPX" -eq 0 ]; then
+    warn "Distrobox install detected. The regular uninstaller cannot remove it."
+    DISTROBOX_UNINSTALL="$SCRIPT_DIR/distrobox/uninstall.sh"
+    if [ -f "$DISTROBOX_UNINSTALL" ]; then
+        info "Delegating to: $DISTROBOX_UNINSTALL"
+        exec bash "$DISTROBOX_UNINSTALL" "$@"
+    else
+        err "Could not find scripts/distrobox/uninstall.sh."
+        err "Clone the repo and run:  bash scripts/distrobox/uninstall.sh"
+        exit 1
+    fi
 fi
 
 # ── Decide what to remove ────────────────────────────────────────────────────
