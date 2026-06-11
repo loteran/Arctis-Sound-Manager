@@ -199,8 +199,10 @@
   }
 
   function mkChart(id, labels, values, type = "bar", extraOpts = {}) {
+    const boldLabels = extraOpts.boldLabels || false;
+    const { boldLabels: _bl, ...chartExtraOpts } = extraOpts;
     const ctx = document.getElementById(id);
-    const isHBar = extraOpts.indexAxis === 'y';
+    const isHBar = chartExtraOpts.indexAxis === 'y';
     return new Chart(ctx, {
       type,
       data: {
@@ -214,7 +216,7 @@
       },
       options: {
         responsive: true,
-        ...extraOpts,
+        ...chartExtraOpts,
         plugins: {
           legend: {
             display: type !== "bar",
@@ -236,6 +238,7 @@
             ticks: {
               color: "#8D96AA",
               ...(isHBar ? {} : { precision: 0 }),
+              ...(boldLabels && isHBar ? { font: { weight: 'bold' } } : {}),
             },
             grid: { color: "#2A3038" },
           },
@@ -264,8 +267,8 @@
         data.distros.map(r => r.label), data.distros.map(r => r.nb),
         "bar", { indexAxis: 'y' });
       mkChart("chart-headsets",
-        headsets.map(r => r.product_id === "Unknown" ? r.label : r.label + " (0x" + r.product_id + ")"),
-        headsets.map(r => r.nb), "bar", { indexAxis: 'y' });
+        headsets.map(r => r.product_id === "Unknown" ? r.label : r.label + " (0x" + r.product_id.slice(-4) + ")"),
+        headsets.map(r => r.nb), "bar", { indexAxis: 'y', boldLabels: true });
       // Versions: order by version number (descending) instead of user count.
       const versionsByNumber = [...data.versions].sort((a, b) => {
         const pa = String(a.label).split(".").map(n => parseInt(n, 10) || 0);
