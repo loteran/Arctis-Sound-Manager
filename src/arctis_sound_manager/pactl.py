@@ -289,6 +289,14 @@ class PulseAudioManager:
                     and s.proplist.get('device.class', '') != 'monitor']
         return physical[0] if physical else None
 
+    def set_default_source(self, name: str) -> None:
+        """Set the default PipeWire/PulseAudio source by node name."""
+        try:
+            self.pulse.source_default_set(name)
+            self.logger.info("Default source set to %s", name)
+        except Exception as e:
+            self.logger.warning("Failed to set default source to %s: %r", name, e)
+
     def set_mix(self, media_mix: int, chat_mix: int):
         if media_mix > 100:
             media_mix = 100
