@@ -285,7 +285,8 @@ class PulseAudioManager:
 
         physical = [s for s in sources
                     if vendor_matches(s)
-                    and _pid_matches(s.proplist.get('device.product.id', ''), product_id)]
+                    and _pid_matches(s.proplist.get('device.product.id', ''), product_id)
+                    and s.proplist.get('device.class', '') != 'monitor']
         return physical[0] if physical else None
 
     def set_mix(self, media_mix: int, chat_mix: int):
