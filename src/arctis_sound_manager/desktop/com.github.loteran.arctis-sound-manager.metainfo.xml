@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.67" date="2026-06-12">
+      <description>
+        <p>Microphone monitor source selected instead of real mic — on some setups PipeWire exposes a monitor source before the real capture source, causing ASM to route apps to the monitor loopback instead of the physical microphone. The physical-source lookup now filters out device.class = monitor entries. (#80). Mic audio bypassed Sonar EQ — applications could connect directly to the ALSA source and skip the sonar-micro-eq filter chain. ASM now sets priority.session = 1010 on the Sonar virtual source and explicitly sets it as the default PulseAudio source at startup, so apps land on the EQ pipeline by default. D-Bus status returned {} when device was connected but status bytes unresolved — if the device was ready but device_status was None, the GUI showed "No device detected" even though the headset was online. The D-Bus GetStatus method now synthesises an online sentinel from online_status.online_value in that case.</p>
+      </description>
+    </release>
     <release version="1.1.66" date="2026-06-12">
       <description>
         <p>HRIR selection silently failed on NixOS (and any read-only source) — apply_hrir_choice used shutil.copy2 which preserves source file permissions and mtime. Since HRIR WAVs live in the Nix store (read-only, epoch timestamp), the copied hrir.wav was also read-only; any subsequent profile selection in Settings → Spatial Audio would fail silently and the convolver would load an invalid file, leaving the Game and Media channels silent while Chat (which bypasses the convolver) still worked. Fixed by unlinking the destination before copying and using shutil.copy (no metadata). (#79). Uninstaller failed on Bazzite / immutable distros when run via curl | bash — the Distrobox delegation path resolved SCRIPT_DIR from BASH_SOURCE[0], which is stdin when piped through curl. The local scripts/distrobox/uninstall.sh was never found and the script exited with an error. Now fetches both _common.sh and distrobox/uninstall.sh to a temporary directory and delegates from there when the local path is unavailable. Added a dedicated NixOS installation section to the README covering both flake and classic (non-flake) paths, with a prominent warning that Settings → Spatial Audio must be opened on first launch to select an HRIR profile — without this step the Game and Media channels are silent.</p>
@@ -199,11 +204,6 @@
     <release version="1.1.30" date="2026-05-15">
       <description>
         <p>Per-channel output device selection — each audio channel card (Game / Chat / Media) now has a dropdown to route that channel to a specific output sink; systray → Output Routing mirrors the same selection (issue #46). Output device routing saved in profiles — optional checkbox in Save Profile dialog captures the current per-channel routing. Language filter — only languages with ≥ 80 % translation coverage appear in the language selector; names are now displayed in their native script via babel (Français, Deutsch, Polski…) instead of 2-letter codes.</p>
-      </description>
-    </release>
-    <release version="1.1.4" date="2026-05-08">
-      <description>
-        <p>dinit: filter-chain and video-router stuck stopped after asm-setup — when asm-setup rewrites service files on disk, dinit keeps the old in-memory definition (without restart = true) until explicitly reloaded. Added dinitctl reload for stopped services before starting them so dinit always picks up the current file (issue #25). dinit: D-Bus collision on re-login — the guard preventing a second asm-daemon from starting used dinitctl status, which could miss the race window between dinit's boot-sequence auto-start and asm-setup's explicit start. Replaced with pgrep -f asm-daemon against the actual running process. dinit: filter-chain start race after pipewire restart — asm-setup now waits 0.5 s after a successful dinitctl restart pipewire before starting dependants, giving the PipeWire socket time to come up.</p>
       </description>
     </release>
   </releases>
