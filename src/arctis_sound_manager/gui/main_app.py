@@ -50,7 +50,11 @@ from arctis_sound_manager.gui.theme import (
     THEMES,
     build_qss,
     set_active_theme,
+    get_theme,
+    set_preview_colors,
+    PREVIEW_THEME_ID,
 )
+from arctis_sound_manager.gui.theme_editor_page import ThemeEditorPage
 from arctis_sound_manager.gui.ui_utils import get_icon_pixmap
 from arctis_sound_manager.i18n import I18n
 from arctis_sound_manager.settings import GeneralSettings
@@ -89,8 +93,16 @@ class QMainApp(QBaseDesktopApp):
         # Build window
         self.main_window = self._build_window()
 
+        # Initialise theme-before-edit tracker
+        self._theme_before_edit: str = "steelseries"
+
         # Wire theme change signal
         self._device_page.sig_theme_changed.connect(self._apply_theme)
+        self._device_page.sig_theme_create.connect(self._open_theme_editor_new)
+        self._device_page.sig_theme_edit.connect(self._open_theme_editor_edit)
+        self._theme_editor_page.sig_preview.connect(self._on_theme_preview)
+        self._theme_editor_page.sig_saved.connect(self._on_theme_saved)
+        self._theme_editor_page.sig_cancelled.connect(self._on_theme_editor_cancelled)
 
         # Wire D-Bus signals to pages
         self.dbus_wrapper.sig_status.connect(self._home_page.update_status)
@@ -133,7 +145,7 @@ class QMainApp(QBaseDesktopApp):
         # Update the active theme state first so c() returns the right colors
         # during all subsequent restyle calls.
         set_active_theme(theme_name)
-        t = THEMES.get(theme_name, THEMES["steelseries"])
+        t = get_theme(theme_name)
         self.app.setStyleSheet(build_qss(theme_name))
         for btn in self._sidebar_buttons:
             btn.update_colors(t)
@@ -145,6 +157,7 @@ class QMainApp(QBaseDesktopApp):
             self._dac_page,
             self._device_page,
             self._help_page,
+            self._theme_editor_page,
         ):
             if hasattr(page, "apply_theme"):
                 page.apply_theme(t)
@@ -152,7 +165,7 @@ class QMainApp(QBaseDesktopApp):
         if hasattr(self._home_page, "profile_bar"):
             self._home_page.profile_bar.apply_theme(t)
         self._switch_page(self._stack.currentIndex())
-        if save:
+        if save and theme_name != PREVIEW_THEME_ID:
             self._general_settings.theme = theme_name
             self._general_settings.write_to_file()
 
@@ -272,12 +285,15 @@ class QMainApp(QBaseDesktopApp):
         self._device_page    = DevicePage()
         self._help_page      = HelpPage()
 
-        self._stack.addWidget(self._home_page)      # index 0 → Home
-        self._stack.addWidget(self._equalizer_page) # index 1 → Equalizer
-        self._stack.addWidget(self._headset_page)   # index 2 → Headset
-        self._stack.addWidget(self._dac_page)       # index 3 → DAC
-        self._stack.addWidget(self._device_page)    # index 4 → Settings
-        self._stack.addWidget(self._help_page)      # index 5 → Help
+        self._theme_editor_page = ThemeEditorPage()
+
+        self._stack.addWidget(self._home_page)        # index 0 → Home
+        self._stack.addWidget(self._equalizer_page)   # index 1 → Equalizer
+        self._stack.addWidget(self._headset_page)     # index 2 → Headset
+        self._stack.addWidget(self._dac_page)         # index 3 → DAC
+        self._stack.addWidget(self._device_page)      # index 4 → Settings
+        self._stack.addWidget(self._help_page)        # index 5 → Help
+        self._stack.addWidget(self._theme_editor_page) # index 6 → Theme Editor
 
         content_layout.addWidget(self._stack)
         root_layout.addWidget(content_wrapper, stretch=1)
@@ -288,8 +304,36 @@ class QMainApp(QBaseDesktopApp):
 
     def _switch_page(self, index: int):
         self._stack.setCurrentIndex(index)
+        active_idx = 4 if index == 6 else index
         for i, btn in enumerate(self._sidebar_buttons):
-            btn.set_active(i == index)
+            btn.set_active(i == active_idx)
+
+    # ── Theme editor ──────────────────────────────────────────────────────────
+
+    def _open_theme_editor_new(self) -> None:
+        self._theme_before_edit = self._general_settings.theme
+        self._theme_editor_page.open_for_new(base_theme_id=self._general_settings.theme)
+        self._switch_page(6)
+
+    def _open_theme_editor_edit(self, theme_id: str) -> None:
+        self._theme_before_edit = self._general_settings.theme
+        self._theme_editor_page.open_for_edit(theme_id)
+        self._switch_page(6)
+
+    def _on_theme_preview(self, colors: dict) -> None:
+        set_preview_colors(colors)
+        self._apply_theme(PREVIEW_THEME_ID, save=False)
+
+    def _on_theme_saved(self, theme_id: str) -> None:
+        set_preview_colors(None)
+        self._device_page.refresh_theme_combo(theme_id)
+        self._apply_theme(theme_id)   # save=True → persiste
+        self._switch_page(4)
+
+    def _on_theme_editor_cancelled(self) -> None:
+        set_preview_colors(None)
+        self._apply_theme(self._theme_before_edit, save=False)
+        self._switch_page(4)
 
     # ── Public API (called by systray_app) ────────────────────────────────────
 

@@ -37,7 +37,6 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
   - [Screenshots](#screenshots)
   - [Supported devices](#supported-devices)
   - [Installation](#installation)
-    - [NixOS](#nixos-flakes-or-classic)
   - [First launch](#first-launch)
     - [System tray mode](#system-tray-mode)
     - [Autostart at login](#autostart-at-login)
@@ -48,6 +47,7 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
     - [Importing a preset](#importing-a-preset)
     - [Community site — ASM Presets](#community-site--asm-presets)
   - [Virtual surround 7.1](#virtual-surround-71)
+  - [Themes](#themes)
   - [Translations](#translations)
   - [Community stats](#community-stats)
   - [Uninstall](#uninstall)
@@ -102,6 +102,7 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
 - **Check for updates** — in-app button forces an immediate GitHub check; installs via terminal (pacman / dnf / apt) or in-app wheel (pipx)
 - **One-click bug reports** — auto-uploads a full diagnostic as a GitHub gist and opens a pre-filled issue
 - **Built-in diagnostics** — `asm-daemon --verify-setup` and `asm-cli diagnose -o file.txt`
+- **Themes** — 5 built-in color themes plus a custom theme editor with live preview and `.ini` import/export ([details](#themes))
 - **Community translations** — new languages from [Crowdin](https://crowdin.com/project/arctis-sound-manager) download automatically on startup, no release needed
 - **Help page** — built-in manual in English, French and Spanish
 - **`ARCTIS_LOG_LEVEL` env var** — `debug` / `info` / `warning`, honored by daemon, GUI and router
@@ -231,7 +232,7 @@ Then restart ASM. *(Thanks to [H0DG3](https://github.com/H0DG3) for identifying 
 <details>
 <summary><strong>NixOS (flakes or classic)</strong></summary>
 
-ASM ships a first-class NixOS module (`nix/module.nix`) that wires up udev rules, systemd user services, PipeWire filter-chain, and all LADSPA plugins automatically. **Do not run `asm-setup`** on NixOS — the module replaces it entirely.
+ASM ships a first-class NixOS module (`nix/module.nix`) that wires up udev rules, systemd user services, PipeWire filter-chain, and all LADSPA plugins automatically. The module replaces `asm-setup`, so you normally don't need to run it — but since v1.1.68 it is safe to do so (the crash on the missing `update-desktop-database` tool has been removed), which is useful for the HRIR repair described below.
 
 **Flake-based config** — add to your `flake.nix`:
 
@@ -273,7 +274,13 @@ Then rebuild and replug the headset once so udev applies the new rules:
 sudo nixos-rebuild switch
 ```
 
-> **⚠️ Spatial Audio first run — required for Game & Media audio:** open ASM → **Settings → Spatial Audio** and pick any HRIR profile. This copies the selected WAV to `~/.local/share/pipewire/hrir_hesuvi/hrir.wav` (58 profiles bundled, no download). **Without this step, the Game and Media channels will be silent** — filter-chain fails to load the convolver and only the Chat channel (which has no convolver) will produce audio.
+> **⚠️ Spatial Audio first run — required for Game & Media audio:** open ASM → **Settings → Spatial Audio** and pick any HRIR profile. This copies the selected WAV to `~/.local/share/pipewire/hrir_hesuvi/hrir.wav` (profiles are bundled, no download needed). **Without this step, the Game and Media channels are silent** — the filter-chain convolver fails to load and only the Chat channel (which has no convolver) produces audio.
+
+> **Stub HRIR file (installs older than v1.1.68):** the HRIR file shipped in the Nix store is a read-only 3.6 KB stub (epoch timestamp) that leaves Game and Media silent. Since v1.1.68, `asm-setup` detects undersized HRIR files and replaces them automatically. On an older install, repair it manually:
+>
+> ```bash
+> rm ~/.local/share/pipewire/hrir_hesuvi/hrir.wav && asm-setup
+> ```
 
 > **KDE audio popup:** the small "Audio Volume" widget in the KDE taskbar only shows physical hardware sinks. The ASM virtual channels (Arctis_Game / Arctis_Chat / Arctis_Media) appear in `pavucontrol` → Playback tab or in KDE System Settings → Audio → Applications. Use those to route each app to the right channel.
 
@@ -319,7 +326,7 @@ asm-gui
 
 Or find **Arctis Sound Manager** in your application launcher (KDE, GNOME, etc.).
 
-> The daemon (`asm-manager.service`) starts automatically at login — the GUI is separate and must be opened manually the first time.
+> The daemon (`arctis-manager.service`) starts automatically at login — the GUI is separate and must be opened manually the first time.
 
 ### System tray mode
 
@@ -339,15 +346,15 @@ If the toggle doesn't work for your DE, use the manual method:
 <summary><strong>KDE Plasma / GNOME (systemd user session)</strong></summary>
 
 ```bash
-systemctl --user enable --now asm-gui-tray.service
+systemctl --user enable --now arctis-gui.service
 ```
 
-A `asm-gui-tray.service` unit is installed by `asm-setup`. If missing:
+An `arctis-gui.service` unit is installed by `asm-setup`. If missing:
 
 ```bash
 asm-cli desktop write
 systemctl --user daemon-reload
-systemctl --user enable --now asm-gui-tray.service
+systemctl --user enable --now arctis-gui.service
 ```
 </details>
 
@@ -502,6 +509,29 @@ This installs the filter-chain config in `~/.config/pipewire/filter-chain.conf.d
 
 Advanced: replace `~/.local/share/pipewire/hrir_hesuvi/hrir.wav` with any 14-channel HeSuVi-compatible WAV and restart filter-chain manually.
 </details>
+
+---
+
+## Themes
+
+ASM ships **5 built-in color themes**: SteelSeries (default), Aurora Glass, Neon Pulse, Slate Premium and Arctic. Switch themes from the dropdown in **Settings → Interface Theme** — the change applies live to every page, dialog and the tray menu, no restart needed.
+
+### Custom themes
+
+Click **Create theme** in Settings to open the theme editor:
+
+- **15 color pickers** grouped into Backgrounds, Accents, Text and Audio channels
+- **Live preview** — the whole app restyles as you pick colors
+- Start from scratch or duplicate any existing theme via **Duplicate from**
+
+User themes are saved as `.ini` files in `~/.config/arctis-sound-manager/themes/`.
+
+### Import / Export
+
+- **Export theme** — saves any theme as an `.ini` file you can share
+- **Import theme** — loads a shared `.ini` file and adds it to your theme list
+
+> Built-in themes cannot be edited or deleted — duplicate one into a custom theme instead.
 
 ---
 
@@ -710,7 +740,7 @@ src/arctis_sound_manager/
 │   ├── help_page.py           # Built-in user manual (EN/FR/ES)
 │   ├── systray_app.py         # System tray icon + single-instance IPC
 │   ├── presets/               # Bundled Sonar presets (Game/Chat/Mic)
-│   ├── theme.py               # Color constants
+│   ├── theme.py               # Theme engine (built-in + user themes, QSS generation)
 │   └── …                      # dialogs, reusable widgets, D-Bus wrapper
 ├── core.py                # CoreEngine: USB lifecycle, status polling, device init
 ├── config.py              # Device YAML parsing + settings definitions
