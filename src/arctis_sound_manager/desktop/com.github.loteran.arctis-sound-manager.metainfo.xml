@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.66" date="2026-06-12">
+      <description>
+        <p>HRIR selection silently failed on NixOS (and any read-only source) — apply_hrir_choice used shutil.copy2 which preserves source file permissions and mtime. Since HRIR WAVs live in the Nix store (read-only, epoch timestamp), the copied hrir.wav was also read-only; any subsequent profile selection in Settings → Spatial Audio would fail silently and the convolver would load an invalid file, leaving the Game and Media channels silent while Chat (which bypasses the convolver) still worked. Fixed by unlinking the destination before copying and using shutil.copy (no metadata). (#79). Uninstaller failed on Bazzite / immutable distros when run via curl | bash — the Distrobox delegation path resolved SCRIPT_DIR from BASH_SOURCE[0], which is stdin when piped through curl. The local scripts/distrobox/uninstall.sh was never found and the script exited with an error. Now fetches both _common.sh and distrobox/uninstall.sh to a temporary directory and delegates from there when the local path is unavailable. Added a dedicated NixOS installation section to the README covering both flake and classic (non-flake) paths, with a prominent warning that Settings → Spatial Audio must be opened on first launch to select an HRIR profile — without this step the Game and Media channels are silent.</p>
+      </description>
+    </release>
     <release version="1.1.65" date="2026-06-10">
       <description>
         <p>OLED splash screen persisted over custom display on devices without a live PipeWire session — the refresh loop slept for the full 5 s REFRESH_INTERVAL even when the 3 s splash had already expired, leaving a ~2 s gap where the device firmware reclaimed the OLED and showed its native UI alongside ASM's splash content. The loop now wakes immediately at splash expiry so the first custom-display frame is pushed without delay. (#76). No interrupt OUT endpoint warning flooded the journal every 2 s — for devices without an interrupt OUT endpoint on their command interface (e.g. Arctis 1 Wireless), ASM correctly falls back to HID SET_REPORT but was logging a WARNING on every status poll. The warning is now emitted once per device attach; subsequent occurrences are downgraded to DEBUG. The flag is reset on teardown so the warning reappears on reconnect. (#74). recreate_loopbacks storm when filter-chain.service crashed repeatedly — if the SteelSeries Sonar filter-chain service crashed and restarted every few seconds (common in Distrobox), each pw-loopback exit triggered a D-Bus RecreateLoopbacks call, causing a rapid stop/start cycle with no net benefit. Calls are now debounced to at most once per 5 s; legitimate Sonar ↔ simple mode switches are unaffected. (#74).</p>
@@ -199,11 +204,6 @@
     <release version="1.1.4" date="2026-05-08">
       <description>
         <p>dinit: filter-chain and video-router stuck stopped after asm-setup — when asm-setup rewrites service files on disk, dinit keeps the old in-memory definition (without restart = true) until explicitly reloaded. Added dinitctl reload for stopped services before starting them so dinit always picks up the current file (issue #25). dinit: D-Bus collision on re-login — the guard preventing a second asm-daemon from starting used dinitctl status, which could miss the race window between dinit's boot-sequence auto-start and asm-setup's explicit start. Replaced with pgrep -f asm-daemon against the actual running process. dinit: filter-chain start race after pipewire restart — asm-setup now waits 0.5 s after a successful dinitctl restart pipewire before starting dependants, giving the PipeWire socket time to come up.</p>
-      </description>
-    </release>
-    <release version="1.0.99" date="2026-05-06">
-      <description>
-        <p>Adaptive multi-DE autostart — Hyprland, Sway, XDG, systemd, dinit — the "Launch at startup" toggle now automatically selects the right method for the detected desktop environment / init system. On Hyprland it writes exec-once = asm-gui --systray into ~/.config/hypr/hyprland.conf (using a comment marker for clean enable/disable). On Sway it writes exec asm-gui --systray into ~/.config/sway/config. On dinit systems the existing dinitctl enable calls are used. On systemd-based DEs (GNOME, KDE, XFCE, …) the arctis-gui.service approach is kept. Any other setup (i3, unknown, non-systemd distros) falls back to an XDG .desktop file in ~/.config/autostart/. Switching DEs cleans up stale entries from the previous method. Fixes the issue reported by users running Hyprland/CachyOS where the toggle had no effect (closes #30).</p>
       </description>
     </release>
   </releases>
