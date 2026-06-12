@@ -607,6 +607,7 @@ class CoreEngine:
             # filter-chain; node.target by name binds when the node appears, so
             # the ordering here is tolerant of filter-chain not being up yet.
             self.setup_loopbacks()
+            self.pa_audio_manager.set_default_source("effect_output.sonar-micro-eq")
 
             # Configure the device
             self.init_device()

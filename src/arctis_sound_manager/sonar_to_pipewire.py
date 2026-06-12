@@ -684,13 +684,14 @@ context.modules = [
         audio.position = [ MONO ]
       }}
       playback.props = {{
-        node.name         = "effect_output.sonar-micro-eq"
-        media.class       = Audio/Source
-        audio.rate        = 48000
-        audio.channels    = 1
-        audio.position    = [ MONO ]
-        node.latency      = 1024/48000
-        node.lock-quantum = true
+        node.name             = "effect_output.sonar-micro-eq"
+        media.class           = Audio/Source
+        audio.rate            = 48000
+        audio.channels        = 1
+        audio.position        = [ MONO ]
+        node.latency          = 1024/48000
+        node.lock-quantum     = true
+        priority.session      = 1010
       }}
     }}
   }}
@@ -795,13 +796,14 @@ context.modules = [
         audio.position = [ MONO ]
       }}
       playback.props = {{
-        node.name         = "effect_output.sonar-micro-eq"
-        media.class       = Audio/Source
-        audio.rate        = 48000
-        audio.channels    = 1
-        audio.position    = [ MONO ]
-        node.latency      = 1024/48000
-        node.lock-quantum = true
+        node.name             = "effect_output.sonar-micro-eq"
+        media.class           = Audio/Source
+        audio.rate            = 48000
+        audio.channels        = 1
+        audio.position        = [ MONO ]
+        node.latency          = 1024/48000
+        node.lock-quantum     = true
+        priority.session      = 1010
       }}
     }}
   }}
