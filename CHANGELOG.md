@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.66] - 12 June 2026
+
+### Fixed
+
+- **Microphone monitor source selected instead of real mic** — on some setups PipeWire exposes a monitor source before the real capture source, causing ASM to route apps to the monitor loopback instead of the physical microphone. The physical-source lookup now filters out `device.class = monitor` entries. (#80)
+- **Mic audio bypassed Sonar EQ** — applications could connect directly to the ALSA source and skip the `sonar-micro-eq` filter chain. ASM now sets `priority.session = 1010` on the Sonar virtual source and explicitly sets it as the default PulseAudio source at startup, so apps land on the EQ pipeline by default.
+- **D-Bus status returned `{}` when device was connected but status bytes unresolved** — if the device was ready but `device_status` was `None`, the GUI showed "No device detected" even though the headset was online. The D-Bus `GetStatus` method now synthesises an online sentinel from `online_status.online_value` in that case.
+- **USB autosuspend disconnected dongle every 2–3 minutes** — the generated udev rules now include `ATTR{power/control}="on"` for all supported devices, preventing the kernel from suspending the USB dongle. (#80)
+- **Arctis Pro Wireless not detected — wrong response byte mapping** — the YAML `starts_with` values matched the request bytes (`0x41aa`, `0x40aa`) instead of the real 32-byte HID response. Hardware capture confirmed `byte[0] = 0x04` = online, `byte[0] = 0x02` = offline, `byte[1]` = battery (0–4). Both mapping entries are corrected. (#81)
+- **Arctis Pro Wireless — audio sinks and mic not found** — the device uses PID `0x1290` for HID but `0x1294` for the ALSA audio card. `_discover_physical_nodes` searched only the HID PID, so sinks and source fell back to vendor-only matching. The fix searches all PIDs listed in `product_ids`. (#81)
+
 ## [1.1.65] - 10 June 2026
 
 ### Fixed
