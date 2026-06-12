@@ -37,6 +37,7 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
   - [Screenshots](#screenshots)
   - [Supported devices](#supported-devices)
   - [Installation](#installation)
+    - [NixOS](#nixos-flakes-or-classic)
   - [First launch](#first-launch)
     - [System tray mode](#system-tray-mode)
     - [Autostart at login](#autostart-at-login)
@@ -225,6 +226,58 @@ rm -rf ~/.cache/fontconfig/*
 fc-cache -f -v
 ```
 Then restart ASM. *(Thanks to [H0DG3](https://github.com/H0DG3) for identifying this fix!)*
+</details>
+
+<details>
+<summary><strong>NixOS (flakes or classic)</strong></summary>
+
+ASM ships a first-class NixOS module (`nix/module.nix`) that wires up udev rules, systemd user services, PipeWire filter-chain, and all LADSPA plugins automatically. **Do not run `asm-setup`** on NixOS — the module replaces it entirely.
+
+**Flake-based config** — add to your `flake.nix`:
+
+```nix
+inputs.arctis-sound-manager = {
+  url = "github:loteran/Arctis-Sound-Manager?dir=nix";
+  inputs.nixpkgs.follows = "nixpkgs";
+};
+```
+
+Then in your `nixosSystem` modules:
+
+```nix
+inputs.arctis-sound-manager.nixosModules.default
+
+{
+  services.pipewire = { enable = true; alsa.enable = true; pulse.enable = true; };
+  services.arctis-sound-manager.enable = true;
+}
+```
+
+**Classic config** (flakes disabled):
+
+```bash
+git clone https://github.com/loteran/Arctis-Sound-Manager.git /etc/nixos/Arctis-Sound-Manager
+```
+
+In `/etc/nixos/configuration.nix`:
+
+```nix
+imports = [ /etc/nixos/Arctis-Sound-Manager/nix/module.nix ];
+services.pipewire = { enable = true; alsa.enable = true; pulse.enable = true; };
+services.arctis-sound-manager.enable = true;
+```
+
+Then rebuild and replug the headset once so udev applies the new rules:
+
+```bash
+sudo nixos-rebuild switch
+```
+
+> **⚠️ Spatial Audio first run — required for Game & Media audio:** open ASM → **Settings → Spatial Audio** and pick any HRIR profile. This copies the selected WAV to `~/.local/share/pipewire/hrir_hesuvi/hrir.wav` (58 profiles bundled, no download). **Without this step, the Game and Media channels will be silent** — filter-chain fails to load the convolver and only the Chat channel (which has no convolver) will produce audio.
+
+> **KDE audio popup:** the small "Audio Volume" widget in the KDE taskbar only shows physical hardware sinks. The ASM virtual channels (Arctis_Game / Arctis_Chat / Arctis_Media) appear in `pavucontrol` → Playback tab or in KDE System Settings → Audio → Applications. Use those to route each app to the right channel.
+
+Full module docs and options: [`nix/README.md`](nix/README.md).
 </details>
 
 <details>
