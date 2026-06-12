@@ -59,7 +59,26 @@ class ArctisManagerDbusStatusService(ServiceInterface):
     @method('GetStatus')
     def get_status(self) -> 's': # type: ignore
         status, config = self.core_engine.device_status, self.core_engine.device_config
-        if not status or not config or not config.status:
+        if not config or not config.status:
+            return json.dumps({})
+
+        # Device is ready but no valid status packet parsed yet — return a
+        # minimal "online" sentinel so the GUI shows Connected rather than
+        # "No device detected". This happens when the status byte offsets in
+        # the device YAML don't match the actual hardware response format.
+        if not status and self.core_engine._device_ready:
+            online_var = getattr(config.online_status, 'status_variable', None)
+            online_val = getattr(config.online_status, 'online_value', 'online')
+            if online_var:
+                category = next(
+                    (cat for cat, fields in config.status.representation.items()
+                     if online_var in fields),
+                    'headset',
+                )
+                return json.dumps({category: {online_var: {'value': online_val, 'type': 'label'}}})
+            return json.dumps({})
+
+        if not status:
             return json.dumps({})
 
         result = {}
@@ -74,6 +93,18 @@ class ArctisManagerDbusStatusService(ServiceInterface):
                     }
             if not result[category]:
                 del result[category]
+
+        # If the online_status variable parsed to None (unknown byte offset in
+        # YAML), substitute "online" so the GUI shows Connected while the
+        # device is functioning normally.
+        online_var = getattr(config.online_status, 'status_variable', None)
+        online_val = getattr(config.online_status, 'online_value', 'online')
+        if online_var and self.core_engine._device_ready:
+            for cat_dict in result.values():
+                entry = cat_dict.get(online_var)
+                if entry and entry.get('value') is None:
+                    entry['value'] = online_val
+                    entry['type'] = 'label'
 
         return json.dumps(result)
 
