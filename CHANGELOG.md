@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.68] - 12 June 2026
+
+### Fixed
+
+- **`asm-setup` crashed on NixOS with `FileNotFoundError: update-desktop-database`** — NixOS and other immutable distros don't ship this tool. The call already used `check=False` but `subprocess.Popen` raises `FileNotFoundError` before the return-code check when the binary is absent. The call is now wrapped in `try/except FileNotFoundError` and silently skipped. (#79)
+- **HRIR file from Nix store (3.6 KB stub) passed validation and was never replaced** — the Nix store copy has a valid RIFF header in its first 4 bytes but is far too short to be a usable 7.1 impulse response, causing Game and Media channels to be silent. `_hrir_valid()` now requires the file to exceed 10 KB in addition to having a RIFF header. `asm-setup` also tries the bundled `hrir_assets/` profiles first (no network required) before downloading from GitHub. (#79)
+
 ## [1.1.67] - 12 June 2026
 
 ### Fixed
