@@ -184,7 +184,8 @@ def apply_hrir_choice(hrir_id: str | None) -> None:
             _log.warning("HRIR WAV not found for id: %s", hrir_id)
             return
         dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dest)
+        dest.unlink(missing_ok=True)  # remove read-only copies (e.g. from Nix store)
+        shutil.copy(src, dest)
         _log.info("HRIR changed → %s", src.name)
     _restart_filter_chain()
 
