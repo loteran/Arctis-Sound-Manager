@@ -131,6 +131,48 @@ in
           # ASM daemon restarts it by this exact name when applying EQ changes).
           filter-chain.wantedBy = [ "default.target" ];
 
+          # Reproduce the two per-user side effects of asm-setup that the rest of
+          # this module doesn't already cover declaratively — everything else
+          # (PipeWire EQ/surround configs, virtual sinks, device defs) the daemon
+          # regenerates itself at startup. Both writes are copy-if-absent, so a
+          # user who later customises either is never overwritten.
+          #
+          #   1. Default HeSuVi 7.1 HRIR. Nothing else creates
+          #      ~/.local/share/pipewire/hrir_hesuvi/hrir.wav: asm-setup (which
+          #      downloads it on regular distros) is deliberately not run here, the
+          #      daemon defaults hrir_id to null, and the GUI HRIR picker only
+          #      copies the tiny src/hrir_assets stubs. Without a valid 161 KB
+          #      impulse here the filter-chain has nothing to convolve and the
+          #      surround Game / Media channels are silent.
+          #
+          #   2. ~/.config/arctis_manager/.setup_done sentinel. The tray GUI runs
+          #      asm-setup automatically (FirstRunDialog, incl. a pkexec prompt)
+          #      whenever this flag is missing — exactly what a module install is
+          #      meant to make unnecessary. Marking setup done suppresses only that
+          #      auto-run; the GUI's independent udev check still surfaces real
+          #      rule problems.
+          arctis-firstrun-seed = {
+            description = "Seed default Arctis HRIR + mark setup done (if absent)";
+            wantedBy = [ "default.target" ];
+            before = [
+              "filter-chain.service"
+              "arctis-manager.service"
+            ];
+            path = [ pkgs.coreutils ];
+            serviceConfig = {
+              Type = "oneshot";
+              RemainAfterExit = true;
+            };
+            script = ''
+              dest="$HOME/.local/share/pipewire/hrir_hesuvi/hrir.wav"
+              [ -e "$dest" ] || install -Dm644 \
+                ${cfg.package}/share/arctis-sound-manager/hrir/EAC_Default.wav "$dest"
+
+              flag="$HOME/.config/arctis_manager/.setup_done"
+              [ -e "$flag" ] || { mkdir -p "$(dirname "$flag")"; : > "$flag"; }
+            '';
+          };
+
           arctis-manager = userService {
             description = "Arctis Sound Manager device daemon";
             after = [

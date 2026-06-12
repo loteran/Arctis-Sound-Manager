@@ -26,9 +26,16 @@
 
 let
   # Only the files the wheel + packaging steps need. Keeps the build input small
-  # and avoids rebuilds when unrelated repo files (docs, top-level hrir/, aur/…)
-  # change. The 58 selectable HRIR profiles live under src/.../hrir_assets and
-  # are included via ../src.
+  # and avoids rebuilds when unrelated repo files (docs, rest of top-level hrir/,
+  # aur/…) change. The 58 selectable HRIR profiles live under src/.../hrir_assets
+  # and are included via ../src.
+  #
+  # ../hrir/EAC_Default.wav is the real 161 KB HeSuVi 7.1 default impulse response
+  # that `asm-setup` downloads on regular distros. We ship it in the closure so the
+  # NixOS module can seed it as the active hrir.wav (see module.nix) — without it,
+  # surround Game/Media channels are silent on a module-only install, because the
+  # GUI HRIR picker only copies the tiny src/hrir_assets stubs and the module never
+  # runs asm-setup. The other selectable profiles stay download-on-demand.
   src = lib.fileset.toSource {
     root = ../.;
     fileset = lib.fileset.unions [
@@ -37,6 +44,7 @@ let
       ../LICENSE
       ../src
       ../scripts/generate_udev_rules.py
+      ../hrir/EAC_Default.wav
     ];
   };
 
@@ -169,6 +177,12 @@ python3Packages.buildPythonApplication {
       --replace-fail "Exec=asm-gui" "Exec=$out/bin/asm-gui"
     install -Dm644 src/arctis_sound_manager/gui/images/steelseries_logo.svg \
       "$out/share/icons/hicolor/scalable/apps/arctis-manager.svg"
+
+    # Default HeSuVi 7.1 HRIR. The NixOS module copies this into each user's
+    # ~/.local/share/pipewire/hrir_hesuvi/hrir.wav (only if absent), giving
+    # working surround out of the box without asm-setup or a network download.
+    install -Dm644 hrir/EAC_Default.wav \
+      "$out/share/arctis-sound-manager/hrir/EAC_Default.wav"
   '';
 
   passthru.updateScript = null;
