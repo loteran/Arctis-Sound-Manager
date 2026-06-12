@@ -130,9 +130,15 @@ if [ "$HAS_DISTROBOX" -eq 1 ] && [ "$HAS_PKG" -eq 0 ] && [ "$HAS_PIPX" -eq 0 ]; 
         info "Delegating to: $DISTROBOX_UNINSTALL"
         exec bash "$DISTROBOX_UNINSTALL" "$@"
     else
-        err "Could not find scripts/distrobox/uninstall.sh."
-        err "Clone the repo and run:  bash scripts/distrobox/uninstall.sh"
-        exit 1
+        # Running from curl pipe — BASH_SOURCE[0] is stdin, SCRIPT_DIR is not the repo.
+        # Download both scripts to a temp dir and run from there.
+        warn "Running from curl — fetching Distrobox uninstaller..."
+        _tmp=$(mktemp -d)
+        trap 'rm -rf "$_tmp"' EXIT
+        _base="https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/scripts"
+        curl -fsSL "$_base/distrobox/_common.sh"  -o "$_tmp/_common.sh"  || { err "Failed to fetch _common.sh";  exit 1; }
+        curl -fsSL "$_base/distrobox/uninstall.sh" -o "$_tmp/uninstall.sh" || { err "Failed to fetch uninstall.sh"; exit 1; }
+        exec bash "$_tmp/uninstall.sh" "$@"
     fi
 fi
 
