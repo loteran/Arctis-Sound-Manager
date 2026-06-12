@@ -649,12 +649,17 @@ class CoreEngine:
 
         Returns (game_sink_name, chat_sink_name, source_name) — any can be None.
         """
+        # Try all PIDs from the device config — HID and audio PIDs often differ
+        # (e.g. Arctis Pro Wireless: HID=0x1290, audio=0x1294).
+        all_pids: list[int] | None = (
+            self.device_config.product_ids if self.device_config else None
+        )
         for attempt in range(attempts):
             game_sink, chat_sink = self.pa_audio_manager.get_arctis_sinks_classified(
-                vendor_id=vendor_id, product_id=product_id,
+                vendor_id=vendor_id, product_id=all_pids or product_id,
             )
             source = self.pa_audio_manager.get_physical_source(
-                vendor_id=vendor_id, product_id=product_id,
+                vendor_id=vendor_id, product_id=all_pids or product_id,
             )
             if game_sink or chat_sink:
                 return (
