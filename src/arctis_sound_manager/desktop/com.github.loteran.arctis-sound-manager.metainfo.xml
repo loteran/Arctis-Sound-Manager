@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.68" date="2026-06-12">
+      <description>
+        <p>asm-setup crashed on NixOS with FileNotFoundError: update-desktop-database — NixOS and other immutable distros don't ship this tool. The call already used check=False but subprocess.Popen raises FileNotFoundError before the return-code check when the binary is absent. The call is now wrapped in try/except FileNotFoundError and silently skipped. (#79). HRIR file from Nix store (3.6 KB stub) passed validation and was never replaced — the Nix store copy has a valid RIFF header in its first 4 bytes but is far too short to be a usable 7.1 impulse response, causing Game and Media channels to be silent. _hrir_valid() now requires the file to exceed 10 KB in addition to having a RIFF header. asm-setup also tries the bundled hrir_assets/ profiles first (no network required) before downloading from GitHub. (#79).</p>
+      </description>
+    </release>
     <release version="1.1.67" date="2026-06-12">
       <description>
         <p>Microphone monitor source selected instead of real mic — on some setups PipeWire exposes a monitor source before the real capture source, causing ASM to route apps to the monitor loopback instead of the physical microphone. The physical-source lookup now filters out device.class = monitor entries. (#80). Mic audio bypassed Sonar EQ — applications could connect directly to the ALSA source and skip the sonar-micro-eq filter chain. ASM now sets priority.session = 1010 on the Sonar virtual source and explicitly sets it as the default PulseAudio source at startup, so apps land on the EQ pipeline by default. D-Bus status returned {} when device was connected but status bytes unresolved — if the device was ready but device_status was None, the GUI showed "No device detected" even though the headset was online. The D-Bus GetStatus method now synthesises an online sentinel from online_status.online_value in that case.</p>
@@ -199,11 +204,6 @@
     <release version="1.1.31" date="2026-05-16">
       <description>
         <p>Microphone routed to wrong device on startup — when the Arctis headset is not yet detected when the filter-chain config is written, target.object was left empty and PipeWire would bind the virtual microphone to the first available source (e.g. a DualSense controller mic). check_and_fix_stale_configs() now detects this condition at daemon startup and patches the target in-place, triggering a filter-chain restart.</p>
-      </description>
-    </release>
-    <release version="1.1.30" date="2026-05-15">
-      <description>
-        <p>Per-channel output device selection — each audio channel card (Game / Chat / Media) now has a dropdown to route that channel to a specific output sink; systray → Output Routing mirrors the same selection (issue #46). Output device routing saved in profiles — optional checkbox in Save Profile dialog captures the current per-channel routing. Language filter — only languages with ≥ 80 % translation coverage appear in the language selector; names are now displayed in their native script via babel (Français, Deutsch, Polski…) instead of 2-letter codes.</p>
       </description>
     </release>
   </releases>
