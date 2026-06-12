@@ -3,6 +3,10 @@
 
 # SteelSeries Stealth dark theme — color constants, theme dict, and global QSS
 
+import configparser
+import logging
+from pathlib import Path
+
 THEMES = {
     "steelseries": {
         "BG_MAIN": "#16191E", "BG_SIDEBAR": "#1B1E22", "BG_CARD": "#1C2026",
@@ -49,20 +53,189 @@ THEMES_LABELS = {
     "arctic": "Arctic",
 }
 
+THEME_KEYS: tuple[str, ...] = (
+    "BG_MAIN", "BG_SIDEBAR", "BG_CARD", "BG_BUTTON", "BG_BUTTON_HOVER",
+    "BG_SIDEBAR_ACTIVE", "ACCENT", "ACCENT2", "TEXT_PRIMARY",
+    "TEXT_SECONDARY", "BORDER", "COLOR_GAME", "COLOR_CHAT",
+    "COLOR_AUX", "COLOR_HDMI",
+)
+
+THEME_GROUPS: dict[str, tuple[str, ...]] = {
+    "theme_group_backgrounds": ("BG_MAIN", "BG_SIDEBAR", "BG_CARD", "BG_BUTTON",
+                                "BG_BUTTON_HOVER", "BG_SIDEBAR_ACTIVE"),
+    "theme_group_accents":     ("ACCENT", "ACCENT2", "BORDER"),
+    "theme_group_text":        ("TEXT_PRIMARY", "TEXT_SECONDARY"),
+    "theme_group_channels":    ("COLOR_GAME", "COLOR_CHAT", "COLOR_AUX", "COLOR_HDMI"),
+}
+
+COLOR_LABEL_KEYS: dict[str, str] = {
+    "BG_MAIN": "theme_color_bg_main", "BG_SIDEBAR": "theme_color_bg_sidebar",
+    "BG_CARD": "theme_color_bg_card", "BG_BUTTON": "theme_color_bg_button",
+    "BG_BUTTON_HOVER": "theme_color_bg_button_hover",
+    "BG_SIDEBAR_ACTIVE": "theme_color_bg_sidebar_active",
+    "ACCENT": "theme_color_accent", "ACCENT2": "theme_color_accent2",
+    "BORDER": "theme_color_border",
+    "TEXT_PRIMARY": "theme_color_text_primary", "TEXT_SECONDARY": "theme_color_text_secondary",
+    "COLOR_GAME": "theme_color_game", "COLOR_CHAT": "theme_color_chat",
+    "COLOR_AUX": "theme_color_aux", "COLOR_HDMI": "theme_color_hdmi",
+}
+
+USER_THEMES_DIR = Path.home() / ".config" / "arctis-sound-manager" / "themes"
+BUILTIN_THEME_IDS = frozenset(THEMES)
+PREVIEW_THEME_ID = "__preview__"
+
 # ── Active theme state ────────────────────────────────────────────────────────
 
 _ACTIVE_THEME = "steelseries"
+_USER_THEMES: dict[str, dict[str, str]] = {}
+_USER_LABELS: dict[str, str] = {}
+_PREVIEW_COLORS: dict[str, str] | None = None
+
+
+def _validate_color(value: str) -> bool:
+    import re
+    return bool(re.fullmatch(r"#[0-9a-fA-F]{6}", value))
+
+
+def slugify(label: str) -> str:
+    import re
+    result = re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")
+    return result or "custom"
+
+
+def reload_user_themes() -> None:
+    global _USER_THEMES, _USER_LABELS
+    _USER_THEMES.clear()
+    _USER_LABELS.clear()
+    try:
+        USER_THEMES_DIR.mkdir(parents=True, exist_ok=True)
+        for f in sorted(USER_THEMES_DIR.glob("*.ini")):
+            tid = f.stem
+            if tid in BUILTIN_THEME_IDS:
+                logging.warning("Skipping user theme %s: conflicts with builtin", tid)
+                continue
+            try:
+                parser = configparser.ConfigParser()
+                parser.optionxform = str  # preserve case
+                parser.read(f, encoding="utf-8")
+                label = parser.get("theme", "name", fallback=tid)
+                colors: dict[str, str] = {}
+                for key in THEME_KEYS:
+                    val = parser.get("colors", key, fallback=THEMES["steelseries"].get(key, "#000000"))
+                    colors[key] = val if _validate_color(val) else THEMES["steelseries"].get(key, "#000000")
+                _USER_THEMES[tid] = colors
+                _USER_LABELS[tid] = label
+            except Exception:
+                logging.warning("Failed to load user theme %s", f, exc_info=True)
+    except Exception:
+        logging.warning("Failed to scan user themes dir", exc_info=True)
+
+
+def get_theme(name: str) -> dict[str, str]:
+    if name == PREVIEW_THEME_ID:
+        return _PREVIEW_COLORS or THEMES["steelseries"]
+    if name in THEMES:
+        return THEMES[name]
+    if name in _USER_THEMES:
+        return _USER_THEMES[name]
+    return THEMES["steelseries"]
+
+
+def get_theme_label(name: str) -> str:
+    if name in THEMES_LABELS:
+        return THEMES_LABELS[name]
+    if name in _USER_LABELS:
+        return _USER_LABELS[name]
+    return name
+
+
+def all_theme_labels() -> dict[str, str]:
+    result: dict[str, str] = dict(THEMES_LABELS)
+    user_sorted = dict(sorted(_USER_LABELS.items(), key=lambda kv: kv[1].lower()))
+    result.update(user_sorted)
+    return result
+
+
+def is_builtin(name: str) -> bool:
+    return name in BUILTIN_THEME_IDS
+
+
+def save_user_theme(label: str, colors: dict[str, str], theme_id: str | None = None) -> str:
+    for key, val in colors.items():
+        if not _validate_color(val):
+            raise ValueError(f"Invalid color for {key}: {val!r}")
+    if theme_id is None:
+        base = slugify(label)
+        tid = base
+        counter = 2
+        while tid in BUILTIN_THEME_IDS or (tid in _USER_THEMES and theme_id is None):
+            tid = f"{base}-{counter}"
+            counter += 1
+        theme_id = tid
+    USER_THEMES_DIR.mkdir(parents=True, exist_ok=True)
+    parser = configparser.ConfigParser()
+    parser.optionxform = str
+    parser["theme"] = {"name": label}
+    parser["colors"] = {k: colors.get(k, THEMES["steelseries"].get(k, "#000000")) for k in THEME_KEYS}
+    with open(USER_THEMES_DIR / f"{theme_id}.ini", "w", encoding="utf-8") as fh:
+        parser.write(fh)
+    reload_user_themes()
+    return theme_id
+
+
+def delete_user_theme(theme_id: str) -> None:
+    if is_builtin(theme_id):
+        raise ValueError(f"Cannot delete builtin theme: {theme_id!r}")
+    path = USER_THEMES_DIR / f"{theme_id}.ini"
+    if path.exists():
+        path.unlink()
+    reload_user_themes()
+
+
+def export_theme_to_file(theme_id: str, dest: Path) -> None:
+    colors = get_theme(theme_id)
+    label = get_theme_label(theme_id)
+    parser = configparser.ConfigParser()
+    parser.optionxform = str
+    parser["theme"] = {"name": label}
+    parser["colors"] = {k: colors.get(k, THEMES["steelseries"].get(k, "#000000")) for k in THEME_KEYS}
+    with open(dest, "w", encoding="utf-8") as fh:
+        parser.write(fh)
+
+
+def import_theme_from_file(src: Path) -> str:
+    parser = configparser.ConfigParser()
+    parser.optionxform = str
+    parser.read(src, encoding="utf-8")
+    if not parser.has_section("colors"):
+        raise ValueError("Missing [colors] section")
+    label = parser.get("theme", "name", fallback=src.stem)
+    colors: dict[str, str] = {}
+    for key in THEME_KEYS:
+        val = parser.get("colors", key, fallback="")
+        if not _validate_color(val):
+            raise ValueError(f"Invalid or missing color for {key}")
+        colors[key] = val
+    return save_user_theme(label, colors)
+
+
+def set_preview_colors(colors: dict[str, str] | None) -> None:
+    global _PREVIEW_COLORS
+    _PREVIEW_COLORS = colors
 
 
 def set_active_theme(name: str) -> None:
     """Set the globally active theme by name (falls back to 'steelseries')."""
     global _ACTIVE_THEME
-    _ACTIVE_THEME = name if name in THEMES else "steelseries"
+    if name in THEMES or name in _USER_THEMES or name == PREVIEW_THEME_ID:
+        _ACTIVE_THEME = name
+    else:
+        _ACTIVE_THEME = "steelseries"
 
 
 def active_theme() -> dict:
     """Return the color dict for the currently active theme."""
-    return THEMES.get(_ACTIVE_THEME, THEMES["steelseries"])
+    return get_theme(_ACTIVE_THEME)
 
 
 def c(key: str) -> str:
@@ -88,7 +261,7 @@ COLOR_HDMI       = THEMES["steelseries"]["COLOR_HDMI"]
 
 def build_qss(theme_name: str) -> str:
     """Generate the full application QSS for the given theme name."""
-    t = THEMES.get(theme_name, THEMES["steelseries"])
+    t = get_theme(theme_name)
 
     BG_MAIN_         = t["BG_MAIN"]
     BG_SIDEBAR_      = t["BG_SIDEBAR"]
@@ -378,3 +551,8 @@ QListWidget::item:hover {{
 
 
 APP_QSS = build_qss("steelseries")
+
+try:
+    reload_user_themes()
+except Exception:
+    pass

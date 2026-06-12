@@ -43,7 +43,9 @@ from arctis_sound_manager.gui.theme import (
     TEXT_PRIMARY,
     TEXT_SECONDARY,
     THEMES,
-    THEMES_LABELS,
+    all_theme_labels, get_theme, get_theme_label, is_builtin,
+    reload_user_themes, export_theme_to_file, import_theme_from_file,
+    delete_user_theme,
 )
 
 _SERVICE = "arctis-manager.service"
@@ -151,6 +153,8 @@ class DevicePage(QWidget):
     """
 
     sig_theme_changed = Signal(str)
+    sig_theme_create = Signal()
+    sig_theme_edit = Signal(str)   # theme_id
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -234,31 +238,42 @@ class DevicePage(QWidget):
         content_layout.addSpacing(8)
 
         # ── Theme selector ────────────────────────────────────────────────────
-        from arctis_sound_manager.settings import GeneralSettings
-        current_theme = GeneralSettings.read_from_file().theme
-
-        theme_title = SectionTitle("Interface Theme")
+        theme_title = SectionTitle(I18n.translate("ui", "interface_theme"))
         content_layout.addWidget(theme_title)
         content_layout.addSpacing(6)
 
-        theme_row = QWidget()
-        theme_row_layout = QHBoxLayout(theme_row)
-        theme_row_layout.setContentsMargins(0, 0, 0, 0)
-        theme_row_layout.setSpacing(8)
+        # Ligne 1 : combo thème
+        theme_combo_row = QHBoxLayout()
+        self._theme_combo = QComboBox()
+        self._theme_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        theme_combo_row.addWidget(self._theme_combo)
+        theme_combo_row.addStretch(1)
+        content_layout.addLayout(theme_combo_row)
+        content_layout.addSpacing(6)
 
-        self._theme_buttons: dict[str, QPushButton] = {}
-        for theme_id, label in THEMES_LABELS.items():
-            btn = QPushButton(f"● {label}")
-            btn.setObjectName("themeChip")
-            btn.setProperty("active", theme_id == current_theme)
-            btn.setCheckable(False)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.clicked.connect(lambda checked=False, tid=theme_id: self._on_theme_selected(tid))
-            theme_row_layout.addWidget(btn)
-            self._theme_buttons[theme_id] = btn
+        # Ligne 2 : boutons
+        theme_btn_row = QHBoxLayout()
+        self._theme_create_btn = QPushButton(I18n.translate("ui", "theme_create"))
+        self._theme_edit_btn = QPushButton(I18n.translate("ui", "theme_edit"))
+        self._theme_delete_btn = QPushButton(I18n.translate("ui", "theme_delete"))
+        self._theme_export_btn = QPushButton(I18n.translate("ui", "theme_export"))
+        self._theme_import_btn = QPushButton(I18n.translate("ui", "theme_import"))
+        theme_btn_row.addWidget(self._theme_create_btn)
+        theme_btn_row.addWidget(self._theme_edit_btn)
+        theme_btn_row.addWidget(self._theme_delete_btn)
+        theme_btn_row.addWidget(self._theme_export_btn)
+        theme_btn_row.addWidget(self._theme_import_btn)
+        theme_btn_row.addStretch(1)
+        content_layout.addLayout(theme_btn_row)
 
-        theme_row_layout.addStretch(1)
-        content_layout.addWidget(theme_row)
+        # Connexions des widgets de thème
+        self._theme_combo.currentIndexChanged.connect(self._on_theme_combo_changed)
+        self._theme_create_btn.clicked.connect(self.sig_theme_create.emit)
+        self._theme_edit_btn.clicked.connect(lambda: self.sig_theme_edit.emit(self._theme_combo.currentData() or ""))
+        self._theme_delete_btn.clicked.connect(self._on_theme_delete)
+        self._theme_export_btn.clicked.connect(self._on_theme_export)
+        self._theme_import_btn.clicked.connect(self._on_theme_import)
+
         content_layout.addSpacing(12)
         content_layout.addWidget(DividerLine())
         content_layout.addSpacing(12)
@@ -399,6 +414,11 @@ class DevicePage(QWidget):
         scroll.setWidget(content)
         outer.addWidget(scroll)
 
+        # Populate theme combo with the currently-active theme.
+        from arctis_sound_manager.settings import GeneralSettings
+        current_theme = GeneralSettings.read_from_file().theme
+        self.refresh_theme_combo(current_theme)
+
         # Apply the currently-active theme on first paint.
         self.apply_theme()
 
@@ -476,23 +496,84 @@ class DevicePage(QWidget):
                 QPushButton:hover {{ background-color: {_theme.c('BG_BUTTON_HOVER')}; }}
             """)
 
-        # Theme chip buttons: each shows its own accent color (that's intentional),
-        # but background/border/text colors should follow the active theme.
-        # The active state border/highlight comes from the global QSS themeChip rule,
-        # so we just trigger a polish pass to pick up the updated QSS.
-        if hasattr(self, "_theme_buttons"):
-            for btn in self._theme_buttons.values():
-                btn.style().unpolish(btn)
-                btn.style().polish(btn)
+        # Theme combo and buttons state are set via refresh_theme_combo / _update_theme_buttons_state.
 
     # ── Theme selector ────────────────────────────────────────────────────────
 
-    def _on_theme_selected(self, theme_id: str) -> None:
-        for tid, btn in self._theme_buttons.items():
-            btn.setProperty("active", tid == theme_id)
-            btn.style().unpolish(btn)
-            btn.style().polish(btn)
-        self.sig_theme_changed.emit(theme_id)
+    def refresh_theme_combo(self, selected: str | None = None) -> None:
+        self._theme_combo.blockSignals(True)
+        self._theme_combo.clear()
+        reload_user_themes()
+        labels = all_theme_labels()
+        for tid, label in labels.items():
+            self._theme_combo.addItem(label, tid)
+        if selected:
+            idx = self._theme_combo.findData(selected)
+            if idx >= 0:
+                self._theme_combo.setCurrentIndex(idx)
+        self._theme_combo.blockSignals(False)
+        self._update_theme_buttons_state()
+
+    def _update_theme_buttons_state(self) -> None:
+        tid = self._theme_combo.currentData()
+        user_theme = tid is not None and not is_builtin(tid)
+        self._theme_edit_btn.setEnabled(user_theme)
+        self._theme_delete_btn.setEnabled(user_theme)
+        self._theme_export_btn.setEnabled(tid is not None)
+
+    def _on_theme_combo_changed(self, index: int) -> None:
+        tid = self._theme_combo.itemData(index)
+        if tid:
+            self._update_theme_buttons_state()
+            self.sig_theme_changed.emit(tid)
+
+    def _on_theme_delete(self) -> None:
+        from PySide6.QtWidgets import QMessageBox
+        tid = self._theme_combo.currentData()
+        if not tid or is_builtin(tid):
+            return
+        name = get_theme_label(tid)
+        msg = I18n.translate("ui", "theme_delete_confirm").format(name=name)
+        reply = QMessageBox.question(self, "", msg,
+                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            delete_user_theme(tid)
+            self.refresh_theme_combo("steelseries")
+            self.sig_theme_changed.emit("steelseries")
+
+    def _on_theme_export(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
+        from pathlib import Path
+        tid = self._theme_combo.currentData()
+        if not tid:
+            return
+        default = str(Path.home() / f"{tid}.ini")
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            I18n.translate("ui", "theme_export_dialog"),
+            default,
+            I18n.translate("ui", "theme_ini_filter"),
+        )
+        if path:
+            export_theme_to_file(tid, Path(path))
+
+    def _on_theme_import(self) -> None:
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        from pathlib import Path
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            I18n.translate("ui", "theme_import_dialog"),
+            str(Path.home()),
+            I18n.translate("ui", "theme_ini_filter"),
+        )
+        if not path:
+            return
+        try:
+            new_id = import_theme_from_file(Path(path))
+            self.refresh_theme_combo(new_id)
+            self.sig_theme_changed.emit(new_id)
+        except ValueError:
+            QMessageBox.warning(self, "", I18n.translate("ui", "theme_import_failed"))
 
     # ── Signal forwarding ─────────────────────────────────────────────────────
 

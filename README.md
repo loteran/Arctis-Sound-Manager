@@ -47,6 +47,7 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
     - [Importing a preset](#importing-a-preset)
     - [Community site — ASM Presets](#community-site--asm-presets)
   - [Virtual surround 7.1](#virtual-surround-71)
+  - [Themes](#themes)
   - [Translations](#translations)
   - [Community stats](#community-stats)
   - [Uninstall](#uninstall)
@@ -101,6 +102,7 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
 - **Check for updates** — in-app button forces an immediate GitHub check; installs via terminal (pacman / dnf / apt) or in-app wheel (pipx)
 - **One-click bug reports** — auto-uploads a full diagnostic as a GitHub gist and opens a pre-filled issue
 - **Built-in diagnostics** — `asm-daemon --verify-setup` and `asm-cli diagnose -o file.txt`
+- **Themes** — 5 built-in color themes plus a custom theme editor with live preview and `.ini` import/export ([details](#themes))
 - **Community translations** — new languages from [Crowdin](https://crowdin.com/project/arctis-sound-manager) download automatically on startup, no release needed
 - **Help page** — built-in manual in English, French and Spanish
 - **`ARCTIS_LOG_LEVEL` env var** — `debug` / `info` / `warning`, honored by daemon, GUI and router
@@ -130,20 +132,20 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
 |---|---|---|---|
 | Arctis 1 / 7X / 7P Wireless | ✅ | 2 | $\color{royalblue}{\textbf{12b3}}$, 12b6, 12d5, $\color{royalblue}{\textbf{12d7}}$ |
 | Arctis 7 / 7 2019 / Pro 2019 / Pro GameDAC | ✅ | 4 | 1260, $\color{royalblue}{\textbf{12ad}}$, 1252, 1280 |
-| Arctis 7+ / PS5 / Xbox / Destiny | ✅ | 4 | $\color{royalblue}{\textbf{220e}}$, 2212, 2216, 2236 |
+| Arctis 7+ / PS5 / Xbox / Destiny | ✅ | 5 | $\color{royalblue}{\textbf{220e}}$, $\color{royalblue}{\textbf{2212}}$, 2216, 2236 |
 | Arctis 9 Wireless | ✅ | 3 | $\color{royalblue}{\textbf{12c2}}$ |
-| Arctis Pro Wireless | ✅ | 7 | $\color{royalblue}{\textbf{1290}}$, $\color{royalblue}{\textbf{1294}}$ |
-| Arctis Nova Pro Wireless / X | ✅ | 44 | $\color{royalblue}{\textbf{12e0}}$, $\color{royalblue}{\textbf{12e5}}$ |
+| Arctis Pro Wireless | ✅ | 8 | $\color{royalblue}{\textbf{1290}}$, $\color{royalblue}{\textbf{1294}}$ |
+| Arctis Nova Pro Wireless / X | ✅ | 50 | $\color{royalblue}{\textbf{12e0}}$, $\color{royalblue}{\textbf{12e5}}$ |
 | Arctis Nova Pro Wired / Xbox Wired | ✅ | 5 | $\color{royalblue}{\textbf{12cb}}$, 12cd |
 | Arctis Nova Pro Omni | ✅ | 1 | $\color{royalblue}{\textbf{2290}}$ |
-| Arctis Nova 3 | ✅ | 5 | $\color{royalblue}{\textbf{12ec}}$ |
-| Arctis Nova 3P / 3X Wireless | ✅ | 5 | $\color{royalblue}{\textbf{2269}}$, 226d |
+| Arctis Nova 3 | ✅ | 6 | $\color{royalblue}{\textbf{12ec}}$ |
+| Arctis Nova 3P / 3X Wireless | ✅ | 6 | $\color{royalblue}{\textbf{2269}}$, 226d |
 | Arctis Nova 5 / 5X | ✅ | 6 | $\color{royalblue}{\textbf{2232}}$, 2253, $\color{royalblue}{\textbf{2255}}$ |
 | Arctis Nova 7 Gen 1 | ✅ | 5 | $\color{royalblue}{\textbf{2202}}$, $\color{royalblue}{\textbf{2206}}$, 223a, 227a, 22ab, 22a4 |
-| Arctis Nova 7 Gen 2 | ✅ | 23 | $\color{royalblue}{\textbf{22a1}}$, $\color{royalblue}{\textbf{227e}}$, 2258, $\color{royalblue}{\textbf{229e}}$, 22a9, $\color{royalblue}{\textbf{22a5}}$ |
-| Arctis Nova 7P | ✅ | 6 | 220a, $\color{royalblue}{\textbf{22a7}}$ |
+| Arctis Nova 7 Gen 2 | ✅ | 24 | $\color{royalblue}{\textbf{22a1}}$, $\color{royalblue}{\textbf{227e}}$, 2258, $\color{royalblue}{\textbf{229e}}$, 22a9, $\color{royalblue}{\textbf{22a5}}$ |
+| Arctis Nova 7P | ✅ | 8 | 220a, $\color{royalblue}{\textbf{22a7}}$ |
 | Arctis Nova Elite | ✅ | 2 | $\color{royalblue}{\textbf{2244}}$, 2249 |
-| Arctis GameBuds / GameBuds X | ✅ | 3 | $\color{royalblue}{\textbf{230a}}$, $\color{royalblue}{\textbf{2317}}$ |
+| Arctis GameBuds / GameBuds X | ✅ | 4 | $\color{royalblue}{\textbf{230a}}$, $\color{royalblue}{\textbf{2317}}$ |
 <!-- STATS:DEVICES:END -->
 
 > ✅ Confirmed by at least one opted-in user
@@ -228,6 +230,64 @@ Then restart ASM. *(Thanks to [H0DG3](https://github.com/H0DG3) for identifying 
 </details>
 
 <details>
+<summary><strong>NixOS (flakes or classic)</strong></summary>
+
+ASM ships a first-class NixOS module (`nix/module.nix`) that wires up udev rules, systemd user services, PipeWire filter-chain, and all LADSPA plugins automatically. The module replaces `asm-setup`, so you normally don't need to run it — but since v1.1.68 it is safe to do so (the crash on the missing `update-desktop-database` tool has been removed), which is useful for the HRIR repair described below.
+
+**Flake-based config** — add to your `flake.nix`:
+
+```nix
+inputs.arctis-sound-manager = {
+  url = "github:loteran/Arctis-Sound-Manager?dir=nix";
+  inputs.nixpkgs.follows = "nixpkgs";
+};
+```
+
+Then in your `nixosSystem` modules:
+
+```nix
+inputs.arctis-sound-manager.nixosModules.default
+
+{
+  services.pipewire = { enable = true; alsa.enable = true; pulse.enable = true; };
+  services.arctis-sound-manager.enable = true;
+}
+```
+
+**Classic config** (flakes disabled):
+
+```bash
+git clone https://github.com/loteran/Arctis-Sound-Manager.git /etc/nixos/Arctis-Sound-Manager
+```
+
+In `/etc/nixos/configuration.nix`:
+
+```nix
+imports = [ /etc/nixos/Arctis-Sound-Manager/nix/module.nix ];
+services.pipewire = { enable = true; alsa.enable = true; pulse.enable = true; };
+services.arctis-sound-manager.enable = true;
+```
+
+Then rebuild and replug the headset once so udev applies the new rules:
+
+```bash
+sudo nixos-rebuild switch
+```
+
+> **⚠️ Spatial Audio first run — required for Game & Media audio:** open ASM → **Settings → Spatial Audio** and pick any HRIR profile. This copies the selected WAV to `~/.local/share/pipewire/hrir_hesuvi/hrir.wav` (profiles are bundled, no download needed). **Without this step, the Game and Media channels are silent** — the filter-chain convolver fails to load and only the Chat channel (which has no convolver) produces audio.
+
+> **Stub HRIR file (installs older than v1.1.68):** the HRIR file shipped in the Nix store is a read-only 3.6 KB stub (epoch timestamp) that leaves Game and Media silent. Since v1.1.68, `asm-setup` detects undersized HRIR files and replaces them automatically. On an older install, repair it manually:
+>
+> ```bash
+> rm ~/.local/share/pipewire/hrir_hesuvi/hrir.wav && asm-setup
+> ```
+
+> **KDE audio popup:** the small "Audio Volume" widget in the KDE taskbar only shows physical hardware sinks. The ASM virtual channels (Arctis_Game / Arctis_Chat / Arctis_Media) appear in `pavucontrol` → Playback tab or in KDE System Settings → Audio → Applications. Use those to route each app to the right channel.
+
+Full module docs and options: [`nix/README.md`](nix/README.md).
+</details>
+
+<details>
 <summary><strong>Other distros (from source)</strong></summary>
 
 Install system deps first:
@@ -266,7 +326,7 @@ asm-gui
 
 Or find **Arctis Sound Manager** in your application launcher (KDE, GNOME, etc.).
 
-> The daemon (`asm-manager.service`) starts automatically at login — the GUI is separate and must be opened manually the first time.
+> The daemon (`arctis-manager.service`) starts automatically at login — the GUI is separate and must be opened manually the first time.
 
 ### System tray mode
 
@@ -286,15 +346,15 @@ If the toggle doesn't work for your DE, use the manual method:
 <summary><strong>KDE Plasma / GNOME (systemd user session)</strong></summary>
 
 ```bash
-systemctl --user enable --now asm-gui-tray.service
+systemctl --user enable --now arctis-gui.service
 ```
 
-A `asm-gui-tray.service` unit is installed by `asm-setup`. If missing:
+An `arctis-gui.service` unit is installed by `asm-setup`. If missing:
 
 ```bash
 asm-cli desktop write
 systemctl --user daemon-reload
-systemctl --user enable --now asm-gui-tray.service
+systemctl --user enable --now arctis-gui.service
 ```
 </details>
 
@@ -452,6 +512,29 @@ Advanced: replace `~/.local/share/pipewire/hrir_hesuvi/hrir.wav` with any 14-cha
 
 ---
 
+## Themes
+
+ASM ships **5 built-in color themes**: SteelSeries (default), Aurora Glass, Neon Pulse, Slate Premium and Arctic. Switch themes from the dropdown in **Settings → Interface Theme** — the change applies live to every page, dialog and the tray menu, no restart needed.
+
+### Custom themes
+
+Click **Create theme** in Settings to open the theme editor:
+
+- **15 color pickers** grouped into Backgrounds, Accents, Text and Audio channels
+- **Live preview** — the whole app restyles as you pick colors
+- Start from scratch or duplicate any existing theme via **Duplicate from**
+
+User themes are saved as `.ini` files in `~/.config/arctis-sound-manager/themes/`.
+
+### Import / Export
+
+- **Export theme** — saves any theme as an `.ini` file you can share
+- **Import theme** — loads a shared `.ini` file and adds it to your theme list
+
+> Built-in themes cannot be edited or deleted — duplicate one into a custom theme instead.
+
+---
+
 ## Translations
 
 [![Crowdin](https://badges.crowdin.net/arctis-sound-manager/localized.svg)](https://crowdin.com/project/arctis-sound-manager)
@@ -478,7 +561,7 @@ To request a new language, open a [GitHub issue](https://github.com/loteran/Arct
 ## Community stats
 
 <!-- STATS:META:START -->
-_Based on **120** unique users (**679** anonymous data points) — last updated 2026-06-10_
+_Based on **133** unique users (**716** anonymous data points) — last updated 2026-06-12_
 <!-- STATS:META:END -->
 
 > Anonymous usage data shared voluntarily by opted-in users.
@@ -490,14 +573,14 @@ _Based on **120** unique users (**679** anonymous data points) — last updated 
 <!-- STATS:TESTED_DISTROS:START -->
 | Distribution | Install method | Users |
 |---|---|---|
-| CachyOS | 🎯 AUR | 👥 57 |
-| Arch Linux | 🎯 AUR | 👥 15 |
-| Nobara Linux 43 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 8 |
-| Ubuntu 26.04 LTS | 🎯 PPA | 👥 7 |
+| CachyOS | 🎯 AUR | 👥 60 |
+| Arch Linux | 🎯 AUR | 👥 18 |
+| Nobara Linux 43 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 10 |
+| Ubuntu 26.04 LTS | 🎯 PPA | 👥 8 |
 | Garuda Linux | 🎯 AUR | 👥 5 |
 | Fedora Linux 44 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 5 |
-| Ubuntu 24.04.4 LTS | 🎯 PPA | 👥 3 |
-| Linux Mint 22.3 | 🎯 PPA | 👥 3 |
+| Ubuntu 24.04.4 LTS | 🎯 PPA | 👥 4 |
+| Linux Mint 22.3 | 🎯 PPA | 👥 4 |
 | Artix Linux | 🎯 AUR | 👥 3 |
 | SteamOS | 📦 Source | 👥 2 |
 | Pop!_OS 24.04 LTS | 🎯 PPA | 👥 2 |
@@ -506,7 +589,9 @@ _Based on **120** unique users (**679** anonymous data points) — last updated 
 | SUSE Linux Enterprise Server for SAP Applications 12 SP2 | 📦 Source | 👥 1 |
 | Russian Nuclear Submarine Ballast Management Controller BMC (OpenBMC Project Reference Distro) 2.8.2-34 | 📦 Source | 👥 1 |
 | PikaOS 4 | 📦 Source | 👥 1 |
+| NixOS 26.11 (Zokor) | 📦 Source | 👥 1 |
 | NixOS 26.05 (Yarara) | 📦 Source | 👥 1 |
+| Fedora Linux 44 (Workstation Edition) | 🎯 COPR | 👥 1 |
 | Fedora Linux 43 (Workstation Edition) | 🎯 COPR | 👥 1 |
 | Fedora Linux 43 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 1 |
 <!-- STATS:TESTED_DISTROS:END -->
@@ -518,18 +603,18 @@ _Based on **120** unique users (**679** anonymous data points) — last updated 
 <!-- STATS:HEADSETS:START -->
 | Headset | Installs |
 |---|---|
-| Arctis Nova Pro Wireless | 44 |
-| Arctis Nova 7 (Gen 2) | 23 |
-| Arctis Pro Wireless | 7 |
-| Arctis Nova 7P (Gen 2) | 6 |
-| Arctis Nova 3 | 5 |
+| Arctis Nova Pro Wireless | 50 |
+| Arctis Nova 7 (Gen 2) | 24 |
+| Arctis Nova 7P (Gen 2) | 8 |
+| Arctis Pro Wireless | 8 |
+| Arctis Nova 3 | 6 |
 | Arctis Nova 5 Wireless | 5 |
 | Arctis Nova 7 (Gen 1) | 5 |
 | Arctis Nova Pro Wired | 5 |
-| Arctis 7+ | 4 |
+| Arctis 7+ | 5 |
 | Arctis 7/Pro Gaming | 4 |
 | Arctis 9 Wireless | 3 |
-| Arctis GameBuds | 2 |
+| Arctis GameBuds | 3 |
 | Arctis Nova Elite | 2 |
 | Arctis 1/7X/7P Wireless | 2 |
 | Arctis GameBuds X | 1 |
@@ -540,14 +625,14 @@ _Based on **120** unique users (**679** anonymous data points) — last updated 
 <!-- STATS:DISTROS:START -->
 | Distribution | Installs |
 |---|---|
-| CachyOS | 57 |
-| Arch Linux | 15 |
-| Nobara Linux 43 (KDE Plasma Desktop Edition) | 8 |
-| Ubuntu 26.04 LTS | 7 |
+| CachyOS | 60 |
+| Arch Linux | 18 |
+| Nobara Linux 43 (KDE Plasma Desktop Edition) | 10 |
+| Ubuntu 26.04 LTS | 8 |
 | Garuda Linux | 5 |
 | Fedora Linux 44 (KDE Plasma Desktop Edition) | 5 |
-| Ubuntu 24.04.4 LTS | 3 |
-| Linux Mint 22.3 | 3 |
+| Ubuntu 24.04.4 LTS | 4 |
+| Linux Mint 22.3 | 4 |
 | Artix Linux | 3 |
 | SteamOS | 2 |
 | Pop!_OS 24.04 LTS | 2 |
@@ -655,7 +740,7 @@ src/arctis_sound_manager/
 │   ├── help_page.py           # Built-in user manual (EN/FR/ES)
 │   ├── systray_app.py         # System tray icon + single-instance IPC
 │   ├── presets/               # Bundled Sonar presets (Game/Chat/Mic)
-│   ├── theme.py               # Color constants
+│   ├── theme.py               # Theme engine (built-in + user themes, QSS generation)
 │   └── …                      # dialogs, reusable widgets, D-Bus wrapper
 ├── core.py                # CoreEngine: USB lifecycle, status polling, device init
 ├── config.py              # Device YAML parsing + settings definitions
