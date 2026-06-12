@@ -21,16 +21,18 @@ device:
     - [0x3c, 0xaa, 'settings.pm_shutdown']
     - [0x90, 0xaa]  # save
 
-  # NOTE: response format for 0x41/0x40 requests is unusual (short non-echoed packets).
-  # starts_with matching and byte positions require hardware verification.
+  # Response is a 32-byte packet; byte[0] = power status, byte[1] = battery (0-4).
+  # Confirmed from hardware capture: [4, 2, 0, ...] = online 50%, [2, 2, 0, ...] = offline.
   status:
     request: 0x41aa
     response_mapping:
-      - starts_with: 0x41aa
+      - starts_with: 0x04
         headset_power_status: 0x00
+        headset_battery_charge: 0x01
 
-      - starts_with: 0x40aa
-        headset_battery_charge: 0x00
+      - starts_with: 0x02
+        headset_power_status: 0x00
+        headset_battery_charge: 0x01
 
     representation:
       headset:
