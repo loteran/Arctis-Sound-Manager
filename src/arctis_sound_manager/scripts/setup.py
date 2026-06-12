@@ -395,7 +395,12 @@ def main() -> None:
     # ── HRIR file ──
     def _hrir_valid(path: Path) -> bool:
         try:
-            return path.exists() and path.read_bytes()[:4] == b"RIFF"
+            # Must be a real RIFF/WAV file of at least 10 KB — rules out read-only
+            # Nix store stubs (3.6 KB, epoch mtime) that have a RIFF header but are
+            # too short to be a usable 7.1 HRIR impulse response.
+            return (path.exists()
+                    and path.stat().st_size > 10_000
+                    and path.read_bytes()[:4] == b"RIFF")
         except OSError:
             return False
 
@@ -405,26 +410,42 @@ def main() -> None:
     else:
         hrir_file.unlink(missing_ok=True)
         _HRIR_DIR.mkdir(parents=True, exist_ok=True)
-        print("  Downloading default HRIR file (EAC_Default)...")
-        downloaded = False
-        for tool, cmd in [
-            ("curl", ["curl", "-fsSL", "-o", str(hrir_file), _HRIR_URL]),
-            ("wget", ["wget", "-q", "-O", str(hrir_file), _HRIR_URL]),
-        ]:
-            try:
-                subprocess.run(cmd, check=True, timeout=60)
-                if _hrir_valid(hrir_file):
-                    print(f"  [ok] HRIR downloaded → {hrir_file}")
-                    downloaded = True
-                    break
-                else:
+
+        # Try bundled assets first (available in system-package installs without network)
+        import importlib.resources as _ir
+        _bundled: Path | None = None
+        try:
+            _assets = Path(_ir.files("arctis_sound_manager")) / "hrir_assets"
+            _candidates = sorted(_assets.glob("*.wav"))
+            if _candidates:
+                _bundled = _candidates[0]
+        except Exception:
+            pass
+
+        if _bundled and _hrir_valid(_bundled):
+            hrir_file.write_bytes(_bundled.read_bytes())
+            print(f"  [ok] HRIR copied from package → {hrir_file}")
+        else:
+            print(f"  Downloading default HRIR file (EAC_Default) from {_HRIR_URL}...")
+            downloaded = False
+            for tool, cmd in [
+                ("curl", ["curl", "-fsSL", "-o", str(hrir_file), _HRIR_URL]),
+                ("wget", ["wget", "-q", "-O", str(hrir_file), _HRIR_URL]),
+            ]:
+                try:
+                    subprocess.run(cmd, check=True, timeout=60)
+                    if _hrir_valid(hrir_file):
+                        print(f"  [ok] HRIR downloaded → {hrir_file}")
+                        downloaded = True
+                        break
+                    else:
+                        hrir_file.unlink(missing_ok=True)
+                except (subprocess.CalledProcessError, FileNotFoundError):
                     hrir_file.unlink(missing_ok=True)
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                hrir_file.unlink(missing_ok=True)
-        if not downloaded:
-            print("  [!] Could not download HRIR. Install curl or wget, then re-run asm-setup")
-            print(f"      Or download manually: {_HRIR_URL}")
-            print(f"      Save as: {hrir_file}")
+            if not downloaded:
+                print("  [!] Could not download HRIR. Install curl or wget, then re-run asm-setup")
+                print(f"      Or download manually: {_HRIR_URL}")
+                print(f"      Save as: {hrir_file}")
 
     asm_cli = shutil.which("asm-cli")
 

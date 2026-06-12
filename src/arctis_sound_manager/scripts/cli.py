@@ -278,10 +278,13 @@ def write_desktop_entries() -> int:
         ["xdg-mime", "default", "ArctisManager.desktop", "x-scheme-handler/arctis-asm"],
         check=False, capture_output=True,
     )
-    _sp.run(
-        ["update-desktop-database", str(APPLICATIONS_PATH)],
-        check=False, capture_output=True,
-    )
+    try:
+        _sp.run(
+            ["update-desktop-database", str(APPLICATIONS_PATH)],
+            check=False, capture_output=True,
+        )
+    except FileNotFoundError:
+        pass  # not available on NixOS / immutable distros — safe to skip
     print("    [ok] Registered arctis-asm:// URL handler")
 
     # Remove legacy systray-only shortcut if present
