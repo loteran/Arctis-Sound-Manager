@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.66] - 12 June 2026
+
+### Fixed
+
+- **HRIR selection silently failed on NixOS (and any read-only source)** — `apply_hrir_choice` used `shutil.copy2` which preserves source file permissions and mtime. Since HRIR WAVs live in the Nix store (read-only, epoch timestamp), the copied `hrir.wav` was also read-only; any subsequent profile selection in Settings → Spatial Audio would fail silently and the convolver would load an invalid file, leaving the Game and Media channels silent while Chat (which bypasses the convolver) still worked. Fixed by unlinking the destination before copying and using `shutil.copy` (no metadata). (#79)
+- **Uninstaller failed on Bazzite / immutable distros when run via `curl | bash`** — the Distrobox delegation path resolved `SCRIPT_DIR` from `BASH_SOURCE[0]`, which is stdin when piped through curl. The local `scripts/distrobox/uninstall.sh` was never found and the script exited with an error. Now fetches both `_common.sh` and `distrobox/uninstall.sh` to a temporary directory and delegates from there when the local path is unavailable.
+
+### Documentation
+
+- Added a dedicated **NixOS** installation section to the README covering both flake and classic (non-flake) paths, with a prominent warning that **Settings → Spatial Audio must be opened on first launch** to select an HRIR profile — without this step the Game and Media channels are silent.
+
 ## [1.1.65] - 10 June 2026
 
 ### Fixed
