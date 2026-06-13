@@ -206,6 +206,11 @@ def write_udev_rules(rules_path: Path, create_directories: bool, force_write: bo
                     ["install", "-m", "644", tmp_path, str(rules_path)],
                     ["udevadm", "control", "--reload-rules"],
                     ["udevadm", "trigger", "--action=add", "--subsystem-match=usb"],
+                    ["sh", "-c",
+                     "for d in /sys/bus/usb/devices/*/; do "
+                     "v=$(cat \"$d/idVendor\" 2>/dev/null); "
+                     "[ \"$v\" = 1038 ] && echo on > \"$d/power/control\" 2>/dev/null; "
+                     "true; done"],
                 )
                 try:
                     return sudo_it([sh_path])
@@ -231,6 +236,11 @@ def reload_udev_rules() -> int:
         for cmd in [
             ["udevadm", "control", "--reload-rules"],
             ["udevadm", "trigger", "--action=add", "--subsystem-match=usb"],
+            ["sh", "-c",
+             "for d in /sys/bus/usb/devices/*/; do "
+             "v=$(cat \"$d/idVendor\" 2>/dev/null); "
+             "[ \"$v\" = 1038 ] && echo on > \"$d/power/control\" 2>/dev/null; "
+             "true; done"],
         ]:
             try:
                 result = subprocess.run(cmd, check=True, timeout=30).returncode
@@ -249,6 +259,11 @@ def reload_udev_rules() -> int:
     sh_path = _make_elevated_script(
         ["udevadm", "control", "--reload-rules"],
         ["udevadm", "trigger", "--action=add", "--subsystem-match=usb"],
+        ["sh", "-c",
+         "for d in /sys/bus/usb/devices/*/; do "
+         "v=$(cat \"$d/idVendor\" 2>/dev/null); "
+         "[ \"$v\" = 1038 ] && echo on > \"$d/power/control\" 2>/dev/null; "
+         "true; done"],
     )
     try:
         return sudo_it([sh_path])
