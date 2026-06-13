@@ -220,28 +220,10 @@ class CoreEngine:
                 physical_chat=physical_chat,
                 device_name=dev_name,
             )
-            chat_spec = None
             for spec in specs:
                 if spec.channel == "chat":
-                    chat_spec = spec
                     continue  # keep Arctis_Chat alive — Discord-safe
                 self.loopback_manager.recreate(spec)
-
-            # Proactively relink Chat to its EQ node — filter-chain just
-            # restarted, WirePlumber may have linked it to a fallback sink.
-            # Using pw-metadata keeps the process alive (no Discord device loss).
-            if chat_spec is not None:
-                from arctis_sound_manager.pw_utils import relink_loopback_playback
-                if relink_loopback_playback(chat_spec.playback_name, chat_spec.target):
-                    self.logger.info(
-                        "recreate_loopbacks_game_media: chat relinked to %s (Discord-safe)",
-                        chat_spec.target,
-                    )
-                else:
-                    self.logger.warning(
-                        "recreate_loopbacks_game_media: chat relink failed — "
-                        "watchdog will retry"
-                    )
 
             self.logger.info(
                 "recreate_loopbacks_game_media: game+media recreated, chat preserved"
@@ -273,7 +255,7 @@ class CoreEngine:
         handler).  Errors are always caught and logged — this coroutine must
         never crash the daemon.
         """
-        from arctis_sound_manager.pw_utils import loopback_link_target, relink_loopback_playback
+        from arctis_sound_manager.pw_utils import loopback_link_target
 
         _WATCHDOG_INTERVAL: float = 5.0
         try:
@@ -311,29 +293,22 @@ class CoreEngine:
                         # actual is None  → orphan / not yet linked: leave it alone.
                         # actual != target → clearly mislinked: recreate.
                         if actual is not None and actual != spec.target:
+                            self.logger.warning(
+                                "_loopback_watchdog: loopback '%s' mislinked to %s "
+                                "(want %s) — recreating",
+                                channel, actual, spec.target,
+                            )
+                            self.loopback_manager.recreate(spec)
                             if channel == "chat":
-                                # Attempt a metadata relink before recreating —
-                                # keeps Arctis_Chat alive in Discord's device list.
-                                if relink_loopback_playback(spec.playback_name, spec.target):
-                                    self.logger.info(
-                                        "_loopback_watchdog: chat relinked %s → %s "
-                                        "(Discord-safe, no recreation)",
-                                        actual, spec.target,
-                                    )
-                                else:
-                                    self.logger.warning(
-                                        "_loopback_watchdog: chat relink failed "
-                                        "(%s → %s) — falling back to recreation",
-                                        actual, spec.target,
-                                    )
-                                    self.loopback_manager.recreate(spec)
-                            else:
-                                self.logger.warning(
-                                    "_loopback_watchdog: loopback '%s' mislinked to %s "
-                                    "(want %s) — recreating",
-                                    channel, actual, spec.target,
+                                # After recreating Chat, move PA streams that
+                                # had routing overrides back to Arctis_Chat so
+                                # Discord audio resumes without a manual restart.
+                                from arctis_sound_manager.pw_utils import (
+                                    reapply_routing_overrides,
                                 )
-                                self.loopback_manager.recreate(spec)
+                                await asyncio.get_running_loop().run_in_executor(
+                                    None, reapply_routing_overrides
+                                )
                 except Exception as exc:
                     self.logger.error(
                         "_loopback_watchdog: unexpected error in mislink check: %r", exc
