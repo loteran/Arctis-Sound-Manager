@@ -1,3 +1,13 @@
+arctis-sound-manager (1.1.71-1) noble; urgency=medium
+
+  * Arctis Nova Pro Wireless X (PID 0x225d) — third hardware variant of the
+    Nova Pro Wireless X, identified in the upstream
+    elegos/Linux-Arctis-Manager project. Uses the same protocol as the
+    existing 0x12e0/0x12e5 variants; all features (EQ, ANC, mic, surround)
+    work identically.
+
+ -- loteran <axel.valadon@gmail.com>  Sat, 13 Jun 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.70-1) noble; urgency=medium
 
   * Device shown as "No device detected" in GUI for always-connected

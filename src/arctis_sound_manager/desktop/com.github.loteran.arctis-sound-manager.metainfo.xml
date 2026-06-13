@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.71" date="2026-06-13">
+      <description>
+        <p>Arctis Nova Pro Wireless X (PID 0x225d) — third hardware variant of the Nova Pro Wireless X, identified in the upstream elegos/Linux-Arctis-Manager project. Uses the same protocol as the existing 0x12e0/0x12e5 variants; all features (EQ, ANC, mic, surround) work identically.</p>
+      </description>
+    </release>
     <release version="1.1.70" date="2026-06-13">
       <description>
         <p>Device shown as "No device detected" in GUI for always-connected headsets — devices without an online_status block (e.g. Arctis Nova 3 family) produced an empty D-Bus status dict even after the daemon had successfully initialised them, causing the GUI to display "No device detected" indefinitely. A sentinel headset_power_status: online is now injected when _device_ready is True and no status representation is defined. (#80). "Failed to find sink Arctis_Game" error at startup — redirect_audio was called immediately after spawning the pw-loopback processes, before PipeWire had registered the virtual sink. The method now retries up to 5 times (× 0.4 s) before giving up, eliminating the race condition on normal hardware. The final failure is now logged as WARNING instead of ERROR since the sink may legitimately be absent if loopback creation failed upstream. (#80).</p>
@@ -199,11 +204,6 @@
     <release version="1.1.34" date="2026-05-18">
       <description>
         <p>Wireless headset disconnect/reconnect loop — when the USB dongle stays plugged in but the RF link drops (headset powered off or out of range), ASM retried USB commands thousands of times per second with no back-off, preventing the dongle firmware from completing RF re-association. Errors with errno 19 (ENODEV) now trigger a 1-second back-off; after ~10 s of consecutive failures ASM voluntarily releases the handle to let the dongle reconnect cleanly. Removed a redundant request_device_status() call that was firing on every loop iteration instead of the intended 2-second cadence (issue #49).</p>
-      </description>
-    </release>
-    <release version="1.1.33" date="2026-05-18">
-      <description>
-        <p>ClearCast crash on startup when noise cancellation was enabled — _NoiseCancelingCard connected the toggle signal before creating self._slider; PySide6 fires checkStateChanged synchronously during setChecked(), so restoring an enabled state from the previous session triggered _set_enabled before the slider existed, raising AttributeError (issue #51). README: First launch section — clarified that the daemon starts automatically but the GUI must be opened separately (asm-gui or via the app launcher), documented --systray mode and per-DE autostart methods.</p>
       </description>
     </release>
   </releases>
