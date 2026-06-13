@@ -109,6 +109,21 @@ class DacPage(QWidget):
         layout.addWidget(self._section_dac)
         layout.addSpacing(12)
 
+        # ── Station (line out) settings ────────────────────────────────────────
+        self._section_station = SectionTitle(I18n.translate("ui", "station_settings"))
+        self._section_station.setVisible(False)
+        layout.addWidget(self._section_station)
+        layout.addSpacing(4)
+
+        self._station_widget = QSettingsWidget(content, "station_settings", "device")
+        self._station_widget.setStyleSheet(f"""
+            QWidget {{ background-color: {BG_MAIN}; color: {TEXT_PRIMARY}; }}
+            QLabel {{ background-color: transparent; color: {TEXT_PRIMARY}; font-size: 11pt; }}
+        """)
+        self._station_widget.setVisible(False)
+        layout.addWidget(self._station_widget)
+        layout.addSpacing(16)
+
         # ── Custom display toggle ──────────────────────────────────────────────
         self._custom_display_card = self._build_custom_display_card()
         layout.addWidget(self._custom_display_card)
@@ -660,6 +675,17 @@ class DacPage(QWidget):
         self._weather_units = units
         self._unit_btn_celsius.setStyleSheet(self._unit_btn_style(units == "celsius"))
         self._unit_btn_fahrenheit.setStyleSheet(self._unit_btn_style(units == "fahrenheit"))
+
+        # Station (line out) settings — only for devices with a station section
+        station_cfg = settings.get('station_settings_config', {})
+        has_station = bool(station_cfg)
+        self._section_station.setVisible(has_station)
+        self._station_widget.setVisible(has_station)
+        if has_station:
+            self._station_widget.update_settings({
+                'settings_config': station_cfg,
+                'device': settings.get('device', {}),
+            })
 
         # Sliders — exclude toggle-only settings
         sliders_config = {

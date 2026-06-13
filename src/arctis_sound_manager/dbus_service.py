@@ -161,6 +161,10 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
                     self.core_engine.device_config.settings.values()
                 ))
             })
+            settings['station_settings_config'] = {
+                config.name: config.to_dict()
+                for config in self.core_engine.device_config.settings.get('station', [])
+            }
             # Expose device identification for the GUI (headset page, telemetry)
             settings['device_name'] = device_state.get_device_name()
             settings['vendor_id']   = f"0x{self.core_engine.device_config.vendor_id:04x}"

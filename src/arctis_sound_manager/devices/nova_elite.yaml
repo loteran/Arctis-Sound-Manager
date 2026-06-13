@@ -178,6 +178,16 @@ device:
     status_variable: headset_power_status
     online_value: online
 
+  # OLED parameters — same GameDAC Gen 2 hardware as Nova Pro Wireless.
+  # Tentative: needs USB capture from a Nova Elite user to confirm interface/wvalue.
+  # If the screen doesn't respond, remove this section and open a GitHub issue.
+  oled:
+    interface: 4
+    report_id: 0x06
+    wvalue: 0x0300
+    width: 128
+    height: 64
+
   settings:
     audio:
       gain:
