@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.74] - 13 June 2026
+
+### Added
+
+- **Headset name on Channels tab** — the connected headset model name is now displayed above the status pills. If the headset is offline, the last known name is shown in gray.
+- **Ko-fi support button in sidebar** — a compact Ko-fi button and "You like it ? Support me !" label appear at the bottom of the sidebar, below the ASM logo.
+- **ASM logo in sidebar** — the logo is displayed above the support section and links to the GitHub repository when clicked.
+
+### Changed
+
+- **Help moved into main navigation** — the Help button is now part of the primary sidebar nav (below Settings) instead of floating at the bottom.
+- **EQ mode switch button inline** — the "Switch to …" button on the Equalizer tab is now compact and placed on the same line as the current mode label.
+- **"Check for updates" moved to top of Settings** — the button is now in the header row alongside the language selector.
+- **Sidebar icons slightly reduced** — icon size reduced from 50 px to 44 px for a more compact sidebar.
+
+### Fixed
+
+- **Chat channel silent after filter-chain restart** — the loopback watchdog now also recreates a loopback when its playback node is completely unlinked (orphaned), not only when it is linked to the wrong target. Previously, `Arctis_Chat_sink_out` could end up with no PipeWire link at all after a filter-chain restart, causing permanent silence on the Chat channel until a manual service restart.
+- **Discord loses Chat routing after filter-chain restart** — `recreate_loopbacks_game_media` now skips recreating the Chat loopback (keeping `Arctis_Chat` alive in Discord's device list), and `reapply_routing_overrides` restores saved PA stream routing after any Chat recreation.
+
 ## [1.1.73] - 13 June 2026
 
 ### Fixed
