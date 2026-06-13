@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.73" date="2026-06-13">
+      <description>
+        <p>USB autosuspend not disabled for already-connected dongles — udevadm trigger does not retroactively apply sysfs attributes to USB interfaces that are already active when the udev rule is installed or updated. Devices plugged in before the update kept autosuspend enabled, causing [Errno 19] No such device disconnects every 2–3 minutes and the GUI to never show the headset as Connected. After udevadm trigger, ASM now also writes on directly to /sys/bus/usb/devices/*/power/control for every connected SteelSeries device via sysfs, taking effect immediately without requiring a replug. (#80). Switching an app back to Output (HDMI) channel silenced audio — clicking G/C/M in the mixer called pw-metadata 0 default.configured.audio.sink to change the PipeWire global default sink. This caused the effect_input.sonar-output-eq filter-chain node to re-target its output to the newly chosen virtual sink instead of HDMI; switching back to O routed the stream into the EQ chain whose physical output had been silently redirected. The global default must never be changed for per-app routing — pulse.sink_input_move() alone is sufficient and is now the only call made. NameError: TEXT_SECONDARY crash after successful preset import via link — _set_status() in the import dialog used the bare constant TEXT_SECONDARY instead of _theme.c("TEXT_SECONDARY"), crashing the dialog after every successful link import at the status update step.</p>
+      </description>
+    </release>
     <release version="1.1.72" date="2026-06-13">
       <description>
         <p>Line Out controls for Nova Pro Wireless and Nova Elite — the physical 3.5 mm LINE OUT jack on the GameDAC Gen 2 station is now configurable directly from the ASM DAC tab. A new Station Output section appears above the OLED options and is automatically hidden for headsets without a station DAC. The section contains:. Line Out Mode button group: *Speaker* (amplified output for passive speakers) or *Stream* (digital controlled output). Left / Right / Aux volume sliders (0–100 %) — visible only when mode is set to *Stream*, using a single multi-value HID command [0x47, left, right, aux] per adjustment.</p>
@@ -199,11 +204,6 @@
     <release version="1.1.44" date="2026-05-29">
       <description>
         <p>dinit (Artix): Sonar mode toggle crashed — switching Game/Chat ↔ Sonar called systemctl --user restart … with no dinit branch, raising FileNotFoundError: systemctl on systems without systemd. The toggle now works on dinit (issue #25). dinit (Artix): EQ / Sonar changes had no effect — applying a new equalizer mode ran dinitctl start pipewire-filter-chain, but start is a no-op when the service is already running, so the freshly generated config was never reloaded (systemd correctly used restart). All config-reload paths now use restart on both init systems — this is the root cause of the "EQ does nothing" reports on dinit (issue #25). Centralised init-system handling — introduced service_control.py, a single abstraction over systemctl --user and dinitctl. The logical→real service-name mapping (notably filter-chain → pipewire-filter-chain on dinit) and the start/restart distinction now live in one place instead of being copy-pasted across ~25 call sites in 11 files. Service calls no longer crash when the init manager binary is absent; they log and skip. This removes ~230 lines of duplicated branching and makes the issue #25 class of bugs impossible to reintroduce per-site. Added a regression test suite (tests/test_service_control.py).</p>
-      </description>
-    </release>
-    <release version="1.1.43" date="2026-05-28">
-      <description>
-        <p>Distrobox container fails to start after reboot on Bazzite / SteamOS / Silverblue — /run/asm-hidraw lives on a tmpfs and is wiped at every boot; the sudo mkdir -p in the install script only ran at container creation time, so on the next boot crun could not stat the bind-mount source and refused to start the container (crun: cannot stat /run/asm-hidraw: No such file or directory). A systemd-tmpfiles drop-in (/etc/tmpfiles.d/asm-hidraw.conf) is now installed on the host, recreating the directory at sysinit.target well before Distrobox starts. Added ConditionPathIsDirectory=/run/asm-hidraw to arctis-manager.service to prevent crash-loops if the directory is somehow absent. Affects all three Distrobox installers (bazzite.sh, steamos.sh, silverblue.sh — issue #59).</p>
       </description>
     </release>
   </releases>
