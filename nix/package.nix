@@ -37,6 +37,7 @@ let
       ../LICENSE
       ../src
       ../scripts/generate_udev_rules.py
+      ../hrir/EAC_Default.wav
     ];
   };
 
@@ -169,6 +170,12 @@ python3Packages.buildPythonApplication {
       --replace-fail "Exec=asm-gui" "Exec=$out/bin/asm-gui"
     install -Dm644 src/arctis_sound_manager/gui/images/steelseries_logo.svg \
       "$out/share/icons/hicolor/scalable/apps/arctis-manager.svg"
+
+    # Default HeSuVi HRIR — seeded by the NixOS module into each user's
+    # ~/.local/share/pipewire/hrir_hesuvi/hrir.wav (only if absent), giving
+    # working surround out of the box without asm-setup or a network download.
+    install -Dm644 hrir/EAC_Default.wav \
+      "$out/share/arctis-sound-manager/hrir/EAC_Default.wav"
   '';
 
   passthru.updateScript = null;

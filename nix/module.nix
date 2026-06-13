@@ -131,6 +131,46 @@ in
           # ASM daemon restarts it by this exact name when applying EQ changes).
           filter-chain.wantedBy = [ "default.target" ];
 
+          # Reproduce the two per-user side effects of asm-setup that the rest of
+          # this module doesn't already cover declaratively:
+          #
+          #   1. Default HeSuVi 7.1 HRIR. Nothing creates
+          #      ~/.local/share/pipewire/hrir_hesuvi/hrir.wav on a module-only
+          #      install: asm-setup is not run, the daemon defaults hrir_id to
+          #      null, and the GUI HRIR picker only copies the tiny
+          #      src/hrir_assets stubs. Without a valid impulse response the
+          #      filter-chain convolves against nothing and Game / Media channels
+          #      are silent.
+          #
+          #   2. ~/.config/arctis_manager/.setup_done sentinel. The tray GUI
+          #      auto-runs asm-setup (FirstRunDialog, incl. a pkexec prompt)
+          #      whenever this flag is missing — exactly the flow a module install
+          #      is supposed to make unnecessary.
+          #
+          # Both writes are copy-if-absent so a user who later customises either
+          # is never overwritten.
+          arctis-firstrun-seed = {
+            description = "Seed default Arctis HRIR + mark setup done (if absent)";
+            wantedBy = [ "default.target" ];
+            before = [
+              "filter-chain.service"
+              "arctis-manager.service"
+            ];
+            path = [ pkgs.coreutils ];
+            serviceConfig = {
+              Type = "oneshot";
+              RemainAfterExit = true;
+            };
+            script = ''
+              dest="$HOME/.local/share/pipewire/hrir_hesuvi/hrir.wav"
+              [ -e "$dest" ] || install -Dm644 \
+                ${cfg.package}/share/arctis-sound-manager/hrir/EAC_Default.wav "$dest"
+
+              flag="$HOME/.config/arctis_manager/.setup_done"
+              [ -e "$flag" ] || { mkdir -p "$(dirname "$flag")"; : > "$flag"; }
+            '';
+          };
+
           arctis-manager = userService {
             description = "Arctis Sound Manager device daemon";
             after = [
@@ -163,15 +203,19 @@ in
       }
 
       # Feed the Sonar LADSPA plugins into PipeWire's filter-chain service.
-      (
-        if pipewireHasLadspaOption then
-          { services.pipewire.extraLadspaPackages = cfg.ladspaPlugins; }
-        else
-          {
-            systemd.user.services.filter-chain.environment.LADSPA_PATH =
-              lib.makeSearchPath "lib/ladspa" cfg.ladspaPlugins;
-          }
-      )
+      #
+      # extraLadspaPackages (available on newer nixpkgs) sets LADSPA_PATH on
+      # pipewire.service and wireplumber, but NOT on the separate filter-chain
+      # process started by the module. We therefore always inject LADSPA_PATH
+      # directly on the filter-chain user service — this is what actually makes
+      # plate_1423 / sc4m_1916 / rnnoise visible to the Sonar surround graph.
+      (lib.optionalAttrs pipewireHasLadspaOption {
+        services.pipewire.extraLadspaPackages = cfg.ladspaPlugins;
+      })
+      // {
+        systemd.user.services.filter-chain.environment.LADSPA_PATH =
+          lib.makeSearchPath "lib/ladspa" cfg.ladspaPlugins;
+      }
     ]
   );
 }

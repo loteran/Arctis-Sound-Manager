@@ -27,6 +27,28 @@ from arctis_sound_manager.eq_types import EqBand, PW_LABEL
 
 _log = logging.getLogger(__name__)
 
+
+def _ladspa_plugin_available(name_pattern: str) -> bool:
+    """Return True if a LADSPA .so matching name_pattern is found in standard dirs."""
+    import fnmatch
+    from pathlib import Path
+    _dirs = (
+        "/usr/lib64/ladspa",
+        "/usr/lib/ladspa",
+        "/usr/lib/x86_64-linux-gnu/ladspa",
+    )
+    for d in _dirs:
+        p = Path(d)
+        if not p.is_dir():
+            continue
+        try:
+            if any(fnmatch.fnmatch(e.name, name_pattern) for e in p.iterdir() if e.is_file()):
+                return True
+        except OSError:
+            continue
+    return False
+
+
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 _SURROUND = "effect_input.virtual-surround-7.1-hesuvi"
@@ -1261,7 +1283,7 @@ def generate_hesuvi_conf(
     node_lines.append(f"{I}{{ type = builtin  label = mixer  name = mixR }}")
 
     # 5. Plate reverb nodes (Distance) — only if distance_pct > 0 and swh-plugins available
-    use_plate = distance_pct > 0
+    use_plate = distance_pct > 0 and _ladspa_plugin_available("plate_1423.so")
     if use_plate:
         node_lines.append(f"{I}# distance reverb (LADSPA plate — requires swh-plugins)")
         node_lines.append(

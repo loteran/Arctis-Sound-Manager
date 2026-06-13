@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.69] - 13 June 2026
+
+### Fixed
+
+- **Game and Media channels silent on NixOS module installs** — two root causes addressed:
+  1. `LADSPA_PATH` was not injected on the `filter-chain` user service when `services.pipewire.extraLadspaPackages` was used (available on newer nixpkgs). `extraLadspaPackages` only sets the path on `pipewire.service` and `wireplumber`, not on the separate `filter-chain` process, so `plate_1423` (Distance reverb) was not found and the entire HeSuVi surround graph failed to load. `LADSPA_PATH` is now always set explicitly on `filter-chain`. (#79)
+  2. No HRIR file was seeded on a fresh module-only install: `asm-setup` is not run, the daemon defaults `hrir_id` to null, and the GUI HRIR picker only copies the tiny bundled stubs. A new `arctis-firstrun-seed` oneshot systemd user service (ordered before `filter-chain` and `arctis-manager`) now copies `EAC_Default.wav` from the package store into `~/.local/share/pipewire/hrir_hesuvi/hrir.wav` if absent, and creates the `.setup_done` sentinel. The HRIR WAV is now shipped in the Nix package closure. (#79, contributed by @nobodys-tools)
+- **HeSuVi surround graph crashes when `plate_1423` (swh-plugins) is absent** — on distros without `swh-plugins` installed, the Distance reverb LADSPA node was generated unconditionally, causing `filter-chain` to exit immediately. The Distance effect is now silently disabled when `plate_1423.so` is not found in the standard LADSPA directories, giving working surround without the reverb rather than a crash-loop. (#79)
+
 ## [1.1.68] - 12 June 2026
 
 ### Fixed
