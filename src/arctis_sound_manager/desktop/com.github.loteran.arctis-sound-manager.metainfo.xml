@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.69" date="2026-06-13">
+      <description>
+        <p>Game and Media channels silent on NixOS module installs — two root causes addressed:. HeSuVi surround graph crashes when plate_1423 (swh-plugins) is absent — on distros without swh-plugins installed, the Distance reverb LADSPA node was generated unconditionally, causing filter-chain to exit immediately. The Distance effect is now silently disabled when plate_1423.so is not found in the standard LADSPA directories, giving working surround without the reverb rather than a crash-loop. (#79).</p>
+      </description>
+    </release>
     <release version="1.1.68" date="2026-06-12">
       <description>
         <p>asm-setup crashed on NixOS with FileNotFoundError: update-desktop-database — NixOS and other immutable distros don't ship this tool. The call already used check=False but subprocess.Popen raises FileNotFoundError before the return-code check when the binary is absent. The call is now wrapped in try/except FileNotFoundError and silently skipped. (#79). HRIR file from Nix store (3.6 KB stub) passed validation and was never replaced — the Nix store copy has a valid RIFF header in its first 4 bytes but is far too short to be a usable 7.1 impulse response, causing Game and Media channels to be silent. _hrir_valid() now requires the file to exceed 10 KB in addition to having a RIFF header. asm-setup also tries the bundled hrir_assets/ profiles first (no network required) before downloading from GitHub. (#79).</p>
@@ -199,11 +204,6 @@
     <release version="1.1.32" date="2026-05-18">
       <description>
         <p>Audio redirect broken for 8 wireless models — is_device_online() compared on_off parser values ('on'/'off') against YAML online_value: online literally; added aliasing so 'on' ↔ 'online' and 'off' ↔ 'offline' are treated as equivalent (discussion #48). Streams stay on dead loopbacks after disconnect — redirect_audio() changed the default sink but did not migrate active streams; now iterates sink_input_list() and moves every stream sitting on an ASM-owned sink, and persists the choice via pw-metadata for PipeWire restart survival (issue #50). babel missing from packaging metadata — added to PKGBUILD depends, RPM Requires, debian/control Depends, system deps checker, and packaging drift check.</p>
-      </description>
-    </release>
-    <release version="1.1.31" date="2026-05-16">
-      <description>
-        <p>Microphone routed to wrong device on startup — when the Arctis headset is not yet detected when the filter-chain config is written, target.object was left empty and PipeWire would bind the virtual microphone to the first available source (e.g. a DualSense controller mic). check_and_fix_stale_configs() now detects this condition at daemon startup and patches the target in-place, triggering a filter-chain restart.</p>
       </description>
     </release>
   </releases>

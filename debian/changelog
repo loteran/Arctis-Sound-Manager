@@ -1,3 +1,16 @@
+arctis-sound-manager (1.1.69-1) noble; urgency=medium
+
+  * Game and Media channels silent on NixOS module installs — two root
+    causes addressed:
+  * HeSuVi surround graph crashes when plate_1423 (swh-plugins) is absent —
+    on distros without swh-plugins installed, the Distance reverb LADSPA
+    node was generated unconditionally, causing filter-chain to exit
+    immediately. The Distance effect is now silently disabled when
+    plate_1423.so is not found in the standard LADSPA directories, giving
+    working surround without the reverb rather than a crash-loop. (#79)
+
+ -- loteran <axel.valadon@gmail.com>  Sat, 13 Jun 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.68-1) noble; urgency=medium
 
   * asm-setup crashed on NixOS with FileNotFoundError:
