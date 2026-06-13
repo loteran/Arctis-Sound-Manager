@@ -59,11 +59,6 @@ class HeadsetPage(QWidget):
         layout.setContentsMargins(36, 28, 36, 36)
         layout.setSpacing(0)
 
-        # App logo
-        from arctis_sound_manager.gui.ui_utils import get_logo_label
-        layout.addWidget(get_logo_label(height=40))
-        layout.addSpacing(28)
-
         # Devices section
         layout.addWidget(SectionTitle(I18n.translate("ui", "devices")))
         layout.addSpacing(20)

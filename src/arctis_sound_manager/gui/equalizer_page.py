@@ -28,7 +28,6 @@ from PySide6.QtWidgets import (
 )
 
 from arctis_sound_manager import service_control as sc
-from arctis_sound_manager.gui.components import AccentButton
 from arctis_sound_manager.gui.sonar_page import SonarPage
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
 from arctis_sound_manager.i18n import I18n
@@ -591,10 +590,6 @@ class EqualizerPage(QWidget):
         root.setContentsMargins(36, 28, 36, 28)
         root.setSpacing(0)
 
-        from arctis_sound_manager.gui.ui_utils import get_logo_label
-        root.addWidget(get_logo_label(height=40))
-        root.addSpacing(28)
-
         self._eq_title = QLabel(I18n.translate('ui', 'equalizer'))
         self._eq_title.setStyleSheet("color: #666666; font-size: 20pt; font-weight: bold; background: transparent;")
         root.addWidget(self._eq_title)
@@ -629,17 +624,34 @@ class EqualizerPage(QWidget):
         self._mode_label = QLabel()
         self._mode_label.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 13pt; font-weight: bold; background: transparent;")
         mrl.addWidget(self._mode_label)
+
+        self._button = QPushButton("")
+        self._button.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        self._button.setFixedHeight(30)
+        self._button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._button.setStyleSheet(f"""
+            QPushButton {{
+                background: {ACCENT};
+                color: #ffffff;
+                border: none;
+                border-radius: 6px;
+                font-size: 10pt;
+                font-weight: bold;
+                padding: 0 14px;
+            }}
+            QPushButton:hover {{ background: #e04000; }}
+            QPushButton:pressed {{ background: #c03800; }}
+        """)
+        self._button.clicked.connect(self._on_toggle)
+        mrl.addWidget(self._button)
         mrl.addStretch(1)
+
         card_layout.addWidget(mode_row)
 
         self._desc_label = QLabel()
         self._desc_label.setWordWrap(True)
         self._desc_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;")
         card_layout.addWidget(self._desc_label)
-
-        self._button = AccentButton("")
-        self._button.clicked.connect(self._on_toggle)
-        card_layout.addWidget(self._button)
 
         root.addWidget(self._card)
         root.addSpacing(24)

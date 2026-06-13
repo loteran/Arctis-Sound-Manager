@@ -102,7 +102,7 @@ class SidebarButton(QPushButton):
     ):
         super().__init__(parent)
         self.setObjectName("sidebarBtn")
-        self.setFixedSize(120, 130)
+        self.setFixedSize(120, 115)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.setCheckable(False)
 
@@ -119,11 +119,12 @@ class SidebarButton(QPushButton):
 
         # Inner layout: icon + label
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 14, 8, 14)
-        layout.setSpacing(8)
+        layout.setContentsMargins(8, 10, 8, 10)
+        layout.setSpacing(6)
         layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
 
-        self._icon_widget = SvgIconWidget(svg_path, icon_color_inactive, size=50)
+        self._icon_size = 44
+        self._icon_widget = SvgIconWidget(svg_path, icon_color_inactive, size=self._icon_size)
         layout.addWidget(self._icon_widget, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         self._label_widget = QLabel(label)
@@ -166,7 +167,7 @@ class SidebarButton(QPushButton):
                 f"color: {self._text_primary}; font-size: 10pt; background: transparent;"
             )
             # Reload icon with active color
-            pix = QPixmap(50, 50)
+            pix = QPixmap(self._icon_size, self._icon_size)
             pix.fill(QColor(0, 0, 0, 0))
             try:
                 with open(self._svg_path, encoding="utf-8") as f:
@@ -187,7 +188,7 @@ class SidebarButton(QPushButton):
                 f"color: {self._text_secondary}; font-size: 10pt; background: transparent;"
             )
             # Reload icon with inactive color
-            pix = QPixmap(50, 50)
+            pix = QPixmap(self._icon_size, self._icon_size)
             pix.fill(QColor(0, 0, 0, 0))
             try:
                 with open(self._svg_path, encoding="utf-8") as f:

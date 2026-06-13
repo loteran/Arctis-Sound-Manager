@@ -643,17 +643,13 @@ class HomePage(QWidget):
         self._sink_ext = None
         self._ext_device_nick: str | None = None  # from settings
         self._connected = False
+        self._last_device_name: str = ""
 
         root = QVBoxLayout(self)
         root.setContentsMargins(36, 28, 36, 28)
         root.setSpacing(0)
         root.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        # ── App logo ──────────────────────────────────────────────────────────
-        from arctis_sound_manager.gui.ui_utils import get_logo_label
-        self._app_title = get_logo_label(height=40)
-        root.addWidget(self._app_title)
-        root.addSpacing(8)
 
         # ── Update banner (hidden by default) ─────────────────────────────────
         self._update_banner = QWidget()
@@ -707,6 +703,15 @@ class HomePage(QWidget):
 
         self._update_banner.hide()
         root.addWidget(self._update_banner)
+        root.addSpacing(4)
+
+        # ── Headset name ───────────────────────────────────────────────────────
+        self._headset_name_lbl = QLabel("")
+        self._headset_name_lbl.setStyleSheet(
+            f"color: {TEXT_PRIMARY}; font-size: 14pt; font-weight: bold; background: transparent;"
+        )
+        self._headset_name_lbl.hide()
+        root.addWidget(self._headset_name_lbl)
         root.addSpacing(4)
 
         # ── Headset status pills ───────────────────────────────────────────────
@@ -890,6 +895,14 @@ class HomePage(QWidget):
                 f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 28pt; font-weight: bold; background: transparent;"
             )
 
+        # Headset name label (only restyle if online — offline stays gray)
+        if hasattr(self, "_headset_name_lbl") and self._headset_name_lbl.isVisible():
+            style = self._headset_name_lbl.styleSheet()
+            if "#8D96AA" not in style:
+                self._headset_name_lbl.setStyleSheet(
+                    f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 14pt; font-weight: bold; background: transparent;"
+                )
+
         # Update banner widgets
         if hasattr(self, "_update_banner"):
             self._update_banner.setStyleSheet(f"""
@@ -986,6 +999,7 @@ class HomePage(QWidget):
     def update_status(self, status: dict):
         if not status:
             self._status_bar.set_no_device()
+            self._headset_name_lbl.hide()
             return
 
         headset = status.get("headset", {})
@@ -1000,10 +1014,27 @@ class HomePage(QWidget):
 
         self._status_bar.update(power, headset_bat_val, dac_bat_val)
 
+        if self._last_device_name:
+            if power == "offline":
+                self._headset_name_lbl.setStyleSheet(
+                    "color: #8D96AA; font-size: 14pt; font-weight: bold; background: transparent;"
+                )
+            else:
+                self._headset_name_lbl.setStyleSheet(
+                    f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 14pt; font-weight: bold; background: transparent;"
+                )
+            self._headset_name_lbl.setText(self._last_device_name)
+            self._headset_name_lbl.show()
+        else:
+            self._headset_name_lbl.hide()
+
     @Slot(object)
     def update_settings(self, settings: dict):
         general = settings.get("general", {})
         self._ext_device_nick = general.get("external_output_device") or None
+        device_name = settings.get("device_name", "")
+        if device_name:
+            self._last_device_name = device_name
 
     # ── Update notification ────────────────────────────────────────────────────
 

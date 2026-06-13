@@ -98,11 +98,6 @@ class DacPage(QWidget):
         layout.setContentsMargins(36, 28, 36, 36)
         layout.setSpacing(0)
 
-        from arctis_sound_manager.gui.ui_utils import get_logo_label
-        self._app_title = get_logo_label(height=40)
-        layout.addWidget(self._app_title)
-        layout.addSpacing(28)
-
         self._section_dac = SectionTitle(I18n.translate("ui", "dac_settings"))
         layout.addWidget(self._section_dac)
         layout.addSpacing(12)

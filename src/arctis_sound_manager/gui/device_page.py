@@ -181,12 +181,23 @@ class DevicePage(QWidget):
         content_layout.setContentsMargins(36, 12, 36, 12)
         content_layout.setSpacing(0)
 
-        # ── App title + language selector ─────────────────────────────────────
+        # ── Top row : check for updates (left) + language selector (right) ──────
         title_row = QHBoxLayout()
         title_row.setSpacing(16)
 
-        from arctis_sound_manager.gui.ui_utils import get_logo_label
-        title_row.addWidget(get_logo_label(height=40), stretch=1)
+        self._check_update_btn = _styled_button(I18n.translate("ui", "check_for_updates"))
+        self._check_update_btn.setFixedWidth(220)
+        self._check_update_btn.clicked.connect(self._on_check_update)
+        title_row.addWidget(self._check_update_btn)
+
+        self._update_status_lbl = QLabel("")
+        self._update_status_lbl.setStyleSheet(
+            f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
+        )
+        self._update_status_lbl.setWordWrap(True)
+        title_row.addWidget(self._update_status_lbl, stretch=1)
+
+        self._update_url: str = ""
 
         lang_row = QHBoxLayout()
         lang_row.setSpacing(6)
@@ -384,27 +395,6 @@ class DevicePage(QWidget):
         telemetry_row.addWidget(self._telemetry_toggle)
         telemetry_row.addStretch(1)
         content_layout.addLayout(telemetry_row)
-
-        content_layout.addSpacing(16)
-        content_layout.addWidget(DividerLine())
-        content_layout.addSpacing(10)
-
-        # ── Check for updates ──────────────────────────────────────────────────
-        update_row = QHBoxLayout()
-        self._check_update_btn = _styled_button(I18n.translate("ui", "check_for_updates"))
-        self._check_update_btn.setFixedWidth(220)
-        self._check_update_btn.clicked.connect(self._on_check_update)
-        update_row.addWidget(self._check_update_btn)
-
-        self._update_status_lbl = QLabel("")
-        self._update_status_lbl.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
-        )
-        self._update_status_lbl.setWordWrap(True)
-        update_row.addWidget(self._update_status_lbl, stretch=1)
-        content_layout.addLayout(update_row)
-
-        self._update_url: str = ""
 
         content_layout.addStretch(1)
 

@@ -8,7 +8,10 @@ Main application window — ArctisSonar GUI visual style.
 import logging
 
 from PySide6.QtCore import Qt, QUrl, Slot
-from PySide6.QtGui import QDesktopServices, QIcon
+from pathlib import Path
+
+from PySide6.QtGui import QDesktopServices, QIcon, QPainter, QPixmap
+from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -211,13 +214,14 @@ class QMainApp(QBaseDesktopApp):
         current_theme = THEMES.get(self._general_settings.theme, THEMES["steelseries"])
         current_accent = current_theme["ACCENT"]
 
-        # Top navigation buttons: Home, Equalizer, Headset, DAC, Settings
+        # Top navigation buttons: Home, Equalizer, Headset, DAC, Settings, Help
         top_pages_def = [
             (HOME_ICON,      I18n.translate('ui', 'channels'),  current_accent),
             (EQUALIZER_ICON, I18n.translate('ui', 'equalizer'), current_accent),
             (HEADPHONE_ICON, I18n.translate('ui', 'headset'),   current_accent),
             (GAMEDAC_ICON,   I18n.translate('ui', 'dac'),       current_accent),
             (SETTINGS_ICON,  I18n.translate('ui', 'settings'),  current_accent),
+            (HELP_ICON,      I18n.translate('ui', 'help'),      current_accent),
         ]
 
         self._sidebar_buttons: list[SidebarButton] = []
@@ -236,36 +240,61 @@ class QMainApp(QBaseDesktopApp):
 
         sidebar_layout.addStretch(1)
 
-        # Help button at the bottom
-        help_btn = SidebarButton(
-            svg_path=HELP_ICON,
-            label=I18n.translate('ui', 'help'),
-            icon_color_inactive=current_theme["TEXT_SECONDARY"],
-            icon_color_active=current_accent,
-            parent=sidebar,
-        )
-        help_idx = len(self._sidebar_buttons)
-        help_btn.clicked.connect(lambda checked=False, i=help_idx: self._switch_page(i))
-        sidebar_layout.addWidget(help_btn, alignment=Qt.AlignmentFlag.AlignHCenter)
-        self._sidebar_buttons.append(help_btn)
+        # Bottom block: logo + github + kofi + version, groupés serré
+        _bottom = QWidget()
+        _bottom.setStyleSheet("background: transparent;")
+        _bottom_layout = QVBoxLayout(_bottom)
+        _bottom_layout.setContentsMargins(0, 0, 0, 0)
+        _bottom_layout.setSpacing(3)
+        _bottom_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
 
-        sidebar_layout.addSpacing(help_btn.sizeHint().height())
+        # ASM logo cliquable → repo GitHub
+        _logo_path = Path(__file__).parent / 'images' / 'asm_logo.png'
+        _logo_px = QPixmap(str(_logo_path))
+        if not _logo_px.isNull():
+            logo_lbl = QLabel()
+            logo_lbl.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+            logo_lbl.setStyleSheet("background: transparent;")
+            logo_lbl.setPixmap(_logo_px.scaledToWidth(55, Qt.TransformationMode.SmoothTransformation))
+            logo_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
+            logo_lbl.setToolTip("Arctis Sound Manager on GitHub")
+            logo_lbl.mousePressEvent = lambda _: QDesktopServices.openUrl(QUrl("https://github.com/loteran/Arctis-Sound-Manager"))
+            _bottom_layout.addWidget(logo_lbl, alignment=Qt.AlignmentFlag.AlignHCenter)
 
-        # GitHub link
-        gh_btn = QPushButton(I18n.translate('ui', 'github_repo'))
-        gh_btn.setObjectName("ghLink")
-        gh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        gh_btn.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl("https://github.com/loteran/Arctis-Sound-Manager"))
-        )
-        sidebar_layout.addWidget(gh_btn, alignment=Qt.AlignmentFlag.AlignHCenter)
+        # Support label
+        support_lbl = QLabel("You like it ? Support me !")
+        support_lbl.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        support_lbl.setStyleSheet("color: #aaaaaa; font-size: 7pt; background: transparent;")
+        _bottom_layout.addWidget(support_lbl, alignment=Qt.AlignmentFlag.AlignHCenter)
+
+        # Ko-fi support button — bouton stylisé compact
+        kofi_btn = QPushButton("☕ Ko-fi")
+        kofi_btn.setObjectName("kofiBtn")
+        kofi_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        kofi_btn.setToolTip("Support me on Ko-fi")
+        kofi_btn.setStyleSheet("""
+            QPushButton#kofiBtn {
+                background-color: #FF5E5B;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 4px 10px;
+                font-size: 9pt;
+                font-weight: bold;
+            }
+            QPushButton#kofiBtn:hover { background-color: #e04f4c; }
+        """)
+        kofi_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://ko-fi.com/W7W31VXIVC")))
+        _bottom_layout.addWidget(kofi_btn, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         # Version label
         from arctis_sound_manager.utils import project_version
         ver_label = QLabel(f"v{project_version()}")
         ver_label.setObjectName("versionLabel")
         ver_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        sidebar_layout.addWidget(ver_label, alignment=Qt.AlignmentFlag.AlignHCenter)
+        _bottom_layout.addWidget(ver_label, alignment=Qt.AlignmentFlag.AlignHCenter)
+
+        sidebar_layout.addWidget(_bottom)
 
         root_layout.addWidget(sidebar)
 
