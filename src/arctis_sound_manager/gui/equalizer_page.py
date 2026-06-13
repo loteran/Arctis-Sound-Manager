@@ -314,6 +314,13 @@ class _ToggleWorker(QThread):
         # Restore streams to the correct sinks/sources for the new mode
         self._restore_streams(saved_si, saved_so, log)
         _update_routing_overrides(self._new_mode)
+        # Pull apps (Discord, …) back onto their override target now that the
+        # overrides have been remapped for the new mode.
+        try:
+            from arctis_sound_manager.pw_utils import reapply_routing_overrides
+            reapply_routing_overrides()
+        except Exception as exc:
+            log.warning("reapply overrides failed: %s", exc)
         try:
             subprocess.run(
                 ["notify-send", "-a", "Arctis EQ", "Arctis EQ",

@@ -559,6 +559,16 @@ class _ApplyWorker(QThread):
                     else:
                         log.warning("Sink %s not found, cannot restore streams", target)
 
+            # Re-apply saved routing overrides (e.g. Discord -> Arctis_Chat).
+            # Streams that were torn down during the restart — instead of merely
+            # moved — are not covered by the snapshot/restore above, and apps
+            # like Discord (Electron) do not re-enumerate their sink on their
+            # own. This waits for the virtual sinks to reappear, then moves each
+            # app's live sink-input back onto its intended channel.
+            if self._channel != "micro":
+                from arctis_sound_manager.pw_utils import reapply_routing_overrides
+                reapply_routing_overrides()
+
             self.done.emit(True)
         except subprocess.TimeoutExpired:
             log.error("_ApplyWorker timeout (channel=%s)", self._channel)
@@ -670,6 +680,13 @@ class _ApplyAllWorker(QThread):
 
             from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
             DbusWrapper.recreate_loopbacks_sync()
+
+            # Profile switches recreate the loopbacks but (unlike _ApplyWorker)
+            # do not snapshot/restore sink-inputs, so apps that fell off their
+            # channel during the restart — Discord especially — must be pulled
+            # back onto their override target explicitly.
+            from arctis_sound_manager.pw_utils import reapply_routing_overrides
+            reapply_routing_overrides()
 
             self.done.emit(True)
         except Exception as exc:

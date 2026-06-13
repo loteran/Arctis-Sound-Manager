@@ -119,6 +119,13 @@ class _ToggleWorker(QThread):
             self.msleep(1000)
 
         _update_routing_overrides(self._new_mode)
+        # Pull apps (Discord, …) back onto their override target now that the
+        # overrides have been remapped for the new mode.
+        try:
+            from arctis_sound_manager.pw_utils import reapply_routing_overrides
+            reapply_routing_overrides()
+        except Exception:
+            pass
         try:
             subprocess.run(
                 ['notify-send', '-a', 'Arctis EQ', 'Arctis EQ',

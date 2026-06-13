@@ -8,8 +8,123 @@ Used to detect and move apps like mpv/haruna that bypass PulseAudio.
 import json
 import logging
 import subprocess
+import time
+from pathlib import Path
 
 logger = logging.getLogger("pw_utils")
+
+OVERRIDES_FILE = Path.home() / ".config" / "arctis_manager" / "routing_overrides.json"
+
+# effect_input sinks are internal filter-chain nodes — apps should never
+# target them directly. Remap to the corresponding Arctis virtual sink so a
+# stale override still lands the app on a real, user-facing destination.
+_EFFECT_REMAP = {
+    "effect_input.sonar-game-eq": "Arctis_Game",
+    "effect_input.sonar-chat-eq": "Arctis_Chat",
+    "effect_input.sonar-media-eq": "Arctis_Media",
+}
+
+
+def _load_overrides() -> dict:
+    if OVERRIDES_FILE.exists():
+        try:
+            return json.loads(OVERRIDES_FILE.read_text())
+        except Exception:
+            pass
+    return {}
+
+
+def reapply_routing_overrides(timeout_s: float = 6.0) -> int:
+    """Re-apply saved routing overrides after a filter-chain restart.
+
+    When the filter-chain service restarts (EQ preset / profile / mode change),
+    the ``effect_input.sonar-*-eq`` nodes — and the ``Arctis_*`` pw-loopback
+    sinks that feed them — disappear and reappear with new PipeWire IDs. Apps
+    such as Discord (Electron) do not re-enumerate their sink when this happens
+    and can fall silent or fall back to the physical output until manually
+    reconnected.
+
+    This walks ``routing_overrides.json`` ({app_name: sink_name}), waits (with
+    retry up to *timeout_s*) for the target virtual sinks to reappear, then
+    moves each app's live PulseAudio sink-input back onto its intended sink.
+
+    It is idempotent and safe to call even when ``asm-router`` is also running:
+    moving a stream that is already on the right sink is a no-op. Returns the
+    number of streams that were moved.
+
+    Errors (pulsectl missing, sink never returns, …) are logged and skipped so
+    the caller is never broken by audio-routing issues.
+    """
+    overrides = _load_overrides()
+    if not overrides:
+        return 0
+
+    try:
+        import pulsectl  # type: ignore
+    except Exception as exc:
+        logger.debug("pulsectl unavailable, cannot reapply overrides: %s", exc)
+        return 0
+
+    # Resolve each override to the real sink name we want the app on, then wait
+    # for those sinks to exist again before attempting any move.
+    wanted_sinks = {_EFFECT_REMAP.get(name, name) for name in overrides.values()}
+
+    moved = 0
+    try:
+        with pulsectl.Pulse("asm-reapply-overrides") as pulse:
+            deadline = time.monotonic() + timeout_s
+            sinks: list = []
+            while True:
+                sinks = pulse.sink_list()
+                present = {s.name for s in sinks}
+                # Only wait on Arctis virtual sinks; a physical/external target
+                # that genuinely no longer exists must not block the retry loop.
+                pending = {
+                    n for n in wanted_sinks
+                    if n.startswith("Arctis_") and n not in present
+                }
+                if not pending or time.monotonic() >= deadline:
+                    if pending:
+                        logger.warning(
+                            "Virtual sinks did not reappear in %.1fs: %s",
+                            timeout_s, ", ".join(sorted(pending)),
+                        )
+                    break
+                time.sleep(0.2)
+
+            name_to_index = {s.name: s.index for s in sinks}
+            sink_inputs = pulse.sink_input_list()
+
+            for app_name, sink_name in overrides.items():
+                target_name = _EFFECT_REMAP.get(sink_name, sink_name)
+                target_idx = name_to_index.get(target_name)
+                if target_idx is None:
+                    logger.warning(
+                        "Override target '%s' for '%s' not found — skipping",
+                        target_name, app_name,
+                    )
+                    continue
+                for si in sink_inputs:
+                    si_app = si.proplist.get("application.name", "")
+                    if si_app != app_name:
+                        continue
+                    if si.sink == target_idx:
+                        continue
+                    try:
+                        pulse.sink_input_move(si.index, target_idx)
+                        moved += 1
+                        logger.info(
+                            "Reapplied override: '%s' -> %s", app_name, target_name,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "Failed to move '%s' -> %s: %s",
+                            app_name, target_name, exc,
+                        )
+    except Exception as exc:
+        logger.warning("reapply_routing_overrides failed: %s", exc)
+
+    return moved
 
 
 def _pw_dump() -> list:
