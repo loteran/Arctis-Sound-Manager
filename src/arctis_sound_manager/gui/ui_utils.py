@@ -10,6 +10,19 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
 
 ICON_PATH = Path(__file__).parent / 'images' / 'steelseries_logo.svg'
+_LOGO_PATH = Path(__file__).parent / 'images' / 'asm_logo.png'
+
+
+def get_logo_label(height: int = 40):
+    """Return a QLabel displaying the ASM logo scaled to *height* logical pixels."""
+    from PySide6.QtWidgets import QLabel
+    lbl = QLabel()
+    lbl.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+    lbl.setStyleSheet("background: transparent;")
+    px = QPixmap(str(_LOGO_PATH))
+    if not px.isNull():
+        lbl.setPixmap(px.scaledToHeight(height, Qt.TransformationMode.SmoothTransformation))
+    return lbl
 
 def get_icon_pixmap(icon_path: Path = ICON_PATH, color: str = '#ffffff') -> QPixmap:
     brush_color = QColor(color)

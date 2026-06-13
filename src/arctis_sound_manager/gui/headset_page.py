@@ -59,12 +59,9 @@ class HeadsetPage(QWidget):
         layout.setContentsMargins(36, 28, 36, 36)
         layout.setSpacing(0)
 
-        # Title
-        app_title = QLabel("Arctis Sound Manager")
-        app_title.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 28pt; font-weight: bold; background: transparent;"
-        )
-        layout.addWidget(app_title)
+        # App logo
+        from arctis_sound_manager.gui.ui_utils import get_logo_label
+        layout.addWidget(get_logo_label(height=40))
         layout.addSpacing(28)
 
         # Devices section

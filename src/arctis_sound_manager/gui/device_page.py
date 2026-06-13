@@ -185,11 +185,8 @@ class DevicePage(QWidget):
         title_row = QHBoxLayout()
         title_row.setSpacing(16)
 
-        app_title = QLabel("Arctis Sound Manager")
-        app_title.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 28pt; font-weight: bold; background: transparent;"
-        )
-        title_row.addWidget(app_title, stretch=1)
+        from arctis_sound_manager.gui.ui_utils import get_logo_label
+        title_row.addWidget(get_logo_label(height=40), stretch=1)
 
         lang_row = QHBoxLayout()
         lang_row.setSpacing(6)

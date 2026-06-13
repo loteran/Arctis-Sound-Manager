@@ -649,12 +649,9 @@ class HomePage(QWidget):
         root.setSpacing(0)
         root.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        # ── App title ─────────────────────────────────────────────────────────
-        self._app_title = QLabel("Arctis Sound Manager")
-        self._app_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        self._app_title.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 28pt; font-weight: bold; background: transparent;"
-        )
+        # ── App logo ──────────────────────────────────────────────────────────
+        from arctis_sound_manager.gui.ui_utils import get_logo_label
+        self._app_title = get_logo_label(height=40)
         root.addWidget(self._app_title)
         root.addSpacing(8)
 
