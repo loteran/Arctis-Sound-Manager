@@ -167,7 +167,7 @@ class PresetImportDialog(QDialog):
     # ── Internal ──────────────────────────────────────────────────────────────
 
     def _set_status(self, msg: str, error: bool = False) -> None:
-        color = "#e05252" if error else TEXT_SECONDARY
+        color = "#e05252" if error else _theme.c("TEXT_SECONDARY")
         self._status.setStyleSheet(
             f"color: {color}; font-size: 10pt; background: transparent;"
         )
@@ -179,10 +179,15 @@ class PresetImportDialog(QDialog):
         )
         if path:
             try:
-                data = json.loads(Path(path).read_text(encoding="utf-8"))
-                if "name" not in data:
-                    data["name"] = Path(path).stem
-                self._finalize_import(data)
+                raw = json.loads(Path(path).read_text(encoding="utf-8"))
+                # Accept both wrapper format {"name":…,"data":{…}} and raw preset data
+                if "data" in raw:
+                    info = raw
+                else:
+                    info = {"name": Path(path).stem, "data": raw}
+                if "name" not in info:
+                    info["name"] = Path(path).stem
+                self._finalize_import(info)
             except (json.JSONDecodeError, KeyError) as e:
                 self._set_status(f"{_t('import_invalid_url')}: {e}", error=True)
 
