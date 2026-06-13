@@ -1409,7 +1409,6 @@ class HomePage(QWidget):
     # ── Drag & drop stream routing ────────────────────────────────────────────
 
     def _on_stream_drop(self, si_index: int, app_name: str, pid: int, target_sink_name: str):
-        import subprocess
         pulse = self._get_pulse()
         if pulse is None:
             return
@@ -1425,11 +1424,6 @@ class HomePage(QWidget):
             overrides = _load_overrides()
             overrides[app_name] = target_sink_name
             _save_overrides(overrides)
-            subprocess.Popen([
-                "pw-metadata", "0",
-                "default.configured.audio.sink",
-                json.dumps({"name": target_sink_name}),
-            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception as exc:
             logger.warning("Error moving stream: %s", exc)
 
