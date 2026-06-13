@@ -56,6 +56,7 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
     - [CLI equivalents](#cli-equivalents)
     - [Tips for a good report](#tips-for-a-good-report)
   - [Development](#development)
+  - [Project structure](#project-structure)
   - [💬 Share your experience](#-share-your-experience)
   - [Contributors](#contributors)
 
@@ -716,56 +717,107 @@ python src/arctis_sound_manager/scripts/gui.py --no-enforce-systemd  # GUI
 python src/arctis_sound_manager/scripts/video_router.py    # media router
 ```
 
-<details>
-<summary>Project structure</summary>
+---
+
+## Project structure
 
 ```
 src/arctis_sound_manager/
-├── scripts/
-│   ├── daemon.py          # asm-daemon: device manager service
-│   ├── gui.py             # asm-gui: graphical interface
-│   ├── video_router.py    # asm-router: media auto-routing service
-│   ├── cli.py             # asm-cli: setup utilities (udev, desktop, tools)
-│   └── setup.py           # asm-setup: post-install automation
-├── gui/                   # PySide6 UI
-│   ├── main_app.py            # Main window + sidebar navigation
-│   ├── home_page.py           # Audio mixer (Game/Chat/Media/Output cards)
-│   ├── headset_page.py        # Device info and live status
-│   ├── device_page.py         # General settings (startup toggle, language)
-│   ├── equalizer_page.py      # EQ mode toggle (Custom / Sonar) + 10-band sliders
-│   ├── sonar_page.py          # Sonar EQ (Game/Chat/Micro tabs, presets, Spatial Audio)
-│   ├── dac_page.py            # GameDAC OLED screen settings (clock, weather, EQ)
-│   ├── eq_curve_widget.py     # Interactive parametric EQ curve (biquad RBJ)
-│   ├── anc_widget.py          # ANC / Transparent mode control
-│   ├── help_page.py           # Built-in user manual (EN/FR/ES)
-│   ├── systray_app.py         # System tray icon + single-instance IPC
-│   ├── presets/               # Bundled Sonar presets (Game/Chat/Mic)
-│   ├── theme.py               # Theme engine (built-in + user themes, QSS generation)
-│   └── …                      # dialogs, reusable widgets, D-Bus wrapper
-├── core.py                # CoreEngine: USB lifecycle, status polling, device init
-├── config.py              # Device YAML parsing + settings definitions
-├── pactl.py               # PulseAudio/PipeWire sink management
-├── loopback_manager.py    # Dynamic pw-loopback virtual sinks (Game/Chat/Media)
-├── sonar_to_pipewire.py   # PipeWire filter-chain (EQ) config generator
-├── device_state.py        # Shared physical-node state for routing
-├── dbus_service.py        # D-Bus interfaces (Settings / Status / Config)
-├── profile_manager.py     # Audio profile: snapshot, save/load/apply
-├── oled_renderer.py       # OLED screen image renderer (PIL)
-├── oled_protocol.py       # OLED HID framing (per-device interface/report id)
-├── oled_manager.py        # OLED scroll/animation loop + weather
-├── weather_service.py     # Weather fetch for the OLED (Open-Meteo)
-├── i18n.py                # Translation singleton with EN fallback
-├── lang/                  # Translation files (.ini, one per language)
-└── devices/               # Per-device configuration YAMLs
+│
+├── scripts/                       # Entry points (installed as CLI commands)
+│   ├── daemon.py                  # asm-daemon  — device manager service
+│   ├── gui.py                     # asm-gui     — graphical interface
+│   ├── video_router.py            # asm-router  — automatic media routing
+│   ├── cli.py                     # asm-cli     — udev / desktop / diagnose tools
+│   └── setup.py                   # asm-setup   — post-install automation
+│
+├── gui/                           # PySide6 user interface
+│   ├── main_app.py                # Main window + sidebar navigation
+│   ├── home_page.py               # Audio mixer (Game / Chat / Media / Output cards)
+│   ├── sonar_page.py              # Sonar EQ — presets, Spatial Audio, macro sliders
+│   ├── equalizer_page.py          # Custom EQ mode toggle + 10-band sliders
+│   ├── headset_page.py            # Device info and live status (battery, mic, ANC)
+│   ├── device_page.py             # App settings (language, startup, update check)
+│   ├── dac_page.py                # GameDAC OLED control (clock, weather, brightness)
+│   ├── help_page.py               # Built-in user manual (EN / FR / ES)
+│   ├── theme.py                   # Theme engine — built-in + user themes, QSS
+│   ├── theme_editor_page.py       # Custom theme editor with live preview
+│   ├── eq_curve_widget.py         # Interactive parametric EQ curve (biquad RBJ)
+│   ├── sonar_toggle_widget.py     # Sonar ↔ custom EQ toggle + spatial audio switch
+│   ├── anc_widget.py              # ANC / Transparent mode control
+│   ├── profile_bar.py             # Audio profile quick-switch bar
+│   ├── systray_app.py             # System tray icon + single-instance IPC
+│   ├── tray_eq_presets.py         # Tray menu EQ preset switcher
+│   ├── status_widget.py           # Headset status widget (battery, mic, sidetone)
+│   ├── settings_widget.py         # Settings panel (theme, language, paths)
+│   ├── preset_import_dialog.py    # Preset import (ASM link / SteelSeries link / file)
+│   ├── preset_export_dialog.py    # Preset export (copy link / save file / publish)
+│   ├── preset_share.py            # Preset sharing helpers (deep link encode/decode)
+│   ├── report_dialog.py           # One-click bug report (gist + GitHub issue)
+│   ├── system_deps_dialog.py      # Self-healing deps check dialog
+│   ├── install_dialogs.py         # Package install confirmation dialogs
+│   ├── udev_dialog.py             # udev rules install / reload dialog
+│   ├── first_run_dialog.py        # First-run wizard (udev, services, HRIR)
+│   ├── telemetry_dialog.py        # Anonymous telemetry opt-in dialog
+│   ├── dbus_wrapper.py            # Synchronous D-Bus client (daemon ↔ GUI bridge)
+│   ├── components.py              # Reusable UI components (cards, sliders, buttons)
+│   ├── ui_utils.py                # UI helpers (DPI scaling, icon loading)
+│   ├── base_app.py                # Shared QApplication base
+│   ├── main_app_proto_widget.py   # Prototype widget base for pages
+│   └── presets/                   # Bundled Sonar presets (Game / Chat / Mic)
+│
+├── core.py                        # CoreEngine — USB lifecycle, polling, device init
+├── config.py                      # Device YAML parsing + settings definitions
+├── constants.py                   # XDG-compliant path constants (config, data, lang)
+├── device_state.py                # Shared physical-node names for audio routing
+├── dbus_service.py                # D-Bus interfaces (Settings / Status / Config)
+├── loopback_manager.py            # Dynamic pw-loopback sinks (Arctis_Game/Chat/Media)
+├── sonar_to_pipewire.py           # PipeWire filter-chain (EQ) config generator
+├── pw_utils.py                    # Native PipeWire stream management + routing overrides
+├── pactl.py                       # PulseAudio / PipeWire sink and stream helpers
+├── service_control.py             # Single entry point for systemctl / dinitctl
+├── profile_manager.py             # Audio profiles — snapshot, save, load, apply
+├── settings.py                    # Persistent settings (JSON, XDG-compliant)
+├── preset_sync.py                 # EQ preset sync (cloud ↔ local)
+├── eq_types.py                    # EQ band data types (EqBand, BandType…)
+├── oled_renderer.py               # OLED image renderer (PIL)
+├── oled_protocol.py               # OLED HID framing (per-device interface / report id)
+├── oled_manager.py                # OLED scroll / animation loop + weather clock
+├── weather_service.py             # Weather fetch for the OLED (Open-Meteo)
+├── hrir_catalog.py                # HRIR profile catalog (57 bundled profiles)
+├── bug_reporter.py                # Diagnostic collector for bug reports
+├── diagnose.py                    # asm-cli diagnose — full system diagnostic dump
+├── system_deps_checker.py         # Startup self-healing dependency checker
+├── udev_rules.py                  # udev rule generation (SteelSeries USB rules)
+├── udev_checker.py                # udev rule presence / content verifier
+├── update_checker.py              # GitHub release update checker
+├── lang_updater.py                # Online translation updater (GitHub → ~/.config)
+├── telemetry.py                   # Anonymous opt-in usage telemetry
+├── autostart.py                   # Autostart management (systemd / XDG / DE-specific)
+├── init_system.py                 # Init system detection (systemd vs dinit)
+├── systemd.py                     # systemd user unit helpers
+├── status_parser_fn.py            # USB HID status frame parser (battery, mic, ANC…)
+├── usb_devices_monitor.py         # USB hotplug monitor (pyudev)
+├── cli_tools.py                   # Shared CLI utilities
+├── log_setup.py                   # Logging configuration (ARCTIS_LOG_LEVEL)
+├── i18n.py                        # Translation singleton with EN fallback
+├── utils.py                       # Misc helpers
+├── lang/                          # Bundled translation files (.ini, one per language)
+└── devices/                       # Per-device configuration YAMLs
 
 scripts/
-├── install.sh             # Main installer (source installs)
-├── distrobox/             # Distrobox installers (Bazzite, SteamOS, Silverblue)
-├── reverse-engineering/   # USB capture + opcode-decode helpers (new devices)
-├── pipewire/              # PipeWire config templates
-└── setup-surround.sh      # Standalone virtual surround setup
+├── install.sh                     # Source installer
+├── uninstall.sh                   # Interactive uninstaller (pipx / pkg / all)
+├── setup-surround.sh              # Standalone virtual surround setup
+├── distrobox/                     # Distrobox scripts (Bazzite, SteamOS, Silverblue)
+├── pipewire/                      # PipeWire config templates
+└── reverse-engineering/           # USB capture + opcode-decode helpers (new devices)
+
+nix/                               # NixOS module
+├── module.nix                     # NixOS module (udev, systemd, filter-chain, LADSPA)
+├── package.nix                    # Nix derivation
+└── README.md                      # NixOS-specific documentation
 ```
-</details>
 
 ---
 
