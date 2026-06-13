@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.73] - 13 June 2026
+
+### Fixed
+
+- **USB autosuspend not disabled for already-connected dongles** — `udevadm trigger` does not retroactively apply sysfs attributes to USB interfaces that are already active when the udev rule is installed or updated. Devices plugged in before the update kept autosuspend enabled, causing `[Errno 19] No such device` disconnects every 2–3 minutes and the GUI to never show the headset as Connected. After `udevadm trigger`, ASM now also writes `on` directly to `/sys/bus/usb/devices/*/power/control` for every connected SteelSeries device via sysfs, taking effect immediately without requiring a replug. (#80)
+- **Switching an app back to Output (HDMI) channel silenced audio** — clicking G/C/M in the mixer called `pw-metadata 0 default.configured.audio.sink` to change the PipeWire global default sink. This caused the `effect_input.sonar-output-eq` filter-chain node to re-target its output to the newly chosen virtual sink instead of HDMI; switching back to O routed the stream into the EQ chain whose physical output had been silently redirected. The global default must never be changed for per-app routing — `pulse.sink_input_move()` alone is sufficient and is now the only call made.
+- **`NameError: TEXT_SECONDARY` crash after successful preset import via link** — `_set_status()` in the import dialog used the bare constant `TEXT_SECONDARY` instead of `_theme.c("TEXT_SECONDARY")`, crashing the dialog after every successful link import at the status update step.
+- **`"Invalid or unsupported link: 'data'"` when importing an ASM JSON preset file** — ASM-exported JSON files have the format `{"parametricEQ": {…}}` with no top-level `"data"` key, but `_finalize_import()` unconditionally accessed `info["data"]`, raising `KeyError: 'data'` which was caught and displayed as the link error. The file importer now detects the format and wraps raw preset data automatically.
+
 ## [1.1.72] - 13 June 2026
 
 ### Added
