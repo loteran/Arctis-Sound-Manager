@@ -618,6 +618,7 @@ class CoreEngine:
             has_oled = (
                 device_config.status is not None
                 and 'gamedac' in device_config.status.representation
+                and device_config.oled is not None
             )
             if has_oled:
                 self.oled_manager = OledManager(self)
