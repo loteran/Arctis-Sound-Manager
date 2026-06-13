@@ -193,18 +193,36 @@ class PulseAudioManager:
         'effect_input.virtual-surround-7.1-hesuvi',
     )
 
+    _REDIRECT_MAX_ATTEMPTS = 5
+    _REDIRECT_RETRY_DELAY_S = 0.4
+
     def redirect_audio(self, output_sink_node_name: str) -> None:
         self.logger.info(f'Redirecting audio to {output_sink_node_name}...')
 
-        sinks = self.sink_list_wrapper()
-        sink = next(
-            (s for s in sinks
-             if s.proplist.get('node.nick', '') == output_sink_node_name
-             or s.proplist.get('node.name', '') == output_sink_node_name),
-            None,
-        )
+        sinks: list[TypedPulseSinkInfo] = []
+        sink = None
+        for attempt in range(1, self._REDIRECT_MAX_ATTEMPTS + 1):
+            sinks = self.sink_list_wrapper()
+            sink = next(
+                (s for s in sinks
+                 if s.proplist.get('node.nick', '') == output_sink_node_name
+                 or s.proplist.get('node.name', '') == output_sink_node_name),
+                None,
+            )
+            if sink is not None:
+                break
+            if attempt < self._REDIRECT_MAX_ATTEMPTS:
+                self.logger.debug(
+                    f'Sink {output_sink_node_name} not yet visible (attempt {attempt}/'
+                    f'{self._REDIRECT_MAX_ATTEMPTS}), retrying in {self._REDIRECT_RETRY_DELAY_S}s...'
+                )
+                time.sleep(self._REDIRECT_RETRY_DELAY_S)
+
         if sink is None:
-            self.logger.error(f'Failed to find sink {output_sink_node_name} to set it as default')
+            self.logger.warning(
+                f'Sink {output_sink_node_name} not found after {self._REDIRECT_MAX_ATTEMPTS} '
+                f'attempt(s) — loopbacks may not have registered yet or failed to start'
+            )
             return
 
         try:

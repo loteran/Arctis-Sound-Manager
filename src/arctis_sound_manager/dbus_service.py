@@ -106,6 +106,15 @@ class ArctisManagerDbusStatusService(ServiceInterface):
                     entry['value'] = online_val
                     entry['type'] = 'label'
 
+        # Devices with no online_status block (e.g. always-connected wired
+        # headsets like the Nova 3) produce an empty result dict because their
+        # representation is also empty. When the daemon has successfully
+        # initialised the device (_device_ready=True), inject a minimal
+        # "online" sentinel so the GUI shows Connected rather than
+        # "No device detected".
+        if not result and self.core_engine._device_ready:
+            result = {'headset': {'headset_power_status': {'value': 'online', 'type': 'label'}}}
+
         return json.dumps(result)
 
 

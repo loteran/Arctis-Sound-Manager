@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.70] - 13 June 2026
+
+### Fixed
+
+- **Device shown as "No device detected" in GUI for always-connected headsets** — devices without an `online_status` block (e.g. Arctis Nova 3 family) produced an empty D-Bus status dict even after the daemon had successfully initialised them, causing the GUI to display "No device detected" indefinitely. A sentinel `headset_power_status: online` is now injected when `_device_ready` is True and no status representation is defined. (#80)
+- **"Failed to find sink Arctis_Game" error at startup** — `redirect_audio` was called immediately after spawning the pw-loopback processes, before PipeWire had registered the virtual sink. The method now retries up to 5 times (× 0.4 s) before giving up, eliminating the race condition on normal hardware. The final failure is now logged as WARNING instead of ERROR since the sink may legitimately be absent if loopback creation failed upstream. (#80)
+
 ## [1.1.69] - 13 June 2026
 
 ### Fixed
