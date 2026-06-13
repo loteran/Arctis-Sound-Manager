@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.72] - 13 June 2026
+
+### Added
+
+- **Line Out controls for Nova Pro Wireless and Nova Elite** — the physical 3.5 mm LINE OUT jack on the GameDAC Gen 2 station is now configurable directly from the ASM DAC tab. A new **Station Output** section appears above the OLED options and is automatically hidden for headsets without a station DAC. The section contains:
+  - **Line Out Mode** button group: *Speaker* (amplified output for passive speakers) or *Stream* (digital controlled output).
+  - **Left / Right / Aux volume** sliders (0–100 %) — visible only when mode is set to *Stream*, using a single multi-value HID command `[0x47, left, right, aux]` per adjustment.
+- **OLED display support for Nova Elite** — the GameDAC Gen 2 station screen (custom time, battery, EQ preset, weather, etc.) is now activated for the Nova Elite. Parameters match the Nova Pro Wireless (interface 4, report_id `0x06`, wvalue `0x0300`, 128×64 px) as both use the same hardware; a USB capture from a Nova Elite user will confirm if adjustments are needed.
+
+### Fixed
+
+- **Nova Elite settings invisible in GUI** — all 10 settings using `type: discrete_map` (ANC mode, EQ preset, screensaver, line out, Bluetooth auto-mute, home screen view/options) were silently skipped by the config loader because `discrete_map` is not a valid `SettingType`. All corrected to `button_group`, which is the standard type used by every other YAML for this pattern.
+- **Nova Elite YAML contained speculative protocol values** — the command prefix (`0x06`), command interface (`[3, 0]`), status request (`0x06b0`), and response mappings were copied from the Nova Pro Wireless without hardware verification. All values have been rewritten from a real USB capture (elegos/Linux-Arctis-Manager upstream v2.4.1): prefix `0x01`, interface `[0, 3]`, 46-command `device_init`, 23 response mapping entries, correct `headset_battery_charge` range (0–100 instead of 0–8).
+- **OledManager activated on Nova Elite with wrong parameters** — adding `gamedac` to the Nova Elite status representation triggered `OledManager` using Nova Pro Wireless defaults (wrong interface/wvalue), which could send frames to the wrong USB endpoint. `OledManager` now requires an explicit `oled:` section in the device YAML to activate.
+
+### Changed
+
+- **Multi-value `update_sequence` support** — `CoreEngine._resolve_update_sequence()` now resolves `'settings.<name>'` tokens in addition to `'value'` and raw integers, enabling a single slider change to send a complete multi-parameter HID command referencing the current values of sibling settings.
+- **Conditional widget visibility** — `QSettingsWidget` gains `_apply_conditional_visibility()`, evaluated after each panel refresh and each user interaction. Settings with `visible_when: {key: value}` are automatically shown or hidden in real time based on other settings in the same section (e.g. stream volume sliders appear only when Line Out Mode is *Stream*).
+
 ## [1.1.71] - 13 June 2026
 
 ### Added
