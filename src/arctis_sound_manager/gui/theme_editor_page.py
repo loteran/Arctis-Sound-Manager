@@ -390,11 +390,15 @@ class ThemeEditorPage(QWidget):
                 I18n.translate("ui", "theme_name_placeholder"),
             )
             return
-        theme_id = save_user_theme(
-            label=name,
-            colors=self._current_colors(),
-            theme_id=self._editing_id,
-        )
+        try:
+            theme_id = save_user_theme(
+                label=name,
+                colors=self._current_colors(),
+                theme_id=self._editing_id,
+            )
+        except OSError as exc:
+            QMessageBox.critical(self, I18n.translate("ui", "error"), str(exc))
+            return
         set_preview_colors(None)
         self.sig_saved.emit(theme_id)
 

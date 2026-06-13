@@ -2,7 +2,10 @@
 # Copyright (C) 2026 loteran — modifications
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+import os
 from pathlib import Path
+
+_XDG_CONFIG = Path(os.environ.get('XDG_CONFIG_HOME') or (Path.home() / '.config'))
 
 # /DBus
 DBUS_BUS_NAME = 'name.giacomofurlan.ArctisManager.Next'
@@ -20,8 +23,8 @@ DBUS_CONFIG_OBJECT_PATH = f'{DBUS_OBJECT_BASE_PATH}/Config'
 
 # Systemd
 SYSTEMD_SERVICE_NAME = 'arctis-manager.service'
-HOME_SYSTEMD_SERVICE_FOLDER = Path.home() / '.config' / 'systemd' / 'user'
-HOME_DINIT_SERVICE_FOLDER = Path.home() / '.config' / 'dinit.d'
+HOME_SYSTEMD_SERVICE_FOLDER = _XDG_CONFIG / 'systemd' / 'user'
+HOME_DINIT_SERVICE_FOLDER = _XDG_CONFIG / 'dinit.d'
 # ./Systemd
 
 PULSE_MEDIA_NODE_NAME = 'Arctis_Game'
@@ -29,11 +32,11 @@ PULSE_CHAT_NODE_NAME = 'Arctis_Chat'
 
 STEELSERIES_VENDOR_ID = 0x1038
 
-SETTINGS_FOLDER = Path.home() / '.config' / 'arctis_manager' / 'settings'
+SETTINGS_FOLDER = _XDG_CONFIG / 'arctis_manager' / 'settings'
 
-HOME_LANG_FOLDER = Path.home() / '.config' / 'arctis_manager' / 'lang'
+HOME_LANG_FOLDER = _XDG_CONFIG / 'arctis_manager' / 'lang'
 
-HOME_CONFIG_FOLDER = Path.home() / '.config' / 'arctis_manager' / 'devices'
+HOME_CONFIG_FOLDER = _XDG_CONFIG / 'arctis_manager' / 'devices'
 SRC_CONFIG_FOLDER = Path(__file__).parent / 'devices'
 
 DEVICES_CONFIG_FOLDER: list[Path] = [HOME_CONFIG_FOLDER, SRC_CONFIG_FOLDER]

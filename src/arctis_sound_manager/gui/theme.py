@@ -5,6 +5,7 @@
 
 import configparser
 import logging
+import os
 from pathlib import Path
 
 THEMES = {
@@ -80,7 +81,7 @@ COLOR_LABEL_KEYS: dict[str, str] = {
     "COLOR_AUX": "theme_color_aux", "COLOR_HDMI": "theme_color_hdmi",
 }
 
-USER_THEMES_DIR = Path.home() / ".config" / "arctis-sound-manager" / "themes"
+USER_THEMES_DIR = Path(os.environ.get('XDG_CONFIG_HOME') or (Path.home() / '.config')) / "arctis-sound-manager" / "themes"
 BUILTIN_THEME_IDS = frozenset(THEMES)
 PREVIEW_THEME_ID = "__preview__"
 
@@ -172,13 +173,17 @@ def save_user_theme(label: str, colors: dict[str, str], theme_id: str | None = N
             tid = f"{base}-{counter}"
             counter += 1
         theme_id = tid
-    USER_THEMES_DIR.mkdir(parents=True, exist_ok=True)
     parser = configparser.ConfigParser()
     parser.optionxform = str
     parser["theme"] = {"name": label}
     parser["colors"] = {k: colors.get(k, THEMES["steelseries"].get(k, "#000000")) for k in THEME_KEYS}
-    with open(USER_THEMES_DIR / f"{theme_id}.ini", "w", encoding="utf-8") as fh:
-        parser.write(fh)
+    try:
+        USER_THEMES_DIR.mkdir(parents=True, exist_ok=True)
+        with open(USER_THEMES_DIR / f"{theme_id}.ini", "w", encoding="utf-8") as fh:
+            parser.write(fh)
+    except OSError as exc:
+        logging.error("Cannot save theme %s to %s: %s", theme_id, USER_THEMES_DIR, exc)
+        raise OSError(f"Cannot save theme: {exc}") from exc
     reload_user_themes()
     return theme_id
 
@@ -555,4 +560,4 @@ APP_QSS = build_qss("steelseries")
 try:
     reload_user_themes()
 except Exception:
-    pass
+    logging.warning("Failed to load user themes at startup", exc_info=True)
