@@ -247,6 +247,55 @@ def loopback_link_target(playback_name: str, data: list | None = None) -> str | 
         return None
 
 
+def relink_loopback_playback(playback_name: str, target_name: str, data: list | None = None) -> bool:
+    """Relink the playback side of a pw-loopback to *target_name* via pw-metadata.
+
+    Instructs WirePlumber to reconnect *playback_name* to *target_name* by
+    writing ``target.node`` in PipeWire metadata — no process is killed or
+    restarted.  This keeps the corresponding PA sink (e.g. ``Arctis_Chat``)
+    alive in applications like Discord that enumerate devices once at startup.
+
+    Returns True when the pw-metadata command succeeds, False if either node
+    is not found or the command fails.
+    """
+    try:
+        if data is None:
+            data = _pw_dump()
+
+        playback_id: int | None = None
+        target_id: int | None = None
+
+        for obj in data:
+            if not obj.get("type", "").endswith("Node"):
+                continue
+            props = obj.get("info", {}).get("props", {})
+            name = props.get("node.name", "")
+            if name == playback_name:
+                playback_id = obj["id"]
+            elif name == target_name:
+                target_id = obj["id"]
+
+        if playback_id is None:
+            logger.warning("relink_loopback_playback: '%s' not found in pw-dump", playback_name)
+            return False
+        if target_id is None:
+            logger.warning("relink_loopback_playback: target '%s' not found in pw-dump", target_name)
+            return False
+
+        subprocess.run(
+            ["pw-metadata", str(playback_id), "target.node", str(target_id)],
+            check=True, timeout=3, capture_output=True,
+        )
+        logger.info(
+            "relink_loopback_playback: '%s' → '%s' (node %d → %d)",
+            playback_name, target_name, playback_id, target_id,
+        )
+        return True
+    except Exception as exc:
+        logger.warning("relink_loopback_playback failed: %s", exc)
+        return False
+
+
 def move_native_stream(stream_node_id: int, target_sink_name: str, data: list | None = None) -> bool:
     """Move a native PipeWire stream to target_sink_name using pw-metadata."""
     if data is None:
