@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Nova Elite YAML contained speculative protocol values** — the command prefix (`0x06`), command interface (`[3, 0]`), status request (`0x06b0`), and response mappings were copied from the Nova Pro Wireless without hardware verification. All values have been rewritten from a real USB capture (elegos/Linux-Arctis-Manager upstream v2.4.1): prefix `0x01`, interface `[0, 3]`, 46-command `device_init`, 23 response mapping entries, correct `headset_battery_charge` range (0–100 instead of 0–8).
 - **OledManager activated on Nova Elite with wrong parameters** — adding `gamedac` to the Nova Elite status representation triggered `OledManager` using Nova Pro Wireless defaults (wrong interface/wvalue), which could send frames to the wrong USB endpoint. `OledManager` now requires an explicit `oled:` section in the device YAML to activate.
 
+### Fixed (NixOS)
+
+- **Nix flake eval error after v1.1.69** — the `lib.optionalAttrs { … } // { … }` expression in `module.nix` was missing enclosing parentheses, causing the attribute-set merge (`//`) to be parsed as a top-level expression and the flake to fail evaluation entirely. (#79, PR #83 — thanks @Svenum!)
+- **`lib.mkForce` required for `LADSPA_PATH` on filter-chain** — nixpkgs' pipewire module already sets `LADSPA_PATH` on the filter-chain service, silently overriding the plain assignment added in v1.1.69. The value is now set with `lib.mkForce` to guarantee it takes effect. (#79, PR #83 — thanks @Svenum!)
+- **GUI crash on Nix with `ModuleNotFoundError: theme_editor_page`** — `theme_editor_page.py` (Theme Editor page) was never committed to git. Any Nix build — which fetches only tracked files — therefore produced a package missing this module, crashing `asm-gui` at startup with an `ImportError`. File is now committed. (#79)
+
 ### Changed
 
 - **Multi-value `update_sequence` support** — `CoreEngine._resolve_update_sequence()` now resolves `'settings.<name>'` tokens in addition to `'value'` and raw integers, enabling a single slider change to send a complete multi-parameter HID command referencing the current values of sibling settings.
