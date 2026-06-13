@@ -386,3 +386,41 @@ class DbusWrapper(QObject):
         except Exception as e:
             DbusWrapper.logger.error('Error in recreate_loopbacks_sync: %s', e)
             return False
+
+    @staticmethod
+    async def _recreate_loopbacks_game_media_async() -> None:
+        dbus_bus = None
+        try:
+            dbus_bus = await MessageBus().connect()
+            await dbus_bus.call(Message(
+                destination=DBUS_BUS_NAME,
+                path=DBUS_CONFIG_OBJECT_PATH,
+                interface=DBUS_CONFIG_INTERFACE_NAME,
+                member='RecreateLoopbacksGameMedia',
+                message_type=MessageType.METHOD_CALL,
+            ))
+        except Exception as e:
+            DbusWrapper.logger.error('Error in recreate_loopbacks_game_media: %s', e)
+        finally:
+            if dbus_bus is not None:
+                dbus_bus.disconnect()
+
+    @staticmethod
+    def recreate_loopbacks_game_media() -> None:
+        """Recreate only Game and Media loopbacks (Chat is preserved).
+        Fire-and-forget, off the UI thread."""
+        DbusWrapper._executor.submit(
+            lambda: asyncio.run(DbusWrapper._recreate_loopbacks_game_media_async())
+        )
+
+    @staticmethod
+    def recreate_loopbacks_game_media_sync() -> bool:
+        """Synchronous variant: recreate Game+Media only, Chat stays alive.
+        Keeps Arctis_Chat in Discord's device list across filter-chain restarts.
+        MUST be called off the Qt UI thread."""
+        try:
+            asyncio.run(DbusWrapper._recreate_loopbacks_game_media_async())
+            return True
+        except Exception as e:
+            DbusWrapper.logger.error('Error in recreate_loopbacks_game_media_sync: %s', e)
+            return False

@@ -499,11 +499,12 @@ class _ApplyWorker(QThread):
                 return
 
             # The Output channel has no Arctis_* loopback of its own; every other
-            # channel feeds one, so have the daemon recreate them fresh now that
-            # the EQ node exists (Discord-safe relink — see comment above).
+            # channel feeds one. Recreate Game+Media only — Chat (always 2ch)
+            # auto-reconnects to its EQ node without being recreated, which keeps
+            # Arctis_Chat alive in Discord's device list across filter-chain restarts.
             if self._channel != "output":
                 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
-                DbusWrapper.recreate_loopbacks_sync()
+                DbusWrapper.recreate_loopbacks_game_media_sync()
 
             # Wait for any saved Arctis_* target sinks to come back before
             # attempting move-sink-input (issue #22).
@@ -679,7 +680,7 @@ class _ApplyAllWorker(QThread):
                     log.warning("%s did not appear", node)
 
             from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
-            DbusWrapper.recreate_loopbacks_sync()
+            DbusWrapper.recreate_loopbacks_game_media_sync()
 
             # Profile switches recreate the loopbacks but (unlike _ApplyWorker)
             # do not snapshot/restore sink-inputs, so apps that fell off their

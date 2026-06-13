@@ -51,6 +51,18 @@ class ArctisManagerDbusConfigService(ServiceInterface):
         )
         return True
 
+    @method('RecreateLoopbacksGameMedia')
+    async def recreate_loopbacks_game_media(self) -> 'b':  # type: ignore
+        """Recreate only Game and Media loopbacks, leaving Chat intact.
+
+        Chat (always 2ch) auto-reconnects after filter-chain restart without
+        being recreated, so Arctis_Chat stays alive in Discord's device list.
+        """
+        await asyncio.get_running_loop().run_in_executor(
+            None, self.core_engine.recreate_loopbacks_game_media
+        )
+        return True
+
 class ArctisManagerDbusStatusService(ServiceInterface):
     def __init__(self, core: CoreEngine):
         super().__init__(DBUS_STATUS_INTERFACE_NAME)

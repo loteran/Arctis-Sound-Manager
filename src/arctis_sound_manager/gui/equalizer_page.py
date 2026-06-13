@@ -302,10 +302,10 @@ class _ToggleWorker(QThread):
             self.done.emit(False, self._old_mode)
             return
 
-        # Let filter-chain recreate the EQ nodes, then recreate the loopbacks
-        # (they relink to the new targets by node.target).
+        # Let filter-chain recreate the EQ nodes, then recreate Game+Media
+        # loopbacks. Chat auto-reconnects and is preserved to keep Discord-safe.
         self.msleep(1500)
-        DbusWrapper.recreate_loopbacks_sync()
+        DbusWrapper.recreate_loopbacks_game_media_sync()
 
         for remaining in range(5, 0, -1):
             self.countdown_tick.emit(remaining)

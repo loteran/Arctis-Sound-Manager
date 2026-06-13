@@ -185,6 +185,51 @@ class CoreEngine:
         except Exception as exc:
             self.logger.error("recreate_loopbacks: unexpected error: %r", exc)
 
+    def recreate_loopbacks_game_media(self) -> None:
+        """Recreate only Game and Media loopbacks, leaving Chat intact.
+
+        After a filter-chain restart (EQ preset / profile change), Chat
+        (always 2ch) auto-reconnects to effect_input.sonar-chat-eq without
+        being recreated.  Keeping Arctis_Chat alive prevents Discord and other
+        Electron apps from losing the sink from their device list — they
+        enumerate devices once and do not detect sinks that reappear.
+
+        Uses the same debounce as recreate_loopbacks.
+        """
+        now = time.monotonic()
+        elapsed = now - self._last_recreate_loopbacks
+        if elapsed < self._RECREATE_DEBOUNCE_S:
+            self.logger.debug(
+                "recreate_loopbacks_game_media: debounced (%.1f s since last call)",
+                elapsed,
+            )
+            return
+        self._last_recreate_loopbacks = now
+        self.logger.info("recreate_loopbacks_game_media: requested via D-Bus")
+        try:
+            if not device_state.is_device_set():
+                self.logger.info("recreate_loopbacks_game_media: no device, skipping")
+                return
+            sonar = self._read_eq_mode_is_sonar()
+            physical_game = device_state.get_physical_out_game()
+            physical_chat = device_state.get_physical_out_chat()
+            dev_name = device_state.get_device_name()
+            specs = make_specs(
+                sonar=sonar,
+                physical_game=physical_game,
+                physical_chat=physical_chat,
+                device_name=dev_name,
+            )
+            for spec in specs:
+                if spec.channel == "chat":
+                    continue  # keep Arctis_Chat alive — Discord-safe
+                self.loopback_manager.recreate(spec)
+            self.logger.info(
+                "recreate_loopbacks_game_media: game+media recreated, chat preserved"
+            )
+        except Exception as exc:
+            self.logger.error("recreate_loopbacks_game_media: unexpected error: %r", exc)
+
     async def _loopback_watchdog(self) -> None:
         """Periodically check for dead or mislinked loopback processes.
 
