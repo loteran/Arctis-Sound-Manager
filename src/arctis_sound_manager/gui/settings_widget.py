@@ -64,6 +64,20 @@ class QSettingsWidget(QWidget):
         
         self.refresh_panel()
     
+    def _apply_conditional_visibility(self):
+        for name, widget in self._settings_widgets.items():
+            config = self.settings_config.get(name)
+            if config is None:
+                continue
+            visible_when = getattr(config, 'visible_when', None)
+            if visible_when is None:
+                continue
+            visible = all(
+                int(self.settings.get(dep_key, -1)) == int(dep_value)
+                for dep_key, dep_value in visible_when.items()
+            )
+            widget.setVisible(visible)
+
     def refresh_panel(self):
         with self.refresh_lock:
             # Clear all the previous settings
@@ -85,6 +99,8 @@ class QSettingsWidget(QWidget):
 
                     self._settings_widgets[name] = widget
                     self.main_layout.addWidget(self._settings_widgets[name])
+
+            self._apply_conditional_visibility()
     
     def update_settings(self, new_settings: dict):
         self.settings_config = {}
@@ -111,6 +127,7 @@ class QSettingsWidget(QWidget):
 
     def on_settings_updated(self, config: ConfigSetting, value: int|str|bool):
         self.settings[config.name] = value
+        self._apply_conditional_visibility()
 
         dbus_value = value
         if config.type == SettingType.TOGGLE:

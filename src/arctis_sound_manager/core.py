@@ -908,9 +908,23 @@ class CoreEngine:
             return
 
         endpoint = self.get_command_endpoint_address()
-        seq = config.get_update_sequence(value)
+        seq = self._resolve_update_sequence(config, value)
         self.logger.info(f'send_command: {setting}={value} → {[hex(b) for b in seq]} on endpoint {endpoint}')
         self.send_command(seq, endpoint)
+
+    def _resolve_update_sequence(self, config, value: int) -> list[int]:
+        result = []
+        for b in config.update_sequence:
+            if isinstance(b, int):
+                result.append(b)
+            elif b == 'value':
+                result.append(value)
+            elif isinstance(b, str) and b.startswith('settings.'):
+                setting_name = b.split('.', 1)[1]
+                result.append(self.device_settings.get(setting_name, 0))
+            else:
+                raise Exception(f"Invalid update sequence value: {b}")
+        return result
 
     def send_command(self, command: list[int], endpoint: int) -> None:
         if self.device_config is None:

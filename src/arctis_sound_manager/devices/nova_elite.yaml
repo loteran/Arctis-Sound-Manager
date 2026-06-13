@@ -54,7 +54,7 @@ device:
     - [0x01, 0x88, 'settings.station_screensaver']
     - [0x01, 0x3c, 0x11, 0x03, 0x03]
     - [0x01, 0xb9, 'settings.transparent_noise_cancelling_level']
-    - [0x01, 0x47, 0x64, 0x64, 0x64]
+    - [0x01, 0x47, 'settings.line_out_stream_main_left_volume', 'settings.line_out_stream_main_right_volume', 'settings.line_out_stream_aux_volume']
     - [0x01, 0x83, 'settings.station_screen_saver_timeout']
     - [0x01, 0xc1, 'settings.auto_off_time_minutes']
     - [0x01, 0xb8, 'settings.noise_cancelling_level']
@@ -190,7 +190,7 @@ device:
         default: 0x00
         update_sequence: [0x01, 0x27, 'value']
       noise_cancelling:
-        type: discrete_map
+        type: button_group
         default: 0x00
         update_sequence: [0x01, 0xbd, 'value']
         values_mapping:
@@ -198,7 +198,7 @@ device:
           0x01: Transparency
           0x02: on
       noise_cancelling_level:
-        type: discrete_map
+        type: button_group
         default: 0x03
         update_sequence: [0x01, 0xb8, 'value']
         values_mapping:
@@ -216,7 +216,7 @@ device:
         update_sequence: [0x01, 0xb9, 'value']
     equalizer:
       equalizer_wireless:
-        type: discrete_map
+        type: button_group
         default: 0x00
         update_sequence: [0x01, 0x2d, 'value']
         values_mapping:
@@ -226,7 +226,7 @@ device:
           0x03: Smiley
           0x04: Custom
       equalizer_bluetooth:
-        type: discrete_map
+        type: button_group
         default: 0x00
         update_sequence: [0x01, 0x2f, 'value']
         values_mapping:
@@ -246,7 +246,7 @@ device:
         default: 0x0a
         update_sequence: [0x01, 0x37, 'value']
       equalizer_mic:
-        type: discrete_map
+        type: button_group
         default: 0x00
         update_sequence: [0x01, 0x2e, 'value']
         values_mapping:
@@ -297,12 +297,45 @@ device:
         default: 0x1c
         update_sequence: [0x01, 0x25, 'value']
       line_out:
-        type: discrete_map
+        type: button_group
         default: 0x01
         update_sequence: [0x01, 0x43, 'value']
         values_mapping:
           0x01: speaker
           0x02: stream
+      line_out_stream_main_left_volume:
+        type: slider
+        min: 0
+        max: 100
+        step: 1
+        min_label: perc_0
+        max_label: perc_100
+        default: 100
+        visible_when:
+          line_out: 2
+        update_sequence: [0x01, 0x47, 'value', 'settings.line_out_stream_main_right_volume', 'settings.line_out_stream_aux_volume']
+      line_out_stream_main_right_volume:
+        type: slider
+        min: 0
+        max: 100
+        step: 1
+        min_label: perc_0
+        max_label: perc_100
+        default: 100
+        visible_when:
+          line_out: 2
+        update_sequence: [0x01, 0x47, 'settings.line_out_stream_main_left_volume', 'value', 'settings.line_out_stream_aux_volume']
+      line_out_stream_aux_volume:
+        type: slider
+        min: 0
+        max: 100
+        step: 1
+        min_label: perc_0
+        max_label: perc_100
+        default: 100
+        visible_when:
+          line_out: 2
+        update_sequence: [0x01, 0x47, 'settings.line_out_stream_main_left_volume', 'settings.line_out_stream_main_right_volume', 'value']
       chatmix_enabled:
         type: toggle
         values:
@@ -331,7 +364,7 @@ device:
         default: 0x0a
         update_sequence: [0x01, 0x85, 'value']
       station_screensaver:
-        type: discrete_map
+        type: button_group
         default: 0x01
         update_sequence: [0x01, 0x88, 'value']
         values_mapping:
@@ -355,14 +388,14 @@ device:
         default: 0x05
         update_sequence: [0x01, 0x83, 'value']
       station_home_screen_view:
-        type: discrete_map
+        type: button_group
         default: 0x00
         update_sequence: [0x01, 0x89, 'value']
         values_mapping:
           0x00: detailed
           0x01: simple
       station_home_screen_options:
-        type: discrete_map
+        type: button_group
         default: 0x00
         update_sequence: [0x01, 0x8a, 'value']
         values_mapping:
@@ -389,7 +422,7 @@ device:
         default: 0x01
         update_sequence: [0x01, 0xb2, 'value']
       bluetooth_auto_mute:
-        type: discrete_map
+        type: button_group
         default: 0x00
         update_sequence: [0x01, 0xb3, 'value']
         values_mapping:
