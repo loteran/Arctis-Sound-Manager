@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.72" date="2026-06-13">
+      <description>
+        <p>Line Out controls for Nova Pro Wireless and Nova Elite — the physical 3.5 mm LINE OUT jack on the GameDAC Gen 2 station is now configurable directly from the ASM DAC tab. A new Station Output section appears above the OLED options and is automatically hidden for headsets without a station DAC. The section contains:. Line Out Mode button group: *Speaker* (amplified output for passive speakers) or *Stream* (digital controlled output). Left / Right / Aux volume sliders (0–100 %) — visible only when mode is set to *Stream*, using a single multi-value HID command [0x47, left, right, aux] per adjustment.</p>
+      </description>
+    </release>
     <release version="1.1.71" date="2026-06-13">
       <description>
         <p>Arctis Nova Pro Wireless X (PID 0x225d) — third hardware variant of the Nova Pro Wireless X, identified in the upstream elegos/Linux-Arctis-Manager project. Uses the same protocol as the existing 0x12e0/0x12e5 variants; all features (EQ, ANC, mic, surround) work identically.</p>
@@ -199,11 +204,6 @@
     <release version="1.1.43" date="2026-05-28">
       <description>
         <p>Distrobox container fails to start after reboot on Bazzite / SteamOS / Silverblue — /run/asm-hidraw lives on a tmpfs and is wiped at every boot; the sudo mkdir -p in the install script only ran at container creation time, so on the next boot crun could not stat the bind-mount source and refused to start the container (crun: cannot stat /run/asm-hidraw: No such file or directory). A systemd-tmpfiles drop-in (/etc/tmpfiles.d/asm-hidraw.conf) is now installed on the host, recreating the directory at sysinit.target well before Distrobox starts. Added ConditionPathIsDirectory=/run/asm-hidraw to arctis-manager.service to prevent crash-loops if the directory is somehow absent. Affects all three Distrobox installers (bazzite.sh, steamos.sh, silverblue.sh — issue #59).</p>
-      </description>
-    </release>
-    <release version="1.1.34" date="2026-05-18">
-      <description>
-        <p>Wireless headset disconnect/reconnect loop — when the USB dongle stays plugged in but the RF link drops (headset powered off or out of range), ASM retried USB commands thousands of times per second with no back-off, preventing the dongle firmware from completing RF re-association. Errors with errno 19 (ENODEV) now trigger a 1-second back-off; after ~10 s of consecutive failures ASM voluntarily releases the handle to let the dongle reconnect cleanly. Removed a redundant request_device_status() call that was firing on every loop iteration instead of the intended 2-second cadence (issue #49).</p>
       </description>
     </release>
   </releases>
