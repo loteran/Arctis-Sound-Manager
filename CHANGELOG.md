@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Nova Elite YAML contained speculative protocol values** — the command prefix (`0x06`), command interface (`[3, 0]`), status request (`0x06b0`), and response mappings were copied from the Nova Pro Wireless without hardware verification. All values have been rewritten from a real USB capture (elegos/Linux-Arctis-Manager upstream v2.4.1): prefix `0x01`, interface `[0, 3]`, 46-command `device_init`, 23 response mapping entries, correct `headset_battery_charge` range (0–100 instead of 0–8).
 - **OledManager activated on Nova Elite with wrong parameters** — adding `gamedac` to the Nova Elite status representation triggered `OledManager` using Nova Pro Wireless defaults (wrong interface/wvalue), which could send frames to the wrong USB endpoint. `OledManager` now requires an explicit `oled:` section in the device YAML to activate.
 
+### Fixed (Theme system)
+
+- **`$XDG_CONFIG_HOME` not respected** — all user-data paths in `constants.py` (settings, lang, device configs, systemd/dinit service folders) and the theme storage path in `theme.py` were hardcoded to `~/.config`. They now check `$XDG_CONFIG_HOME` first, matching the XDG Base Directory spec and fixing config resolution for NixOS users and anyone with a custom home layout.
+- **Saving a theme could crash the GUI** — `save_user_theme()` called `mkdir` and `open` with no error handling; a `PermissionError` (e.g. read-only home on NixOS, NFS mount) propagated uncaught into the Qt slot and terminated the GUI. I/O errors are now caught, logged, and surfaced to the user as a `QMessageBox.critical` dialog instead.
+- **Theme load errors silently swallowed at startup** — the module-level `reload_user_themes()` call was wrapped in `except Exception: pass`, hiding any startup failure. It now logs a `WARNING` with a full traceback so problems are visible in `journalctl`.
+
 ### Fixed (NixOS)
 
 - **Nix flake eval error after v1.1.69** — the `lib.optionalAttrs { … } // { … }` expression in `module.nix` was missing enclosing parentheses, causing the attribute-set merge (`//`) to be parsed as a top-level expression and the flake to fail evaluation entirely. (#79, PR #83 — thanks @Svenum!)
