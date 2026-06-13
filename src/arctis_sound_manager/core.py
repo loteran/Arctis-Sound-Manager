@@ -290,9 +290,9 @@ class CoreEngine:
                         if not self.loopback_manager.is_running(channel):
                             continue
                         actual = loopback_link_target(spec.playback_name)
-                        # actual is None  → orphan / not yet linked: leave it alone.
-                        # actual != target → clearly mislinked: recreate.
-                        if actual is not None and actual != spec.target:
+                        # actual is None  → orphan (unlinked): recreate.
+                        # actual != target → mislinked: recreate.
+                        if actual != spec.target:
                             self.logger.warning(
                                 "_loopback_watchdog: loopback '%s' mislinked to %s "
                                 "(want %s) — recreating",
