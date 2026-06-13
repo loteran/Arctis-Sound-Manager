@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.70" date="2026-06-13">
+      <description>
+        <p>Device shown as "No device detected" in GUI for always-connected headsets — devices without an online_status block (e.g. Arctis Nova 3 family) produced an empty D-Bus status dict even after the daemon had successfully initialised them, causing the GUI to display "No device detected" indefinitely. A sentinel headset_power_status: online is now injected when _device_ready is True and no status representation is defined. (#80). "Failed to find sink Arctis_Game" error at startup — redirect_audio was called immediately after spawning the pw-loopback processes, before PipeWire had registered the virtual sink. The method now retries up to 5 times (× 0.4 s) before giving up, eliminating the race condition on normal hardware. The final failure is now logged as WARNING instead of ERROR since the sink may legitimately be absent if loopback creation failed upstream. (#80).</p>
+      </description>
+    </release>
     <release version="1.1.69" date="2026-06-13">
       <description>
         <p>Game and Media channels silent on NixOS module installs — two root causes addressed:. HeSuVi surround graph crashes when plate_1423 (swh-plugins) is absent — on distros without swh-plugins installed, the Distance reverb LADSPA node was generated unconditionally, causing filter-chain to exit immediately. The Distance effect is now silently disabled when plate_1423.so is not found in the standard LADSPA directories, giving working surround without the reverb rather than a crash-loop. (#79).</p>
@@ -199,11 +204,6 @@
     <release version="1.1.33" date="2026-05-18">
       <description>
         <p>ClearCast crash on startup when noise cancellation was enabled — _NoiseCancelingCard connected the toggle signal before creating self._slider; PySide6 fires checkStateChanged synchronously during setChecked(), so restoring an enabled state from the previous session triggered _set_enabled before the slider existed, raising AttributeError (issue #51). README: First launch section — clarified that the daemon starts automatically but the GUI must be opened separately (asm-gui or via the app launcher), documented --systray mode and per-DE autostart methods.</p>
-      </description>
-    </release>
-    <release version="1.1.32" date="2026-05-18">
-      <description>
-        <p>Audio redirect broken for 8 wireless models — is_device_online() compared on_off parser values ('on'/'off') against YAML online_value: online literally; added aliasing so 'on' ↔ 'online' and 'off' ↔ 'offline' are treated as equivalent (discussion #48). Streams stay on dead loopbacks after disconnect — redirect_audio() changed the default sink but did not migrate active streams; now iterates sink_input_list() and moves every stream sitting on an ASM-owned sink, and persists the choice via pw-metadata for PipeWire restart survival (issue #50). babel missing from packaging metadata — added to PKGBUILD depends, RPM Requires, debian/control Depends, system deps checker, and packaging drift check.</p>
       </description>
     </release>
   </releases>

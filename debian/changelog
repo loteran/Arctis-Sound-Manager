@@ -1,3 +1,22 @@
+arctis-sound-manager (1.1.70-1) noble; urgency=medium
+
+  * Device shown as "No device detected" in GUI for always-connected
+    headsets — devices without an online_status block (e.g. Arctis Nova 3
+    family) produced an empty D-Bus status dict even after the daemon had
+    successfully initialised them, causing the GUI to display "No device
+    detected" indefinitely. A sentinel headset_power_status: online is now
+    injected when _device_ready is True and no status representation is
+    defined. (#80)
+  * "Failed to find sink Arctis_Game" error at startup — redirect_audio was
+    called immediately after spawning the pw-loopback processes, before
+    PipeWire had registered the virtual sink. The method now retries up to 5
+    times (× 0.4 s) before giving up, eliminating the race condition on
+    normal hardware. The final failure is now logged as WARNING instead of
+    ERROR since the sink may legitimately be absent if loopback creation
+    failed upstream. (#80)
+
+ -- loteran <axel.valadon@gmail.com>  Sat, 13 Jun 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.69-1) noble; urgency=medium
 
   * Game and Media channels silent on NixOS module installs — two root
