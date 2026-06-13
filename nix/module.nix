@@ -209,13 +209,15 @@ in
       # process started by the module. We therefore always inject LADSPA_PATH
       # directly on the filter-chain user service — this is what actually makes
       # plate_1423 / sc4m_1916 / rnnoise visible to the Sonar surround graph.
-      (lib.optionalAttrs pipewireHasLadspaOption {
-        services.pipewire.extraLadspaPackages = cfg.ladspaPlugins;
-      })
-      // {
-        systemd.user.services.filter-chain.environment.LADSPA_PATH =
-          lib.makeSearchPath "lib/ladspa" cfg.ladspaPlugins;
-      }
+      (
+        lib.optionalAttrs pipewireHasLadspaOption {
+          services.pipewire.extraLadspaPackages = cfg.ladspaPlugins;
+        }
+        // {
+          systemd.user.services.filter-chain.environment.LADSPA_PATH =
+            lib.makeSearchPath "lib/ladspa" cfg.ladspaPlugins;
+        }
+      )
     ]
   );
 }
