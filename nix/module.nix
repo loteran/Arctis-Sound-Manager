@@ -214,8 +214,10 @@ in
           services.pipewire.extraLadspaPackages = cfg.ladspaPlugins;
         }
         // {
-          systemd.user.services.filter-chain.environment.LADSPA_PATH =
-            lib.makeSearchPath "lib/ladspa" cfg.ladspaPlugins;
+          # lib.mkForce is required as this env is alredy set in the pipewire module of nixos/nixpkgs
+          systemd.user.services.filter-chain.environment.LADSPA_PATH = lib.mkForce (
+            lib.makeSearchPath "lib/ladspa" cfg.ladspaPlugins
+          );
         }
       )
     ]
