@@ -37,14 +37,14 @@ device:
     - [0x06, 0xb9, 'settings.transparent_level']
     - [0x06, 0x37, 'settings.mic_volume']         # Mic volume 100% (01 (mute) - a0 (100%))
     - [0x06, 0xb2]
-    - [0x06, 0x47, 0x64, 0x00, 0x64]
+    - [0x06, 0x47, 'settings.line_out_stream_main_left_volume', 'settings.line_out_stream_main_right_volume', 'settings.line_out_stream_aux_volume']
     - [0x06, 0x83, 0x01]
     - [0x06, 0xbd, 'settings.noise_cancelling']
     - [0x06, 0x27, 'settings.gain']               # Audio Gain (0x01: low, 0x02: high)
     - [0x06, 0xb3, 0x00]
     - [0x06, 0x39, 'settings.mic_side_tone']      # Set the sidetone to 0 (off) -> possible values: 0 (off 1 (low 2 (medium 3 (high)
     - [0x06, 0xbf, 'settings.mic_led_brightness'] # Mute mic led brightness (out of 10)
-    - [0x06, 0x43, 0x01]
+    - [0x06, 0x43, 'settings.line_out']
     - [0x06, 0x69, 0x00]
     - [0x06, 0x3b, 0x00]
     - [0x06, 0x8d, 0x01]
@@ -67,9 +67,17 @@ device:
         eq_band_index: 0x02
         eq_band_value: 0x03
 
+      - starts_with: 0x0743
+        line_out: 0x02
+
       - starts_with: 0x0745
         media_mix: 0x02
         chat_mix: 0x03
+
+      - starts_with: 0x0747
+        line_out_stream_main_left_volume: 0x02
+        line_out_stream_main_right_volume: 0x03
+        line_out_stream_aux_volume: 0x04
 
       - starts_with: 0x07bd
         noise_cancelling: 0x02
@@ -105,6 +113,7 @@ device:
       gamedac:
         - station_volume
         - charge_slot_battery_charge
+        - line_out
       bluetooth:
         - bluetooth_powerup_state
         - bluetooth_power_status
@@ -198,6 +207,47 @@ device:
           on_label: range
         default: 0x00 # speed
         update_sequence: [0x06, 0xc3, 'value']
+    station:
+      line_out:
+        type: button_group
+        default: 0x01
+        update_sequence: [0x06, 0x43, 'value']
+        values_mapping:
+          0x01: speaker
+          0x02: stream
+      line_out_stream_main_left_volume:
+        type: slider
+        min: 0
+        max: 100
+        step: 1
+        min_label: perc_0
+        max_label: perc_100
+        default: 100
+        visible_when:
+          line_out: 2
+        update_sequence: [0x06, 0x47, 'value', 'settings.line_out_stream_main_right_volume', 'settings.line_out_stream_aux_volume']
+      line_out_stream_main_right_volume:
+        type: slider
+        min: 0
+        max: 100
+        step: 1
+        min_label: perc_0
+        max_label: perc_100
+        default: 100
+        visible_when:
+          line_out: 2
+        update_sequence: [0x06, 0x47, 'settings.line_out_stream_main_left_volume', 'value', 'settings.line_out_stream_aux_volume']
+      line_out_stream_aux_volume:
+        type: slider
+        min: 0
+        max: 100
+        step: 1
+        min_label: perc_0
+        max_label: perc_100
+        default: 100
+        visible_when:
+          line_out: 2
+        update_sequence: [0x06, 0x47, 'settings.line_out_stream_main_left_volume', 'settings.line_out_stream_main_right_volume', 'value']
     audio:
       noise_cancelling:
         type: slider
@@ -217,6 +267,11 @@ device:
         update_sequence: [0x06, 0xb9, 'value']
 
   status_parse:
+    line_out:
+      type: int_str_mapping
+      values:
+        0x01: speaker
+        0x02: stream
     station_volume:
       type: percentage
       perc_min: 56
