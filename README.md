@@ -721,6 +721,9 @@ python src/arctis_sound_manager/scripts/video_router.py    # media router
 
 ## Project structure
 
+<details>
+<summary><strong>Show project structure</strong></summary>
+
 ```
 src/arctis_sound_manager/
 │
@@ -818,6 +821,7 @@ nix/                               # NixOS module
 ├── package.nix                    # Nix derivation
 └── README.md                      # NixOS-specific documentation
 ```
+</details>
 
 ---
 
