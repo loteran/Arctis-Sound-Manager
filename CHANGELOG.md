@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.75] - 16 June 2026
+
+### Fixed
+
+- **Arctis Nova Pro Omni — battery display showed values above 1000%** — the Omni firmware reports headset and GameDAC battery as a direct 0–100 percentage value, but `nova_pro_omni.yaml` had `perc_max: 8` (inherited from the Nova Pro Wireless which uses a 0–8 discrete scale). The formula `raw × 100 ÷ 8` turned a 92% charge into 1150% and a 98% charge into 1225%. Setting `perc_max: 100` for both `headset_battery_charge` and `charge_slot_battery_charge` corrects the display.
+
 ## [1.1.74] - 13 June 2026
 
 ### Added

@@ -284,11 +284,11 @@ device:
     headset_battery_charge:
       type: percentage
       perc_min: 0
-      perc_max: 8
+      perc_max: 100
     charge_slot_battery_charge:
       type: percentage
       perc_min: 0
-      perc_max: 8
+      perc_max: 100
     transparent_noise_cancelling_level:
       type: percentage
       perc_min: 0
