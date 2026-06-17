@@ -1041,6 +1041,7 @@ class HomePage(QWidget):
     @Slot(str, str, str)
     def on_update_available(self, version: str, url: str, wheel_url: str = ""):
         if not version:
+            self._update_banner.hide()
             return
         self._update_label.setText(
             I18n.translate("ui", "update_available").replace("{version}", version)

@@ -155,6 +155,7 @@ class DevicePage(QWidget):
     sig_theme_changed = Signal(str)
     sig_theme_create = Signal()
     sig_theme_edit = Signal(str)   # theme_id
+    sig_update_result = Signal(str, str, str)  # re-emits (version, url, wheel_url) from manual re-check
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -643,6 +644,8 @@ class DevicePage(QWidget):
                 f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
             )
             self._update_status_lbl.setText(I18n.translate("ui", "up_to_date"))
+
+        self.sig_update_result.emit(version, url, wheel_url)
 
     def _do_install_update(self) -> None:
         from arctis_sound_manager.update_checker import (

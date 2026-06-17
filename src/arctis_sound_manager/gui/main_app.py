@@ -128,6 +128,7 @@ class QMainApp(QBaseDesktopApp):
         self._update_worker = UpdateCheckWorker(project_version())
         self._update_worker.result.connect(self._home_page.on_update_available)
         self._update_worker.start()
+        self._device_page.sig_update_result.connect(self._home_page.on_update_available)
 
         # Check for new/updated translation files (non-blocking)
         from arctis_sound_manager.lang_updater import LangUpdateWorker

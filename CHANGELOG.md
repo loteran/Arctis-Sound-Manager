@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.76] - 17 June 2026
+
+### Fixed
+
+- **Update banner persisted after upgrading via package manager** — the "update available" banner on the Home page was never hidden when a re-check found no newer version: `on_update_available` returned early on an empty result without calling `_update_banner.hide()`. The banner would therefore remain visible for the rest of the session even after the user updated externally (apt/pacman/dnf). Now the banner is explicitly hidden when the check confirms the installed version is current. Additionally, the manual "Check for updates" button in the Settings page now also drives the Home page banner (via `DevicePage.sig_update_result`), so clicking "Check for updates" after an external upgrade instantly clears the stale notification without requiring a restart.
+
 ## [1.1.75] - 16 June 2026
 
 ### Fixed
