@@ -70,29 +70,36 @@ export default {
 
     // ── GET /stats (JSON API) ──────────────────────────────────────────────────
     if (request.method === "GET" && url.pathname === "/stats") {
-      const [distros, headsets, versions, totalRow] = await Promise.all([
-        env.DB.prepare(
-          "SELECT distro AS label, COUNT(*) AS nb FROM users GROUP BY distro ORDER BY nb DESC LIMIT 30"
-        ).all(),
-        env.DB.prepare(
-          "SELECT headset AS label, product_id, COUNT(*) AS nb FROM users GROUP BY headset, product_id ORDER BY nb DESC LIMIT 30"
-        ).all(),
-        env.DB.prepare(
-          "SELECT version AS label, COUNT(*) AS nb FROM users GROUP BY version ORDER BY nb DESC LIMIT 20"
-        ).all(),
-        env.DB.prepare("SELECT COUNT(*) AS nb FROM users").first(),
-      ]);
+      try {
+        const [distros, headsets, versions, totalRow] = await Promise.all([
+          env.DB.prepare(
+            "SELECT distro AS label, COUNT(*) AS nb FROM users GROUP BY distro ORDER BY nb DESC LIMIT 30"
+          ).all(),
+          env.DB.prepare(
+            "SELECT headset AS label, product_id, COUNT(*) AS nb FROM users GROUP BY headset, product_id ORDER BY nb DESC LIMIT 30"
+          ).all(),
+          env.DB.prepare(
+            "SELECT version AS label, COUNT(*) AS nb FROM users GROUP BY version ORDER BY nb DESC LIMIT 20"
+          ).all(),
+          env.DB.prepare("SELECT COUNT(*) AS nb FROM users").first(),
+        ]);
 
-      return Response.json(
-        {
-          total:        totalRow?.nb ?? 0,
-          distros:      distros.results,
-          headsets:     headsets.results,
-          versions:     versions.results,
-          generated_at: new Date().toISOString(),
-        },
-        { headers: { ...CORS, "Cache-Control": "public, max-age=3600" } }
-      );
+        return Response.json(
+          {
+            total:        totalRow?.nb ?? 0,
+            distros:      distros.results,
+            headsets:     headsets.results,
+            versions:     versions.results,
+            generated_at: new Date().toISOString(),
+          },
+          { headers: { ...CORS, "Cache-Control": "public, max-age=3600" } }
+        );
+      } catch (err) {
+        return Response.json(
+          { error: "Internal error", message: String(err) },
+          { status: 500, headers: CORS }
+        );
+      }
     }
 
     // ── GET / (HTML dashboard) ─────────────────────────────────────────────────
