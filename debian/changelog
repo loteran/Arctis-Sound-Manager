@@ -1,3 +1,45 @@
+arctis-sound-manager (1.1.77-1) noble; urgency=medium
+
+  * Loopback watchdog recreated loopbacks every 5 s, breaking Discord
+    routing — _loopback_watchdog treated a None link target (loopback not
+    yet wired by WirePlumber) as a mislink and immediately recreated the
+    loopback. This caused Discord's audio streams to lose their target sink
+    every 5–10 seconds and repeatedly fall back to the system default,
+    ignoring any routing_overrides entries. A grace period of 3 consecutive
+    ticks (15 s) is now applied before acting on a None link: transient
+    PipeWire graph states are ignored, while genuinely orphaned loopbacks
+    (stuck unlinked for > 15 s) are still recovered. (#84)
+
+ -- loteran <axel.valadon@gmail.com>  Thu, 18 Jun 2026 00:00:00 +0000
+
+arctis-sound-manager (1.1.76-1) noble; urgency=medium
+
+  * Update banner persisted after upgrading via package manager — the
+    "update available" banner on the Home page was never hidden when a
+    re-check found no newer version: on_update_available returned early on
+    an empty result without calling _update_banner.hide(). The banner would
+    therefore remain visible for the rest of the session even after the user
+    updated externally (apt/pacman/dnf). Now the banner is explicitly hidden
+    when the check confirms the installed version is current. Additionally,
+    the manual "Check for updates" button in the Settings page now also
+    drives the Home page banner (via DevicePage.sig_update_result), so
+    clicking "Check for updates" after an external upgrade instantly clears
+    the stale notification without requiring a restart.
+
+ -- loteran <axel.valadon@gmail.com>  Wed, 17 Jun 2026 00:00:00 +0000
+
+arctis-sound-manager (1.1.75-1) noble; urgency=medium
+
+  * Arctis Nova Pro Omni — battery display showed values above 1000% — the
+    Omni firmware reports headset and GameDAC battery as a direct 0–100
+    percentage value, but nova_pro_omni.yaml had perc_max: 8 (inherited from
+    the Nova Pro Wireless which uses a 0–8 discrete scale). The formula raw
+    × 100 ÷ 8 turned a 92% charge into 1150% and a 98% charge into 1225%.
+    Setting perc_max: 100 for both headset_battery_charge and
+    charge_slot_battery_charge corrects the display.
+
+ -- loteran <axel.valadon@gmail.com>  Tue, 16 Jun 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.74-1) noble; urgency=medium
 
   * Headset name on Channels tab — the connected headset model name is now
