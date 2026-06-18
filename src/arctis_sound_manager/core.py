@@ -246,9 +246,10 @@ class CoreEngine:
            which sink it is actually wired to.  If the actual link target differs
            from the expected ``spec.target``, the loopback is recreated so that
            WirePlumber re-applies ``node.target``.  Orphan loopbacks (not yet
-           linked to anything, ``actual is None``) are left alone — they are
-           transitionally unlinked and ``node.target`` will wire them on the
-           next PipeWire graph change.
+           linked to anything, ``actual is None``) are given a grace period of
+           ``_ORPHAN_GRACE_TICKS`` consecutive ticks (15 s at the default
+           interval) before being recreated: a single-tick ``None`` is a normal
+           transient PipeWire state and must not trigger a spurious recreate.
 
         The coroutine exits cleanly when ``self._stopping`` is set (by
         :meth:`stop`) or when the task is cancelled (by the daemon shutdown
@@ -258,6 +259,15 @@ class CoreEngine:
         from arctis_sound_manager.pw_utils import loopback_link_target
 
         _WATCHDOG_INTERVAL: float = 5.0
+        # Number of consecutive ticks a loopback may be None-linked before we
+        # treat it as a permanent orphan and recreate it.  One tick = 5 s, so
+        # 3 ticks = 15 s of grace before action.  Transient None states (one
+        # PipeWire graph cycle) are ignored entirely.
+        _ORPHAN_GRACE_TICKS: int = 3
+        # Per-channel count of consecutive ticks where loopback_link_target
+        # returned None.  Reset to 0 whenever the link becomes non-None or the
+        # loopback is restarted.
+        _none_ticks: dict[str, int] = {}
         try:
             while not self._stopping:
                 await asyncio.sleep(_WATCHDOG_INTERVAL)
@@ -273,6 +283,8 @@ class CoreEngine:
                             "_loopback_watchdog: restarted dead loopback(s): %s",
                             restarted,
                         )
+                        for ch in restarted:
+                            _none_ticks.pop(ch, None)
                 except Exception as exc:
                     self.logger.error(
                         "_loopback_watchdog: unexpected error in restart_dead: %r", exc
@@ -290,25 +302,40 @@ class CoreEngine:
                         if not self.loopback_manager.is_running(channel):
                             continue
                         actual = loopback_link_target(spec.playback_name)
-                        # actual is None  → orphan (unlinked): recreate.
-                        # actual != target → mislinked: recreate.
-                        if actual != spec.target:
+                        if actual is None:
+                            # Orphan: may be a transient one-tick PipeWire state.
+                            # Accumulate ticks; only act after _ORPHAN_GRACE_TICKS
+                            # consecutive None results (= permanent orphan).
+                            count = _none_ticks.get(channel, 0) + 1
+                            _none_ticks[channel] = count
+                            if count < _ORPHAN_GRACE_TICKS:
+                                continue
+                            self.logger.warning(
+                                "_loopback_watchdog: loopback '%s' orphaned for "
+                                "%d ticks — recreating",
+                                channel, count,
+                            )
+                            _none_ticks.pop(channel, None)
+                        else:
+                            _none_ticks.pop(channel, None)
+                            if actual == spec.target:
+                                continue
                             self.logger.warning(
                                 "_loopback_watchdog: loopback '%s' mislinked to %s "
                                 "(want %s) — recreating",
                                 channel, actual, spec.target,
                             )
-                            self.loopback_manager.recreate(spec)
-                            if channel == "chat":
-                                # After recreating Chat, move PA streams that
-                                # had routing overrides back to Arctis_Chat so
-                                # Discord audio resumes without a manual restart.
-                                from arctis_sound_manager.pw_utils import (
-                                    reapply_routing_overrides,
-                                )
-                                await asyncio.get_running_loop().run_in_executor(
-                                    None, reapply_routing_overrides
-                                )
+                        self.loopback_manager.recreate(spec)
+                        if channel == "chat":
+                            # After recreating Chat, move PA streams that
+                            # had routing overrides back to Arctis_Chat so
+                            # Discord audio resumes without a manual restart.
+                            from arctis_sound_manager.pw_utils import (
+                                reapply_routing_overrides,
+                            )
+                            await asyncio.get_running_loop().run_in_executor(
+                                None, reapply_routing_overrides
+                            )
                 except Exception as exc:
                     self.logger.error(
                         "_loopback_watchdog: unexpected error in mislink check: %r", exc

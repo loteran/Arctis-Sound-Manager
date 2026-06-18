@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.77] - 18 June 2026
+
+### Fixed
+
+- **Loopback watchdog recreated loopbacks every 5 s, breaking Discord routing** — `_loopback_watchdog` treated a `None` link target (loopback not yet wired by WirePlumber) as a mislink and immediately recreated the loopback. This caused Discord's audio streams to lose their target sink every 5–10 seconds and repeatedly fall back to the system default, ignoring any `routing_overrides` entries. A grace period of 3 consecutive ticks (15 s) is now applied before acting on a `None` link: transient PipeWire graph states are ignored, while genuinely orphaned loopbacks (stuck unlinked for > 15 s) are still recovered. (#84)
+
 ## [1.1.76] - 17 June 2026
 
 ### Fixed
