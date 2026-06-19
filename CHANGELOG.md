@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.78] - 19 June 2026
+
+### Added
+
+- **3 new Sonar EQ presets from SteelSeries GG 113.0.0** — *Pure*, *Precision* and *Immersion* from the official SteelSeries GG 113.0.0 preset list are now bundled for the Game, Chat and Media channels.
+
+### Fixed
+
+- **Per-channel EQ apply no longer interrupts the sibling channel** — applying a preset or sliders on the Game channel used to restart both the Game **and** Media loopbacks (and vice-versa), causing a ~1.5 s audio cut on the channel that was not touched. The apply-worker now calls the new `RecreateLoopbackSingle` D-Bus method to restart only the loopback for the channel that was actually edited. Chat remains unaffected as before. (issue #85 — thanks @cookiekiller!)
+- **`weather_*` settings no longer spam `[ERROR] Unknown general setting configuration`** — `weather_enabled`, `weather_location`, `weather_lat`, `weather_lon`, `weather_units` and `weather_city_display` are stored in `GeneralSettings` but had no matching `ConfigSetting` entry, so every `SetSetting` D-Bus call hit the unknown-key branch. They are now handled as a dedicated special case before the whitelist lookup. (issue #85)
+- **Routing override for Discord now matches `application.process.binary` as fallback** — `reapply_routing_overrides` previously matched only on `application.name`; Discord's Electron renderer sets this to `"WEBRTC VoiceEngine"` rather than `"Discord"`. The matcher now falls back to `application.process.binary` when `application.name` does not match, so a `"Discord": "Arctis_Chat"` entry in `routing_overrides.json` is respected on first connection and after every filter-chain restart. (issue #85)
+
 ## [1.1.77] - 18 June 2026
 
 ### Fixed

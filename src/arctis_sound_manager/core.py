@@ -231,6 +231,58 @@ class CoreEngine:
         except Exception as exc:
             self.logger.error("recreate_loopbacks_game_media: unexpected error: %r", exc)
 
+    def recreate_loopback_single(self, channel: str) -> None:
+        """Recreate the loopback for a single channel, leaving all others intact.
+
+        Used when only one EQ channel's preset changed — avoids disrupting the
+        sibling channel's audio stream (e.g. editing Media EQ no longer cuts Game).
+        Chat is never recreated via this path: it auto-reconnects after a
+        filter-chain restart without process teardown.
+
+        Uses the same debounce timestamp as recreate_loopbacks_game_media so
+        rapid successive per-channel calls are also throttled.
+        """
+        if channel not in ("game", "media"):
+            self.logger.debug(
+                "recreate_loopback_single: channel=%r has no Arctis_* loopback, skipping",
+                channel,
+            )
+            return
+        now = time.monotonic()
+        elapsed = now - self._last_recreate_loopbacks
+        if elapsed < self._RECREATE_DEBOUNCE_S:
+            self.logger.debug(
+                "recreate_loopback_single(%s): debounced (%.1f s since last call)",
+                channel, elapsed,
+            )
+            return
+        self._last_recreate_loopbacks = now
+        self.logger.info("recreate_loopback_single: channel=%r requested via D-Bus", channel)
+        try:
+            if not device_state.is_device_set():
+                self.logger.info("recreate_loopback_single: no device, skipping")
+                return
+            sonar = self._read_eq_mode_is_sonar()
+            physical_game = device_state.get_physical_out_game()
+            physical_chat = device_state.get_physical_out_chat()
+            dev_name = device_state.get_device_name()
+            specs = make_specs(
+                sonar=sonar,
+                physical_game=physical_game,
+                physical_chat=physical_chat,
+                device_name=dev_name,
+            )
+            for spec in specs:
+                if spec.channel == channel:
+                    self.loopback_manager.recreate(spec)
+                    self.logger.info(
+                        "recreate_loopback_single: channel=%r recreated", channel,
+                    )
+                    return
+            self.logger.warning("recreate_loopback_single: spec for channel=%r not found", channel)
+        except Exception as exc:
+            self.logger.error("recreate_loopback_single: unexpected error: %r", exc)
+
     async def _loopback_watchdog(self) -> None:
         """Periodically check for dead or mislinked loopback processes.
 

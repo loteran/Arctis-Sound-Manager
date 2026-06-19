@@ -105,8 +105,13 @@ def reapply_routing_overrides(timeout_s: float = 6.0) -> int:
                     )
                     continue
                 for si in sink_inputs:
+                    # Match on application.name first; fall back to
+                    # application.process.binary for Electron apps (Discord,
+                    # Slack, …) that set application.name to their internal
+                    # WebRTC node name rather than the product name.
                     si_app = si.proplist.get("application.name", "")
-                    if si_app != app_name:
+                    si_binary = si.proplist.get("application.process.binary", "")
+                    if si_app != app_name and si_binary != app_name:
                         continue
                     if si.sink == target_idx:
                         continue
