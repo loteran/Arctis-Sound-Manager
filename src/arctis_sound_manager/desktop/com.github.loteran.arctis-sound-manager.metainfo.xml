@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.79" date="2026-06-19">
+      <description>
+        <p>pacman mirror 404 auto-retry in deps dialog — when installing a missing dependency via the system deps dialog on Arch/CachyOS, a desynchronized mirror (HTTP 404 on the package file) caused the install to fail silently. The dialog now captures pacman output, detects the mirror-sync error pattern, and automatically retries with pacman -Syy to force a database refresh before running the original install command. A guard flag prevents infinite retry loops.</p>
+      </description>
+    </release>
     <release version="1.1.78" date="2026-06-19">
       <description>
         <p>3 new Sonar EQ presets from SteelSeries GG 113.0.0 — *Pure*, *Precision* and *Immersion* from the official SteelSeries GG 113.0.0 preset list are now bundled for the Game, Chat and Media channels. Per-channel EQ apply no longer interrupts the sibling channel — applying a preset or sliders on the Game channel used to restart both the Game and Media loopbacks (and vice-versa), causing a ~1.5 s audio cut on the channel that was not touched. The apply-worker now calls the new RecreateLoopbackSingle D-Bus method to restart only the loopback for the channel that was actually edited. Chat remains unaffected as before. (issue #85 — thanks @cookiekiller!). **weather_* settings no longer spam [ERROR] Unknown general setting configuration** — weather_enabled, weather_location, weather_lat, weather_lon, weather_units and weather_city_display are stored in GeneralSettings but had no matching ConfigSetting entry, so every SetSetting D-Bus call hit the unknown-key branch. They are now handled as a dedicated special case before the whitelist lookup. (issue #85).</p>
@@ -199,11 +204,6 @@
     <release version="1.1.50" date="2026-06-02">
       <description>
         <p>Arctis Nova 5X (PID 0x2255) support — the 0x2255 variant is now declared in the device YAML, so it is detected and managed like the other Nova 5/5X models. Its udev rule is generated automatically at build time. Unmapped PIDs are surfaced in red in the README device table — any Product ID reported by telemetry but not yet declared in a device YAML is now listed automatically in red, so it can be triaged and promoted into a YAML. The list self-cleans: a PID drops out once it lands in a YAML. The device table also gained an lsusb -d 1038: snippet so users can find their own Product ID.</p>
-      </description>
-    </release>
-    <release version="1.1.49" date="2026-06-01">
-      <description>
-        <p>RNNoise mic noise-suppression dependency failed to install on Ubuntu (#65) — the plugin is not packaged for Ubuntu or its derivatives (Linux Mint, Pop!_OS, elementary, KDE neon), yet ASM suggested an apt package that has no candidate there. Those distros now build the LADSPA plugin from source in one click (Install / Copy cmd), and the dependency is no longer treated as blocking — the rest of ASM works without it. Debian keeps the apt package; Fedora and Arch are unchanged. The "Copy cmd" button also now preserves command quoting correctly. On the DAC OLED, the EQ-mode badge (S = Sonar, C = Custom EQ) is now shown to the right of the clock instead of on its own line.</p>
       </description>
     </release>
   </releases>

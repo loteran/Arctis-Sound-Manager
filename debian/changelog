@@ -1,3 +1,15 @@
+arctis-sound-manager (1.1.79-1) noble; urgency=medium
+
+  * pacman mirror 404 auto-retry in deps dialog — when installing a missing
+    dependency via the system deps dialog on Arch/CachyOS, a desynchronized
+    mirror (HTTP 404 on the package file) caused the install to fail
+    silently. The dialog now captures pacman output, detects the mirror-sync
+    error pattern, and automatically retries with pacman -Syy to force a
+    database refresh before running the original install command. A guard
+    flag prevents infinite retry loops.
+
+ -- loteran <axel.valadon@gmail.com>  Fri, 19 Jun 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.78-1) noble; urgency=medium
 
   * 3 new Sonar EQ presets from SteelSeries GG 113.0.0 — *Pure*, *Precision*
