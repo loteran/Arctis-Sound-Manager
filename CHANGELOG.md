@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.78] - 19 June 2026
+
+### Fixed
+
+- **pacman mirror 404 auto-retry in deps dialog** — when installing a missing dependency via the system deps dialog on Arch/CachyOS, a desynchronized mirror (HTTP 404 on the package file) caused the install to fail silently. The dialog now captures `pacman` output, detects the mirror-sync error pattern, and automatically retries with `pacman -Syy` to force a database refresh before running the original install command. A guard flag prevents infinite retry loops.
+- **D-Bus settings service now handles weather keys** — weather-related settings (`weather_enabled`, `weather_location`, `weather_lat`, `weather_lon`, `weather_units`, `weather_city_display`) written by the weather service were rejected by the D-Bus handler because they have no `ConfigSetting` entry. They are now passed through directly to `general_settings` and persisted.
+- **PipeWire routing override now matches by process binary** — `reapply_routing_overrides` previously matched streams only by `application.name`, missing streams whose `application.name` differs from the override key but whose `application.process.binary` matches (e.g. some Flatpak apps). The check now falls back to `application.process.binary` when `application.name` does not match.
+
 ## [1.1.77] - 18 June 2026
 
 ### Fixed

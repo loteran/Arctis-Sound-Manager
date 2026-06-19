@@ -106,7 +106,8 @@ def reapply_routing_overrides(timeout_s: float = 6.0) -> int:
                     continue
                 for si in sink_inputs:
                     si_app = si.proplist.get("application.name", "")
-                    if si_app != app_name:
+                    si_binary = si.proplist.get("application.process.binary", "")
+                    if si_app != app_name and si_binary != app_name:
                         continue
                     if si.sink == target_idx:
                         continue

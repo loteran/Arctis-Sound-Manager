@@ -244,6 +244,16 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
             gs.write_to_file()
             return True
 
+        # Special case: weather keys written by the weather service — no ConfigSetting entry
+        _WEATHER_KEYS = {
+            'weather_enabled', 'weather_location', 'weather_lat', 'weather_lon',
+            'weather_units', 'weather_city_display',
+        }
+        if setting in _WEATHER_KEYS:
+            setattr(self.core_engine.general_settings, setting, value)
+            self.core_engine.general_settings.write_to_file()
+            return True
+
         # Special case: HRIR profile selection (no ConfigSetting — GUI uses its own QComboBox)
         if setting == 'hrir_id':
             gs = self.core_engine.general_settings

@@ -20,6 +20,7 @@ file tickets.
 from __future__ import annotations
 
 import logging
+import re
 import shlex
 import shutil
 import subprocess
@@ -55,6 +56,17 @@ from arctis_sound_manager.utils import project_version
 log = logging.getLogger(__name__)
 
 _SKIP_MARKER = Path.home() / ".config" / "arctis_manager" / ".skip_deps_check"
+
+# Pacman mirror-sync error: the mirror has the index but not the file yet.
+# Detected in QProcess output; triggers an automatic `pacman -Syy` + retry.
+_PACMAN_MIRROR_ERROR_RE = re.compile(
+    r"returned error: 404"
+    r"|failed to retrieve"
+    r"|echec de recuperation"         # accents stripped in ASCII log paths
+    r"|erreur.*recuperation"
+    r"|transaction.*failed.*retrieve",
+    re.IGNORECASE,
+)
 
 def _btn_ss(bg: str, fg: str, hover: str) -> str:
     return (
@@ -385,11 +397,22 @@ class SystemDepsDialog(QDialog):
             return
         self._run_with_pkexec(all_cmds, context="all missing deps")
 
-    def _run_with_pkexec(self, commands: list[list[str]], context: str) -> None:
+    def _run_with_pkexec(
+        self,
+        commands: list[list[str]],
+        context: str,
+        *,
+        _mirror_retry: bool = False,
+    ) -> None:
         """Run the commands sequentially via pkexec (or directly if the
         head is an internal helper that shouldn't be elevated). The dialog
         stays alive; on completion of the last command we re-run the
-        checker to refresh the rows."""
+        checker to refresh the rows.
+
+        On pacman 404 mirror errors the method retries once automatically
+        with `pacman -Syy` prepended to the elevated batch (_mirror_retry
+        guards against a second retry loop).
+        """
         if not shutil.which("pkexec"):
             self._status_lbl.setText(
                 "pkexec not found — install polkit, or copy each command manually."
@@ -433,11 +456,36 @@ class SystemDepsDialog(QDialog):
 
         chained = " && ".join(_shell_quote(a) for a in elevated)
         proc = QProcess(self)
+        proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         proc.setProgram("pkexec")
         proc.setArguments(["sh", "-c", chained])
 
+        uses_pacman = any(a[0] == "pacman" for a in elevated)
+
         def _on_finished(exit_code: int, _exit_status):
+            output = bytes(proc.readAll()).decode(errors="replace")
             if exit_code != 0:
+                # Auto-retry once on pacman 404 mirror sync errors.
+                if (
+                    not _mirror_retry
+                    and uses_pacman
+                    and _PACMAN_MIRROR_ERROR_RE.search(output)
+                ):
+                    log.warning(
+                        "pacman 404 mirror error detected — forcing -Syy and retrying"
+                    )
+                    self._status_lbl.setText(
+                        "Mirror out of sync (404) — refreshing package databases…"
+                    )
+                    # Prepend a forced DB refresh to the same elevated batch.
+                    resync_cmd = ["pacman", "-Syy", "--noconfirm"]
+                    self._run_with_pkexec(
+                        [resync_cmd, *elevated] + user_local,
+                        context,
+                        _mirror_retry=True,
+                    )
+                    return
+
                 self._status_lbl.setText(
                     f"Install failed (pkexec exit {exit_code}). "
                     "Try 'Copy cmd' on individual rows and run them in a terminal."
