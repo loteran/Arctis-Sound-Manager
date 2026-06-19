@@ -19,7 +19,7 @@ def test_config_parse():
 
     assert config.name == "SteelSeries Arctis Nova Pro Wireless"
     assert config.vendor_id == 0x1038
-    assert config.product_ids == [0x12e0, 0x12e5]
+    assert config.product_ids == [0x12e0, 0x12e5, 0x225d]
 
     assert config.command_interface_index == [4, 0]
     assert config.listen_interface_indexes == [4]
@@ -33,21 +33,21 @@ def test_config_parse():
 
     assert config.status is not None
     assert config.status.request == 0x06b0
-    assert len(config.status.response_mapping) == 6
+    assert len(config.status.response_mapping) == 8
     assert config.status.response_mapping[0].starts_with == 0x0725
     assert config.status.response_mapping[1].starts_with == 0x0731
-    assert config.status.response_mapping[2].starts_with == 0x0745
-    assert config.status.response_mapping[5].starts_with == 0x06b0
+    assert config.status.response_mapping[3].starts_with == 0x0745
+    assert config.status.response_mapping[7].starts_with == 0x06b0
     assert len(config.status.response_mapping[0].__dict__.keys()) == 2
     assert len(config.status.response_mapping[1].__dict__.keys()) == 3
-    assert len(config.status.response_mapping[2].__dict__.keys()) == 3
-    assert len(config.status.response_mapping[5].__dict__.keys()) == 15
-    assert hasattr(config.status.response_mapping[5], 'headset_power_status')
+    assert len(config.status.response_mapping[3].__dict__.keys()) == 3
+    assert len(config.status.response_mapping[7].__dict__.keys()) == 15
+    assert hasattr(config.status.response_mapping[7], 'headset_power_status')
     assert len(config.status.representation.keys()) == 5
     assert list(config.status.representation.keys()) == ['headset', 'mic', 'gamedac', 'bluetooth', 'wireless']
-    assert config.status.representation['gamedac'] == ['station_volume', 'charge_slot_battery_charge']
+    assert config.status.representation['gamedac'] == ['station_volume', 'charge_slot_battery_charge', 'line_out']
 
-    assert len(config.status_parse) == 17
+    assert len(config.status_parse) == 18
     assert config.status_parse.get('bluetooth_power_status') is not None
     assert config.status_parse['bluetooth_power_status'].type == StatusParseType.ON_OFF
     assert config.status_parse['bluetooth_power_status'].init_kwargs == {'off': 0x01, 'on': 0x00}
@@ -65,11 +65,12 @@ def test_config_parse():
 
     assert config.settings is not None
 
-    assert len(config.settings) == 5
+    assert len(config.settings) == 6
     assert 'headset' in config.settings
     assert 'microphone' in config.settings
     assert 'power_management' in config.settings
     assert 'wireless' in config.settings
+    assert 'station' in config.settings
     assert 'audio' in config.settings
 
     assert len(config.settings['headset']) == 1

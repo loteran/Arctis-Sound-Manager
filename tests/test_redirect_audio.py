@@ -147,7 +147,7 @@ def test_redirect_audio_unknown_sink_logs_error_and_skips():
     pa.sink_list_wrapper = MagicMock(return_value=[])
     pa.redirect_audio('nope')
     pa.pulse.default_set.assert_not_called()
-    pa.logger.error.assert_called()
+    pa.logger.warning.assert_called()
 
 
 def test_redirect_audio_writes_pw_metadata_when_available():
