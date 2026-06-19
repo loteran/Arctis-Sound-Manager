@@ -32,6 +32,7 @@ def _make_engine_stub():
 
     engine = CoreEngine.__new__(CoreEngine)
     engine.logger = MagicMock()
+    engine.pa_audio_manager = MagicMock()
     engine._device_lock = threading.RLock()
     engine._detect_lock = threading.Lock()
     engine._device_ready = False
