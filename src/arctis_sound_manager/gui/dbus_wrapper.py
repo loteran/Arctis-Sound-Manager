@@ -424,3 +424,37 @@ class DbusWrapper(QObject):
         except Exception as e:
             DbusWrapper.logger.error('Error in recreate_loopbacks_game_media_sync: %s', e)
             return False
+
+    @staticmethod
+    async def _recreate_loopback_single_async(channel: str) -> None:
+        dbus_bus = None
+        try:
+            dbus_bus = await MessageBus().connect()
+            await dbus_bus.call(Message(
+                destination=DBUS_BUS_NAME,
+                path=DBUS_CONFIG_OBJECT_PATH,
+                interface=DBUS_CONFIG_INTERFACE_NAME,
+                member='RecreateLoopbackSingle',
+                message_type=MessageType.METHOD_CALL,
+                signature='s',
+                body=[channel],
+            ))
+        except Exception as e:
+            DbusWrapper.logger.error('Error in recreate_loopback_single: %s', e)
+        finally:
+            if dbus_bus is not None:
+                dbus_bus.disconnect()
+
+    @staticmethod
+    def recreate_loopback_single_sync(channel: str) -> bool:
+        """Synchronous variant: recreate only the given channel's loopback.
+
+        Use this when a single EQ channel's preset was applied, so the sibling
+        channel's audio stream is not interrupted. MUST be called off the Qt UI
+        thread (e.g. from an _ApplyWorker)."""
+        try:
+            asyncio.run(DbusWrapper._recreate_loopback_single_async(channel))
+            return True
+        except Exception as e:
+            DbusWrapper.logger.error('Error in recreate_loopback_single_sync: %s', e)
+            return False

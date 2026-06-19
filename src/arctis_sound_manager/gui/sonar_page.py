@@ -498,13 +498,14 @@ class _ApplyWorker(QThread):
                 self.done.emit(False)
                 return
 
-            # The Output channel has no Arctis_* loopback of its own; every other
-            # channel feeds one. Recreate Game+Media only — Chat (always 2ch)
-            # auto-reconnects to its EQ node without being recreated, which keeps
-            # Arctis_Chat alive in Discord's device list across filter-chain restarts.
-            if self._channel != "output":
+            # Recreate only the loopback for the edited channel.  Chat
+            # (always 2ch) auto-reconnects to its EQ node without being
+            # recreated, which keeps Arctis_Chat alive in Discord's device
+            # list across filter-chain restarts.  Micro and Output have no
+            # Arctis_* loopback of their own.
+            if self._channel in ("game", "media"):
                 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
-                DbusWrapper.recreate_loopbacks_game_media_sync()
+                DbusWrapper.recreate_loopback_single_sync(self._channel)
 
             # Wait for any saved Arctis_* target sinks to come back before
             # attempting move-sink-input (issue #22).

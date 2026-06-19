@@ -63,6 +63,18 @@ class ArctisManagerDbusConfigService(ServiceInterface):
         )
         return True
 
+    @method('RecreateLoopbackSingle')
+    async def recreate_loopback_single(self, channel: 's') -> 'b':  # type: ignore
+        """Recreate the loopback for a single channel (game or media) only.
+
+        Used by the EQ apply-worker when only one channel's preset was edited,
+        so the sibling channel's audio is not disrupted.
+        """
+        await asyncio.get_running_loop().run_in_executor(
+            None, self.core_engine.recreate_loopback_single, channel
+        )
+        return True
+
 class ArctisManagerDbusStatusService(ServiceInterface):
     def __init__(self, core: CoreEngine):
         super().__init__(DBUS_STATUS_INTERFACE_NAME)
@@ -221,6 +233,28 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
             self.logger.error(f'SetSetting: error while parsing JSON value ({value}): {e}')
 
             return False
+
+        # Special case: weather settings (no ConfigSetting entry — managed via
+        # SetWeatherSettings, but also written individually by the GUI on some paths)
+        _WEATHER_TYPES: dict[str, type] = {
+            'weather_enabled': bool,
+            'weather_location': str,
+            'weather_lat': float,
+            'weather_lon': float,
+            'weather_units': str,
+            'weather_city_display': str,
+        }
+        if setting in _WEATHER_TYPES:
+            expected = _WEATHER_TYPES[setting]
+            if not isinstance(value, expected):
+                self.logger.error(
+                    'SetSetting %s: type mismatch (got %s, expected %s)',
+                    setting, type(value).__name__, expected.__name__,
+                )
+                return False
+            setattr(self.core_engine.general_settings, setting, value)
+            self.core_engine.general_settings.write_to_file()
+            return True
 
         # Special case: font size settings (int, no ConfigSetting entry)
         _FONT_SIZE_KEYS = {
