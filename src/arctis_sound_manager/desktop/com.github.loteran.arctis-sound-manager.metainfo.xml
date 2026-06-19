@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.78" date="2026-06-19">
+      <description>
+        <p>3 new Sonar EQ presets from SteelSeries GG 113.0.0 — *Pure*, *Precision* and *Immersion* from the official SteelSeries GG 113.0.0 preset list are now bundled for the Game, Chat and Media channels. Per-channel EQ apply no longer interrupts the sibling channel — applying a preset or sliders on the Game channel used to restart both the Game and Media loopbacks (and vice-versa), causing a ~1.5 s audio cut on the channel that was not touched. The apply-worker now calls the new RecreateLoopbackSingle D-Bus method to restart only the loopback for the channel that was actually edited. Chat remains unaffected as before. (issue #85 — thanks @cookiekiller!). **weather_* settings no longer spam [ERROR] Unknown general setting configuration** — weather_enabled, weather_location, weather_lat, weather_lon, weather_units and weather_city_display are stored in GeneralSettings but had no matching ConfigSetting entry, so every SetSetting D-Bus call hit the unknown-key branch. They are now handled as a dedicated special case before the whitelist lookup. (issue #85).</p>
+      </description>
+    </release>
     <release version="1.1.77" date="2026-06-18">
       <description>
         <p>Loopback watchdog recreated loopbacks every 5 s, breaking Discord routing — _loopback_watchdog treated a None link target (loopback not yet wired by WirePlumber) as a mislink and immediately recreated the loopback. This caused Discord's audio streams to lose their target sink every 5–10 seconds and repeatedly fall back to the system default, ignoring any routing_overrides entries. A grace period of 3 consecutive ticks (15 s) is now applied before acting on a None link: transient PipeWire graph states are ignored, while genuinely orphaned loopbacks (stuck unlinked for &gt; 15 s) are still recovered. (#84)</p>
@@ -199,11 +204,6 @@
     <release version="1.1.49" date="2026-06-01">
       <description>
         <p>RNNoise mic noise-suppression dependency failed to install on Ubuntu (#65) — the plugin is not packaged for Ubuntu or its derivatives (Linux Mint, Pop!_OS, elementary, KDE neon), yet ASM suggested an apt package that has no candidate there. Those distros now build the LADSPA plugin from source in one click (Install / Copy cmd), and the dependency is no longer treated as blocking — the rest of ASM works without it. Debian keeps the apt package; Fedora and Arch are unchanged. The "Copy cmd" button also now preserves command quoting correctly. On the DAC OLED, the EQ-mode badge (S = Sonar, C = Custom EQ) is now shown to the right of the clock instead of on its own line.</p>
-      </description>
-    </release>
-    <release version="1.1.48" date="2026-05-31">
-      <description>
-        <p>Microphone Background / Impact noise reduction could not be turned off — same Qt.CheckState truthiness bug as the Spatial Audio toggle in 1.1.47; the OFF state is now registered correctly. GUI could crash (SIGABRT) on a quick EQ-mode toggle or when applying a preset from the tray — the background apply thread could be destroyed while still running. Thread cleanup now waits for the thread to fully stop (same class as the Smart Volume slider crash fixed in 1.1.47). The daemon froze for up to several seconds while reloading its configuration (e.g. on ReloadConfigs / loopback recreation) because blocking device discovery ran on the asyncio event loop. That work is now offloaded to a worker thread, keeping the daemon responsive.</p>
       </description>
     </release>
   </releases>
