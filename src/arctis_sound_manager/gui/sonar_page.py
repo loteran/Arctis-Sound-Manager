@@ -104,7 +104,8 @@ _APPLY_DELAY  = 600   # ms debounce before restarting filter-chain
 # ── Preset I/O ────────────────────────────────────────────────────────────────
 
 def _parse_preset_data(data: dict) -> list[EqBand]:
-    eq = data.get("parametricEQ", {})
+    payload = data.get("data", data)  # GG 113+ wraps settings in a "data" key
+    eq = payload.get("parametricEQ", {})
     indexed = sorted(
         ((int(k[6:]), v) for k, v in eq.items()
          if k.startswith("filter") and k[6:].isdigit()),
