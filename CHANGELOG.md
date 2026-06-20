@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.81] - 20 June 2026
+
+### Fixed
+
+- **YouTube and browser audio silent when ASM is running** — `sonar-output-eq` was generated with `media.class = Audio/Sink/Internal` even in bypass mode, making it invisible to normal apps. WirePlumber had memorised `Firefox → effect_input.sonar-output-eq` in its `stream-properties` database, then refused to connect any new stream to that node (Internal nodes cannot be targeted by PulseAudio-compat clients), leaving Firefox suspended with no sink. The node is now `Audio/Sink` with `priority.session = 1` so apps can connect to it while it is never auto-selected as the default output. Same fix applied to the active 8-channel path.
+- **Audio routing broken after daemon restart without the system tray** — the `arctis-manager` systemd unit now declares `Wants=filter-chain.service` and `After=filter-chain.service`. Previously, restarting the daemon alone left the filter-chain stopped, causing all Sonar EQ loopbacks (`sonar-game-eq`, `sonar-chat-eq`, `sonar-media-eq`) to become orphaned and be recreated every 15 s until WirePlumber degraded.
+- **System tray forced `Arctis_Game` as default sink unconditionally on startup** — the GUI `start()` method called `pactl set-default-sink Arctis_Game` regardless of headset state. When the headset was off, Firefox and any other app opening after ASM started were routed to a dead sink. Default-sink redirection is now owned exclusively by the daemon (`redirect_audio_on_connect` / `on_disconnect` logic).
+
 ## [1.1.80] - 20 June 2026
 
 ### Added
