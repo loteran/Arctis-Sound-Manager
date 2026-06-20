@@ -56,6 +56,21 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.81" date="2026-06-20">
+      <description>
+        <p>YouTube and browser audio silent when ASM is running — sonar-output-eq was generated with media.class = Audio/Sink/Internal even in bypass mode, making it invisible to normal apps. WirePlumber had memorised Firefox → effect_input.sonar-output-eq in its stream-properties database, then refused to connect any new stream to that node (Internal nodes cannot be targeted by PulseAudio-compat clients), leaving Firefox suspended with no sink. The node is now Audio/Sink with priority.session = 1 so apps can connect to it while it is never auto-selected as the default output. Same fix applied to the active 8-channel path. Audio routing broken after daemon restart without the system tray — the arctis-manager systemd unit now declares Wants=filter-chain.service and After=filter-chain.service. Previously, restarting the daemon alone left the filter-chain stopped, causing all Sonar EQ loopbacks (sonar-game-eq, sonar-chat-eq, sonar-media-eq) to become orphaned and be recreated every 15 s until WirePlumber degraded. System tray forced Arctis_Game as default sink unconditionally on startup — the GUI start() method called pactl set-default-sink Arctis_Game regardless of headset state. When the headset was off, Firefox and any other app opening after ASM started were routed to a dead sink. Default-sink redirection is now owned exclusively by the daemon (redirect_audio_on_connect / on_disconnect logic).</p>
+      </description>
+    </release>
+    <release version="1.1.80" date="2026-06-20">
+      <description>
+        <p>3 new Sonar EQ presets from SteelSeries GG 113.0.0 — *007 First Light*, *Subnautica 2* and *Virtua Fighter 5 R.E.V.O World Stage* are now bundled for the Game channel. Output (HDMI) channel silent after profile switch or device change — the sonar-output-eq filter-chain config hardcoded audio.channels = 8 and a stale node.target pointing to a non-existent hdmi-surround71 device. ASM now queries PipeWire at config-write time to detect the active HDMI/DisplayPort sink and adapts channel count and position automatically (2.0 stereo, 5.1 surround, 7.1 surround). HDMI sinks are preferred over S/PDIF in auto-detection. Flat EQ for presets in SteelSeries GG 113+ format — GG 113.0.0 changed the preset export format, wrapping all settings under a data key. Affected bundled presets (*Forza Horizon 6*, *Deep Rock Galactic: Rogue Core*, *Lineage 2*) were silently rendered as flat/bypass. The parser now handles both formats.</p>
+      </description>
+    </release>
+    <release version="1.1.79" date="2026-06-19">
+      <description>
+        <p>pacman mirror 404 auto-retry in deps dialog — when installing a missing dependency via the system deps dialog on Arch/CachyOS, a desynchronized mirror (HTTP 404 on the package file) caused the install to fail silently. The dialog now captures pacman output, detects the mirror-sync error pattern, and automatically retries with pacman -Syy to force a database refresh before running the original install command. A guard flag prevents infinite retry loops.</p>
+      </description>
+    </release>
     <release version="1.1.78" date="2026-06-19">
       <description>
         <p>3 new Sonar EQ presets from SteelSeries GG 113.0.0 — *Pure*, *Precision* and *Immersion* from the official SteelSeries GG 113.0.0 preset list are now bundled for the Game, Chat and Media channels. Per-channel EQ apply no longer interrupts the sibling channel — applying a preset or sliders on the Game channel used to restart both the Game and Media loopbacks (and vice-versa), causing a ~1.5 s audio cut on the channel that was not touched. The apply-worker now calls the new RecreateLoopbackSingle D-Bus method to restart only the loopback for the channel that was actually edited. Chat remains unaffected as before. (issue #85 — thanks @cookiekiller!). **weather_* settings no longer spam [ERROR] Unknown general setting configuration** — weather_enabled, weather_location, weather_lat, weather_lon, weather_units and weather_city_display are stored in GeneralSettings but had no matching ConfigSetting entry, so every SetSetting D-Bus call hit the unknown-key branch. They are now handled as a dedicated special case before the whitelist lookup. (issue #85).</p>
@@ -189,21 +204,6 @@
     <release version="1.1.52" date="2026-06-02">
       <description>
         <p>Microphone filter-chain crashed PipeWire when ClearCast AI noise cancellation was enabled (#69) — the rnnoise LADSPA plugin (librnnoise_ladspa) aborts when it is fed buffers at a sample rate it was not built for, taking down the whole filter-chain service (pipewire -c filter-chain.conf) and leaving the system with no audio until reboot. The mic filter-chain is now pinned to 48 kHz — the rate rnnoise expects — so the plugin always receives valid buffers. Periodic ~1 s microphone dropouts in apps using echo cancellation (#68) — Discord/Teams/Steam WebRTC echo cancellation drifted against the virtual mic source's clock and reset roughly once per second, silencing the mic for a split second at a steady cadence. Pinning the mic filter-chain to 48 kHz and locking its quantum (node.lock-quantum) removes the resampling and clock drift, so app-side echo cancellation can stay enabled without stuttering.</p>
-      </description>
-    </release>
-    <release version="1.1.51" date="2026-06-02">
-      <description>
-        <p>Arctis 7+ reported as offline while actually connected — the power-status parser only recognised a single "online" byte (0x02), but the Arctis 7+ firmware reports several online sub-states (0x00, 0x02, 0x03). When the headset was in any of the unmatched states it was treated as powered off, so online detection and audio redirection failed. The parser now enumerates all online states explicitly via int_str_mapping (thanks @Michsior14 — #67). Bumped pygments to 2.20.0 (fixes a low-severity ReDoS advisory in the GUID regex) and pytest to 9.0.3 (dev dependency).</p>
-      </description>
-    </release>
-    <release version="1.1.50" date="2026-06-02">
-      <description>
-        <p>Arctis Nova 5X (PID 0x2255) support — the 0x2255 variant is now declared in the device YAML, so it is detected and managed like the other Nova 5/5X models. Its udev rule is generated automatically at build time. Unmapped PIDs are surfaced in red in the README device table — any Product ID reported by telemetry but not yet declared in a device YAML is now listed automatically in red, so it can be triaged and promoted into a YAML. The list self-cleans: a PID drops out once it lands in a YAML. The device table also gained an lsusb -d 1038: snippet so users can find their own Product ID.</p>
-      </description>
-    </release>
-    <release version="1.1.49" date="2026-06-01">
-      <description>
-        <p>RNNoise mic noise-suppression dependency failed to install on Ubuntu (#65) — the plugin is not packaged for Ubuntu or its derivatives (Linux Mint, Pop!_OS, elementary, KDE neon), yet ASM suggested an apt package that has no candidate there. Those distros now build the LADSPA plugin from source in one click (Install / Copy cmd), and the dependency is no longer treated as blocking — the rest of ASM works without it. Debian keeps the apt package; Fedora and Arch are unchanged. The "Copy cmd" button also now preserves command quoting correctly. On the DAC OLED, the EQ-mode badge (S = Sonar, C = Custom EQ) is now shown to the right of the clock instead of on its own line.</p>
       </description>
     </release>
   </releases>
