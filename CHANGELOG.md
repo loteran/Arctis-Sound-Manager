@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.80] - 20 June 2026
+
+### Added
+
+- **3 new Sonar EQ presets from SteelSeries GG 113.0.0** — *007 First Light*, *Subnautica 2* and *Virtua Fighter 5 R.E.V.O World Stage* are now bundled for the Game channel.
+
+### Fixed
+
+- **Output (HDMI) channel silent after profile switch or device change** — the `sonar-output-eq` filter-chain config hardcoded `audio.channels = 8` and a stale `node.target` pointing to a non-existent `hdmi-surround71` device. ASM now queries PipeWire at config-write time to detect the active HDMI/DisplayPort sink and adapts channel count and position automatically (2.0 stereo, 5.1 surround, 7.1 surround). HDMI sinks are preferred over S/PDIF in auto-detection.
+- **Flat EQ for presets in SteelSeries GG 113+ format** — GG 113.0.0 changed the preset export format, wrapping all settings under a `data` key. Affected bundled presets (*Forza Horizon 6*, *Deep Rock Galactic: Rogue Core*, *Lineage 2*) were silently rendered as flat/bypass. The parser now handles both formats.
+
 ## [1.1.79] - 19 June 2026
 
 ### Fixed
