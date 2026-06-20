@@ -149,7 +149,7 @@ def test_bypass_micro_has_node_name_in_playback():
     text = generate_sonar_micro_conf([], 0.0, 0.0, 0.0,
                                      output_path=Path("/dev/null"),
                                      boost_db=0.0)
-    assert 'node.name      = "effect_output.sonar-micro-eq"' in text
+    assert 'node.name             = "effect_output.sonar-micro-eq"' in text
 
 
 def test_active_game_has_node_name_in_playback():
@@ -177,7 +177,7 @@ def test_micro_source_pattern():
     # Capture side: passive, no media.class
     assert "node.passive   = true" in text
     # Playback side: Audio/Source (not Audio/Source/Virtual)
-    assert "media.class    = Audio/Source" in text
+    assert "media.class           = Audio/Source" in text
     assert "Audio/Source/Virtual" not in text
     # No Audio/Sink on capture side
     assert "Audio/Sink" not in text
@@ -308,7 +308,7 @@ def test_check_and_fix_stale_configs_fixes_micro_source_virtual(tmp_path):
 
     fixed = (tmp_path / "sonar-micro-eq.conf").read_text()
     assert "Audio/Source/Virtual" not in fixed
-    assert "media.class    = Audio/Source" in fixed
+    assert "media.class           = Audio/Source" in fixed
 
 
 # ── generate_virtual_sinks_conf — deprecated shim behaviour ──────────────────
