@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.80" date="2026-06-20">
+      <description>
+        <p>3 new Sonar EQ presets from SteelSeries GG 113.0.0 — *007 First Light*, *Subnautica 2* and *Virtua Fighter 5 R.E.V.O World Stage* are now bundled for the Game channel. Output (HDMI) channel silent after profile switch or device change — the sonar-output-eq filter-chain config hardcoded audio.channels = 8 and a stale node.target pointing to a non-existent hdmi-surround71 device. ASM now queries PipeWire at config-write time to detect the active HDMI/DisplayPort sink and adapts channel count and position automatically (2.0 stereo, 5.1 surround, 7.1 surround). HDMI sinks are preferred over S/PDIF in auto-detection. Flat EQ for presets in SteelSeries GG 113+ format — GG 113.0.0 changed the preset export format, wrapping all settings under a data key. Affected bundled presets (*Forza Horizon 6*, *Deep Rock Galactic: Rogue Core*, *Lineage 2*) were silently rendered as flat/bypass. The parser now handles both formats.</p>
+      </description>
+    </release>
     <release version="1.1.79" date="2026-06-19">
       <description>
         <p>pacman mirror 404 auto-retry in deps dialog — when installing a missing dependency via the system deps dialog on Arch/CachyOS, a desynchronized mirror (HTTP 404 on the package file) caused the install to fail silently. The dialog now captures pacman output, detects the mirror-sync error pattern, and automatically retries with pacman -Syy to force a database refresh before running the original install command. A guard flag prevents infinite retry loops.</p>
@@ -199,11 +204,6 @@
     <release version="1.1.51" date="2026-06-02">
       <description>
         <p>Arctis 7+ reported as offline while actually connected — the power-status parser only recognised a single "online" byte (0x02), but the Arctis 7+ firmware reports several online sub-states (0x00, 0x02, 0x03). When the headset was in any of the unmatched states it was treated as powered off, so online detection and audio redirection failed. The parser now enumerates all online states explicitly via int_str_mapping (thanks @Michsior14 — #67). Bumped pygments to 2.20.0 (fixes a low-severity ReDoS advisory in the GUID regex) and pytest to 9.0.3 (dev dependency).</p>
-      </description>
-    </release>
-    <release version="1.1.50" date="2026-06-02">
-      <description>
-        <p>Arctis Nova 5X (PID 0x2255) support — the 0x2255 variant is now declared in the device YAML, so it is detected and managed like the other Nova 5/5X models. Its udev rule is generated automatically at build time. Unmapped PIDs are surfaced in red in the README device table — any Product ID reported by telemetry but not yet declared in a device YAML is now listed automatically in red, so it can be triaged and promoted into a YAML. The list self-cleans: a PID drops out once it lands in a YAML. The device table also gained an lsusb -d 1038: snippet so users can find their own Product ID.</p>
       </description>
     </release>
   </releases>
