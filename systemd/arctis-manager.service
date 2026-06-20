@@ -1,7 +1,7 @@
 [Unit]
 Description=Arctis Sound Manager
-After=pipewire.service pipewire-pulse.service
-Wants=pipewire.service
+After=pipewire.service pipewire-pulse.service filter-chain.service
+Wants=pipewire.service filter-chain.service
 StartLimitInterval=1min
 StartLimitBurst=5
 

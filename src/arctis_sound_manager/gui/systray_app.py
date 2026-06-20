@@ -152,16 +152,12 @@ class QSystrayApp(QBaseDesktopApp):
         # start (not restart): just ensure filter-chain is up without cutting audio.
         sc.start("filter-chain")
 
-        # Save the current default sink, then claim it for ASM so apps that
-        # open after ASM starts route to Arctis_Game instead of EasyEffects
-        # or whatever was default before. Restored in sig_stop().
+        # Save the current default sink so sig_stop() can restore it.
+        # The daemon owns redirect logic (redirect_audio_on_connect / on_disconnect).
         result = subprocess.run(
             ["pactl", "get-default-sink"], capture_output=True, text=True
         )
         self._previous_default_sink = result.stdout.strip()
-        subprocess.run(
-            ["pactl", "set-default-sink", "Arctis_Game"], capture_output=True
-        )
 
         self.dbus_bus = await MessageBus().connect()
 
