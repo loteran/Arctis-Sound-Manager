@@ -2,6 +2,7 @@
   "version": 1,
   "presets": [
     "#Blud [Game].json",
+    "007 First Light [Game].json",
     "AION [Game].json",
     "ARC Raiders [Game].json",
     "Alan Wake 2 [Game].json",
@@ -299,6 +300,7 @@
     "Stellar Blade [Game].json",
     "Stray [Game].json",
     "Street Fighter 6 [Game].json",
+    "Subnautica 2 [Game].json",
     "Suicide Squad_ Kill the Justice League [Game].json",
     "System Shock 2_ 25th Anniversary Remaster [Game].json",
     "System shock [Game].json",
@@ -326,6 +328,7 @@
     "Valorant by FaZe [Game].json",
     "Vampire_ The Masquerade - Bloodhunt [Game].json",
     "Vampire_ The Masquerade - Bloodlines 2 [Game].json",
+    "Virtua Fighter 5 R.E.V.O World Stage [Game].json",
     "Visions of Mana [Game].json",
     "WWE 2K25 [Game].json",
     "Walkie Talkie [Chat].json",

@@ -18,8 +18,7 @@ MANIFEST_PATH = Path(__file__).parent.parent / "presets_manifest.json"
 def main() -> None:
     presets = sorted(p.name for p in PRESETS_DIR.glob("*.json"))
     manifest = {"version": 1, "presets": presets}
-    MANIFEST_PATH.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "
-")
+    MANIFEST_PATH.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
     print(f"Generated {MANIFEST_PATH} — {len(presets)} presets.")
 
 
