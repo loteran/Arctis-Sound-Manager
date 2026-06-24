@@ -355,6 +355,49 @@ def collect_system_info() -> dict:
     info['session_type'] = os.environ.get('XDG_SESSION_TYPE', '<unset>')
     info['desktop'] = os.environ.get('XDG_CURRENT_DESKTOP', '<unset>')
 
+    # ── Gamescope / Steam Game Mode detection ─────────────────────────────────
+    # Under Bazzite (and other Steam Deck / Gamescope setups) the WirePlumber
+    # routing policy keeps changing, which can trigger sustained loopback flapping
+    # (issue #90).  Detecting this session upfront helps triage.
+    _gamescope_by_proc = bool(_run_out(['pgrep', '-x', 'gamescope']))
+    _desktop_val = (
+        os.environ.get('XDG_CURRENT_DESKTOP', '')
+        + ' '
+        + os.environ.get('XDG_SESSION_DESKTOP', '')
+    ).lower()
+    _gamescope_by_env = 'gamescope' in _desktop_val
+    if _gamescope_by_proc and _gamescope_by_env:
+        info['gamescope_session'] = 'yes (process found + XDG env match)'
+    elif _gamescope_by_proc:
+        info['gamescope_session'] = 'yes (gamescope process found)'
+    elif _gamescope_by_env:
+        info['gamescope_session'] = 'yes (XDG_CURRENT_DESKTOP/XDG_SESSION_DESKTOP contains "gamescope")'
+    else:
+        info['gamescope_session'] = 'no'
+
+    # ── Loopback watchdog activity summary ────────────────────────────────────
+    # Count occurrences of key watchdog log patterns in the already-captured
+    # arctis-manager journal so maintainers can instantly see if flapping is
+    # happening without grepping through the full log.
+    _WATCHDOG_KEYWORDS = (
+        '_loopback_watchdog',
+        'restarted dead',
+        'mislinked',
+        'orphaned',
+        'flapping',
+        'backing off',
+    )
+    _log_text = info.get('logs', '')
+    if _log_text:
+        _activity: dict[str, int] = {}
+        for _kw in _WATCHDOG_KEYWORDS:
+            _count = _log_text.lower().count(_kw.lower())
+            if _count:
+                _activity[_kw] = _count
+        info['loopback_watchdog_activity'] = _activity
+    else:
+        info['loopback_watchdog_activity'] = {}
+
     return info
 
 
@@ -375,8 +418,35 @@ def format_bug_report(traceback_str: Optional[str] = None) -> str:
         f'- **PULSE_SERVER**: `{info.get("pulse_server", "?")}`',
         f'- **PipeWire services**: {info.get("pw_service_status", "?")}',
         f'- **filter-chain.service**: {info.get("filter_chain_status", "?")}',
+        f'- **Gamescope session**: {info.get("gamescope_session", "?")}',
         '',
     ]
+
+    # Gamescope / Game Mode section — only when detected, so regular desktop
+    # reports stay uncluttered.
+    if info.get('gamescope_session', 'no') != 'no':
+        lines += [
+            '## Gamescope / Steam Game Mode',
+            '<!-- Gamescope session detected.  WirePlumber routing policy in Game Mode',
+            '     can repeatedly mis-route loopbacks, causing audio cuts (issue #90). -->',
+            f'- **Detection**: {info.get("gamescope_session", "?")}',
+            f'- **XDG_CURRENT_DESKTOP**: `{os.environ.get("XDG_CURRENT_DESKTOP", "<unset>")}`',
+            f'- **XDG_SESSION_DESKTOP**: `{os.environ.get("XDG_SESSION_DESKTOP", "<unset>")}`',
+            '',
+        ]
+
+    # Loopback watchdog activity — only shown when there is something to report.
+    _watchdog_activity = info.get('loopback_watchdog_activity', {})
+    if _watchdog_activity:
+        lines += [
+            '## Loopback watchdog activity (from recent daemon logs)',
+            '<!-- Non-zero counts here indicate the watchdog had to intervene.',
+            '     High "flapping" or "backing off" counts = issue #90 (Gamescope). -->',
+            '```',
+            *[f'{kw}: {count}' for kw, count in sorted(_watchdog_activity.items())],
+            '```',
+            '',
+        ]
 
     methods = info.get('install_methods', [])
     if methods:

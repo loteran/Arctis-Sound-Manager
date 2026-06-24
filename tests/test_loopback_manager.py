@@ -646,3 +646,103 @@ class TestSpecs:
                 mgr.start(spec)
         mgr.stop_all()
         assert mgr.specs() == {}
+
+
+# ── LoopbackManager.restart_dead skip_channels parameter ──────────────────────
+
+
+class TestRestartDeadSkipChannels:
+    """Tests for the anti-flapping ``skip_channels`` parameter of restart_dead().
+
+    The watchdog passes cooled-down channels here so that a dead process in
+    cooldown is NOT revived until the backoff expires.
+    """
+
+    def test_skip_none_behaves_like_no_arg(self, media_spec: LoopbackSpec) -> None:
+        """skip_channels=None must behave identically to calling restart_dead()
+        with no arguments (backward-compat guarantee)."""
+        mgr = LoopbackManager()
+        dead_proc = _mock_proc(returncode=1)
+        new_proc = _mock_proc()
+        new_proc.pid = 11111
+
+        with patch("subprocess.Popen", side_effect=[dead_proc, new_proc]):
+            mgr.start(media_spec)
+            restarted = mgr.restart_dead(skip_channels=None)
+
+        assert "media" in restarted
+
+    def test_skip_empty_set_restarts_dead(self, media_spec: LoopbackSpec) -> None:
+        """An explicit empty set still restarts dead channels (no-op skip)."""
+        mgr = LoopbackManager()
+        dead_proc = _mock_proc(returncode=1)
+        new_proc = _mock_proc()
+        new_proc.pid = 22222
+
+        with patch("subprocess.Popen", side_effect=[dead_proc, new_proc]):
+            mgr.start(media_spec)
+            restarted = mgr.restart_dead(skip_channels=set())
+
+        assert "media" in restarted
+
+    def test_dead_channel_in_skip_is_not_revived(
+        self, media_spec: LoopbackSpec
+    ) -> None:
+        """A dead channel whose name is in skip_channels must NOT be restarted."""
+        mgr = LoopbackManager()
+        dead_proc = _mock_proc(returncode=1)
+
+        with patch("subprocess.Popen", return_value=dead_proc) as mock_popen:
+            mgr.start(media_spec)  # Popen call 1 — returns dead_proc
+            restarted = mgr.restart_dead(skip_channels={"media"})
+
+        # No second Popen call — the channel was skipped.
+        assert mock_popen.call_count == 1
+        assert restarted == []
+
+    def test_skip_does_not_affect_other_channels(
+        self,
+        game_spec: LoopbackSpec,
+        chat_spec: LoopbackSpec,
+        media_spec: LoopbackSpec,
+    ) -> None:
+        """Only the named channel is skipped; other dead channels are still revived."""
+        mgr = LoopbackManager()
+        # game=alive, chat=dead (to be skipped), media=dead (should be revived)
+        live_proc = _mock_proc(returncode=None)   # game — alive
+        dead_chat = _mock_proc(returncode=2)      # chat — dead, in cooldown
+        dead_media = _mock_proc(returncode=3)     # media — dead, NOT in cooldown
+        revived_media = _mock_proc()
+        revived_media.pid = 33333
+
+        with patch(
+            "subprocess.Popen",
+            side_effect=[live_proc, dead_chat, dead_media, revived_media],
+        ):
+            mgr.start(game_spec)
+            mgr.start(chat_spec)
+            mgr.start(media_spec)
+            restarted = mgr.restart_dead(skip_channels={"chat"})
+
+        # Only media was revived; chat was skipped despite being dead.
+        assert "media" in restarted
+        assert "chat" not in restarted
+        assert "game" not in restarted
+
+    def test_skip_all_channels_returns_empty(
+        self, all_sonar_specs: list[LoopbackSpec]
+    ) -> None:
+        """When all channels are in skip_channels, restart_dead returns []."""
+        mgr = LoopbackManager()
+        procs = [_mock_proc(returncode=1) for _ in all_sonar_specs]  # all dead
+
+        with patch("subprocess.Popen", side_effect=procs) as mock_popen:
+            for spec in all_sonar_specs:
+                mgr.start(spec)
+            restarted = mgr.restart_dead(
+                skip_channels={"game", "chat", "media"}
+            )
+
+        assert restarted == []
+        # Popen called 3 times for initial start, 0 times for restart.
+        assert mock_popen.call_count == 3
