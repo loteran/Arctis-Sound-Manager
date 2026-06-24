@@ -302,7 +302,9 @@ class LoopbackManager:
                 return False
             return proc.poll() is None
 
-    def restart_dead(self) -> list[str]:
+    def restart_dead(
+        self, skip_channels: "set[str] | None" = None
+    ) -> list[str]:
         """Restart any loopback process that has died unexpectedly.
 
         Iterates over every channel that has a remembered spec (i.e. was
@@ -317,15 +319,29 @@ class LoopbackManager:
         This method is thread-safe and is designed to be called from the
         :meth:`CoreEngine._loopback_watchdog` coroutine at a regular cadence.
 
+        Parameters
+        ----------
+        skip_channels:
+            Optional set of channel names to exclude from restart even if
+            their process has died.  Used by the anti-flapping guard in
+            :meth:`CoreEngine._loopback_watchdog` to keep a channel suppressed
+            during its cooldown period.  ``None`` (default) behaves exactly
+            like the previous no-argument version — all dead channels are
+            restarted.
+
         Returns
         -------
         list[str]
             Logical channel names that were restarted (empty list if all
             loopbacks are healthy or nothing is registered).
         """
+        _skip: set[str] = skip_channels if skip_channels is not None else set()
         restarted: list[str] = []
         with self._lock:
             for channel, spec in list(self._specs.items()):
+                if channel in _skip:
+                    # Channel is in cooldown — do not revive it this cycle.
+                    continue
                 proc = self._handles.get(channel)
                 is_dead = proc is None or proc.poll() is not None
                 if not is_dead:

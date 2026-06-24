@@ -1043,6 +1043,25 @@ class HomePage(QWidget):
         if not version:
             self._update_banner.hide()
             return
+
+        # Proactive multi-install guard: if ASM is installed by more than one
+        # method (e.g. a stale pip --user shadowing an RPM), the "update
+        # available" signal itself may be a phantom caused by the older copy
+        # reporting its version.  Surface the multi-install situation right
+        # away instead of showing a misleading "update available" banner.
+        from arctis_sound_manager.update_checker import detect_all_install_methods
+        _all_methods = detect_all_install_methods()
+        if len(_all_methods) > 1:
+            self._update_label.setText(I18n.translate("ui", "update_multi_install"))
+            self._update_link_btn.clicked.connect(
+                lambda: QDesktopServices.openUrl(QUrl(url))
+            )
+            # Hide the "Update now" button — it would install on top of one
+            # copy without cleaning the others, making the situation worse.
+            self._update_install_btn.hide()
+            self._update_banner.show()
+            return
+
         self._update_label.setText(
             I18n.translate("ui", "update_available").replace("{version}", version)
         )

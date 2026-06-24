@@ -284,8 +284,38 @@ def collect_system_info() -> dict:
         ['journalctl', '--user', '-u', 'pipewire', '-n', '20', '--no-pager'],
     )
     info['journalctl_filter_chain'] = _run_out(
-        ['journalctl', '--user', '-u', 'filter-chain', '-n', '30', '--no-pager'],
+        ['journalctl', '--user', '-u', 'filter-chain', '-n', '80', '--no-pager'],
     )
+
+    # A filter-chain SIGSEGV (issue #88) leaves a coredump whose backtrace names
+    # the offending module — the single most useful artifact to locate the crash.
+    # coredumpctl is systemd-only; _run_out returns '' when it's absent.
+    _coredump_raw = _run_out(
+        ['coredumpctl', 'info', '--no-pager', 'pipewire'], timeout=10.0,
+    )
+    info['coredump_filter_chain'] = (
+        '\n'.join(_coredump_raw.splitlines()[-200:]) if _coredump_raw else ''
+    )
+
+    # The generated filter-chain configs themselves: a LADSPA plugin referenced
+    # here but absent on the host is the most likely segfault cause.
+    _fc_conf_dir = Path.home() / '.config' / 'pipewire' / 'filter-chain.conf.d'
+    _fc_conf_entries: list[str] = []
+    if _fc_conf_dir.is_dir():
+        try:
+            for _p in sorted(_fc_conf_dir.iterdir()):
+                if not _p.is_file():
+                    continue
+                try:
+                    _fc_content = _p.read_text(encoding='utf-8', errors='replace')
+                except OSError as _e:
+                    _fc_content = f'(could not read: {_e!r})'
+                _fc_conf_entries.append(
+                    f'### {_p.name}\n```\n{_fc_content.strip()}\n```'
+                )
+        except OSError:
+            pass
+    info['filter_chain_confs'] = '\n\n'.join(_fc_conf_entries)
 
     # udev rules: which paths exist + the actual content of the active file.
     # The ASM checker's own verdict on whether the rules are valid is also useful.
@@ -325,6 +355,49 @@ def collect_system_info() -> dict:
     info['session_type'] = os.environ.get('XDG_SESSION_TYPE', '<unset>')
     info['desktop'] = os.environ.get('XDG_CURRENT_DESKTOP', '<unset>')
 
+    # ── Gamescope / Steam Game Mode detection ─────────────────────────────────
+    # Under Bazzite (and other Steam Deck / Gamescope setups) the WirePlumber
+    # routing policy keeps changing, which can trigger sustained loopback flapping
+    # (issue #90).  Detecting this session upfront helps triage.
+    _gamescope_by_proc = bool(_run_out(['pgrep', '-x', 'gamescope']))
+    _desktop_val = (
+        os.environ.get('XDG_CURRENT_DESKTOP', '')
+        + ' '
+        + os.environ.get('XDG_SESSION_DESKTOP', '')
+    ).lower()
+    _gamescope_by_env = 'gamescope' in _desktop_val
+    if _gamescope_by_proc and _gamescope_by_env:
+        info['gamescope_session'] = 'yes (process found + XDG env match)'
+    elif _gamescope_by_proc:
+        info['gamescope_session'] = 'yes (gamescope process found)'
+    elif _gamescope_by_env:
+        info['gamescope_session'] = 'yes (XDG_CURRENT_DESKTOP/XDG_SESSION_DESKTOP contains "gamescope")'
+    else:
+        info['gamescope_session'] = 'no'
+
+    # ── Loopback watchdog activity summary ────────────────────────────────────
+    # Count occurrences of key watchdog log patterns in the already-captured
+    # arctis-manager journal so maintainers can instantly see if flapping is
+    # happening without grepping through the full log.
+    _WATCHDOG_KEYWORDS = (
+        '_loopback_watchdog',
+        'restarted dead',
+        'mislinked',
+        'orphaned',
+        'flapping',
+        'backing off',
+    )
+    _log_text = info.get('logs', '')
+    if _log_text:
+        _activity: dict[str, int] = {}
+        for _kw in _WATCHDOG_KEYWORDS:
+            _count = _log_text.lower().count(_kw.lower())
+            if _count:
+                _activity[_kw] = _count
+        info['loopback_watchdog_activity'] = _activity
+    else:
+        info['loopback_watchdog_activity'] = {}
+
     return info
 
 
@@ -345,8 +418,35 @@ def format_bug_report(traceback_str: Optional[str] = None) -> str:
         f'- **PULSE_SERVER**: `{info.get("pulse_server", "?")}`',
         f'- **PipeWire services**: {info.get("pw_service_status", "?")}',
         f'- **filter-chain.service**: {info.get("filter_chain_status", "?")}',
+        f'- **Gamescope session**: {info.get("gamescope_session", "?")}',
         '',
     ]
+
+    # Gamescope / Game Mode section — only when detected, so regular desktop
+    # reports stay uncluttered.
+    if info.get('gamescope_session', 'no') != 'no':
+        lines += [
+            '## Gamescope / Steam Game Mode',
+            '<!-- Gamescope session detected.  WirePlumber routing policy in Game Mode',
+            '     can repeatedly mis-route loopbacks, causing audio cuts (issue #90). -->',
+            f'- **Detection**: {info.get("gamescope_session", "?")}',
+            f'- **XDG_CURRENT_DESKTOP**: `{os.environ.get("XDG_CURRENT_DESKTOP", "<unset>")}`',
+            f'- **XDG_SESSION_DESKTOP**: `{os.environ.get("XDG_SESSION_DESKTOP", "<unset>")}`',
+            '',
+        ]
+
+    # Loopback watchdog activity — only shown when there is something to report.
+    _watchdog_activity = info.get('loopback_watchdog_activity', {})
+    if _watchdog_activity:
+        lines += [
+            '## Loopback watchdog activity (from recent daemon logs)',
+            '<!-- Non-zero counts here indicate the watchdog had to intervene.',
+            '     High "flapping" or "backing off" counts = issue #90 (Gamescope). -->',
+            '```',
+            *[f'{kw}: {count}' for kw, count in sorted(_watchdog_activity.items())],
+            '```',
+            '',
+        ]
 
     methods = info.get('install_methods', [])
     if methods:
@@ -478,10 +578,33 @@ def format_bug_report(traceback_str: Optional[str] = None) -> str:
     jc_fc = info.get('journalctl_filter_chain', '')
     if jc_fc:
         lines += [
-            '## filter-chain logs (`journalctl --user -u filter-chain`, last 30)',
+            '## filter-chain logs (`journalctl --user -u filter-chain`, last 80)',
             '```',
-            jc_fc[-3000:],
+            jc_fc[-6000:],
             '```',
+            '',
+        ]
+
+    coredump = info.get('coredump_filter_chain', '')
+    if coredump:
+        lines += [
+            '## filter-chain coredump backtrace (`coredumpctl info pipewire`)',
+            '<!-- Captured from the systemd coredump store. Empty on non-systemd',
+            '     distros or when no coredump was recorded. -->',
+            '```',
+            coredump[-6000:],
+            '```',
+            '',
+        ]
+
+    fc_confs = info.get('filter_chain_confs', '')
+    if fc_confs:
+        lines += [
+            '## ASM filter-chain configs (`~/.config/pipewire/filter-chain.conf.d/`)',
+            '<!-- A LADSPA plugin referenced here but absent on the host filesystem',
+            '     is the most likely segfault cause (issue #88). -->',
+            '',
+            fc_confs,
             '',
         ]
 

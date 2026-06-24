@@ -119,7 +119,7 @@ jobs:
           # bumps the version: `release: vX`, `Merge develop for vX`, and the
           # legacy `chore: bump version`.
           MSG=$(git log -1 --pretty=%s)
-          if echo "$MSG" | grep -qE "^(chore: bump version|release: v[0-9]|Merge develop for v[0-9])"; then
+          if echo "$MSG" | grep -qE "^(chore(\([^)]*\))?: bump version|release: v[0-9]|Merge develop for v[0-9])"; then
             echo "Release/version-bump commit — skipping packaging drift check (sync job will fix it)."
             exit 0
           fi

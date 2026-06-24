@@ -9,6 +9,8 @@ import signal
 import sys
 from argparse import ArgumentParser
 
+log = logging.getLogger(__name__)
+
 
 def _check_display_or_exit() -> None:
     """Refuse to start cleanly on a system with no graphical session.

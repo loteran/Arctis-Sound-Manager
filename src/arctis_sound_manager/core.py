@@ -303,6 +303,15 @@ class CoreEngine:
            interval) before being recreated: a single-tick ``None`` is a normal
            transient PipeWire state and must not trigger a spurious recreate.
 
+        **Anti-flapping guard** — under Gamescope / Steam Game Mode, WirePlumber
+        routing policy may continuously mis-route loopbacks, causing the watchdog
+        to recreate them in a tight loop and producing sustained audio cuts.  To
+        break this cycle, the watchdog tracks recent interventions per channel and
+        applies an exponential-backoff cooldown when a channel is recreated too
+        often.  During cooldown, the channel is skipped entirely (no restart, no
+        recreate).  A muted-but-stable loopback is less disruptive than constant
+        cuts.
+
         The coroutine exits cleanly when ``self._stopping`` is set (by
         :meth:`stop`) or when the task is cancelled (by the daemon shutdown
         handler).  Errors are always caught and logged — this coroutine must
@@ -316,10 +325,35 @@ class CoreEngine:
         # 3 ticks = 15 s of grace before action.  Transient None states (one
         # PipeWire graph cycle) are ignored entirely.
         _ORPHAN_GRACE_TICKS: int = 3
+
+        # ── Anti-flapping constants ───────────────────────────────────────────
+        # Threshold: how many interventions (restart OR recreate) within the
+        # observation window trigger a cooldown.  3 events in 30 s means the
+        # channel has already been disrupted 3 times in ~15 s of real time.
+        _FLAP_THRESHOLD: int = 3
+        # Rolling window for counting recent interventions (seconds).
+        _FLAP_WINDOW: float = 30.0
+        # First cooldown applied when flapping is detected (seconds).
+        _COOLDOWN_BASE: float = 60.0
+        # Maximum cooldown; repeated flapping doubles up to this cap (seconds).
+        _COOLDOWN_MAX: float = 300.0
+
+        # ── Per-channel state ─────────────────────────────────────────────────
         # Per-channel count of consecutive ticks where loopback_link_target
         # returned None.  Reset to 0 whenever the link becomes non-None or the
         # loopback is restarted.
         _none_ticks: dict[str, int] = {}
+        # Timestamps of recent interventions per channel (monotonic clock).
+        _flap_history: dict[str, list[float]] = {}
+        # Monotonic timestamp past which the channel is in cooldown.
+        _cooldown_until: dict[str, float] = {}
+        # Current cooldown duration per channel (doubles on each new flap event,
+        # capped at _COOLDOWN_MAX; resets toward base after the channel is healthy).
+        _cooldown_dur: dict[str, float] = {}
+        # Whether we have already emitted the "skipping (in cooldown)" log line
+        # for the current cooldown period (avoid per-tick log spam).
+        _cooldown_logged: dict[str, bool] = {}
+
         try:
             while not self._stopping:
                 await asyncio.sleep(_WATCHDOG_INTERVAL)
@@ -328,8 +362,56 @@ class CoreEngine:
                 if not device_state.is_device_set():
                     # No device — no loopbacks to watch.
                     continue
+
+                now = time.monotonic()
+
+                # Channels currently in cooldown — passed to restart_dead so that
+                # a dead process in cooldown is NOT revived this tick.
+                cooled_channels: set[str] = {
+                    ch for ch, until in _cooldown_until.items() if now < until
+                }
+
+                def _record_intervention(channel: str) -> None:
+                    """Record one intervention, purge stale history, trigger cooldown if flapping."""
+                    history = _flap_history.setdefault(channel, [])
+                    history.append(now)
+                    # Purge entries older than the observation window.
+                    cutoff = now - _FLAP_WINDOW
+                    _flap_history[channel] = [t for t in history if t >= cutoff]
+                    if len(_flap_history[channel]) >= _FLAP_THRESHOLD:
+                        dur = _cooldown_dur.get(channel, _COOLDOWN_BASE)
+                        _cooldown_until[channel] = now + dur
+                        # Double the duration for the next flap event (exponential
+                        # backoff), capped at _COOLDOWN_MAX.
+                        _cooldown_dur[channel] = min(dur * 2.0, _COOLDOWN_MAX)
+                        self.logger.warning(
+                            "_loopback_watchdog: loopback '%s' flapping "
+                            "(%d recreations/%ds) — backing off for %ds; "
+                            "audio for this channel may be degraded but stable",
+                            channel,
+                            len(_flap_history[channel]),
+                            int(_FLAP_WINDOW),
+                            int(dur),
+                        )
+                        # Clear history so the window starts fresh after cooldown.
+                        _flap_history[channel] = []
+                        _cooldown_logged[channel] = False
+
+                # Channels that have exited their cooldown since the last tick:
+                # gradually reset their cooldown duration back toward base so a
+                # channel that was flapping but became healthy doesn't stay at a
+                # high backoff forever.
+                for ch in list(_cooldown_until.keys()):
+                    if now >= _cooldown_until[ch]:
+                        # Cooldown expired — halve the duration back toward base
+                        # (but keep the key so the next flap doesn't restart cold).
+                        current = _cooldown_dur.get(ch, _COOLDOWN_BASE)
+                        _cooldown_dur[ch] = max(current / 2.0, _COOLDOWN_BASE)
+
                 try:
-                    restarted = self.loopback_manager.restart_dead()
+                    restarted = self.loopback_manager.restart_dead(
+                        skip_channels=cooled_channels if cooled_channels else None
+                    )
                     if restarted:
                         self.logger.warning(
                             "_loopback_watchdog: restarted dead loopback(s): %s",
@@ -337,6 +419,17 @@ class CoreEngine:
                         )
                         for ch in restarted:
                             _none_ticks.pop(ch, None)
+                            _record_intervention(ch)
+                    # Log once per cooldown period for any channel we are skipping.
+                    for ch in cooled_channels:
+                        if not _cooldown_logged.get(ch, False):
+                            remaining = int(_cooldown_until[ch] - now)
+                            self.logger.info(
+                                "_loopback_watchdog: loopback '%s' in anti-flap "
+                                "cooldown — skipping for ~%ds more",
+                                ch, remaining,
+                            )
+                            _cooldown_logged[ch] = True
                 except Exception as exc:
                     self.logger.error(
                         "_loopback_watchdog: unexpected error in restart_dead: %r", exc
@@ -348,6 +441,9 @@ class CoreEngine:
                 # just restarted — give them one watchdog tick to get linked.
                 try:
                     for channel, spec in self.loopback_manager.specs().items():
+                        if channel in cooled_channels:
+                            # In anti-flap cooldown — do not intervene this tick.
+                            continue
                         if channel in restarted:
                             # Just recreated — node.target will bind next cycle.
                             continue
@@ -378,6 +474,7 @@ class CoreEngine:
                                 channel, actual, spec.target,
                             )
                         self.loopback_manager.recreate(spec)
+                        _record_intervention(channel)
                         if channel == "chat":
                             # After recreating Chat, move PA streams that
                             # had routing overrides back to Arctis_Chat so

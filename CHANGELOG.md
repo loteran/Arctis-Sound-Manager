@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.82] - 24 June 2026
+
+### Fixed
+
+- **Audio cuts in and out in Steam Game Mode / Gamescope (Bazzite, SteamOS)** — under Gamescope, WirePlumber keeps reshuffling routing, so the loopback watchdog saw a permanent mislink and recreated the `Arctis_Game` / `Arctis_Chat` / `Arctis_Media` loopbacks every few seconds, each recreation causing a brief cut, looping forever. The watchdog now has an anti-flapping guard: when a channel is recreated 3 times within 30 s it enters a cooldown (60 s, doubling up to 5 min) during which it is left alone — a stable loopback, even if temporarily mislinked, is far less disruptive than constant cuts. (#90)
+- **Filter-chain crash-loop left audio permanently broken (Steam Deck / SteamOS)** — when the PipeWire filter-chain SIGSEGVs on startup (e.g. a LADSPA plugin present in a Distrobox container but missing on the host), systemd restarted it endlessly, so the virtual sinks kept appearing and disappearing. ASM now detects the crash-loop, moves its EQ configs aside ("safe mode") and restarts once more to give flat-but-stable audio instead of perpetual cuts. (#88)
+- **Phantom "update available" that never goes away (Fedora and similar)** — a leftover `pip install --user` copy in `~/.local` shadowed the distro package on `sys.path`, so ASM read that stale copy's old version and nagged about an update that was already installed. ASM now reports the version of the package actually running, detects a shadowing pip install and shows a clear "multiple installations detected" message instead, and the dnf update command uses `--refresh` so a real new version is never hidden by stale COPR metadata.
+
+### Diagnostics
+
+- Bug reports now capture the filter-chain coredump backtrace and the generated `filter-chain.conf.d/` configs (to pinpoint segfaults), whether the session is Steam Game Mode / Gamescope, and a summary of recent loopback watchdog activity.
+
+## [1.1.81] - 20 June 2026
+
+### Fixed
+
+- **YouTube and browser audio silent when ASM is running** — `sonar-output-eq` was generated with `media.class = Audio/Sink/Internal` even in bypass mode, making it invisible to normal apps. WirePlumber had memorised `Firefox → effect_input.sonar-output-eq` in its `stream-properties` database, then refused to connect any new stream to that node (Internal nodes cannot be targeted by PulseAudio-compat clients), leaving Firefox suspended with no sink. The node is now `Audio/Sink` with `priority.session = 1` so apps can connect to it while it is never auto-selected as the default output. Same fix applied to the active 8-channel path.
+- **Audio routing broken after daemon restart without the system tray** — the `arctis-manager` systemd unit now declares `Wants=filter-chain.service` and `After=filter-chain.service`. Previously, restarting the daemon alone left the filter-chain stopped, causing all Sonar EQ loopbacks (`sonar-game-eq`, `sonar-chat-eq`, `sonar-media-eq`) to become orphaned and be recreated every 15 s until WirePlumber degraded.
+- **System tray forced `Arctis_Game` as default sink unconditionally on startup** — the GUI `start()` method called `pactl set-default-sink Arctis_Game` regardless of headset state. When the headset was off, Firefox and any other app opening after ASM started were routed to a dead sink. Default-sink redirection is now owned exclusively by the daemon (`redirect_audio_on_connect` / `on_disconnect` logic).
+
 ## [1.1.80] - 20 June 2026
 
 ### Added
