@@ -4,15 +4,47 @@
 
 from abc import ABC
 from enum import Enum
-from importlib.metadata import PackageNotFoundError, version
+from importlib.metadata import PackageNotFoundError, distributions, version
+from pathlib import Path
 from typing import Any, Callable, Generic, TypeVar
 
 
 def project_version() -> str:
+    """Return the version of the distribution that ACTUALLY provides the running
+    arctis_sound_manager package.
+
+    On Fedora (and similar setups) there can be a stale ``pip install --user``
+    copy in ``~/.local`` that shadows the RPM install on ``sys.path``.
+    ``importlib.metadata.version()`` returns the FIRST metadata directory found,
+    which may belong to that stale user copy rather than the system-installed
+    package.  Instead, we locate the running package on disk and walk the
+    installed distributions to find the one whose installation root contains our
+    package directory — that is the correct version to report.
+
+    Falls back to the name-based lookup, then ``"dev"`` if everything fails.
+    """
     try:
-        return version("arctis-sound-manager")  # metti il nome del package
+        import arctis_sound_manager as _pkg
+        pkg_dir = Path(_pkg.__file__).resolve().parent
+
+        for dist in distributions():
+            try:
+                # direct_url.json / RECORD both live under dist.locate_file(".")
+                dist_root = Path(dist.locate_file(".")).resolve()
+                if pkg_dir.is_relative_to(dist_root):
+                    return dist.version
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    # Name-based fallback (may return wrong version when shadowed)
+    try:
+        return version("arctis-sound-manager")
     except PackageNotFoundError:
-        return "dev"
+        pass
+
+    return "dev"
 
 
 class JsonSerializable(ABC):
