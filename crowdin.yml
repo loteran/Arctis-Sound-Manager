@@ -5,5 +5,3 @@ files:
   - source: /src/arctis_sound_manager/lang/en.ini
     translation: /src/arctis_sound_manager/lang/%two_letters_code%.ini
     update_option: update_as_unapproved
-    excluded_target_languages:
-      - en
