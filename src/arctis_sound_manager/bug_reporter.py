@@ -284,8 +284,38 @@ def collect_system_info() -> dict:
         ['journalctl', '--user', '-u', 'pipewire', '-n', '20', '--no-pager'],
     )
     info['journalctl_filter_chain'] = _run_out(
-        ['journalctl', '--user', '-u', 'filter-chain', '-n', '30', '--no-pager'],
+        ['journalctl', '--user', '-u', 'filter-chain', '-n', '80', '--no-pager'],
     )
+
+    # A filter-chain SIGSEGV (issue #88) leaves a coredump whose backtrace names
+    # the offending module — the single most useful artifact to locate the crash.
+    # coredumpctl is systemd-only; _run_out returns '' when it's absent.
+    _coredump_raw = _run_out(
+        ['coredumpctl', 'info', '--no-pager', 'pipewire'], timeout=10.0,
+    )
+    info['coredump_filter_chain'] = (
+        '\n'.join(_coredump_raw.splitlines()[-200:]) if _coredump_raw else ''
+    )
+
+    # The generated filter-chain configs themselves: a LADSPA plugin referenced
+    # here but absent on the host is the most likely segfault cause.
+    _fc_conf_dir = Path.home() / '.config' / 'pipewire' / 'filter-chain.conf.d'
+    _fc_conf_entries: list[str] = []
+    if _fc_conf_dir.is_dir():
+        try:
+            for _p in sorted(_fc_conf_dir.iterdir()):
+                if not _p.is_file():
+                    continue
+                try:
+                    _fc_content = _p.read_text(encoding='utf-8', errors='replace')
+                except OSError as _e:
+                    _fc_content = f'(could not read: {_e!r})'
+                _fc_conf_entries.append(
+                    f'### {_p.name}\n```\n{_fc_content.strip()}\n```'
+                )
+        except OSError:
+            pass
+    info['filter_chain_confs'] = '\n\n'.join(_fc_conf_entries)
 
     # udev rules: which paths exist + the actual content of the active file.
     # The ASM checker's own verdict on whether the rules are valid is also useful.
@@ -478,10 +508,33 @@ def format_bug_report(traceback_str: Optional[str] = None) -> str:
     jc_fc = info.get('journalctl_filter_chain', '')
     if jc_fc:
         lines += [
-            '## filter-chain logs (`journalctl --user -u filter-chain`, last 30)',
+            '## filter-chain logs (`journalctl --user -u filter-chain`, last 80)',
             '```',
-            jc_fc[-3000:],
+            jc_fc[-6000:],
             '```',
+            '',
+        ]
+
+    coredump = info.get('coredump_filter_chain', '')
+    if coredump:
+        lines += [
+            '## filter-chain coredump backtrace (`coredumpctl info pipewire`)',
+            '<!-- Captured from the systemd coredump store. Empty on non-systemd',
+            '     distros or when no coredump was recorded. -->',
+            '```',
+            coredump[-6000:],
+            '```',
+            '',
+        ]
+
+    fc_confs = info.get('filter_chain_confs', '')
+    if fc_confs:
+        lines += [
+            '## ASM filter-chain configs (`~/.config/pipewire/filter-chain.conf.d/`)',
+            '<!-- A LADSPA plugin referenced here but absent on the host filesystem',
+            '     is the most likely segfault cause (issue #88). -->',
+            '',
+            fc_confs,
             '',
         ]
 
