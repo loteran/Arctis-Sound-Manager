@@ -1,3 +1,36 @@
+arctis-sound-manager (1.1.82-1) noble; urgency=medium
+
+  * Audio cuts in and out in Steam Game Mode / Gamescope (Bazzite, SteamOS)
+    — under Gamescope, WirePlumber keeps reshuffling routing, so the
+    loopback watchdog saw a permanent mislink and recreated the Arctis_Game
+    / Arctis_Chat / Arctis_Media loopbacks every few seconds, each
+    recreation causing a brief cut, looping forever. The watchdog now has an
+    anti-flapping guard: when a channel is recreated 3 times within 30 s it
+    enters a cooldown (60 s, doubling up to 5 min) during which it is left
+    alone — a stable loopback, even if temporarily mislinked, is far less
+    disruptive than constant cuts. (#90)
+  * Filter-chain crash-loop left audio permanently broken (Steam Deck /
+    SteamOS) — when the PipeWire filter-chain SIGSEGVs on startup (e.g. a
+    LADSPA plugin present in a Distrobox container but missing on the host),
+    systemd restarted it endlessly, so the virtual sinks kept appearing and
+    disappearing. ASM now detects the crash-loop, moves its EQ configs aside
+    ("safe mode") and restarts once more to give flat-but-stable audio
+    instead of perpetual cuts. (#88)
+  * Phantom "update available" that never goes away (Fedora and similar) — a
+    leftover pip install --user copy in ~/.local shadowed the distro package
+    on sys.path, so ASM read that stale copy's old version and nagged about
+    an update that was already installed. ASM now reports the version of the
+    package actually running, detects a shadowing pip install and shows a
+    clear "multiple installations detected" message instead, and the dnf
+    update command uses --refresh so a real new version is never hidden by
+    stale COPR metadata.
+  * Bug reports now capture the filter-chain coredump backtrace and the
+    generated filter-chain.conf.d/ configs (to pinpoint segfaults), whether
+    the session is Steam Game Mode / Gamescope, and a summary of recent
+    loopback watchdog activity.
+
+ -- loteran <axel.valadon@gmail.com>  Wed, 24 Jun 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.81-1) noble; urgency=medium
 
   * YouTube and browser audio silent when ASM is running — sonar-output-eq
