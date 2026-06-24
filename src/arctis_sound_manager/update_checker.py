@@ -8,6 +8,7 @@ import json
 import logging
 import re
 import shutil
+import site
 import subprocess
 import urllib.request
 from datetime import datetime, timezone
@@ -59,6 +60,37 @@ def detect_all_install_methods() -> list[InstallMethod]:
         except FileNotFoundError:
             pass
 
+    # Detect a pip --user install that shadows a system package manager install.
+    # We check two complementary signals:
+    #   1. The running arctis_sound_manager package lives under the user-site
+    #      directory (~/.local/…/site-packages), which means a pip --user copy
+    #      is loaded even when a system package is also present.
+    #   2. There are multiple `asm-daemon` binaries on PATH (system + user-local).
+    # Either signal alone is enough to flag a shadowing pip install.
+    try:
+        import arctis_sound_manager as _asm_pkg
+        running_path = Path(_asm_pkg.__file__).resolve()
+
+        # Signal 1 — running package lives under user site-packages
+        _user_site = Path(site.getusersitepackages()).resolve()
+        _pip_user_detected = running_path.is_relative_to(_user_site)
+
+        # Signal 2 — multiple asm-daemon binaries on PATH
+        if not _pip_user_detected:
+            try:
+                r2 = subprocess.run(
+                    ["bash", "-c", "command -v -a asm-daemon 2>/dev/null"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                _pip_user_detected = r2.stdout.count("\n") > 1
+            except Exception:
+                pass
+
+        if _pip_user_detected and InstallMethod.PIP not in found:
+            found.append(InstallMethod.PIP)
+    except Exception:
+        pass
+
     return found
 
 
@@ -69,7 +101,9 @@ def detect_install_method() -> InstallMethod:
 
 
 PACKAGE_MANAGER_COMMANDS: dict[InstallMethod, str] = {
-    InstallMethod.RPM:    "sudo dnf upgrade arctis-sound-manager && asm-setup",
+    # --refresh forces dnf to re-sync COPR metadata; without it a stale cache
+    # can report "nothing to upgrade" even when a newer package exists.
+    InstallMethod.RPM:    "sudo dnf upgrade --refresh arctis-sound-manager && asm-setup",
     InstallMethod.PACMAN: "paru -S arctis-sound-manager && asm-setup",
     InstallMethod.APT:    "sudo apt update && sudo apt upgrade arctis-sound-manager && asm-setup",
 }
