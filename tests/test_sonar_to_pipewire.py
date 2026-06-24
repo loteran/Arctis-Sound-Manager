@@ -460,3 +460,90 @@ def test_read_eq_mode_is_sonar_returns_false_when_file_contains_custom(tmp_path)
     eq_mode_file = tmp_path / ".eq_mode"
     eq_mode_file.write_text("custom")
     assert _eq_mode_is_sonar(eq_mode_file) is False
+
+
+# ── _restart_filter_chain crash-loop safe mode (issue #88) ────────────────────
+
+
+def test_restart_filter_chain_stable_no_safe_mode(monkeypatch):
+    """When the filter-chain stays up, safe mode is NOT entered."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    monkeypatch.setattr(stp, "_filter_chain_safe_mode", False)
+
+    restart_calls = []
+    with patch("arctis_sound_manager.service_control.restart",
+               side_effect=lambda *a, **kw: restart_calls.append(a) or True), \
+         patch("arctis_sound_manager.service_control.is_active", return_value=True), \
+         patch("time.sleep"):
+        stp._restart_filter_chain()
+
+    assert len(restart_calls) == 1
+    assert stp._filter_chain_safe_mode is False
+
+
+def test_restart_filter_chain_crash_loop_enters_safe_mode(tmp_path, monkeypatch):
+    """A persistent crash-loop triggers safe mode and moves ASM configs aside."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    monkeypatch.setattr(stp, "_filter_chain_safe_mode", False)
+    monkeypatch.setattr(stp, "_CONF_DIR", tmp_path)
+    monkeypatch.setattr(stp, "_CONF_DIR_DISABLED", tmp_path.parent / "disabled")
+
+    (tmp_path / "sonar-game-eq.conf").write_text("game")
+    (tmp_path / "sonar-chat-eq.conf").write_text("chat")
+    (tmp_path / "unrelated.conf").write_text("should stay")
+
+    with patch("arctis_sound_manager.service_control.restart", return_value=True), \
+         patch("arctis_sound_manager.service_control.is_active", return_value=False), \
+         patch("time.sleep"):
+        stp._restart_filter_chain()
+
+    assert stp._filter_chain_safe_mode is True
+    disabled = tmp_path.parent / "disabled"
+    assert (disabled / "sonar-game-eq.conf").exists()
+    assert (disabled / "sonar-chat-eq.conf").exists()
+    assert not (tmp_path / "sonar-game-eq.conf").exists()
+    assert (tmp_path / "unrelated.conf").exists()  # non-ASM file untouched
+
+
+def test_restart_filter_chain_noop_when_already_safe_mode(monkeypatch):
+    """Calling _restart_filter_chain while already in safe mode is a no-op."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    monkeypatch.setattr(stp, "_filter_chain_safe_mode", True)
+
+    restart_calls = []
+    with patch("arctis_sound_manager.service_control.restart",
+               side_effect=lambda *a, **kw: restart_calls.append(a) or True):
+        stp._restart_filter_chain()
+
+    assert restart_calls == []
+
+
+def test_safe_mode_moves_only_asm_files(tmp_path, monkeypatch):
+    """_enter_filter_chain_safe_mode moves only filenames in _ASM_CONF_NAMES."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    monkeypatch.setattr(stp, "_filter_chain_safe_mode", False)
+    monkeypatch.setattr(stp, "_CONF_DIR", tmp_path)
+    disabled_dir = tmp_path.parent / "fc_disabled"
+    monkeypatch.setattr(stp, "_CONF_DIR_DISABLED", disabled_dir)
+
+    for name in stp._ASM_CONF_NAMES:
+        (tmp_path / name).write_text(f"# {name}")
+    (tmp_path / "user-custom.conf").write_text("# user-managed")
+    (tmp_path / "10-system.conf").write_text("# system-managed")
+
+    with patch("arctis_sound_manager.service_control.restart", return_value=True):
+        stp._enter_filter_chain_safe_mode()
+
+    for name in stp._ASM_CONF_NAMES:
+        assert (disabled_dir / name).exists(), f"{name} should have moved"
+        assert not (tmp_path / name).exists(), f"{name} should not remain"
+    assert (tmp_path / "user-custom.conf").exists()
+    assert (tmp_path / "10-system.conf").exists()
+
+
+def test_reset_filter_chain_safe_mode_clears_flag(monkeypatch):
+    """reset_filter_chain_safe_mode() clears the module-level flag."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    monkeypatch.setattr(stp, "_filter_chain_safe_mode", True)
+    stp.reset_filter_chain_safe_mode()
+    assert stp._filter_chain_safe_mode is False

@@ -29,9 +29,28 @@ _log = logging.getLogger(__name__)
 
 
 def _ladspa_plugin_available(name_pattern: str) -> bool:
-    """Return True if a LADSPA .so matching name_pattern is found in standard dirs."""
+    """Return True if a LADSPA .so matching name_pattern is found in standard dirs.
+
+    NOTE: under Distrobox/Flatpak the filter-chain service runs on the HOST while
+    this scan sees the CONTAINER filesystem. A plugin found here may be absent on
+    the host, making filter-chain SEGV when it tries to dlopen() it (issue #88).
+    We warn but do not disable LADSPA in containers, since the user may have
+    installed the plugins on the host too.
+    """
     import fnmatch
     from pathlib import Path
+    try:
+        from arctis_sound_manager.bug_reporter import _detect_container_env
+        _container = _detect_container_env()
+    except Exception:
+        _container = 'native'
+    if _container != 'native':
+        _log.warning(
+            "LADSPA scan for '%s' runs inside a container (%s); a plugin found "
+            "here may be missing on the host, which can crash filter-chain. "
+            "Install the LADSPA plugins on the host if filter-chain fails to start.",
+            name_pattern, _container,
+        )
     _dirs = (
         "/usr/lib64/ladspa",
         "/usr/lib/ladspa",
@@ -233,10 +252,111 @@ def _link_ladspa(out: str, inp: str) -> str:
 
 # ── HRIR choice ───────────────────────────────────────────────────────────────
 
-def _restart_filter_chain() -> None:
-    """Restart filter-chain service (systemd or dinit)."""
+# ASM-generated config filenames inside _CONF_DIR — the complete list.
+# Keep in sync with generate_sonar_eq_conf / generate_sonar_micro_conf and the
+# dynamic HeSuVi sink. Only these are moved aside in safe mode; unrelated/system
+# configs in the same directory are never touched.
+_ASM_CONF_NAMES = frozenset({
+    "sonar-game-eq.conf",
+    "sonar-chat-eq.conf",
+    "sonar-media-eq.conf",
+    "sonar-output-eq.conf",
+    "sonar-micro-eq.conf",
+    "sink-virtual-surround-7.1-hesuvi.conf",
+})
+
+# Backup dir for safe mode: a sibling of _CONF_DIR. PipeWire's filter-chain
+# loader ignores it because it is not the *.conf.d directory it scans.
+_CONF_DIR_DISABLED = _CONF_DIR.parent / "filter-chain.conf.d.disabled"
+
+# Set once the safe-mode fallback has run, to stop any code path from recursing
+# back into the crash-loop handler. Module-level: reset on daemon restart, or
+# explicitly via reset_filter_chain_safe_mode() on a deliberate user action.
+_filter_chain_safe_mode: bool = False
+
+
+def reset_filter_chain_safe_mode() -> None:
+    """Clear the safe-mode flag so the next _restart_filter_chain() re-enables
+    EQ configs. Call this when the user deliberately changes a setting after a
+    safe-mode warning."""
+    global _filter_chain_safe_mode
+    _filter_chain_safe_mode = False
+
+
+def _enter_filter_chain_safe_mode() -> None:
+    """Move ASM-generated configs out of filter-chain.conf.d/ and restart once.
+
+    Called when the filter-chain is detected in a SEGV crash-loop after a
+    restart. Only moves files in _ASM_CONF_NAMES; never touches unrelated/system
+    configs. Idempotent and guarded against recursion via _filter_chain_safe_mode
+    (set before any work begins)."""
+    global _filter_chain_safe_mode
+    if _filter_chain_safe_mode:
+        return  # already in safe mode — never recurse
+    _filter_chain_safe_mode = True
+
     from arctis_sound_manager import service_control as sc
+
+    moved: list[str] = []
+    try:
+        _CONF_DIR_DISABLED.mkdir(parents=True, exist_ok=True)
+        for name in _ASM_CONF_NAMES:
+            src = _CONF_DIR / name
+            if src.exists():
+                try:
+                    src.rename(_CONF_DIR_DISABLED / name)
+                    moved.append(name)
+                except OSError as exc:
+                    _log.warning("safe_mode: could not move %s: %s", name, exc)
+    except OSError as exc:
+        _log.warning("safe_mode: could not create backup dir %s: %s",
+                     _CONF_DIR_DISABLED, exc)
+
+    _log.warning(
+        "filter-chain SAFE MODE: disabled ASM EQ configs because the filter-chain "
+        "entered a SEGV crash-loop after restart. Moved %d config(s) to %s: %s. "
+        "Audio will be flat but stable. Use 'Report a Bug' to capture diagnostics.",
+        len(moved), _CONF_DIR_DISABLED, moved,
+    )
+
+    # Restart once more — with no ASM modules to load the filter-chain should
+    # come up clean and give flat-but-stable audio instead of a permanent cut.
     sc.restart("filter-chain", timeout=15)
+
+
+def _restart_filter_chain() -> None:
+    """Restart the filter-chain service with crash-loop detection and fallback.
+
+    After the restart, polls sc.is_active() a few times over a short grace
+    period. A SEGV crash-loop keeps the service in auto-restart/failed state, so
+    is_active() returns False; on that signal we enter safe mode (see
+    _enter_filter_chain_safe_mode). The fallback runs at most once per process
+    and cannot recurse."""
+    import time
+    from arctis_sound_manager import service_control as sc
+
+    if _filter_chain_safe_mode:
+        _log.warning(
+            "filter-chain restart skipped: safe mode active (EQ configs disabled "
+            "after a prior crash-loop). Change a setting to re-enable.")
+        return
+
+    sc.restart("filter-chain", timeout=15)
+
+    # Stability poll: 3 checks, 1 s apart. In a crash-loop is_active() is False
+    # between systemd's rapid restarts.
+    active_after_grace = False
+    for _ in range(3):
+        time.sleep(1.0)
+        if sc.is_active("filter-chain"):
+            active_after_grace = True
+            break
+
+    if not active_after_grace:
+        _log.warning(
+            "filter-chain did not stay active after restart (crash-loop "
+            "detected) — entering safe mode")
+        _enter_filter_chain_safe_mode()
 
 
 def apply_hrir_choice(hrir_id: str | None) -> None:
