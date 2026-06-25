@@ -32,8 +32,8 @@ Depends: ${misc:Depends},
          wireplumber,
          libusb-1.0-0,
          curl,
-         swh-plugins,
-         noise-suppression-for-voice
+         swh-plugins
+Recommends: noise-suppression-for-voice
 Description: Linux GUI for SteelSeries Arctis headsets
  Arctis Sound Manager is a Linux application for configuring SteelSeries Arctis
  headsets. It provides a 4-channel audio mixer (Game / Chat / Media / HDMI),

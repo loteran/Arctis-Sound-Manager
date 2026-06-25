@@ -360,11 +360,15 @@ def test_rnnoise_ubuntu_builds_from_source():
     assert "BUILD_LADSPA_PLUGIN=ON" in " ".join(cmd)
 
 
-def test_rnnoise_debian_uses_apt_package():
+def test_rnnoise_debian_builds_from_source():
+    # noise-suppression-for-voice is not packaged for Debian either (issue #96),
+    # so Debian builds the LADSPA plugin from source like Ubuntu.
     rn = _rnnoise_check()
     with patch.object(sdc, "detect_distro", lambda: "debian"):
         cmd = install_command_for(rn)
-    assert cmd == ["apt-get", "install", "-y", "noise-suppression-for-voice"]
+    assert cmd is not None and cmd[0] == "bash"
+    assert "noise-suppression-for-voice.git" in " ".join(cmd)
+    assert "BUILD_LADSPA_PLUGIN=ON" in " ".join(cmd)
 
 
 def test_rnnoise_mint_and_pop_build_from_source():

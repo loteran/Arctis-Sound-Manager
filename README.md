@@ -294,7 +294,9 @@ Full module docs and options: [`nix/README.md`](nix/README.md).
 Install system deps first:
 ```bash
 # Debian / Ubuntu
-sudo apt install pipx libusb-1.0-0 libpulse0 libudev1 swh-plugins noise-suppression-for-voice curl
+sudo apt install pipx libusb-1.0-0 libpulse0 libudev1 swh-plugins curl
+# noise-suppression-for-voice (rnnoise LADSPA) is not packaged for Debian/Ubuntu —
+# ASM builds it from source automatically when you enable ClearCast mic suppression.
 
 # Fedora / Nobara
 sudo dnf install pipx libusb1 pulseaudio-libs systemd-libs ladspa-swh-plugins curl
