@@ -135,15 +135,15 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
 | Arctis 7 / 7 2019 / Pro 2019 / Pro GameDAC | ✅ | 6 | 1260, $\color{royalblue}{\textbf{12ad}}$, 1252, 1280 |
 | Arctis 7+ / PS5 / Xbox / Destiny | ✅ | 8 | $\color{royalblue}{\textbf{220e}}$, $\color{royalblue}{\textbf{2212}}$, 2216, 2236 |
 | Arctis 9 Wireless | ✅ | 4 | $\color{royalblue}{\textbf{12c2}}$ |
-| Arctis Pro Wireless | ✅ | 13 | $\color{royalblue}{\textbf{1290}}$, $\color{royalblue}{\textbf{1294}}$ |
-| Arctis Nova Pro Wireless / X | ✅ | 76 | $\color{royalblue}{\textbf{12e0}}$, $\color{royalblue}{\textbf{12e5}}$ |
+| Arctis Pro Wireless | ✅ | 14 | $\color{royalblue}{\textbf{1290}}$, $\color{royalblue}{\textbf{1294}}$ |
+| Arctis Nova Pro Wireless / X | ✅ | 77 | $\color{royalblue}{\textbf{12e0}}$, $\color{royalblue}{\textbf{12e5}}$ |
 | Arctis Nova Pro Wired / Xbox Wired | ✅ | 7 | $\color{royalblue}{\textbf{12cb}}$, $\color{royalblue}{\textbf{12cd}}$ |
 | Arctis Nova Pro Omni | ✅ | 4 | $\color{royalblue}{\textbf{2290}}$ |
 | Arctis Nova 3 | ✅ | 2 | $\color{royalblue}{\textbf{12ec}}$ |
 | Arctis Nova 3P / 3X Wireless | ✅ | 9 | $\color{royalblue}{\textbf{2269}}$, $\color{royalblue}{\textbf{226d}}$ |
 | Arctis Nova 5 / 5X | ✅ | 11 | $\color{royalblue}{\textbf{2232}}$, $\color{royalblue}{\textbf{2253}}$, $\color{royalblue}{\textbf{2255}}$ |
 | Arctis Nova 7 Gen 1 | ✅ | 14 | $\color{royalblue}{\textbf{2202}}$, $\color{royalblue}{\textbf{2206}}$, 223a, 227a, 22ab, 22a4 |
-| Arctis Nova 7 Gen 2 | ✅ | 34 | $\color{royalblue}{\textbf{22a1}}$, $\color{royalblue}{\textbf{227e}}$, 2258, $\color{royalblue}{\textbf{229e}}$, 22a9, $\color{royalblue}{\textbf{22a5}}$ |
+| Arctis Nova 7 Gen 2 | ✅ | 35 | $\color{royalblue}{\textbf{22a1}}$, $\color{royalblue}{\textbf{227e}}$, 2258, $\color{royalblue}{\textbf{229e}}$, 22a9, $\color{royalblue}{\textbf{22a5}}$ |
 | Arctis Nova 7P | ✅ | 9 | $\color{royalblue}{\textbf{220a}}$, $\color{royalblue}{\textbf{22a7}}$ |
 | Arctis Nova Elite | ✅ | 2 | $\color{royalblue}{\textbf{2244}}$, 2249 |
 | Arctis GameBuds / GameBuds X | ✅ | 4 | $\color{royalblue}{\textbf{230a}}$, $\color{royalblue}{\textbf{2317}}$ |
@@ -562,7 +562,7 @@ To request a new language, open a [GitHub issue](https://github.com/loteran/Arct
 ## Community stats
 
 <!-- STATS:META:START -->
-_Based on **205** unique users (**57483** anonymous data points) — last updated 2026-06-24_
+_Based on **208** unique users (**57518** anonymous data points) — last updated 2026-06-25_
 <!-- STATS:META:END -->
 
 > Anonymous usage data shared voluntarily by opted-in users.
@@ -574,8 +574,8 @@ _Based on **205** unique users (**57483** anonymous data points) — last update
 <!-- STATS:TESTED_DISTROS:START -->
 | Distribution | Install method | Users |
 |---|---|---|
-| CachyOS | 🎯 AUR | 👥 97 |
-| Arch Linux | 🎯 AUR | 👥 30 |
+| CachyOS | 🎯 AUR | 👥 98 |
+| Arch Linux | 🎯 AUR | 👥 32 |
 | Nobara Linux 43 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 14 |
 | Fedora Linux 44 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 10 |
 | Ubuntu 26.04 LTS | 🎯 PPA | 👥 8 |
@@ -607,10 +607,10 @@ _Based on **205** unique users (**57483** anonymous data points) — last update
 <!-- STATS:HEADSETS:START -->
 | Headset | Installs |
 |---|---|
-| Arctis Nova Pro Wireless | 76 |
-| Arctis Nova 7 (Gen 2) | 34 |
+| Arctis Nova Pro Wireless | 77 |
+| Arctis Nova 7 (Gen 2) | 35 |
+| Arctis Pro Wireless | 14 |
 | Arctis Nova 7 (Gen 1) | 14 |
-| Arctis Pro Wireless | 13 |
 | Arctis Nova 3 | 11 |
 | Arctis Nova 5 Wireless | 10 |
 | Arctis Nova 7P (Gen 2) | 8 |
@@ -630,8 +630,8 @@ _Based on **205** unique users (**57483** anonymous data points) — last update
 <!-- STATS:DISTROS:START -->
 | Distribution | Installs |
 |---|---|
-| CachyOS | 97 |
-| Arch Linux | 30 |
+| CachyOS | 98 |
+| Arch Linux | 32 |
 | Nobara Linux 43 (KDE Plasma Desktop Edition) | 14 |
 | Fedora Linux 44 (KDE Plasma Desktop Edition) | 10 |
 | Ubuntu 26.04 LTS | 8 |
