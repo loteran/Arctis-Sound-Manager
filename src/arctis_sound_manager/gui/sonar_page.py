@@ -2350,7 +2350,8 @@ class _NoiseCancelingCard(QWidget):
                 "Install it with:\n"
                 "  Fedora/Nobara:  sudo dnf copr enable uriesk/noise-suppression-for-voice\n"
                 "                  sudo dnf install noise-suppression-for-voice\n"
-                "  Debian/Ubuntu:  sudo apt install noise-suppression-for-voice\n"
+                "  Debian/Ubuntu:  not packaged — ASM builds it from source\n"
+                "                  (use the dependency installer, or build manually)\n"
                 "  Arch/CachyOS:   sudo pacman -S noise-suppression-for-voice"
             )
             self._toggle.setToolTip(_tip)

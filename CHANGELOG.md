@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.83] - 25 June 2026
+
+### Fixed
+
+- **Package uninstallable on Ubuntu 24.04 (and any Debian/Ubuntu) from the PPA** — `arctis-sound-manager` declared a hard `Depends: noise-suppression-for-voice`, but that package (the rnnoise LADSPA plugin) is not in the Debian or Ubuntu archives nor the PPA, so apt refused to install ASM at all (`Depends: noise-suppression-for-voice but it is not installable`). It is now a `Recommends:`, matching the binary `.deb` build, so ASM installs cleanly; the optional ClearCast mic suppression plugin is still offered and built from source on demand by ASM's dependency installer. (#96)
+- **Dependency installer wrongly tried `apt install noise-suppression-for-voice` on Debian** — the package does not exist on Debian either, so the install would have failed. Debian now builds the LADSPA plugin from source, like Ubuntu and its derivatives. (#96)
+
 ## [1.1.82] - 24 June 2026
 
 ### Fixed

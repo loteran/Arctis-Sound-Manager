@@ -327,8 +327,8 @@ def _pipewire_pulse_restart_cmd() -> list[str]:
     return ["systemctl", "--user", "restart", "pipewire", "pipewire-pulse"]
 
 
-# The RNNoise LADSPA plugin is not packaged for Ubuntu (or its derivatives), so
-# on those distros we build it from source. Only the LADSPA target is built
+# The RNNoise LADSPA plugin is not packaged for Debian, Ubuntu or its
+# derivatives, so on those distros we build it from source. Only the LADSPA target is built
 # (VST/VST3/LV2/AU disabled) so no JUCE / X11 / freetype build deps are needed —
 # just git, cmake and a C/C++ toolchain. Runs as root via pkexec; output goes to
 # the standard LADSPA dir. Verified to produce build/bin/ladspa/librnnoise_ladspa.so.
@@ -386,10 +386,10 @@ def _build_checks() -> list[DepCheck]:
                 "fedora": ["bash", "-c",
                            "dnf copr enable -y uriesk/noise-suppression-for-voice"
                            " && dnf install -y noise-suppression-for-voice"],
-                # The noise-suppression-for-voice package exists on Debian but
-                # NOT on Ubuntu / its derivatives (issue #65), so those build it
-                # from source (LADSPA target only).
-                "debian":     ["apt-get", "install", "-y", "noise-suppression-for-voice"],
+                # noise-suppression-for-voice is NOT packaged for Debian *or*
+                # Ubuntu / its derivatives (issues #65, #96), so all of them build
+                # it from source (LADSPA target only).
+                "debian":     _RNNOISE_LADSPA_SOURCE_BUILD,
                 "ubuntu":     _RNNOISE_LADSPA_SOURCE_BUILD,
                 "linuxmint":  _RNNOISE_LADSPA_SOURCE_BUILD,
                 "pop":        _RNNOISE_LADSPA_SOURCE_BUILD,
@@ -399,7 +399,7 @@ def _build_checks() -> list[DepCheck]:
                 "arch":   ["pacman", "-S", "--noconfirm", "noise-suppression-for-voice"],
             },
             user_action=(
-                "On Ubuntu and derivatives the plugin is not packaged, so Install "
+                "On Debian, Ubuntu and derivatives the plugin is not packaged, so Install "
                 "builds it from source (downloads git/cmake/build-essential, compiles "
                 "the LADSPA plugin only — takes a moment). Without it, only ClearCast "
                 "mic noise suppression is unavailable."
