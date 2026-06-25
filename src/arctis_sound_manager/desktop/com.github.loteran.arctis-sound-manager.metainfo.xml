@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.83" date="2026-06-25">
+      <description>
+        <p>Package uninstallable on Ubuntu 24.04 (and any Debian/Ubuntu) from the PPA — arctis-sound-manager declared a hard Depends: noise-suppression-for-voice, but that package (the rnnoise LADSPA plugin) is not in the Debian or Ubuntu archives nor the PPA, so apt refused to install ASM at all (Depends: noise-suppression-for-voice but it is not installable). It is now a Recommends:, matching the binary .deb build, so ASM installs cleanly; the optional ClearCast mic suppression plugin is still offered and built from source on demand by ASM's dependency installer. (#96). Dependency installer wrongly tried apt install noise-suppression-for-voice on Debian — the package does not exist on Debian either, so the install would have failed. Debian now builds the LADSPA plugin from source, like Ubuntu and its derivatives. (#96).</p>
+      </description>
+    </release>
     <release version="1.1.82" date="2026-06-24">
       <description>
         <p>Audio cuts in and out in Steam Game Mode / Gamescope (Bazzite, SteamOS) — under Gamescope, WirePlumber keeps reshuffling routing, so the loopback watchdog saw a permanent mislink and recreated the Arctis_Game / Arctis_Chat / Arctis_Media loopbacks every few seconds, each recreation causing a brief cut, looping forever. The watchdog now has an anti-flapping guard: when a channel is recreated 3 times within 30 s it enters a cooldown (60 s, doubling up to 5 min) during which it is left alone — a stable loopback, even if temporarily mislinked, is far less disruptive than constant cuts. (#90). Filter-chain crash-loop left audio permanently broken (Steam Deck / SteamOS) — when the PipeWire filter-chain SIGSEGVs on startup (e.g. a LADSPA plugin present in a Distrobox container but missing on the host), systemd restarted it endlessly, so the virtual sinks kept appearing and disappearing. ASM now detects the crash-loop, moves its EQ configs aside ("safe mode") and restarts once more to give flat-but-stable audio instead of perpetual cuts. (#88). Phantom "update available" that never goes away (Fedora and similar) — a leftover pip install --user copy in ~/.local shadowed the distro package on sys.path, so ASM read that stale copy's old version and nagged about an update that was already installed. ASM now reports the version of the package actually running, detects a shadowing pip install and shows a clear "multiple installations detected" message instead, and the dnf update command uses --refresh so a real new version is never hidden by stale COPR metadata.</p>
@@ -199,11 +204,6 @@
     <release version="1.1.54" date="2026-06-03">
       <description>
         <p>Arctis GameBuds / GameBuds X support — initial device support for the Arctis GameBuds (PS5/PC, 0x230a) and GameBuds X for Xbox (0x2317) via their 2.4 GHz USB dongle. Supported controls: mic volume, sidetone (Off/Low/Medium/High), noise cancelling mode (Off/Transparency/ANC), ANC/transparency level, volume limiter, wear sense, and auto power-off (up to 90 min). Protocol reverse-engineered from a USB capture; battery level and connection status are not yet available (status protocol unknown).</p>
-      </description>
-    </release>
-    <release version="1.1.53" date="2026-06-02">
-      <description>
-        <p>Left-click the tray icon to open the window — a single left-click on the Arctis Sound Manager system-tray icon now opens the main window (launching it the first time, raising and focusing it afterwards). Previously the window could only be reached through the tray's right-click context menu. Right-click still shows the context menu.</p>
       </description>
     </release>
   </releases>
