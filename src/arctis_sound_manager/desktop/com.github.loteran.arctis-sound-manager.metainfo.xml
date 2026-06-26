@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.84" date="2026-06-26">
+      <description>
+        <p>Wrong version reported in the GUI footer and bug reports — on installs that share a single site-packages directory (typical on Arch/CachyOS, and inside Distrobox), the version lookup matched the *first* enumerated distribution rather than the one that actually ships ASM, so the footer and Report a bug output showed nonsense versions like 0.1 or 1.9.0 for a 1.1.83 install. The version is now resolved by checking which distribution genuinely owns the running arctis_sound_manager package files, while still preferring the copy that is actually imported (resolves a stale ~/.local shadow of the system install). Hardened virtual-sink routing against PipeWire socket changes (Steam Game Mode / Distrobox) — pw-loopback processes are now spawned with the resolved host PipeWire socket pinned in their environment (falling back to /run/user/&lt;uid&gt;/pipewire-0), and the loopback watchdog detects when the active PipeWire socket changes (e.g. a Desktop ↔ Game Mode session switch under Gamescope) and recreates all loopbacks so they rebind to the new socket instead of going silent on the stale one. (#90).</p>
+      </description>
+    </release>
     <release version="1.1.83" date="2026-06-25">
       <description>
         <p>Package uninstallable on Ubuntu 24.04 (and any Debian/Ubuntu) from the PPA — arctis-sound-manager declared a hard Depends: noise-suppression-for-voice, but that package (the rnnoise LADSPA plugin) is not in the Debian or Ubuntu archives nor the PPA, so apt refused to install ASM at all (Depends: noise-suppression-for-voice but it is not installable). It is now a Recommends:, matching the binary .deb build, so ASM installs cleanly; the optional ClearCast mic suppression plugin is still offered and built from source on demand by ASM's dependency installer. (#96). Dependency installer wrongly tried apt install noise-suppression-for-voice on Debian — the package does not exist on Debian either, so the install would have failed. Debian now builds the LADSPA plugin from source, like Ubuntu and its derivatives. (#96).</p>
@@ -199,11 +204,6 @@
     <release version="1.1.55" date="2026-06-06">
       <description>
         <p>Arctis Nova Pro Omni support — added product ID 0x2290 to the Arctis Nova Pro Wireless device profile. Audio routing (Game/Chat/Media mixer, HeSuVi spatial surround, Sonar EQ) and HID controls are enabled by reusing the Nova Pro Wireless DAC protocol. The status protocol is assumed identical and not yet confirmed by a USB capture, so some reported status values may be inaccurate until verified.</p>
-      </description>
-    </release>
-    <release version="1.1.54" date="2026-06-03">
-      <description>
-        <p>Arctis GameBuds / GameBuds X support — initial device support for the Arctis GameBuds (PS5/PC, 0x230a) and GameBuds X for Xbox (0x2317) via their 2.4 GHz USB dongle. Supported controls: mic volume, sidetone (Off/Low/Medium/High), noise cancelling mode (Off/Transparency/ANC), ANC/transparency level, volume limiter, wear sense, and auto power-off (up to 90 min). Protocol reverse-engineered from a USB capture; battery level and connection status are not yet available (status protocol unknown).</p>
       </description>
     </release>
   </releases>
