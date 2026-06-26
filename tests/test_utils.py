@@ -65,93 +65,143 @@ def test_project_version_returns_string():
     assert len(v) > 0
 
 
-# ── project_version path-mapping tests ────────────────────────────────────
+# ── project_version distribution-ownership tests ──────────────────────────
 
 class _FakeDist:
-    """Minimal importlib.metadata Distribution stub."""
+    """Minimal importlib.metadata Distribution stub.
 
-    def __init__(self, version: str, root: Path):
+    *files* are paths relative to *root* (mirroring RECORD entries). *name* is
+    exposed via ``metadata['Name']`` like a real Distribution.
+    """
+
+    def __init__(self, version: str, root: Path, name: str = "arctis-sound-manager",
+                 files=None):
         self.version = version
         self._root = root
+        self.metadata = {"Name": name}
+        if files is None:
+            files = ["arctis_sound_manager/__init__.py"]
+        self.files = [Path(f) for f in files]
 
     def locate_file(self, rel):
         return self._root / rel
 
 
-def test_project_version_picks_distribution_by_path(tmp_path):
-    """project_version resolves the dist whose root contains the running package."""
-    # Simulate two installs in different prefixes
-    stale_root = tmp_path / "user_site"
-    fresh_root = tmp_path / "sys_site"
+def test_project_version_ignores_sibling_in_shared_site_packages(tmp_path):
+    """The real bug: many dists share one site-packages root.
 
-    pkg_dir = fresh_root / "arctis_sound_manager"
+    A sibling package (here 'pillow' 1.9.0) enumerated first must NOT have its
+    version reported just because it lives under the same site-packages dir as
+    the running arctis_sound_manager package.
+    """
+    site = tmp_path / "site-packages"
+    pkg_dir = site / "arctis_sound_manager"
     pkg_dir.mkdir(parents=True)
-    fake_init = pkg_dir / "__init__.py"
-    fake_init.touch()
-
-    stale_pkg_dir = stale_root / "arctis_sound_manager"
-    stale_pkg_dir.mkdir(parents=True)
+    (pkg_dir / "__init__.py").touch()
 
     import arctis_sound_manager
 
-    # stale_dist reports 1.0.0, fresh_dist reports 1.0.86
-    stale_dist = _FakeDist("1.0.0", stale_root)
-    fresh_dist = _FakeDist("1.0.86", fresh_root)
+    sibling = _FakeDist("1.9.0", site, name="pillow", files=["PIL/__init__.py"])
+    asm = _FakeDist("1.1.83", site)  # owns arctis_sound_manager/__init__.py
 
     with (
-        mock.patch.object(arctis_sound_manager, "__file__", str(fake_init)),
-        mock.patch("arctis_sound_manager.utils.distributions", return_value=iter([stale_dist, fresh_dist])),
+        mock.patch.object(arctis_sound_manager, "__file__", str(pkg_dir / "__init__.py")),
+        mock.patch("arctis_sound_manager.utils.distributions",
+                   return_value=iter([sibling, asm])),
     ):
         v = project_version()
 
-    assert v == "1.0.86", (
-        f"project_version() must return the version of the distribution whose "
-        f"root contains the running package file, got {v!r}"
+    assert v == "1.1.83", (
+        f"project_version() must report the arctis-sound-manager dist, not a "
+        f"sibling sharing the same site-packages root, got {v!r}"
     )
 
 
-def test_project_version_fallback_on_no_match(tmp_path):
-    """Falls back to name-based lookup when no distribution root matches."""
-    pkg_dir = tmp_path / "arctis_sound_manager"
-    pkg_dir.mkdir(parents=True)
-    fake_init = pkg_dir / "__init__.py"
-    fake_init.touch()
+def test_project_version_prefers_imported_copy_when_shadowed(tmp_path):
+    """Two arctis-sound-manager installs: report the one actually imported."""
+    user_root = tmp_path / "user_site"   # ~/.local copy, version 0.1
+    sys_root = tmp_path / "sys_site"     # system copy, version 1.1.83
+
+    user_pkg = user_root / "arctis_sound_manager"
+    user_pkg.mkdir(parents=True)
+    (user_pkg / "__init__.py").touch()
+    sys_pkg = sys_root / "arctis_sound_manager"
+    sys_pkg.mkdir(parents=True)
+    (sys_pkg / "__init__.py").touch()
 
     import arctis_sound_manager
 
-    # A distribution whose root is elsewhere — won't match pkg_dir
-    other_root = tmp_path / "somewhere_else"
-    other_root.mkdir(parents=True)
-    non_matching_dist = _FakeDist("9.9.9", other_root)
+    user_dist = _FakeDist("0.1", user_root)
+    sys_dist = _FakeDist("1.1.83", sys_root)
+
+    # Running package is imported from the system copy → report 1.1.83 even
+    # though the ~/.local dist is enumerated first.
+    with (
+        mock.patch.object(arctis_sound_manager, "__file__", str(sys_pkg / "__init__.py")),
+        mock.patch("arctis_sound_manager.utils.distributions",
+                   return_value=iter([user_dist, sys_dist])),
+    ):
+        v = project_version()
+
+    assert v == "1.1.83"
+
+
+def test_project_version_named_fallback_when_no_location_match(tmp_path):
+    """An arctis-sound-manager dist with no matching files still beats nothing."""
+    pkg_dir = tmp_path / "site" / "arctis_sound_manager"
+    pkg_dir.mkdir(parents=True)
+    (pkg_dir / "__init__.py").touch()
+
+    import arctis_sound_manager
+
+    # Editable/odd install: files point elsewhere, so _dist_owns_dir is False,
+    # but the dist still names itself arctis-sound-manager.
+    elsewhere = tmp_path / "elsewhere"
+    odd_dist = _FakeDist("1.0.50", elsewhere, files=["src/arctis_sound_manager/__init__.py"])
 
     with (
-        mock.patch.object(arctis_sound_manager, "__file__", str(fake_init)),
-        mock.patch("arctis_sound_manager.utils.distributions", return_value=iter([non_matching_dist])),
-        mock.patch(
-            "arctis_sound_manager.utils.version",
-            side_effect=lambda _: "1.0.50",
-        ),
+        mock.patch.object(arctis_sound_manager, "__file__", str(pkg_dir / "__init__.py")),
+        mock.patch("arctis_sound_manager.utils.distributions", return_value=iter([odd_dist])),
+    ):
+        v = project_version()
+
+    assert v == "1.0.50"
+
+
+def test_project_version_fallback_on_no_named_dist(tmp_path):
+    """Falls back to name-based lookup when no dist names itself arctis-sound-manager."""
+    pkg_dir = tmp_path / "arctis_sound_manager"
+    pkg_dir.mkdir(parents=True)
+    (pkg_dir / "__init__.py").touch()
+
+    import arctis_sound_manager
+
+    sibling = _FakeDist("9.9.9", tmp_path, name="numpy", files=["numpy/__init__.py"])
+
+    with (
+        mock.patch.object(arctis_sound_manager, "__file__", str(pkg_dir / "__init__.py")),
+        mock.patch("arctis_sound_manager.utils.distributions", return_value=iter([sibling])),
+        mock.patch("arctis_sound_manager.utils.version", side_effect=lambda _: "1.0.50"),
     ):
         v = project_version()
 
     assert v == "1.0.50", (
         "project_version() must fall back to the name-based lookup when no "
-        "distribution root contains the running package"
+        "distribution identifies as arctis-sound-manager"
     )
 
 
 def test_project_version_final_fallback_dev(tmp_path):
-    """Falls back to 'dev' when both path-mapping and name lookup fail."""
+    """Falls back to 'dev' when both ownership and name lookup fail."""
     pkg_dir = tmp_path / "arctis_sound_manager"
     pkg_dir.mkdir(parents=True)
-    fake_init = pkg_dir / "__init__.py"
-    fake_init.touch()
+    (pkg_dir / "__init__.py").touch()
 
     import arctis_sound_manager
     from importlib.metadata import PackageNotFoundError
 
     with (
-        mock.patch.object(arctis_sound_manager, "__file__", str(fake_init)),
+        mock.patch.object(arctis_sound_manager, "__file__", str(pkg_dir / "__init__.py")),
         mock.patch("arctis_sound_manager.utils.distributions", return_value=iter([])),
         mock.patch("arctis_sound_manager.utils.version", side_effect=PackageNotFoundError),
     ):
