@@ -21,7 +21,8 @@ from arctis_sound_manager.config import (CommandTransport,
 from arctis_sound_manager.constants import (PULSE_CHAT_NODE_NAME,
                                             PULSE_MEDIA_NODE_NAME,
                                             STEELSERIES_VENDOR_ID)
-from arctis_sound_manager.loopback_manager import LoopbackManager, make_specs
+from arctis_sound_manager.loopback_manager import (LoopbackManager, make_specs,
+                                                   current_pipewire_socket_signature)
 from arctis_sound_manager.pactl import ONLY_PHYSICAL, PulseAudioManager
 from arctis_sound_manager.settings import DeviceSettings, GeneralSettings
 from arctis_sound_manager.usb_devices_monitor import USBDevicesMonitor
@@ -288,8 +289,13 @@ class CoreEngine:
 
         Runs as an asyncio ``Task`` alongside ``core_loop``.  Every 5 seconds,
         if a device is currently connected (``device_state.is_device_set()``),
-        performs two passes:
+        performs three checks in order:
 
+        0. **Socket change detection** — compares the current PipeWire socket
+           path to the one seen on the previous tick.  If it differs (e.g.
+           Gamescope / Steam Game Mode session switch under Distrobox), all
+           loopbacks are recreated immediately and the rest of the tick is
+           skipped so they have one full cycle to bind to the new socket.
         1. **Dead-process pass** — calls :meth:`LoopbackManager.restart_dead`
            to revive any crashed ``pw-loopback`` processes.
         2. **Mislink pass** — for every loopback that was *not* just restarted
@@ -354,6 +360,14 @@ class CoreEngine:
         # for the current cooldown period (avoid per-tick log spam).
         _cooldown_logged: dict[str, bool] = {}
 
+        # ── PipeWire socket tracking (issue #90) ─────────────────────────────
+        # Last-known PipeWire socket path seen by the watchdog.  ``None`` means
+        # "not yet initialised" (first tick with a device present).  Changes in
+        # this value indicate a session switch (e.g. Gamescope / Steam Game Mode
+        # under Distrobox) that requires all loopbacks to be recreated so they
+        # reconnect to the new socket rather than hanging on the stale one.
+        _pw_socket_sig: str | None = None
+
         try:
             while not self._stopping:
                 await asyncio.sleep(_WATCHDOG_INTERVAL)
@@ -407,6 +421,44 @@ class CoreEngine:
                         # (but keep the key so the next flap doesn't restart cold).
                         current = _cooldown_dur.get(ch, _COOLDOWN_BASE)
                         _cooldown_dur[ch] = max(current / 2.0, _COOLDOWN_BASE)
+
+                # ── PipeWire socket change detection (issue #90) ──────────────
+                # Under Gamescope / Steam Game Mode with Distrobox, the PipeWire
+                # socket can change when the session switches (e.g. Desktop ↔
+                # Game Mode).  pw-loopback processes that were spawned against the
+                # old socket stop routing audio until they are restarted against
+                # the new one.  We detect this by comparing the current socket
+                # signature to the one seen on the previous tick; when it changes
+                # we recreate all loopbacks immediately and skip the rest of this
+                # tick so they get one full cycle to bind.
+                try:
+                    _new_sig = current_pipewire_socket_signature()
+                    if _pw_socket_sig is None:
+                        # First tick with a device present — establish the
+                        # baseline without triggering a recreate (the socket
+                        # hasn't *changed* yet relative to any prior state).
+                        _pw_socket_sig = _new_sig
+                    elif _new_sig != _pw_socket_sig:
+                        _old_sig = _pw_socket_sig
+                        _pw_socket_sig = _new_sig
+                        self.logger.warning(
+                            "_loopback_watchdog: PipeWire socket changed "
+                            "(%r → %r) — recreating all loopbacks to rebind "
+                            "to new socket",
+                            _old_sig, _new_sig,
+                        )
+                        self.loopback_manager.recreate_all(
+                            list(self.loopback_manager.specs().values())
+                        )
+                        # Skip dead/mislink passes this tick: give the new
+                        # loopbacks one watchdog cycle to bind before we inspect
+                        # them (avoids immediate false-positive orphan/mislink).
+                        continue
+                except Exception as exc:
+                    self.logger.error(
+                        "_loopback_watchdog: error checking PipeWire socket "
+                        "signature: %r", exc,
+                    )
 
                 try:
                     restarted = self.loopback_manager.restart_dead(
