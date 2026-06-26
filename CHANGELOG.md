@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.84] - 26 June 2026
+
+### Fixed
+
+- **Wrong version reported in the GUI footer and bug reports** — on installs that share a single `site-packages` directory (typical on Arch/CachyOS, and inside Distrobox), the version lookup matched the *first* enumerated distribution rather than the one that actually ships ASM, so the footer and `Report a bug` output showed nonsense versions like `0.1` or `1.9.0` for a `1.1.83` install. The version is now resolved by checking which distribution genuinely owns the running `arctis_sound_manager` package files, while still preferring the copy that is actually imported (resolves a stale `~/.local` shadow of the system install).
+
+### Changed
+
+- **Hardened virtual-sink routing against PipeWire socket changes (Steam Game Mode / Distrobox)** — `pw-loopback` processes are now spawned with the resolved host PipeWire socket pinned in their environment (falling back to `/run/user/<uid>/pipewire-0`), and the loopback watchdog detects when the active PipeWire socket changes (e.g. a Desktop ↔ Game Mode session switch under Gamescope) and recreates all loopbacks so they rebind to the new socket instead of going silent on the stale one. (#90)
+
 ## [1.1.83] - 25 June 2026
 
 ### Fixed
