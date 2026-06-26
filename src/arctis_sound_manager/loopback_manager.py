@@ -26,11 +26,109 @@ channel names before constructing LoopbackSpec objects.
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import threading
 from dataclasses import dataclass
 
 _log = logging.getLogger(__name__)
+
+
+# ── PipeWire socket resolution ────────────────────────────────────────────────
+
+def _resolve_pipewire_socket() -> str | None:
+    """Resolve the absolute path of the active PipeWire socket.
+
+    Probes candidate locations in order of preference:
+
+    1. ``{XDG_RUNTIME_DIR}/{PIPEWIRE_REMOTE}`` — honours both env vars so
+       that custom socket names (e.g. ``pipewire-1`` from a nested session)
+       are respected.
+    2. ``/run/user/{uid}/pipewire-0`` — hard-coded host-side default, used
+       as a fallback when ``XDG_RUNTIME_DIR`` points inside a Distrobox
+       container mount that differs from the host socket path.
+
+    Returns the first path that passes ``os.path.exists``, or ``None`` when
+    no reachable socket is found.  Never raises — callers can treat ``None``
+    as "socket unknown, inherit parent env".
+
+    Parameters
+    ----------
+    (none)
+
+    Returns
+    -------
+    str | None
+        Absolute socket path, or ``None``.
+    """
+    try:
+        uid = os.getuid()
+        runtime_dir = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{uid}"
+        remote = os.environ.get("PIPEWIRE_REMOTE") or "pipewire-0"
+        candidate = f"{runtime_dir}/{remote}"
+        if os.path.exists(candidate):
+            return candidate
+        # Fallback: always probe the host-side default socket, because under
+        # Distrobox ``XDG_RUNTIME_DIR`` may point to a container-private path
+        # even though PipeWire runs on the host and its socket lives at the
+        # standard location.  Skipped when it equals candidate (no dup check).
+        host_fallback = f"/run/user/{uid}/pipewire-0"
+        if candidate != host_fallback and os.path.exists(host_fallback):
+            return host_fallback
+        return None
+    except Exception:
+        return None
+
+
+def _pw_loopback_env() -> dict[str, str] | None:
+    """Build an env dict that pins the active PipeWire socket for pw-loopback.
+
+    Returns a *copy* of ``os.environ`` with ``XDG_RUNTIME_DIR`` overridden
+    to the socket's parent directory and ``PIPEWIRE_REMOTE`` overridden to
+    the socket's basename.  This forces every spawned ``pw-loopback`` child
+    to connect to the same socket that was active at spawn time, even if the
+    daemon's own environment has a stale or container-relative
+    ``XDG_RUNTIME_DIR`` (the typical Bazzite / Steam Game Mode + Distrobox
+    scenario that triggers issue #90).
+
+    Returns ``None`` when ``_resolve_pipewire_socket`` cannot find a socket.
+    Callers should then pass ``env=None`` to ``subprocess.Popen``, which
+    inherits the parent environment unchanged — preserving the pre-#90
+    behaviour as a safe fallback so the daemon never regresses on systems
+    where no socket file is found.
+
+    Returns
+    -------
+    dict[str, str] | None
+        Pinned environment mapping, or ``None`` when no socket is found.
+    """
+    socket = _resolve_pipewire_socket()
+    if socket is None:
+        return None
+    env = dict(os.environ)
+    env["XDG_RUNTIME_DIR"] = os.path.dirname(socket)
+    env["PIPEWIRE_REMOTE"] = os.path.basename(socket)
+    return env
+
+
+def current_pipewire_socket_signature() -> str:
+    """Return a stable identifier for the currently active PipeWire socket.
+
+    Used by :meth:`~arctis_sound_manager.core.CoreEngine._loopback_watchdog`
+    to detect PipeWire socket changes (e.g. Gamescope / Steam Game Mode
+    session switch under Distrobox) that require all loopbacks to be
+    recreated so they rebind to the new socket.
+
+    Returns the absolute socket path, or an empty string when no socket can
+    be resolved.  Never raises.
+
+    Returns
+    -------
+    str
+        Active socket path or ``""`` when unknown.
+    """
+    return _resolve_pipewire_socket() or ""
+
 
 # ── Data model ────────────────────────────────────────────────────────────────
 
@@ -205,7 +303,12 @@ class LoopbackManager:
             self._stop_unlocked(spec.channel)
             argv = _build_pw_loopback_argv(spec)
             _log.info("Starting loopback %r: %s", spec.channel, " ".join(argv))
-            proc = subprocess.Popen(argv)
+            # Pin the active PipeWire socket via env so pw-loopback always
+            # connects to the correct socket even when XDG_RUNTIME_DIR in the
+            # daemon's environment is stale or container-relative (issue #90).
+            # _pw_loopback_env() returns None when no socket is found, and
+            # Popen(env=None) inherits the parent env unchanged — safe fallback.
+            proc = subprocess.Popen(argv, env=_pw_loopback_env())
             self._handles[spec.channel] = proc
             # Remember spec AFTER a successful Popen so a failed launch
             # (OSError) doesn't leave a stale entry that the watchdog would
@@ -354,7 +457,9 @@ class LoopbackManager:
                 )
                 try:
                     argv = _build_pw_loopback_argv(spec)
-                    new_proc = subprocess.Popen(argv)
+                    # Same socket-pinning as in start() — ensures the revived
+                    # process connects to the correct PipeWire socket (issue #90).
+                    new_proc = subprocess.Popen(argv, env=_pw_loopback_env())
                     self._handles[channel] = new_proc
                     restarted.append(channel)
                     _log.info(
