@@ -1168,7 +1168,26 @@ class CoreEngine:
         if self.device_config.command_transport != CommandTransport.INTERRUPT:
             return 0
 
-        endpoint, _ = self.guess_interface_endpoint('out', self.device_config.command_interface_index[0], self.device_config.command_interface_index[1])
+        try:
+            endpoint, _ = self.guess_interface_endpoint('out', self.device_config.command_interface_index[0], self.device_config.command_interface_index[1])
+        except Exception as exc:
+            # The declared command interface does not exist on this hardware unit
+            # (e.g. wrong interface/alt-setting in the YAML, issue #100 Nova Elite).
+            # Treat identically to the "no OUT endpoint" case: fall back to
+            # HID SET_REPORT over the control endpoint so the daemon keeps running.
+            if not self._warned_no_out_endpoint:
+                self._warned_no_out_endpoint = True
+                self.logger.warning(
+                    f"Command interface not found on "
+                    f"{self.usb_device.idVendor:04x}:{self.usb_device.idProduct:04x} "
+                    f"({exc}); falling back to HID SET_REPORT (control transfer)."
+                )
+            else:
+                self.logger.debug(
+                    "Command interface not found on %04x:%04x (SET_REPORT fallback active).",
+                    self.usb_device.idVendor, self.usb_device.idProduct,
+                )
+            return 0
         if endpoint is None:
             # Some units (e.g. certain Arctis 7X firmwares, issue #59) expose the
             # command interface with an interrupt IN endpoint only — no OUT. The
