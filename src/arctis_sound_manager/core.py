@@ -1117,6 +1117,19 @@ class CoreEngine:
         if is_steelseries_alsa or is_arctis_owned:
             self.pa_audio_manager.redirect_audio(redirect_device)
     
+    def _setting_default(self, name: str) -> int:
+        """Profile-declared default for a setting, or 0 if none is an int.
+
+        Used as the fallback when a saved setting value is missing, so device
+        init never pushes a stray 0 that would mute/min-cap a control.
+        """
+        if self.device_config is not None:
+            for section in self.device_config.settings.values():
+                for setting in section:
+                    if setting.name == name and isinstance(setting.default_value, int):
+                        return setting.default_value
+        return 0
+
     def translate_init_bytes(self, data: list[int|str]) -> list[int]:
         result: list[int] = []
 
@@ -1126,7 +1139,11 @@ class CoreEngine:
             elif isinstance(byte, str):
                 uri = byte.split('.')
                 if uri[0] == 'settings':
-                    result.append(self.device_settings.get(uri[1]))
+                    # Fall back to the profile default (not 0) when the saved
+                    # value is missing. A stray 0 here gets pushed to the device
+                    # and min-caps the control — e.g. mic_volume dropping to 1/10
+                    # after a reconnect/update instead of the user's saved level.
+                    result.append(self.device_settings.get(uri[1], self._setting_default(uri[1])))
                 elif byte == 'status.request':
                     if self.device_config is None:
                         raise Exception(f'Device configuration is not available, skipping {byte}')
@@ -1151,7 +1168,26 @@ class CoreEngine:
         if self.device_config.command_transport != CommandTransport.INTERRUPT:
             return 0
 
-        endpoint, _ = self.guess_interface_endpoint('out', self.device_config.command_interface_index[0], self.device_config.command_interface_index[1])
+        try:
+            endpoint, _ = self.guess_interface_endpoint('out', self.device_config.command_interface_index[0], self.device_config.command_interface_index[1])
+        except Exception as exc:
+            # The declared command interface does not exist on this hardware unit
+            # (e.g. wrong interface/alt-setting in the YAML, issue #100 Nova Elite).
+            # Treat identically to the "no OUT endpoint" case: fall back to
+            # HID SET_REPORT over the control endpoint so the daemon keeps running.
+            if not self._warned_no_out_endpoint:
+                self._warned_no_out_endpoint = True
+                self.logger.warning(
+                    f"Command interface not found on "
+                    f"{self.usb_device.idVendor:04x}:{self.usb_device.idProduct:04x} "
+                    f"({exc}); falling back to HID SET_REPORT (control transfer)."
+                )
+            else:
+                self.logger.debug(
+                    "Command interface not found on %04x:%04x (SET_REPORT fallback active).",
+                    self.usb_device.idVendor, self.usb_device.idProduct,
+                )
+            return 0
         if endpoint is None:
             # Some units (e.g. certain Arctis 7X firmwares, issue #59) expose the
             # command interface with an interrupt IN endpoint only — no OUT. The

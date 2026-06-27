@@ -330,6 +330,20 @@ def _cleanup_stale_gui_service() -> None:
         break
 
 
+def _cli_invocation() -> list[str]:
+    """Command prefix used to invoke asm-cli.
+
+    Prefers the installed ``asm-cli`` binary; when it is not on PATH (e.g. when
+    running from a source checkout for debugging), falls back to the in-tree
+    module via the current interpreter so udev rules and the desktop entry still
+    get written instead of being silently skipped.
+    """
+    asm_cli = shutil.which("asm-cli")
+    if asm_cli:
+        return [asm_cli]
+    return [sys.executable, "-m", "arctis_sound_manager.scripts.cli"]
+
+
 def main() -> None:
     _refuse_root()
 
@@ -447,7 +461,7 @@ def main() -> None:
                 print(f"      Or download manually: {_HRIR_URL}")
                 print(f"      Save as: {hrir_file}")
 
-    asm_cli = shutil.which("asm-cli")
+    asm_cli_cmd = _cli_invocation()
 
     # ── Desktop entry + systemd service file ──
     # Skip if a system-level desktop entry already exists (AUR/COPR/DEB packages install one)
@@ -456,14 +470,11 @@ def main() -> None:
         print("\n==> System desktop entry found — skipping asm-cli desktop write")
     else:
         print("\n==> Writing desktop entry and service file...")
-        if asm_cli:
-            result = subprocess.run([asm_cli, "desktop", "write"], text=True)
-            if result.returncode == 0:
-                print("  [ok] desktop entry and service file written")
-            else:
-                print("  [!] desktop write failed — run manually: asm-cli desktop write")
+        result = subprocess.run(asm_cli_cmd + ["desktop", "write"], text=True)
+        if result.returncode == 0:
+            print("  [ok] desktop entry and service file written")
         else:
-            print("  [!] asm-cli not found — run manually: asm-cli desktop write")
+            print("  [!] desktop write failed — run manually: asm-cli desktop write")
 
     # ── Udev rules ──
     print("\n==> Installing udev rules...")
@@ -478,24 +489,21 @@ def main() -> None:
 
     rules_already_valid = is_udev_rules_valid()
     if not rules_already_valid:
-        if asm_cli:
-            result = subprocess.run(
-                [asm_cli, "udev", "write-rules", "--force", "--reload"],
-                text=True,
-            )
-            if result.returncode == 0:
-                print("  [ok] udev rules installed (reload+trigger included)")
-            else:
-                print("  [!] udev rules failed — run manually: asm-cli udev write-rules --force --reload")
+        result = subprocess.run(
+            asm_cli_cmd + ["udev", "write-rules", "--force", "--reload"],
+            text=True,
+        )
+        if result.returncode == 0:
+            print("  [ok] udev rules installed (reload+trigger included)")
         else:
-            print("  [!] asm-cli not found — run manually: asm-cli udev write-rules --force --reload")
+            print("  [!] udev rules failed — run manually: asm-cli udev write-rules --force --reload")
     else:
         print("  [ok] udev rules already valid — skipping write (installed by package)")
         # Fix C: detect a stale /etc rules file that udev prioritises over /usr/lib.
         # udev processes /etc before /usr/lib, so a leftover /etc file with fewer
         # PIDs silently shadows the up-to-date package rules for newer devices.
         _etc_rules = Path("/etc/udev/rules.d/91-steelseries-arctis.rules")
-        if _etc_rules.exists() and asm_cli:
+        if _etc_rules.exists():
             try:
                 _expected = {pid for _, pid in _expected_pids()}
                 _covered = _pids_in_rules(_etc_rules.read_text())
@@ -507,7 +515,7 @@ def main() -> None:
                         + ") — updating in-place..."
                     )
                     result = subprocess.run(
-                        [asm_cli, "udev", "write-rules", "--force", "--reload"],
+                        asm_cli_cmd + ["udev", "write-rules", "--force", "--reload"],
                         text=True,
                     )
                     if result.returncode == 0:
