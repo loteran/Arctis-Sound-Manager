@@ -1117,6 +1117,19 @@ class CoreEngine:
         if is_steelseries_alsa or is_arctis_owned:
             self.pa_audio_manager.redirect_audio(redirect_device)
     
+    def _setting_default(self, name: str) -> int:
+        """Profile-declared default for a setting, or 0 if none is an int.
+
+        Used as the fallback when a saved setting value is missing, so device
+        init never pushes a stray 0 that would mute/min-cap a control.
+        """
+        if self.device_config is not None:
+            for section in self.device_config.settings.values():
+                for setting in section:
+                    if setting.name == name and isinstance(setting.default_value, int):
+                        return setting.default_value
+        return 0
+
     def translate_init_bytes(self, data: list[int|str]) -> list[int]:
         result: list[int] = []
 
@@ -1126,7 +1139,11 @@ class CoreEngine:
             elif isinstance(byte, str):
                 uri = byte.split('.')
                 if uri[0] == 'settings':
-                    result.append(self.device_settings.get(uri[1]))
+                    # Fall back to the profile default (not 0) when the saved
+                    # value is missing. A stray 0 here gets pushed to the device
+                    # and min-caps the control — e.g. mic_volume dropping to 1/10
+                    # after a reconnect/update instead of the user's saved level.
+                    result.append(self.device_settings.get(uri[1], self._setting_default(uri[1])))
                 elif byte == 'status.request':
                     if self.device_config is None:
                         raise Exception(f'Device configuration is not available, skipping {byte}')
