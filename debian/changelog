@@ -1,3 +1,25 @@
+arctis-sound-manager (1.1.85-1) noble; urgency=medium
+
+  * Arctis Nova Elite "Sage & Gold" colorway (PID 0x2270) is now recognised
+    out of the box (#101).
+  * Arctis Nova Elite crashed the daemon at startup — the command interface
+    was declared as interface 0 instead of the real interface 3, so the
+    daemon could not find it and exited on launch. It now targets the
+    correct interface, and the daemon falls back to HID SET_REPORT (control
+    transfer) instead of crashing whenever a unit's command interface is
+    missing (#100).
+  * Microphone volume (and other device settings) could reset to the minimum
+    on launch — when a saved setting value was missing while initialising
+    the headset, ASM pushed 0 to the device, dropping the mic to 1/10
+    instead of your saved level. Missing values now fall back to the device
+    profile's default.
+  * asm-setup skipped the udev rules when run from a source checkout — it
+    now falls back to the in-tree CLI module when the asm-cli binary isn't
+    on PATH, so the udev rules and desktop entry get written instead of
+    being silently skipped.
+
+ -- loteran <axel.valadon@gmail.com>  Sun, 28 Jun 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.84-1) noble; urgency=medium
 
   * Wrong version reported in the GUI footer and bug reports — on installs

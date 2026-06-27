@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.85" date="2026-06-28">
+      <description>
+        <p>Arctis Nova Elite "Sage &amp; Gold" colorway (PID 0x2270) is now recognised out of the box (#101). Arctis Nova Elite crashed the daemon at startup — the command interface was declared as interface 0 instead of the real interface 3, so the daemon could not find it and exited on launch. It now targets the correct interface, and the daemon falls back to HID SET_REPORT (control transfer) instead of crashing whenever a unit's command interface is missing (#100). Microphone volume (and other device settings) could reset to the minimum on launch — when a saved setting value was missing while initialising the headset, ASM pushed 0 to the device, dropping the mic to 1/10 instead of your saved level. Missing values now fall back to the device profile's default.</p>
+      </description>
+    </release>
     <release version="1.1.84" date="2026-06-26">
       <description>
         <p>Wrong version reported in the GUI footer and bug reports — on installs that share a single site-packages directory (typical on Arch/CachyOS, and inside Distrobox), the version lookup matched the *first* enumerated distribution rather than the one that actually ships ASM, so the footer and Report a bug output showed nonsense versions like 0.1 or 1.9.0 for a 1.1.83 install. The version is now resolved by checking which distribution genuinely owns the running arctis_sound_manager package files, while still preferring the copy that is actually imported (resolves a stale ~/.local shadow of the system install). Hardened virtual-sink routing against PipeWire socket changes (Steam Game Mode / Distrobox) — pw-loopback processes are now spawned with the resolved host PipeWire socket pinned in their environment (falling back to /run/user/&lt;uid&gt;/pipewire-0), and the loopback watchdog detects when the active PipeWire socket changes (e.g. a Desktop ↔ Game Mode session switch under Gamescope) and recreates all loopbacks so they rebind to the new socket instead of going silent on the stale one. (#90).</p>
@@ -199,11 +204,6 @@
     <release version="1.1.56" date="2026-06-06">
       <description>
         <p>Arctis Nova Pro Omni controls — the Omni (0x2290) now has its own device profile targeting the correct USB layout: control interface 3 (the 64-byte HID endpoint) with HID SET_REPORT transport. In 1.1.55 it reused the Nova Pro Wireless profile (interface 4 with an interrupt-OUT endpoint the Omni does not expose), so the UI appeared but the controls had no effect. DAC command opcodes are still assumed identical to the Nova Pro Wireless, pending confirmation.</p>
-      </description>
-    </release>
-    <release version="1.1.55" date="2026-06-06">
-      <description>
-        <p>Arctis Nova Pro Omni support — added product ID 0x2290 to the Arctis Nova Pro Wireless device profile. Audio routing (Game/Chat/Media mixer, HeSuVi spatial surround, Sonar EQ) and HID controls are enabled by reusing the Nova Pro Wireless DAC protocol. The status protocol is assumed identical and not yet confirmed by a USB capture, so some reported status values may be inaccurate until verified.</p>
       </description>
     </release>
   </releases>
