@@ -1036,6 +1036,7 @@ class CoreEngine:
         parsed = parsed_status(self.device_status, self.device_config)
         actual = parsed.get(online_status_config.status_variable)
         expected = online_status_config.online_value
+        raw = self.device_status.get(online_status_config.status_variable)
 
         # The `on_off` parser returns 'on'/'off' but 8 device YAMLs declare
         # online_value: 'online'. Without this aliasing Nova 5, Nova 7,
@@ -1045,17 +1046,33 @@ class CoreEngine:
         if isinstance(actual, str) and isinstance(expected, str):
             al, el = actual.lower(), expected.lower()
             if el in _ON:
-                return al in _ON
+                result = al in _ON
+                self.logger.debug(
+                    "[issue97] is_device_online: var=%s raw=%r parsed=%r expected=%r -> %s",
+                    online_status_config.status_variable, raw, actual, expected, result)
+                return result
             if el in _OFF:
-                return al in _OFF
+                result = al in _OFF
+                self.logger.debug(
+                    "[issue97] is_device_online: var=%s raw=%r parsed=%r expected=%r -> %s",
+                    online_status_config.status_variable, raw, actual, expected, result)
+                return result
 
-        return actual == expected
+        result = actual == expected
+        self.logger.debug(
+            "[issue97] is_device_online: var=%s raw=%r parsed=%r expected=%r -> %s",
+            online_status_config.status_variable, raw, actual, expected, result)
+        return result
     
     def on_device_status_changed(self, key: str, value: int):
         if self.device_config and self.device_config.online_status and key == self.device_config.online_status.status_variable:
+            self.logger.debug(
+                "[issue97] online status_variable %s changed to raw=%r", key, value)
             if self.is_device_online():
+                self.logger.debug("[issue97] -> online, calling redirect_to_media_sink()")
                 self.redirect_to_media_sink()
             else:
+                self.logger.debug("[issue97] -> offline, calling redirect_audio_on_disconnect()")
                 self.redirect_audio_on_disconnect()
 
         if key == 'eq_band_value' and self.device_status is not None:
@@ -1095,13 +1112,17 @@ class CoreEngine:
 
     def redirect_audio_on_disconnect(self):
         if not self.general_settings.redirect_audio_on_disconnect:
+            self.logger.debug("[issue97] redirect_audio_on_disconnect: setting is OFF, returning")
             return
         redirect_device = self.general_settings.redirect_audio_on_disconnect_device
         if not redirect_device:
+            self.logger.debug("[issue97] redirect_audio_on_disconnect: no fallback device configured, returning")
             return
 
         current_default_device = self.pa_audio_manager.get_default_device()
         if current_default_device is None:
+            self.logger.debug(
+                "[issue97] redirect_audio_on_disconnect: current default is None, redirecting to %r", redirect_device)
             self.pa_audio_manager.redirect_audio(redirect_device)
             return
 
@@ -1113,9 +1134,17 @@ class CoreEngine:
         is_arctis_owned = any(
             frag in current_name for frag in self._ARCTIS_OWNED_SINK_FRAGMENTS
         )
+        self.logger.debug(
+            "[issue97] redirect_audio_on_disconnect: current_default=%r is_steelseries_alsa=%s "
+            "is_arctis_owned=%s fallback=%r",
+            current_name, is_steelseries_alsa, is_arctis_owned, redirect_device)
 
         if is_steelseries_alsa or is_arctis_owned:
+            self.logger.debug("[issue97] redirect_audio_on_disconnect: redirecting to %r", redirect_device)
             self.pa_audio_manager.redirect_audio(redirect_device)
+        else:
+            self.logger.debug(
+                "[issue97] redirect_audio_on_disconnect: current default not Arctis-owned, leaving it as is")
     
     def translate_init_bytes(self, data: list[int|str]) -> list[int]:
         result: list[int] = []
