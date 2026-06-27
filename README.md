@@ -150,6 +150,7 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
 <!-- STATS:DEVICES:END -->
 
 > ✅ Confirmed by at least one opted-in user
+> 🔵 Product IDs shown in **blue** are actively in use — detected on real users' devices through the app's anonymous usage stats
 > 🔴 Seen in telemetry but not yet declared in a device YAML — support pending
 
 **Find your headset's Product ID** (the 4 hex digits after `1038:`):
