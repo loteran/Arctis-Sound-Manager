@@ -145,7 +145,7 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
 | Arctis Nova 7 Gen 1 | ✅ | 14 | $\color{royalblue}{\textbf{2202}}$, $\color{royalblue}{\textbf{2206}}$, 223a, 227a, 22ab, 22a4 |
 | Arctis Nova 7 Gen 2 | ✅ | 35 | $\color{royalblue}{\textbf{22a1}}$, $\color{royalblue}{\textbf{227e}}$, 2258, $\color{royalblue}{\textbf{229e}}$, 22a9, $\color{royalblue}{\textbf{22a5}}$ |
 | Arctis Nova 7P | ✅ | 9 | $\color{royalblue}{\textbf{220a}}$, $\color{royalblue}{\textbf{22a7}}$ |
-| Arctis Nova Elite | ✅ | 2 | $\color{royalblue}{\textbf{2244}}$, 2249 |
+| Arctis Nova Elite | ✅ | 2 | $\color{royalblue}{\textbf{2244}}$, 2249, $\color{royalblue}{\textbf{2270}}$ |
 | Arctis GameBuds / GameBuds X | ✅ | 4 | $\color{royalblue}{\textbf{230a}}$, $\color{royalblue}{\textbf{2317}}$ |
 <!-- STATS:DEVICES:END -->
 
