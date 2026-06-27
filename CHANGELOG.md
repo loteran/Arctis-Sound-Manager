@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.85] - 28 June 2026
+
+### Added
+
+- **Arctis Nova Elite "Sage & Gold" colorway** (PID `0x2270`) is now recognised out of the box (#101).
+
+### Fixed
+
+- **Arctis Nova Elite crashed the daemon at startup** — the command interface was declared as interface 0 instead of the real interface 3, so the daemon could not find it and exited on launch. It now targets the correct interface, and the daemon falls back to HID SET_REPORT (control transfer) instead of crashing whenever a unit's command interface is missing (#100).
+- **Microphone volume (and other device settings) could reset to the minimum on launch** — when a saved setting value was missing while initialising the headset, ASM pushed `0` to the device, dropping the mic to 1/10 instead of your saved level. Missing values now fall back to the device profile's default.
+- **`asm-setup` skipped the udev rules when run from a source checkout** — it now falls back to the in-tree CLI module when the `asm-cli` binary isn't on `PATH`, so the udev rules and desktop entry get written instead of being silently skipped.
+
 ## [1.1.84] - 26 June 2026
 
 ### Fixed
