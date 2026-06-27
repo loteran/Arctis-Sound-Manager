@@ -158,7 +158,46 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
 lsusb -d 1038:
 ```
 
-If your PID isn't listed above, [open an issue](https://github.com/loteran/Arctis-Sound-Manager/issues/new) with it so support can be added.
+If your PID isn't listed above, ASM doesn't recognise your headset yet — here's how to get it added.
+
+<details>
+<summary><b>My headset isn't recognised — how to add it (create the device YAML)</b></summary>
+
+ASM describes each headset with a small YAML "device profile". Adding a new headset means creating (or extending) one of these. Many "new" headsets are just an existing model with a fresh Product ID (e.g. a new colorway) — in that case adding the single PID is enough.
+
+**1. Collect your device's USB details**
+
+```bash
+lsusb -d 1038:                         # your PID = the 4 hex digits after "1038:"
+lsusb -v -d 1038:XXXX > lsusb.log      # full interface/endpoint layout (replace XXXX with your PID)
+asm-cli diagnose -o asm-diagnose.txt   # ASM's view of the device
+```
+
+**2. New variant of a model already in the table?**
+
+Open the matching profile in `~/.config/arctis_manager/devices/` (e.g. `nova_elite.yaml`) and add your PID under `product_ids:`:
+
+```yaml
+product_ids:
+  - 0x2244
+  - 0x2270   # ← your PID
+```
+
+Then restart the daemon and test:
+
+```bash
+systemctl --user restart arctis-manager.service
+```
+
+If the device controls respond, it works. If the daemon log shows `Failed to find interface`, your command interface differs: set `command_interface_index: [<interface>, <alt_setting>]` to the HID interface from your `lsusb -v` that carries the 64-byte interrupt endpoint (often `[3, 0]`).
+
+> ℹ️ Edits under `~/.config/arctis_manager/devices/` are perfect for testing, but may be overwritten on update — do step 3 to make support permanent.
+
+**3. Open an issue so it ships for everyone**
+
+[Open an issue](https://github.com/loteran/Arctis-Sound-Manager/issues/new) and attach `lsusb.log` + `asm-diagnose.txt` (and mention whether the quick edit above worked). Brand-new models can need their HID control protocol reverse-engineered from a Windows USB capture, but the `lsusb` layout is enough to get most variants added in the next release.
+
+</details>
 
 ---
 
