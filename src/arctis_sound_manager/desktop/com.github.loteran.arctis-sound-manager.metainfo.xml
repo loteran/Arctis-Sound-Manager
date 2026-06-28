@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.86" date="2026-06-28">
+      <description>
+        <p>"Redirect Audio on Disconnect" did nothing even with a device selected (especially USB outputs) — the settings dropdown only saved your choice when the selected *index changed*, so picking the device that was already displayed (or re-selecting it) saved nothing, and the daemon kept reading an empty value. On top of that, when the stored value didn't match any current device the dropdown silently showed the first device as if it were selected, so the option *looked* configured while nothing was actually persisted. Dropdowns now persist on every pick (including re-selecting the current item) and show an unset state instead of faking a selection (#97). Fedora: the ClearCast / rnnoise noise-suppression plugin couldn't be installed — the install instructions (system-deps dialog, RPM %post, README) pointed at the uriesk/noise-suppression-for-voice COPR + package noise-suppression-for-voice, but that COPR only ships a source package, so dnf install failed with "matches only source packages". Switched to the lkiesow/noise-suppression-for-voice COPR and the ladspa-realtime-noise-suppression-plugin binary package (verified on Fedora 44).</p>
+      </description>
+    </release>
     <release version="1.1.85" date="2026-06-28">
       <description>
         <p>Arctis Nova Elite "Sage &amp; Gold" colorway (PID 0x2270) is now recognised out of the box (#101). Arctis Nova Elite crashed the daemon at startup — the command interface was declared as interface 0 instead of the real interface 3, so the daemon could not find it and exited on launch. It now targets the correct interface, and the daemon falls back to HID SET_REPORT (control transfer) instead of crashing whenever a unit's command interface is missing (#100). Microphone volume (and other device settings) could reset to the minimum on launch — when a saved setting value was missing while initialising the headset, ASM pushed 0 to the device, dropping the mic to 1/10 instead of your saved level. Missing values now fall back to the device profile's default.</p>
@@ -199,11 +204,6 @@
     <release version="1.1.57" date="2026-06-06">
       <description>
         <p>OLED weather (and all custom-display content) could vanish after the DAC re-enumerated — the Arctis Nova Pro Wireless re-enumerates on the USB bus at boot, wake and replug. The daemon overwrote its libusb handle without releasing the previous one, so the stale handle kept the interface claimed and every later transfer failed with EBUSY (Resource busy), blanking the custom OLED display and blocking device commands. The handle is now fully released (dispose_resources) before re-claiming on same-device re-enumeration. "Show city" weather toggle on the DAC tab could not be turned off — oled_show_weather_city had no matching configuration entry, so the D-Bus SetSetting call was rejected and the toggle snapped back to on. Added the missing entry. Vertical OLED scroll no longer triggers when the content essentially fits — the layout height was over-counted (separator double-count plus excess weather padding); the natural height now mirrors the real render and a small scroll deadzone was added, so a near-full screen stays still instead of jittering.</p>
-      </description>
-    </release>
-    <release version="1.1.56" date="2026-06-06">
-      <description>
-        <p>Arctis Nova Pro Omni controls — the Omni (0x2290) now has its own device profile targeting the correct USB layout: control interface 3 (the 64-byte HID endpoint) with HID SET_REPORT transport. In 1.1.55 it reused the Nova Pro Wireless profile (interface 4 with an interrupt-OUT endpoint the Omni does not expose), so the UI appeared but the controls had no effect. DAC command opcodes are still assumed identical to the Nova Pro Wireless, pending confirmation.</p>
       </description>
     </release>
   </releases>

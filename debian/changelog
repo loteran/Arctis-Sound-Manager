@@ -1,3 +1,26 @@
+arctis-sound-manager (1.1.86-1) noble; urgency=medium
+
+  * "Redirect Audio on Disconnect" did nothing even with a device selected
+    (especially USB outputs) — the settings dropdown only saved your choice
+    when the selected *index changed*, so picking the device that was
+    already displayed (or re-selecting it) saved nothing, and the daemon
+    kept reading an empty value. On top of that, when the stored value
+    didn't match any current device the dropdown silently showed the first
+    device as if it were selected, so the option *looked* configured while
+    nothing was actually persisted. Dropdowns now persist on every pick
+    (including re-selecting the current item) and show an unset state
+    instead of faking a selection (#97).
+  * Fedora: the ClearCast / rnnoise noise-suppression plugin couldn't be
+    installed — the install instructions (system-deps dialog, RPM %post,
+    README) pointed at the uriesk/noise-suppression-for-voice COPR + package
+    noise-suppression-for-voice, but that COPR only ships a source package,
+    so dnf install failed with "matches only source packages". Switched to
+    the lkiesow/noise-suppression-for-voice COPR and the
+    ladspa-realtime-noise-suppression-plugin binary package (verified on
+    Fedora 44).
+
+ -- loteran <axel.valadon@gmail.com>  Sun, 28 Jun 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.85-1) noble; urgency=medium
 
   * Arctis Nova Elite "Sage & Gold" colorway (PID 0x2270) is now recognised
