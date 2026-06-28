@@ -1,13 +1,41 @@
+name: Back-merge main into develop
+
 # back-merge-main-to-develop.yaml
 #
 # Purpose: After CI release-chore commits land on main (sync-packaging-version,
-# readme stats, metainfo/debian regeneration), automatically merge main back into
-# develop so the two branches never drift apart again.
+# readme stats, metainfo/debian regeneration, Crowdin), automatically merge
+# main back into develop so the two branches never drift apart again.
+#
+# Trigger model:
+#   - workflow_run: catches the chore workflows that push via GITHUB_TOKEN.
+#     GitHub's "on: push" is NOT retriggered for GITHUB_TOKEN-authored pushes,
+#     so we watch for those workflow runs completing instead.
+#   - schedule (hourly): catch-all safety net for any drift source not enumerated
+#     above (e.g. direct pushes from tools or future CI jobs not listed here).
+#   - push: branches: [main]: covers human pushes promptly; harmless for
+#     GITHUB_TOKEN-authored pushes (those are silently skipped by GitHub).
+#   - workflow_dispatch: allows a manual run at any time.
 #
 # Loop safety: GITHUB_TOKEN-authored pushes do NOT retrigger workflow runs, so
 # this job pushing to develop will never kick off another instance of itself.
 
 on:
+  workflow_run:
+    workflows:
+      - "Sync packaging version"
+      - "Update README stats"
+      - "Create GitHub Release"
+      - "Crowdin Sync"
+    types:
+      - completed
+
+  # Catch-all safety net: runs hourly to catch any drift source not covered
+  # by the workflow_run triggers above (offset to avoid top-of-hour rush).
+  schedule:
+    - cron: '17 * * * *'
+
+  workflow_dispatch:
+
   push:
     branches:
       - main
