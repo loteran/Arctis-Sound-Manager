@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Fedora: the ClearCast / rnnoise noise-suppression plugin couldn't be installed** — the install instructions (system-deps dialog, RPM `%post`, README) pointed at the `uriesk/noise-suppression-for-voice` COPR + package `noise-suppression-for-voice`, but that COPR only ships a source package, so `dnf install` failed with "matches only source packages". Switched to the `lkiesow/noise-suppression-for-voice` COPR and the `ladspa-realtime-noise-suppression-plugin` binary package (verified on Fedora 44).
+
 ## [1.1.85] - 28 June 2026
 
 ### Added

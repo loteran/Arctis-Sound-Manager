@@ -379,13 +379,13 @@ def _build_checks() -> list[DepCheck]:
             detect=lambda: _find_ladspa_plugin("librnnoise*.so") is not None,
             install_commands={
                 # noise-suppression-for-voice is NOT in official Fedora repos;
-                # it requires the uriesk/noise-suppression-for-voice COPR.
+                # it requires the lkiesow/noise-suppression-for-voice COPR.
                 # The %post scriptlet already enables the COPR + triggers a
                 # background install for RPM users. This command is the
                 # fallback shown in the GUI for manual / pipx installs.
                 "fedora": ["bash", "-c",
-                           "dnf copr enable -y uriesk/noise-suppression-for-voice"
-                           " && dnf install -y noise-suppression-for-voice"],
+                           "dnf copr enable -y lkiesow/noise-suppression-for-voice"
+                           " && dnf install -y ladspa-realtime-noise-suppression-plugin"],
                 # noise-suppression-for-voice is NOT packaged for Debian *or*
                 # Ubuntu / its derivatives (issues #65, #96), so all of them build
                 # it from source (LADSPA target only).
