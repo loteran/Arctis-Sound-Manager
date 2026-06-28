@@ -870,20 +870,32 @@ class CoreEngine:
             # one-shot PipeWire restart.  After the restart the daemon creates the
             # loopbacks dynamically via setup_loopbacks() below.
             try:
-                from arctis_sound_manager.sonar_to_pipewire import check_and_fix_stale_configs
+                from arctis_sound_manager.sonar_to_pipewire import check_and_fix_stale_configs, ensure_filter_chain_healthy, restart_filter_chain
                 fixed, needs_pw_restart = check_and_fix_stale_configs()
                 if fixed:
                     from arctis_sound_manager import service_control as sc
                     if needs_pw_restart:
                         self.logger.info("Stale PipeWire configs migrated — restarting PipeWire")
                         sc.restart("pipewire", "wireplumber", "pipewire-pulse", timeout=20)
-                        sc.restart("filter-chain", timeout=20)
+                        restart_filter_chain(timeout=20)
                     else:
                         self.logger.info("Stale Sonar configs fixed — restarting filter-chain")
-                        sc.restart("filter-chain", timeout=15)
+                        restart_filter_chain(timeout=15)
             except Exception as exc:
                 # Never let a config-repair failure block device init.
                 self.logger.warning(f"check_and_fix_stale_configs failed: {exc!r}")
+
+            # Proactive crash-loop guard (issue #88). On SteamOS the filter-chain
+            # is started by systemd at login and may SEGV-crash-loop on the HeSuVi
+            # graph before ASM ever issues a restart; this catches that case and
+            # falls back to flat-but-stable audio.
+            try:
+                if not ensure_filter_chain_healthy():
+                    self.logger.warning(
+                        "filter-chain entered safe mode at startup — audio will be "
+                        "flat but stable (issue #88)")
+            except Exception as exc:
+                self.logger.warning(f"ensure_filter_chain_healthy failed: {exc!r}")
 
             # Create dynamic loopbacks (Arctis_Game / Arctis_Chat / Arctis_Media).
             # device_state is already populated above, so make_specs can resolve

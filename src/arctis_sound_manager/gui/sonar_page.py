@@ -89,6 +89,7 @@ from arctis_sound_manager.sonar_to_pipewire import (
     check_and_fix_stale_configs,
     generate_sonar_eq_conf,
     generate_sonar_micro_conf,
+    restart_filter_chain,
 )
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -487,7 +488,7 @@ class _ApplyWorker(QThread):
             else:
                 target_node = f"effect_input.sonar-{self._channel}-eq"
 
-            ok = sc.restart("filter-chain", timeout=15)
+            ok = restart_filter_chain(timeout=15)
             if not ok:
                 log.error("audio restart failed")
                 self.done.emit(False)
@@ -669,7 +670,7 @@ class _ApplyAllWorker(QThread):
             # recreate the Arctis_* loopbacks fresh so they relink correctly.
             # Never restart pipewire / pipewire-pulse → connected apps (Discord)
             # keep their sink.
-            ok = sc.restart("filter-chain", timeout=15)
+            ok = restart_filter_chain(timeout=15)
             if not ok:
                 log.error("audio restart failed")
                 self.done.emit(False)
@@ -2702,7 +2703,7 @@ class SonarPage(QWidget):
                            timeout=20)
             else:
                 logging.getLogger(__name__).info("Stale Sonar configs fixed, restarting filter-chain")
-                sc.restart("filter-chain", timeout=15)
+                restart_filter_chain(timeout=15)
 
         self.setStyleSheet(f"background-color: {BG_MAIN};")
 

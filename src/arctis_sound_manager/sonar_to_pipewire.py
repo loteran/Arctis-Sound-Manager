@@ -324,14 +324,15 @@ def _enter_filter_chain_safe_mode() -> None:
     sc.restart("filter-chain", timeout=15)
 
 
-def _restart_filter_chain() -> None:
+def _restart_filter_chain(timeout: float = 15) -> bool:
     """Restart the filter-chain service with crash-loop detection and fallback.
 
-    After the restart, polls sc.is_active() a few times over a short grace
-    period. A SEGV crash-loop keeps the service in auto-restart/failed state, so
-    is_active() returns False; on that signal we enter safe mode (see
-    _enter_filter_chain_safe_mode). The fallback runs at most once per process
-    and cannot recurse."""
+    Returns True if the service stayed active after restart, False if a
+    crash-loop was detected (safe mode entered). After the restart, polls
+    sc.is_active() a few times over a short grace period. A SEGV crash-loop
+    keeps the service in auto-restart/failed state, so is_active() returns
+    False; on that signal we enter safe mode (see _enter_filter_chain_safe_mode).
+    The fallback runs at most once per process and cannot recurse."""
     import time
     from arctis_sound_manager import service_control as sc
 
@@ -339,9 +340,9 @@ def _restart_filter_chain() -> None:
         _log.warning(
             "filter-chain restart skipped: safe mode active (EQ configs disabled "
             "after a prior crash-loop). Change a setting to re-enable.")
-        return
+        return False
 
-    sc.restart("filter-chain", timeout=15)
+    sc.restart("filter-chain", timeout=timeout)
 
     # Stability poll: 3 checks, 1 s apart. In a crash-loop is_active() is False
     # between systemd's rapid restarts.
@@ -357,6 +358,57 @@ def _restart_filter_chain() -> None:
             "filter-chain did not stay active after restart (crash-loop "
             "detected) — entering safe mode")
         _enter_filter_chain_safe_mode()
+    return active_after_grace
+
+
+def restart_filter_chain(timeout: float | None = 15) -> bool:
+    """Public entry point for a user-initiated filter-chain restart (issue #88).
+
+    Clears any prior safe-mode flag (the user is deliberately re-applying
+    settings, so we should try the real EQ/surround configs again), then
+    restarts with crash-loop detection. Returns True if the service stayed
+    active, False if it crash-looped (safe mode entered → flat-but-stable audio).
+    """
+    reset_filter_chain_safe_mode()
+    return _restart_filter_chain(timeout=timeout if timeout is not None else 15)
+
+
+def ensure_filter_chain_healthy() -> bool:
+    """Proactive startup health-check for the filter-chain (issue #88).
+
+    On SteamOS / Steam Deck, filter-chain.service is started directly by systemd
+    at login. If the HeSuVi graph SEGV-crash-loops PipeWire, ASM never issues a
+    restart, so the reactive safe-mode in _restart_filter_chain() never fires and
+    the user is stuck with no audio. This check runs at daemon startup: if ASM
+    HeSuVi/EQ configs are present but the filter-chain is not staying active, it
+    enters safe mode (moves the configs aside, restarts clean) for flat-but-stable
+    audio.
+
+    Returns True if the filter-chain is healthy (or there is nothing to protect),
+    False if safe mode was entered.
+    """
+    import time
+    from arctis_sound_manager import service_control as sc
+
+    if _filter_chain_safe_mode:
+        return False  # already handled in this process
+
+    # Nothing to protect if none of our configs are present.
+    if not any((_CONF_DIR / name).exists() for name in _ASM_CONF_NAMES):
+        return True
+
+    # Stability poll: same pattern as _restart_filter_chain. A crash-loop keeps
+    # is_active() False between systemd's rapid auto-restarts.
+    for _ in range(3):
+        if sc.is_active("filter-chain"):
+            return True
+        time.sleep(1.0)
+
+    _log.warning(
+        "filter-chain not staying active at startup with ASM configs present "
+        "(crash-loop detected) — entering safe mode")
+    _enter_filter_chain_safe_mode()
+    return False
 
 
 def apply_hrir_choice(hrir_id: str | None) -> None:

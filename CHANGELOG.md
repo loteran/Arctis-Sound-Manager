@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **No audio / constant connect-disconnect on SteamOS (Steam Deck) when the HeSuVi 7.1 graph crash-loops PipeWire** — the filter-chain safe-mode (which falls back to flat-but-stable audio) was purely reactive: it only fired when ASM itself restarted the filter-chain. On the Deck the service is started by systemd at login and SEGV-crash-loops on the heavy HeSuVi graph before ASM ever issues a restart, so the safety net never kicked in and the user was left with no audio. ASM now runs a **proactive health-check at daemon startup**: if its EQ/HeSuVi configs are present but the filter-chain is not staying active, it enters safe mode (disables just those configs, restarts clean). All filter-chain restart paths (startup repair and the Sonar/EQ GUI workers) now route through the crash-loop-aware restart so the fallback can engage and so re-applying a setting re-enables the real configs (#88).
+
 ## [1.1.85] - 28 June 2026
 
 ### Added

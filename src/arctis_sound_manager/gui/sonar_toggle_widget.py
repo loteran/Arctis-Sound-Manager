@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPushButton, QSlider,
 from arctis_sound_manager import service_control as sc
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
 from arctis_sound_manager.i18n import I18n
-from arctis_sound_manager.sonar_to_pipewire import ensure_sonar_eq_configs
+from arctis_sound_manager.sonar_to_pipewire import ensure_sonar_eq_configs, restart_filter_chain
 
 
 STATE_FILE      = Path.home() / '.config' / 'arctis_manager' / '.eq_mode'
@@ -103,7 +103,7 @@ class _ToggleWorker(QThread):
         # daemon recreate the Arctis_* loopbacks with the new targets. We never
         # restart pipewire / pipewire-pulse / arctis-manager, so connected apps
         # (Discord) keep their sink and audio.
-        ok = sc.restart("filter-chain")
+        ok = restart_filter_chain()
         if not ok:
             _apply_yaml(self._old_mode)  # rollback
             STATE_FILE.write_text(self._old_mode)

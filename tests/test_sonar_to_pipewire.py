@@ -547,3 +547,69 @@ def test_reset_filter_chain_safe_mode_clears_flag(monkeypatch):
     monkeypatch.setattr(stp, "_filter_chain_safe_mode", True)
     stp.reset_filter_chain_safe_mode()
     assert stp._filter_chain_safe_mode is False
+
+
+def test_ensure_filter_chain_healthy_active_returns_true(tmp_path, monkeypatch):
+    """Healthy filter-chain with configs present → no safe mode."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    monkeypatch.setattr(stp, "_filter_chain_safe_mode", False)
+    monkeypatch.setattr(stp, "_CONF_DIR", tmp_path)
+    (tmp_path / "sonar-game-eq.conf").write_text("game")
+
+    with patch("arctis_sound_manager.service_control.is_active", return_value=True), \
+         patch("time.sleep"):
+        assert stp.ensure_filter_chain_healthy() is True
+    assert stp._filter_chain_safe_mode is False
+
+
+def test_ensure_filter_chain_healthy_noop_without_configs(tmp_path, monkeypatch):
+    """No ASM configs present → nothing to protect, returns True."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    monkeypatch.setattr(stp, "_filter_chain_safe_mode", False)
+    monkeypatch.setattr(stp, "_CONF_DIR", tmp_path)  # empty dir
+
+    with patch("arctis_sound_manager.service_control.is_active", return_value=False) as m, \
+         patch("time.sleep"):
+        assert stp.ensure_filter_chain_healthy() is True
+    m.assert_not_called()
+
+
+def test_ensure_filter_chain_healthy_crash_loop_enters_safe_mode(tmp_path, monkeypatch):
+    """Crash-loop at startup with configs present → safe mode, configs moved aside."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    monkeypatch.setattr(stp, "_filter_chain_safe_mode", False)
+    monkeypatch.setattr(stp, "_CONF_DIR", tmp_path)
+    monkeypatch.setattr(stp, "_CONF_DIR_DISABLED", tmp_path.parent / "disabled")
+    (tmp_path / "sink-virtual-surround-7.1-hesuvi.conf").write_text("hesuvi")
+
+    with patch("arctis_sound_manager.service_control.restart", return_value=True), \
+         patch("arctis_sound_manager.service_control.is_active", return_value=False), \
+         patch("time.sleep"):
+        assert stp.ensure_filter_chain_healthy() is False
+
+    assert stp._filter_chain_safe_mode is True
+    disabled = tmp_path.parent / "disabled"
+    assert (disabled / "sink-virtual-surround-7.1-hesuvi.conf").exists()
+    assert not (tmp_path / "sink-virtual-surround-7.1-hesuvi.conf").exists()
+
+
+def test_restart_filter_chain_resets_safe_mode_then_restarts(monkeypatch):
+    """restart_filter_chain clears safe mode and restarts with detection."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    monkeypatch.setattr(stp, "_filter_chain_safe_mode", True)
+
+    with patch("arctis_sound_manager.service_control.restart", return_value=True), \
+         patch("arctis_sound_manager.service_control.is_active", return_value=True), \
+         patch("time.sleep"):
+        assert stp.restart_filter_chain() is True
+    assert stp._filter_chain_safe_mode is False
+
+
+def test_restart_filter_chain_returns_bool(monkeypatch):
+    """_restart_filter_chain returns True when the service stays active."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    monkeypatch.setattr(stp, "_filter_chain_safe_mode", False)
+    with patch("arctis_sound_manager.service_control.restart", return_value=True), \
+         patch("arctis_sound_manager.service_control.is_active", return_value=True), \
+         patch("time.sleep"):
+        assert stp._restart_filter_chain() is True
