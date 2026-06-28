@@ -1,0 +1,55 @@
+# back-merge-main-to-develop.yaml
+#
+# Purpose: After CI release-chore commits land on main (sync-packaging-version,
+# readme stats, metainfo/debian regeneration), automatically merge main back into
+# develop so the two branches never drift apart again.
+#
+# Loop safety: GITHUB_TOKEN-authored pushes do NOT retrigger workflow runs, so
+# this job pushing to develop will never kick off another instance of itself.
+
+on:
+  push:
+    branches:
+      - main
+
+# Queue runs rather than cancel them, so back-merges land in order.
+concurrency:
+  group: back-merge-develop
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  back-merge:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout develop
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+          # Default GITHUB_TOKEN is fine; its pushes do not retrigger workflows.
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Merge main into develop and push
+        run: |
+          git fetch origin main
+
+          if git merge --no-edit --no-ff origin/main; then
+            # Merge succeeded — check whether there is actually anything new to push.
+            if git diff --quiet origin/develop..HEAD; then
+              echo "develop already up to date with main — nothing to push."
+            else
+              git push origin develop
+            fi
+          else
+            echo "::error::Automatic back-merge of main into develop hit a conflict — resolve manually."
+            git merge --abort || true
+            exit 1
+          fi

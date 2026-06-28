@@ -45,7 +45,7 @@ Options:
   -h, --help     Show this help message
 
 Note: uses Fedora 41 + ASM COPR. The rnnoise plugin (ClearCast) is installed
-automatically via uriesk/noise-suppression-for-voice COPR during ASM setup.
+automatically via lkiesow/noise-suppression-for-voice COPR during ASM setup.
 
 Log: ~/.cache/asm-distrobox-install.log
 EOF

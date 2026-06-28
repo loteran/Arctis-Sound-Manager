@@ -340,8 +340,8 @@ sudo apt install pipx libusb-1.0-0 libpulse0 libudev1 swh-plugins curl
 
 # Fedora / Nobara
 sudo dnf install pipx libusb1 pulseaudio-libs systemd-libs ladspa-swh-plugins curl
-sudo dnf copr enable uriesk/noise-suppression-for-voice
-sudo dnf install noise-suppression-for-voice
+sudo dnf copr enable lkiesow/noise-suppression-for-voice
+sudo dnf install ladspa-realtime-noise-suppression-plugin
 ```
 
 Then install ASM:
