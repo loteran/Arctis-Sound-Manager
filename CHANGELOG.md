@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **"Redirect Audio on Disconnect" did nothing even with a device selected (especially USB outputs)** — the settings dropdown only saved your choice when the selected *index changed*, so picking the device that was already displayed (or re-selecting it) saved nothing, and the daemon kept reading an empty value. On top of that, when the stored value didn't match any current device the dropdown silently showed the first device as if it were selected, so the option *looked* configured while nothing was actually persisted. Dropdowns now persist on every pick (including re-selecting the current item) and show an unset state instead of faking a selection (#97).
+
 ## [1.1.85] - 28 June 2026
 
 ### Added
