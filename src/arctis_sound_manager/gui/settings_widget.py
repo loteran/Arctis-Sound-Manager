@@ -244,12 +244,23 @@ class QSettingsWidget(QWidget):
             if options:
                 widget.addItems([o['name'] for o in options])
                 option = next((o for o in options if o['id'] == value), None)
-                widget.setCurrentIndex(options.index(option or options[0]))
+                # Only show a selection when the saved value actually matches an
+                # available option. Previously we fell back to options[0] and
+                # displayed it as if selected, even when nothing valid was stored
+                # — so a USB device whose node.nick was never persisted (or had
+                # changed) looked configured while the daemon read None and the
+                # "redirect on disconnect" fallback silently did nothing (#97).
+                # Leaving the index at -1 makes the unset state honest.
+                widget.setCurrentIndex(options.index(option) if option is not None else -1)
             def _on_select_change(index: int, cfg=config) -> None:
                 options = self._option_lists.get(cfg.options_source, [])
                 if 0 <= index < len(options):
                     callback(cfg, options[index]['id'])
-            widget.currentIndexChanged.connect(_on_select_change)
+            # 'activated' fires on every user pick — including re-selecting the
+            # item that is already current — so the value is always persisted.
+            # 'currentIndexChanged' only fired on an index *change*, so picking
+            # the already-displayed device saved nothing (#97).
+            widget.activated.connect(_on_select_change)
         else:
             widget = QLabel(f'UNKNOWN TYPE: {config.type}')
 
