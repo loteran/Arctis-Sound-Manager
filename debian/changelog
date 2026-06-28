@@ -1,3 +1,64 @@
+arctis-sound-manager (1.1.85-1) noble; urgency=medium
+
+  * Arctis Nova Elite "Sage & Gold" colorway (PID 0x2270) is now recognised
+    out of the box (#101).
+  * Arctis Nova Elite crashed the daemon at startup — the command interface
+    was declared as interface 0 instead of the real interface 3, so the
+    daemon could not find it and exited on launch. It now targets the
+    correct interface, and the daemon falls back to HID SET_REPORT (control
+    transfer) instead of crashing whenever a unit's command interface is
+    missing (#100).
+  * Microphone volume (and other device settings) could reset to the minimum
+    on launch — when a saved setting value was missing while initialising
+    the headset, ASM pushed 0 to the device, dropping the mic to 1/10
+    instead of your saved level. Missing values now fall back to the device
+    profile's default.
+  * asm-setup skipped the udev rules when run from a source checkout — it
+    now falls back to the in-tree CLI module when the asm-cli binary isn't
+    on PATH, so the udev rules and desktop entry get written instead of
+    being silently skipped.
+
+ -- loteran <axel.valadon@gmail.com>  Sun, 28 Jun 2026 00:00:00 +0000
+
+arctis-sound-manager (1.1.84-1) noble; urgency=medium
+
+  * Wrong version reported in the GUI footer and bug reports — on installs
+    that share a single site-packages directory (typical on Arch/CachyOS,
+    and inside Distrobox), the version lookup matched the *first* enumerated
+    distribution rather than the one that actually ships ASM, so the footer
+    and Report a bug output showed nonsense versions like 0.1 or 1.9.0 for a
+    1.1.83 install. The version is now resolved by checking which
+    distribution genuinely owns the running arctis_sound_manager package
+    files, while still preferring the copy that is actually imported
+    (resolves a stale ~/.local shadow of the system install).
+  * Hardened virtual-sink routing against PipeWire socket changes (Steam
+    Game Mode / Distrobox) — pw-loopback processes are now spawned with the
+    resolved host PipeWire socket pinned in their environment (falling back
+    to /run/user/<uid>/pipewire-0), and the loopback watchdog detects when
+    the active PipeWire socket changes (e.g. a Desktop ↔ Game Mode session
+    switch under Gamescope) and recreates all loopbacks so they rebind to
+    the new socket instead of going silent on the stale one. (#90)
+
+ -- loteran <axel.valadon@gmail.com>  Fri, 26 Jun 2026 00:00:00 +0000
+
+arctis-sound-manager (1.1.83-1) noble; urgency=medium
+
+  * Package uninstallable on Ubuntu 24.04 (and any Debian/Ubuntu) from the
+    PPA — arctis-sound-manager declared a hard Depends:
+    noise-suppression-for-voice, but that package (the rnnoise LADSPA
+    plugin) is not in the Debian or Ubuntu archives nor the PPA, so apt
+    refused to install ASM at all (Depends: noise-suppression-for-voice but
+    it is not installable). It is now a Recommends:, matching the binary
+    .deb build, so ASM installs cleanly; the optional ClearCast mic
+    suppression plugin is still offered and built from source on demand by
+    ASM's dependency installer. (#96)
+  * Dependency installer wrongly tried apt install
+    noise-suppression-for-voice on Debian — the package does not exist on
+    Debian either, so the install would have failed. Debian now builds the
+    LADSPA plugin from source, like Ubuntu and its derivatives. (#96)
+
+ -- loteran <axel.valadon@gmail.com>  Thu, 25 Jun 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.82-1) noble; urgency=medium
 
   * Audio cuts in and out in Steam Game Mode / Gamescope (Bazzite, SteamOS)
