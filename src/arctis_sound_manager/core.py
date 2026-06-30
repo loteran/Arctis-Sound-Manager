@@ -302,12 +302,17 @@ class CoreEngine:
            and is still running, queries PipeWire (via
            :func:`~arctis_sound_manager.pw_utils.loopback_link_target`) to see
            which sink it is actually wired to.  If the actual link target differs
-           from the expected ``spec.target``, the loopback is recreated so that
-           WirePlumber re-applies ``node.target``.  Orphan loopbacks (not yet
-           linked to anything, ``actual is None``) are given a grace period of
-           ``_ORPHAN_GRACE_TICKS`` consecutive ticks (15 s at the default
-           interval) before being recreated: a single-tick ``None`` is a normal
-           transient PipeWire state and must not trigger a spurious recreate.
+           from the expected ``spec.target`` for ``_MISLINK_GRACE_TICKS``
+           consecutive ticks, WirePlumber is asked to re-point ``node.target``
+           via a non-destructive ``pw-metadata`` relink (the loopback process and
+           its PA sink stay alive); only if that relink fails is the loopback
+           recreated.  Orphan loopbacks (not yet linked to anything,
+           ``actual is None``) are given a grace period of ``_ORPHAN_GRACE_TICKS``
+           consecutive ticks (15 s at the default interval) before being
+           recreated.  Both grace counters exist because a single-tick mismatch
+           or ``None`` is a normal transient PipeWire state (e.g. the surround
+           chain rebuilding when Spatial Audio toggles) and must not trigger a
+           spurious recreate that would feed a self-sustaining churn loop.
 
         **Anti-flapping guard** — under Gamescope / Steam Game Mode, WirePlumber
         routing policy may continuously mis-route loopbacks, causing the watchdog
@@ -331,6 +336,15 @@ class CoreEngine:
         # 3 ticks = 15 s of grace before action.  Transient None states (one
         # PipeWire graph cycle) are ignored entirely.
         _ORPHAN_GRACE_TICKS: int = 3
+        # Number of consecutive ticks a loopback may be mislinked (linked to a
+        # node other than spec.target) before we intervene.  When Spatial Audio
+        # is enabled the Sonar EQ → HeSuVi surround chain is rebuilt on toggle,
+        # and during that window WirePlumber briefly relocates the loopback to
+        # the physical sink.  A single-tick mismatch is a normal transient and
+        # must NOT trigger a recreate — otherwise the recreate itself churns the
+        # graph and feeds a self-sustaining loop that silences the channel
+        # (issue #100, "surround on = thrash, surround off = stable").
+        _MISLINK_GRACE_TICKS: int = 3
 
         # ── Anti-flapping constants ───────────────────────────────────────────
         # Threshold: how many interventions (restart OR recreate) within the
@@ -349,6 +363,10 @@ class CoreEngine:
         # returned None.  Reset to 0 whenever the link becomes non-None or the
         # loopback is restarted.
         _none_ticks: dict[str, int] = {}
+        # Per-channel count of consecutive ticks where the loopback was linked to
+        # the wrong node (mislinked).  Reset to 0 once the link matches
+        # spec.target, the loopback goes orphan, or it is recreated.
+        _mislink_ticks: dict[str, int] = {}
         # Timestamps of recent interventions per channel (monotonic clock).
         _flap_history: dict[str, list[float]] = {}
         # Monotonic timestamp past which the channel is in cooldown.
@@ -498,6 +516,7 @@ class CoreEngine:
                             continue
                         if channel in restarted:
                             # Just recreated — node.target will bind next cycle.
+                            _mislink_ticks.pop(channel, None)
                             continue
                         if not self.loopback_manager.is_running(channel):
                             continue
@@ -516,9 +535,41 @@ class CoreEngine:
                                 channel, count,
                             )
                             _none_ticks.pop(channel, None)
+                            _mislink_ticks.pop(channel, None)
                         else:
                             _none_ticks.pop(channel, None)
                             if actual == spec.target:
+                                _mislink_ticks.pop(channel, None)
+                                continue
+                            # Mislink grace: a single-tick mismatch is a normal
+                            # transient (e.g. the surround chain rebuilding when
+                            # Spatial Audio toggles). Only act after the mislink
+                            # persists, mirroring the orphan grace above.
+                            count = _mislink_ticks.get(channel, 0) + 1
+                            _mislink_ticks[channel] = count
+                            if count < _MISLINK_GRACE_TICKS:
+                                continue
+                            _mislink_ticks.pop(channel, None)
+                            # Prefer a non-destructive relink via pw-metadata over
+                            # a full process recreate: re-pointing node.target keeps
+                            # the pw-loopback (and its PA sink) alive, so we don't
+                            # restart the dropout cycle. Only recreate if the
+                            # metadata relink fails.
+                            from arctis_sound_manager.pw_utils import (
+                                relink_loopback_playback,
+                            )
+                            relinked = await asyncio.get_running_loop().run_in_executor(
+                                None,
+                                relink_loopback_playback,
+                                spec.playback_name,
+                                spec.target,
+                            )
+                            if relinked:
+                                self.logger.info(
+                                    "_loopback_watchdog: loopback '%s' mislinked to "
+                                    "%s (want %s) — relinked via pw-metadata",
+                                    channel, actual, spec.target,
+                                )
                                 continue
                             self.logger.warning(
                                 "_loopback_watchdog: loopback '%s' mislinked to %s "
