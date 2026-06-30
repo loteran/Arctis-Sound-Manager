@@ -1,3 +1,17 @@
+arctis-sound-manager (1.1.87-1) noble; urgency=medium
+
+  * Sonar devices (e.g. Arctis Nova Elite) went silent when Spatial Audio
+    was enabled — with surround on, the loopback watchdog mistook a
+    single-cycle transient (the Sonar EQ → HeSuVi surround chain rebuilding)
+    for a mis-routed loopback and killed/recreated the pw-loopback, which
+    churned the graph and fed a self-sustaining loop that muted the channel
+    (and spammed the OLED with Resource busy). The watchdog now waits for
+    the mismatch to persist before acting, and corrects a genuine mislink
+    with a non-destructive pw-metadata relink instead of tearing the
+    loopback down. (#100)
+
+ -- loteran <axel.valadon@gmail.com>  Tue, 30 Jun 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.86-1) noble; urgency=medium
 
   * "Redirect Audio on Disconnect" did nothing even with a device selected
