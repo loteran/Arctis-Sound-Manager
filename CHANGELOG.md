@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.87] - 30 June 2026
+
+### Fixed
+
+- **Sonar devices (e.g. Arctis Nova Elite) went silent when Spatial Audio was enabled** — with surround on, the loopback watchdog mistook a single-cycle transient (the Sonar EQ → HeSuVi surround chain rebuilding) for a mis-routed loopback and killed/recreated the `pw-loopback`, which churned the graph and fed a self-sustaining loop that muted the channel (and spammed the OLED with `Resource busy`). The watchdog now waits for the mismatch to persist before acting, and corrects a genuine mislink with a non-destructive `pw-metadata` relink instead of tearing the loopback down. (#100)
+
 ## [1.1.86] - 28 June 2026
 
 ### Fixed
