@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.87" date="2026-06-30">
+      <description>
+        <p>Sonar devices (e.g. Arctis Nova Elite) went silent when Spatial Audio was enabled — with surround on, the loopback watchdog mistook a single-cycle transient (the Sonar EQ → HeSuVi surround chain rebuilding) for a mis-routed loopback and killed/recreated the pw-loopback, which churned the graph and fed a self-sustaining loop that muted the channel (and spammed the OLED with Resource busy). The watchdog now waits for the mismatch to persist before acting, and corrects a genuine mislink with a non-destructive pw-metadata relink instead of tearing the loopback down. (#100)</p>
+      </description>
+    </release>
     <release version="1.1.86" date="2026-06-28">
       <description>
         <p>"Redirect Audio on Disconnect" did nothing even with a device selected (especially USB outputs) — the settings dropdown only saved your choice when the selected *index changed*, so picking the device that was already displayed (or re-selecting it) saved nothing, and the daemon kept reading an empty value. On top of that, when the stored value didn't match any current device the dropdown silently showed the first device as if it were selected, so the option *looked* configured while nothing was actually persisted. Dropdowns now persist on every pick (including re-selecting the current item) and show an unset state instead of faking a selection (#97). Fedora: the ClearCast / rnnoise noise-suppression plugin couldn't be installed — the install instructions (system-deps dialog, RPM %post, README) pointed at the uriesk/noise-suppression-for-voice COPR + package noise-suppression-for-voice, but that COPR only ships a source package, so dnf install failed with "matches only source packages". Switched to the lkiesow/noise-suppression-for-voice COPR and the ladspa-realtime-noise-suppression-plugin binary package (verified on Fedora 44).</p>
@@ -199,11 +204,6 @@
     <release version="1.1.58" date="2026-06-06">
       <description>
         <p>Arctis Nova Pro Omni controls had no effect — a real Windows USB capture of SteelSeries GG driving the Omni (firmware 1.32.0) revealed its HID control commands lead with report id 0x01, not 0x06 (Nova Pro Wireless) nor 0x07 (previously inferred from third-party OLED drivers). The device profile now leads every command with 0x01 and polls status with 0x01b0; the per-setting opcodes are byte-for-byte identical to the Nova Pro Wireless. Gain, mic, sidetone, EQ, ANC and the other controls should now take effect on the Omni. (#70)</p>
-      </description>
-    </release>
-    <release version="1.1.57" date="2026-06-06">
-      <description>
-        <p>OLED weather (and all custom-display content) could vanish after the DAC re-enumerated — the Arctis Nova Pro Wireless re-enumerates on the USB bus at boot, wake and replug. The daemon overwrote its libusb handle without releasing the previous one, so the stale handle kept the interface claimed and every later transfer failed with EBUSY (Resource busy), blanking the custom OLED display and blocking device commands. The handle is now fully released (dispose_resources) before re-claiming on same-device re-enumeration. "Show city" weather toggle on the DAC tab could not be turned off — oled_show_weather_city had no matching configuration entry, so the D-Bus SetSetting call was rejected and the toggle snapped back to on. Added the missing entry. Vertical OLED scroll no longer triggers when the content essentially fits — the layout height was over-counted (separator double-count plus excess weather padding); the natural height now mirrors the real render and a small scroll deadzone was added, so a near-full screen stays still instead of jittering.</p>
       </description>
     </release>
   </releases>
