@@ -348,11 +348,15 @@ class CoreEngine:
 
         # ── Anti-flapping constants ───────────────────────────────────────────
         # Threshold: how many interventions (restart OR recreate) within the
-        # observation window trigger a cooldown.  3 events in 30 s means the
-        # channel has already been disrupted 3 times in ~15 s of real time.
+        # observation window trigger a cooldown.
         _FLAP_THRESHOLD: int = 3
         # Rolling window for counting recent interventions (seconds).
-        _FLAP_WINDOW: float = 30.0
+        # Correctif 3 (issue #88): raised from 30 → 60 s so that 3 orphan
+        # recreations spaced ~15-16 s apart (3 ticks × 5 s grace + overhead)
+        # all fall within the window and correctly trigger the cooldown.
+        # At 30 s only 2 of those recreations would fit, never reaching the
+        # threshold of 3 and letting the recreate loop run indefinitely.
+        _FLAP_WINDOW: float = 60.0
         # First cooldown applied when flapping is detected (seconds).
         _COOLDOWN_BASE: float = 60.0
         # Maximum cooldown; repeated flapping doubles up to this cap (seconds).
@@ -377,6 +381,17 @@ class CoreEngine:
         # Whether we have already emitted the "skipping (in cooldown)" log line
         # for the current cooldown period (avoid per-tick log spam).
         _cooldown_logged: dict[str, bool] = {}
+
+        # ── Target-absent tracking (issue #88 Correctif 3) ───────────────────
+        # Per-channel count of consecutive ticks where the loopback is orphaned
+        # AND the expected target EQ node (e.g. effect_input.sonar-game-eq) is
+        # absent from the PipeWire graph (= filter-chain is dead/crash-looping).
+        # Recreating an orphan when the target doesn't exist is pointless; after
+        # enough such ticks we call ensure_filter_chain_healthy() instead.
+        _target_absent_ticks: dict[str, int] = {}
+        # How many consecutive "orphan + target absent" ticks before we escalate
+        # to ensure_filter_chain_healthy().  Each tick = _WATCHDOG_INTERVAL s.
+        _TARGET_ABSENT_TICKS: int = 3
 
         # ── PipeWire socket tracking (issue #90) ─────────────────────────────
         # Last-known PipeWire socket path seen by the watchdog.  ``None`` means
@@ -521,6 +536,7 @@ class CoreEngine:
                         if not self.loopback_manager.is_running(channel):
                             continue
                         actual = loopback_link_target(spec.playback_name)
+                        _is_orphan = False
                         if actual is None:
                             # Orphan: may be a transient one-tick PipeWire state.
                             # Accumulate ticks; only act after _ORPHAN_GRACE_TICKS
@@ -531,13 +547,15 @@ class CoreEngine:
                                 continue
                             self.logger.warning(
                                 "_loopback_watchdog: loopback '%s' orphaned for "
-                                "%d ticks — recreating",
+                                "%d ticks — checking target",
                                 channel, count,
                             )
                             _none_ticks.pop(channel, None)
                             _mislink_ticks.pop(channel, None)
+                            _is_orphan = True
                         else:
                             _none_ticks.pop(channel, None)
+                            _target_absent_ticks.pop(channel, None)
                             if actual == spec.target:
                                 _mislink_ticks.pop(channel, None)
                                 continue
@@ -576,6 +594,57 @@ class CoreEngine:
                                 "(want %s) — recreating",
                                 channel, actual, spec.target,
                             )
+
+                        # Correctif 3 (issue #88): for orphan loopbacks, check if
+                        # the expected target EQ node exists in the PipeWire graph.
+                        # If the filter-chain is dead/crash-looping, spec.target
+                        # (e.g. effect_input.sonar-game-eq) will be absent from the
+                        # graph and recreating the loopback is pointless — it will
+                        # remain orphaned until filter-chain comes back. Instead,
+                        # count "target absent" ticks and escalate to
+                        # ensure_filter_chain_healthy() so safe mode can be armed.
+                        if _is_orphan and spec.target:
+                            from arctis_sound_manager.pw_utils import pw_node_exists
+                            target_exists = await asyncio.get_running_loop().run_in_executor(
+                                None, pw_node_exists, spec.target,
+                            )
+                            if not target_exists:
+                                ta_count = _target_absent_ticks.get(channel, 0) + 1
+                                _target_absent_ticks[channel] = ta_count
+                                self.logger.warning(
+                                    "_loopback_watchdog: loopback '%s' orphaned and "
+                                    "target '%s' absent from PW graph (filter-chain "
+                                    "dead?) — ticks=%d, skipping recreate",
+                                    channel, spec.target, ta_count,
+                                )
+                                if ta_count >= _TARGET_ABSENT_TICKS:
+                                    _target_absent_ticks.pop(channel, None)
+                                    self.logger.warning(
+                                        "_loopback_watchdog: target '%s' absent for "
+                                        "%d ticks — calling ensure_filter_chain_healthy()",
+                                        spec.target, ta_count,
+                                    )
+                                    try:
+                                        from arctis_sound_manager.sonar_to_pipewire import (
+                                            ensure_filter_chain_healthy,
+                                        )
+                                        await asyncio.get_running_loop().run_in_executor(
+                                            None, ensure_filter_chain_healthy
+                                        )
+                                    except Exception as _ehc_exc:
+                                        self.logger.error(
+                                            "_loopback_watchdog: ensure_filter_chain_healthy "
+                                            "failed: %r", _ehc_exc
+                                        )
+                                continue  # do NOT recreate — target doesn't exist yet
+                            else:
+                                _target_absent_ticks.pop(channel, None)
+                                self.logger.warning(
+                                    "_loopback_watchdog: loopback '%s' orphaned for "
+                                    "%d ticks (target present) — recreating",
+                                    channel, count,
+                                )
+
                         self.loopback_manager.recreate(spec)
                         _record_intervention(channel)
                         if channel == "chat":
@@ -920,6 +989,18 @@ class CoreEngine:
             # now removes the legacy 10-arctis-virtual-sinks.conf and signals a
             # one-shot PipeWire restart.  After the restart the daemon creates the
             # loopbacks dynamically via setup_loopbacks() below.
+            # Correctif 1 (issue #88): detect a pre-existing filter-chain crash-loop
+            # BEFORE touching configs.  If the service was already crash-looping at
+            # session start (e.g. a missing LADSPA .so causes a SEGV), entering
+            # safe mode here prevents check_and_fix_stale_configs from regenerating
+            # the crashing configs and re-arming the crash.  Safe mode writes a
+            # disk marker (Correctif 2) so the flag survives daemon restarts.
+            try:
+                from arctis_sound_manager.sonar_to_pipewire import ensure_filter_chain_healthy
+                ensure_filter_chain_healthy()
+            except Exception as exc:
+                self.logger.warning("ensure_filter_chain_healthy failed: %r", exc)
+
             try:
                 from arctis_sound_manager.sonar_to_pipewire import check_and_fix_stale_configs
                 fixed, needs_pw_restart = check_and_fix_stale_configs()
