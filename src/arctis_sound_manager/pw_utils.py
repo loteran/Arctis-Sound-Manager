@@ -141,6 +141,34 @@ def _pw_dump() -> list:
         return []
 
 
+def pw_node_exists(name: str, data: list | None = None) -> bool:
+    """Return True if a PipeWire node with ``node.name == name`` is currently
+    present in the graph.
+
+    Used by the loopback watchdog (Correctif 3, issue #88) to detect when the
+    filter-chain EQ nodes have disappeared (dead or crash-looping filter-chain
+    service) so the watchdog can call ``ensure_filter_chain_healthy()`` instead
+    of endlessly recreating orphan loopbacks to a non-existent target.
+
+    Parameters
+    ----------
+    name:
+        ``node.name`` to search for (e.g. ``"effect_input.sonar-game-eq"``).
+    data:
+        Optional pre-fetched ``pw-dump`` payload.  When *None*, a fresh
+        ``pw-dump`` is executed.
+    """
+    if data is None:
+        data = _pw_dump()
+    for obj in data:
+        if not obj.get("type", "").endswith("Node"):
+            continue
+        props = obj.get("info", {}).get("props", {})
+        if props.get("node.name") == name:
+            return True
+    return False
+
+
 def get_native_streams(data: list | None = None) -> list[dict]:
     """
     Return native PipeWire audio output streams (not PulseAudio clients).
@@ -289,6 +317,17 @@ def relink_loopback_playback(playback_name: str, target_name: str, data: list | 
 
         subprocess.run(
             ["pw-metadata", str(playback_id), "target.node", str(target_id)],
+            check=True, timeout=3, capture_output=True,
+        )
+        # WirePlumber >= 0.5 resolves target.object (by node.name or
+        # object.serial) with priority over the deprecated target.node (node ID).
+        # Write target.object using the node name — WirePlumber accepts it and
+        # it survives filter-chain restarts that change node IDs.
+        # We do not use object.serial here because it requires an extra pw-dump
+        # lookup and would add complexity without meaningful benefit: node.name
+        # is stable within a PipeWire session and is already used by loopback_manager.
+        subprocess.run(
+            ["pw-metadata", str(playback_id), "target.object", target_name],
             check=True, timeout=3, capture_output=True,
         )
         logger.info(

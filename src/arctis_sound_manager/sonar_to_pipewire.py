@@ -269,18 +269,31 @@ _ASM_CONF_NAMES = frozenset({
 # loader ignores it because it is not the *.conf.d directory it scans.
 _CONF_DIR_DISABLED = _CONF_DIR.parent / "filter-chain.conf.d.disabled"
 
+# Disk marker for safe-mode persistence across daemon restarts (Correctif 2,
+# issue #88).  Written by _enter_filter_chain_safe_mode(), removed by
+# reset_filter_chain_safe_mode().  PipeWire filter-chain crash-loops survive
+# daemon restarts — without the marker, ASM would re-enable the crashing
+# configs on the next session start.
+_SAFE_MODE_MARKER = Path.home() / ".config" / "arctis_manager" / "filter_chain_safe_mode.json"
+
 # Set once the safe-mode fallback has run, to stop any code path from recursing
-# back into the crash-loop handler. Module-level: reset on daemon restart, or
-# explicitly via reset_filter_chain_safe_mode() on a deliberate user action.
-_filter_chain_safe_mode: bool = False
+# back into the crash-loop handler.  Initialised from the disk marker so the
+# flag survives a daemon restart (the filter-chain crash-loop persists across
+# restarts until the configs are removed).
+# Reset explicitly via reset_filter_chain_safe_mode() on a deliberate user action.
+_filter_chain_safe_mode: bool = _SAFE_MODE_MARKER.exists()
 
 
 def reset_filter_chain_safe_mode() -> None:
-    """Clear the safe-mode flag so the next _restart_filter_chain() re-enables
-    EQ configs. Call this when the user deliberately changes a setting after a
-    safe-mode warning."""
+    """Clear the safe-mode flag and remove the disk marker so the next
+    _restart_filter_chain() re-enables EQ configs. Call this when the user
+    deliberately re-enables EQ after a safe-mode warning."""
     global _filter_chain_safe_mode
     _filter_chain_safe_mode = False
+    try:
+        _SAFE_MODE_MARKER.unlink(missing_ok=True)
+    except OSError as exc:
+        _log.warning("reset_filter_chain_safe_mode: could not remove marker: %s", exc)
 
 
 def _enter_filter_chain_safe_mode() -> None:
@@ -294,6 +307,21 @@ def _enter_filter_chain_safe_mode() -> None:
     if _filter_chain_safe_mode:
         return  # already in safe mode — never recurse
     _filter_chain_safe_mode = True
+
+    # Persist safe-mode flag to disk so it survives a daemon restart (issue #88
+    # Correctif 2): the filter-chain crash-loop is not reset by restarting ASM,
+    # so without the marker check_and_fix_stale_configs / ensure_sonar_eq_configs
+    # would re-enable the crashing configs on the next session.
+    try:
+        import datetime as _dt
+        import json as _json
+        _SAFE_MODE_MARKER.parent.mkdir(parents=True, exist_ok=True)
+        _SAFE_MODE_MARKER.write_text(_json.dumps({
+            "timestamp": _dt.datetime.now().isoformat(),
+            "reason": "crash-loop detected after filter-chain restart",
+        }))
+    except OSError as exc:
+        _log.warning("safe_mode: could not write marker %s: %s", _SAFE_MODE_MARKER, exc)
 
     from arctis_sound_manager import service_control as sc
 
@@ -324,15 +352,34 @@ def _enter_filter_chain_safe_mode() -> None:
     sc.restart("filter-chain", timeout=15)
 
 
+def _poll_filter_chain_stable() -> bool:
+    """Poll filter-chain stability: 3 checks, 1 s apart.
+
+    Returns True if ``sc.is_active("filter-chain")`` returns True at least once
+    within the grace period.  A SEGV crash-loop keeps the service in
+    auto-restart/failed state between systemd's rapid restarts, so is_active()
+    stays False throughout.
+
+    Extracted from ``_restart_filter_chain()`` so it can be reused by
+    ``ensure_filter_chain_healthy()`` (Correctif 1, issue #88)."""
+    import time
+    from arctis_sound_manager import service_control as sc
+
+    for _ in range(3):
+        time.sleep(1.0)
+        if sc.is_active("filter-chain"):
+            return True
+    return False
+
+
 def _restart_filter_chain() -> None:
     """Restart the filter-chain service with crash-loop detection and fallback.
 
-    After the restart, polls sc.is_active() a few times over a short grace
-    period. A SEGV crash-loop keeps the service in auto-restart/failed state, so
-    is_active() returns False; on that signal we enter safe mode (see
-    _enter_filter_chain_safe_mode). The fallback runs at most once per process
-    and cannot recurse."""
-    import time
+    After the restart, polls sc.is_active() via _poll_filter_chain_stable()
+    over a short grace period. A SEGV crash-loop keeps the service in
+    auto-restart/failed state, so is_active() returns False; on that signal we
+    enter safe mode (see _enter_filter_chain_safe_mode). The fallback runs at
+    most once per process and cannot recurse."""
     from arctis_sound_manager import service_control as sc
 
     if _filter_chain_safe_mode:
@@ -343,20 +390,72 @@ def _restart_filter_chain() -> None:
 
     sc.restart("filter-chain", timeout=15)
 
-    # Stability poll: 3 checks, 1 s apart. In a crash-loop is_active() is False
-    # between systemd's rapid restarts.
-    active_after_grace = False
-    for _ in range(3):
-        time.sleep(1.0)
-        if sc.is_active("filter-chain"):
-            active_after_grace = True
-            break
-
-    if not active_after_grace:
+    if not _poll_filter_chain_stable():
         _log.warning(
             "filter-chain did not stay active after restart (crash-loop "
             "detected) — entering safe mode")
         _enter_filter_chain_safe_mode()
+
+
+def ensure_filter_chain_healthy() -> bool:
+    """Detect a crash-looping filter-chain at boot or device-attach time and arm
+    the safe-mode fallback if needed (Correctif 1, issue #88).
+
+    Checks (in order):
+    1. ``sc.is_active("filter-chain")`` — if False the service is already down.
+    2. ``NRestarts`` (systemd only) — if >= 3 the service has restarted at
+       least 3 times, which strongly indicates a crash-loop.
+
+    If unhealthy → calls ``_enter_filter_chain_safe_mode()`` which moves ASM
+    configs aside and restarts filter-chain without them so audio is flat but
+    stable rather than permanently cut.
+
+    Returns True when the filter-chain appears healthy (or the init system is
+    not systemd and a live check is not possible).  Returns False when safe mode
+    was entered or was already active.
+
+    Callers must not call this in a tight loop — each call may block up to
+    ``3 × 1 s`` for the poll and ``5 s`` for the NRestarts subprocess."""
+    from arctis_sound_manager import service_control as sc
+
+    if _filter_chain_safe_mode:
+        return False  # already in safe mode — nothing more to do
+
+    # Primary check: is the service running right now?
+    if not sc.is_active("filter-chain"):
+        _log.warning(
+            "ensure_filter_chain_healthy: filter-chain is not active at "
+            "boot/attach — entering safe mode to prevent crash-loop audio cut"
+        )
+        _enter_filter_chain_safe_mode()
+        return False
+
+    # Secondary check (systemd only): NRestarts — a high restart count means
+    # the service has been repeatedly crashing even if it appears momentarily
+    # active between systemd's rapid auto-restarts.
+    try:
+        import subprocess as _sp
+        from arctis_sound_manager.init_system import detect_init
+        if detect_init() == "systemd":
+            r = _sp.run(
+                ["systemctl", "--user", "show", "filter-chain", "-p", "NRestarts"],
+                capture_output=True, text=True, timeout=5,
+            )
+            for line in r.stdout.splitlines():
+                if line.startswith("NRestarts="):
+                    n_restarts = int(line.split("=", 1)[1].strip())
+                    if n_restarts >= 3:
+                        _log.warning(
+                            "ensure_filter_chain_healthy: filter-chain NRestarts=%d "
+                            "(crash-loop detected) — entering safe mode",
+                            n_restarts,
+                        )
+                        _enter_filter_chain_safe_mode()
+                        return False
+    except Exception as exc:
+        _log.debug("ensure_filter_chain_healthy: NRestarts query failed: %s", exc)
+
+    return True
 
 
 def apply_hrir_choice(hrir_id: str | None) -> None:
@@ -513,11 +612,19 @@ def _active_conf_8ch(
         last_name = "boost"
 
     if smart_volume and smart_volume.get("enabled"):
-        mode = smart_volume.get("loudness", "balanced")
-        level = smart_volume.get("level", 50)
-        preset = _SMART_PRESETS.get(mode, _SMART_PRESETS["balanced"])
-        node_lines.append(_sc4m_node("compressor", preset, level))
-        link_lines.append(_link_to_ladspa(last_name, "compressor"))
+        # Correctif 4 (issue #88): guard LADSPA node behind plugin availability
+        # check. A missing sc4m_1916.so causes dlopen() SEGV in filter-chain.
+        if not _ladspa_plugin_available("sc4m_1916.so"):
+            _log.warning(
+                "LADSPA plugin sc4m_1916 not found — skipping Smart Volume "
+                "compressor node, feature degraded; install swh-plugins on the host"
+            )
+        else:
+            mode = smart_volume.get("loudness", "balanced")
+            level = smart_volume.get("level", 50)
+            preset = _SMART_PRESETS.get(mode, _SMART_PRESETS["balanced"])
+            node_lines.append(_sc4m_node("compressor", preset, level))
+            link_lines.append(_link_to_ladspa(last_name, "compressor"))
 
     nodes_text = "\n".join(node_lines)
     links_block = ""
@@ -529,7 +636,10 @@ def _active_conf_8ch(
 
     media_class = "Audio/Sink" if channel == "output" else "Audio/Sink/Internal"
     priority = "1" if channel == "output" else "1000"
-    _target_line = f'        node.target         = "{target}"\n' if target else ''
+    _target_line = (
+        f'        node.target         = "{target}"\n'
+        f'        target.object       = "{target}"\n'
+    ) if target else ''
 
     return f"""\
 # Auto-generated by Arctis Sound Manager — DO NOT EDIT
@@ -604,24 +714,39 @@ def _active_conf_2ch(
     else:
         last_L, last_R = names_L[-1], names_R[-1]
 
+    # Correctif 4 (issue #88): track whether LADSPA comp nodes were actually
+    # added — affects port name ("Output" vs "Out") used in outputs_text below.
+    _smart_vol_ladspa = False
     if smart_volume and smart_volume.get("enabled"):
-        mode = smart_volume.get("loudness", "balanced")
-        level = smart_volume.get("level", 50)
-        preset = _SMART_PRESETS.get(mode, _SMART_PRESETS["balanced"])
-        node_lines.append(_sc4m_node("comp_L", preset, level))
-        node_lines.append(_sc4m_node("comp_R", preset, level))
-        link_lines.append(_link_to_ladspa(last_L, "comp_L"))
-        link_lines.append(_link_to_ladspa(last_R, "comp_R"))
-        last_L, last_R = "comp_L", "comp_R"
+        # Guard: a missing sc4m_1916.so causes dlopen() SEGV in filter-chain.
+        if not _ladspa_plugin_available("sc4m_1916.so"):
+            _log.warning(
+                "LADSPA plugin sc4m_1916 not found — skipping Smart Volume "
+                "compressor nodes, feature degraded; install swh-plugins on the host"
+            )
+        else:
+            mode = smart_volume.get("loudness", "balanced")
+            level = smart_volume.get("level", 50)
+            preset = _SMART_PRESETS.get(mode, _SMART_PRESETS["balanced"])
+            node_lines.append(_sc4m_node("comp_L", preset, level))
+            node_lines.append(_sc4m_node("comp_R", preset, level))
+            link_lines.append(_link_to_ladspa(last_L, "comp_L"))
+            link_lines.append(_link_to_ladspa(last_R, "comp_R"))
+            last_L, last_R = "comp_L", "comp_R"
+            _smart_vol_ladspa = True
 
     nodes_text   = "\n".join(node_lines)
     links_text   = "\n".join(link_lines)
     inputs_text  = f'"{names_L[0]}:In"  "{names_R[0]}:In"'
-    # LADSPA nodes use "Output" port name, builtins use "Out"
-    is_ladspa = smart_volume and smart_volume.get("enabled")
-    out_port = "Output" if is_ladspa else "Out"
+    # LADSPA nodes use "Output" port name, builtins use "Out".
+    # Use _smart_vol_ladspa (not smart_volume.get("enabled")) so that a missing
+    # plugin that was skipped does not produce a broken "Output" port reference.
+    out_port = "Output" if _smart_vol_ladspa else "Out"
     outputs_text = f'"{last_L}:{out_port}"  "{last_R}:{out_port}"'
-    _target_line = f'        node.target         = "{target}"\n' if target else ''
+    _target_line = (
+        f'        node.target         = "{target}"\n'
+        f'        target.object       = "{target}"\n'
+    ) if target else ''
 
     return f"""\
 # Auto-generated by Arctis Sound Manager — DO NOT EDIT
@@ -795,52 +920,77 @@ def generate_sonar_micro_conf(
             last_is_ladspa = False
 
     # ── Noise gate (LADSPA swh-plugins gate_1410) ──
+    # Correctif 4 (issue #88): guard LADSPA node. A missing gate_1410.so causes
+    # dlopen() SEGV in filter-chain; omit node gracefully if plugin not found.
     if ng.get("enabled", False):
-        threshold = max(-60.0, min(-10.0, ng.get("value", -40.0)))
-        node_lines.append(
-            f"                    {{ type = ladspa  name = ngate  plugin = gate_1410  label = gate\n"
-            f"                      control = {{ \"Threshold (dB)\" = {threshold:.1f}"
-            f"  \"Attack (ms)\" = 5.0  \"Hold (ms)\" = 50.0  \"Decay (ms)\" = 100.0"
-            f"  \"Range (dB)\" = -90.0"
-            f"  \"Output select (-1 = key listen, 0 = gate, 1 = bypass)\" = 0"
-            f" }} }}"
-        )
-        link_lines.append(_smart_link("ngate", True))
-        last_node = "ngate"
-        last_is_ladspa = True
+        if not _ladspa_plugin_available("gate_1410.so"):
+            _log.warning(
+                "LADSPA plugin gate_1410 not found — skipping noise gate node, "
+                "feature degraded; install swh-plugins on the host"
+            )
+        else:
+            threshold = max(-60.0, min(-10.0, ng.get("value", -40.0)))
+            node_lines.append(
+                f"                    {{ type = ladspa  name = ngate  plugin = gate_1410  label = gate\n"
+                f"                      control = {{ \"Threshold (dB)\" = {threshold:.1f}"
+                f"  \"Attack (ms)\" = 5.0  \"Hold (ms)\" = 50.0  \"Decay (ms)\" = 100.0"
+                f"  \"Range (dB)\" = -90.0"
+                f"  \"Output select (-1 = key listen, 0 = gate, 1 = bypass)\" = 0"
+                f" }} }}"
+            )
+            link_lines.append(_smart_link("ngate", True))
+            last_node = "ngate"
+            last_is_ladspa = True
 
     # ── rnnoise noise cancellation ──
+    # Correctif 4 (issue #88): guard LADSPA node. A missing librnnoise_ladspa.so
+    # causes dlopen() SEGV in filter-chain; omit node gracefully if not found.
     if nc.get("enabled", False):
-        vad_threshold = max(0.0, min(100.0, nc.get("value", 0.5) * 100))
-        node_lines.append(
-            f"                    {{ type = ladspa  name = rnnoise\n"
-            f"                      plugin = librnnoise_ladspa  label = noise_suppressor_mono\n"
-            f"                      control = {{ \"VAD Threshold (%)\" = {vad_threshold:.1f} }} }}"
-        )
-        link_lines.append(_smart_link("rnnoise", True))
-        last_node = "rnnoise"
-        last_is_ladspa = True
+        if not _ladspa_plugin_available("librnnoise_ladspa.so"):
+            _log.warning(
+                "LADSPA plugin librnnoise_ladspa not found — skipping noise "
+                "cancellation node, feature degraded; install "
+                "noise-suppression-for-voice on the host"
+            )
+        else:
+            vad_threshold = max(0.0, min(100.0, nc.get("value", 0.5) * 100))
+            node_lines.append(
+                f"                    {{ type = ladspa  name = rnnoise\n"
+                f"                      plugin = librnnoise_ladspa  label = noise_suppressor_mono\n"
+                f"                      control = {{ \"VAD Threshold (%)\" = {vad_threshold:.1f} }} }}"
+            )
+            link_lines.append(_smart_link("rnnoise", True))
+            last_node = "rnnoise"
+            last_is_ladspa = True
 
     # ── Compressor / volume stabilizer (LADSPA sc4m_1916) ──
+    # Correctif 4 (issue #88): guard LADSPA node. A missing sc4m_1916.so causes
+    # dlopen() SEGV in filter-chain; omit node gracefully if plugin not found.
     if comp.get("enabled", False):
-        # value 0→1 maps compression intensity
-        comp_val = max(0.0, min(1.0, comp.get("value", 0.0)))
-        comp_threshold = -10.0 - comp_val * 20.0   # -10 → -30 dB
-        comp_ratio = 2.0 + comp_val * 6.0           # 2:1 → 8:1
-        comp_makeup = comp_val * 10.0                # 0 → 10 dB
-        node_lines.append(
-            f"                    {{ type = ladspa  name = comp  plugin = sc4m_1916  label = sc4m\n"
-            f"                      control = {{ \"RMS/peak\" = 0.5"
-            f"  \"Attack time (ms)\" = 10.0  \"Release time (ms)\" = 150.0"
-            f"  \"Threshold level (dB)\" = {comp_threshold:.1f}"
-            f"  \"Ratio (1:n)\" = {comp_ratio:.1f}"
-            f"  \"Knee radius (dB)\" = 6.0"
-            f"  \"Makeup gain (dB)\" = {comp_makeup:.1f}"
-            f" }} }}"
-        )
-        link_lines.append(_smart_link("comp", True))
-        last_node = "comp"
-        last_is_ladspa = True
+        if not _ladspa_plugin_available("sc4m_1916.so"):
+            _log.warning(
+                "LADSPA plugin sc4m_1916 not found — skipping micro compressor "
+                "node, feature degraded; install swh-plugins on the host"
+            )
+        else:
+            # value 0→1 maps compression intensity
+            comp_val = max(0.0, min(1.0, comp.get("value", 0.0)))
+            comp_threshold = -10.0 - comp_val * 20.0   # -10 → -30 dB
+            comp_ratio = 2.0 + comp_val * 6.0           # 2:1 → 8:1
+            comp_makeup = comp_val * 10.0                # 0 → 10 dB
+            node_lines.append(
+                f"                    {{ type = ladspa  name = comp  plugin = sc4m_1916  label = sc4m\n"
+                f"                      control = {{ \"RMS/peak\" = 0.5"
+                f"  \"Attack time (ms)\" = 10.0  \"Release time (ms)\" = 150.0"
+                f"  \"Threshold level (dB)\" = {comp_threshold:.1f}"
+                f"  \"Ratio (1:n)\" = {comp_ratio:.1f}"
+                f"  \"Knee radius (dB)\" = 6.0"
+                f"  \"Makeup gain (dB)\" = {comp_makeup:.1f}"
+                f" }} }}"
+            )
+            link_lines.append(_smart_link("comp", True))
+            last_node = "comp"
+            last_is_ladspa = True
 
     nodes_text  = "\n".join(node_lines)
     links_text  = "\n".join(link_lines)
@@ -896,7 +1046,10 @@ context.modules = [
 
 def _bypass_conf(sink_name: str, target: str, channels: int, position: str, channel: str = "") -> str:
     """Generate a bypass config. Multi-channel uses auto-dup (no inputs/outputs), 2ch uses L/R."""
-    _target_line = f'        node.target         = "{target}"\n' if target else ''
+    _target_line = (
+        f'        node.target         = "{target}"\n'
+        f'        target.object       = "{target}"\n'
+    ) if target else ''
     media_class = "Audio/Sink" if channel == "output" else "Audio/Sink/Internal"
     priority = "1" if channel == "output" else "1000"
     if channels != 2:
@@ -1077,6 +1230,18 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
     """
     import logging
     log = logging.getLogger(__name__)
+
+    # Correctif 2 (issue #88): safe mode is active — the ASM configs were
+    # intentionally moved aside to break a filter-chain SEGV crash-loop.
+    # Regenerating them now would re-arm the crash.  Skip all repairs until the
+    # user explicitly resets safe mode via reset_filter_chain_safe_mode().
+    if _filter_chain_safe_mode or _SAFE_MODE_MARKER.exists():
+        log.info(
+            "check_and_fix_stale_configs: safe mode active — skipping config "
+            "regeneration (filter_chain_safe_mode marker present)"
+        )
+        return False, False
+
     fixed = False
     needs_pw_restart = False
     bad_dir = _CONF_DIR.parent / "pipewire.conf.d"
@@ -1252,6 +1417,18 @@ def ensure_sonar_eq_configs() -> bool:
     """
     import logging
     log = logging.getLogger(__name__)
+
+    # Correctif 2 (issue #88): safe mode is active — the ASM configs were
+    # intentionally moved aside to break a filter-chain SEGV crash-loop.
+    # Regenerating them here would re-arm the crash.  Skip until the user
+    # explicitly resets safe mode via reset_filter_chain_safe_mode().
+    if _filter_chain_safe_mode or _SAFE_MODE_MARKER.exists():
+        log.info(
+            "ensure_sonar_eq_configs: safe mode active — skipping config "
+            "regeneration"
+        )
+        return False
+
     generated = False
 
     # Determine if spatial audio is enabled — affects game channel count and target.
@@ -1532,6 +1709,7 @@ context.modules = [
       playback.props = {{
         node.name          = "effect_output.virtual-surround-7.1-hesuvi"
         node.target        = "{_get_physical_out_game()}"
+        target.object      = "{_get_physical_out_game()}"
         node.dont-fallback = true
         node.linger        = true
         audio.channels     = 2

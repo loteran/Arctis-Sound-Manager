@@ -104,6 +104,15 @@ def test_game_targets_hesuvi_virtual_surround():
     assert "virtual-surround-7.1-hesuvi" in text
 
 
+def test_game_target_has_target_object():
+    """Game EQ playback.props must include both node.target and target.object (WP 0.5)."""
+    text = generate_sonar_eq_conf("game", [], 0.0, 0.0, 0.0,
+                                  output_path=Path("/dev/null"),
+                                  spatial_audio=True)
+    assert 'node.target         = "effect_input.virtual-surround-7.1-hesuvi"' in text
+    assert 'target.object       = "effect_input.virtual-surround-7.1-hesuvi"' in text
+
+
 def test_game_8ch_channels():
     """Game EQ uses 8 channels (7.1 surround)."""
     text = generate_sonar_eq_conf("game", [], 0.0, 0.0, 0.0,
@@ -129,6 +138,35 @@ def test_chat_targets_physical_output():
         device_state.clear()
     assert "alsa_output.usb-SteelSeries" in text
     assert "audio.channels = 2" in text
+
+
+def test_chat_target_has_target_object():
+    """Chat EQ playback.props must include both node.target and target.object (WP 0.5)."""
+    from arctis_sound_manager import device_state
+    phys = "alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.pro-output-0"
+    device_state.set_current_device(
+        physical_out_game="alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.pro-output-1",
+        physical_out_chat=phys,
+        physical_in="alsa_input.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.mono-fallback",
+        spatial_engine="hesuvi",
+        device_name="SteelSeries Arctis Nova Pro Wireless",
+    )
+    try:
+        text = generate_sonar_eq_conf("chat", [], 0.0, 0.0, 0.0,
+                                      output_path=Path("/dev/null"))
+    finally:
+        device_state.clear()
+    assert f'node.target         = "{phys}"' in text
+    assert f'target.object       = "{phys}"' in text
+
+
+def test_bypass_game_has_target_object():
+    """Game EQ bypass config must include target.object when target is non-empty."""
+    text = generate_sonar_eq_conf("game", [], 0.0, 0.0, 0.0,
+                                  output_path=Path("/dev/null"),
+                                  spatial_audio=True, boost_db=0.0)
+    # spatial_audio=True → target = HeSuVi virtual surround
+    assert 'target.object       = "effect_input.virtual-surround-7.1-hesuvi"' in text
 
 
 def test_bypass_game_has_node_name_in_playback():
@@ -487,6 +525,8 @@ def test_restart_filter_chain_crash_loop_enters_safe_mode(tmp_path, monkeypatch)
     monkeypatch.setattr(stp, "_filter_chain_safe_mode", False)
     monkeypatch.setattr(stp, "_CONF_DIR", tmp_path)
     monkeypatch.setattr(stp, "_CONF_DIR_DISABLED", tmp_path.parent / "disabled")
+    # Patch marker so we don't write to the real home dir during tests
+    monkeypatch.setattr(stp, "_SAFE_MODE_MARKER", tmp_path / "safe_mode_marker.json")
 
     (tmp_path / "sonar-game-eq.conf").write_text("game")
     (tmp_path / "sonar-chat-eq.conf").write_text("chat")
@@ -525,6 +565,8 @@ def test_safe_mode_moves_only_asm_files(tmp_path, monkeypatch):
     monkeypatch.setattr(stp, "_CONF_DIR", tmp_path)
     disabled_dir = tmp_path.parent / "fc_disabled"
     monkeypatch.setattr(stp, "_CONF_DIR_DISABLED", disabled_dir)
+    # Patch marker path so we don't write to the real home dir during tests
+    monkeypatch.setattr(stp, "_SAFE_MODE_MARKER", tmp_path / "safe_mode_marker.json")
 
     for name in stp._ASM_CONF_NAMES:
         (tmp_path / name).write_text(f"# {name}")
@@ -541,9 +583,275 @@ def test_safe_mode_moves_only_asm_files(tmp_path, monkeypatch):
     assert (tmp_path / "10-system.conf").exists()
 
 
-def test_reset_filter_chain_safe_mode_clears_flag(monkeypatch):
+def test_reset_filter_chain_safe_mode_clears_flag(tmp_path, monkeypatch):
     """reset_filter_chain_safe_mode() clears the module-level flag."""
     import arctis_sound_manager.sonar_to_pipewire as stp
     monkeypatch.setattr(stp, "_filter_chain_safe_mode", True)
+    monkeypatch.setattr(stp, "_SAFE_MODE_MARKER", tmp_path / "marker.json")
     stp.reset_filter_chain_safe_mode()
     assert stp._filter_chain_safe_mode is False
+
+
+# ── Correctif 1 — _poll_filter_chain_stable / ensure_filter_chain_healthy ─────
+
+
+def test_poll_filter_chain_stable_returns_true_when_active(monkeypatch):
+    """_poll_filter_chain_stable() returns True when is_active() sees the service up."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+
+    with patch("arctis_sound_manager.service_control.is_active", return_value=True), \
+         patch("time.sleep"):
+        result = stp._poll_filter_chain_stable()
+
+    assert result is True
+
+
+def test_poll_filter_chain_stable_returns_false_in_crash_loop(monkeypatch):
+    """_poll_filter_chain_stable() returns False when is_active() stays False (crash-loop)."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+
+    with patch("arctis_sound_manager.service_control.is_active", return_value=False), \
+         patch("time.sleep"):
+        result = stp._poll_filter_chain_stable()
+
+    assert result is False
+
+
+def test_ensure_filter_chain_healthy_enters_safe_mode_when_inactive(tmp_path, monkeypatch):
+    """ensure_filter_chain_healthy() enters safe mode if filter-chain is not active."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    monkeypatch.setattr(stp, "_filter_chain_safe_mode", False)
+    monkeypatch.setattr(stp, "_SAFE_MODE_MARKER", tmp_path / "marker.json")
+    monkeypatch.setattr(stp, "_CONF_DIR", tmp_path)
+    monkeypatch.setattr(stp, "_CONF_DIR_DISABLED", tmp_path.parent / "fc_disabled")
+
+    with patch("arctis_sound_manager.service_control.is_active", return_value=False), \
+         patch("arctis_sound_manager.service_control.restart", return_value=True):
+        result = stp.ensure_filter_chain_healthy()
+
+    assert result is False
+    assert stp._filter_chain_safe_mode is True
+
+
+def test_ensure_filter_chain_healthy_returns_true_when_healthy(tmp_path, monkeypatch):
+    """ensure_filter_chain_healthy() returns True when is_active() is True and
+    NRestarts is below threshold."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    monkeypatch.setattr(stp, "_filter_chain_safe_mode", False)
+    monkeypatch.setattr(stp, "_SAFE_MODE_MARKER", tmp_path / "marker.json")
+
+    with patch("arctis_sound_manager.service_control.is_active", return_value=True), \
+         patch("arctis_sound_manager.init_system.detect_init", return_value="unknown"):
+        # detect_init returning "unknown" skips NRestarts check
+        result = stp.ensure_filter_chain_healthy()
+
+    assert result is True
+    assert stp._filter_chain_safe_mode is False
+
+
+def test_ensure_filter_chain_healthy_enters_safe_mode_on_high_nrestarts(tmp_path, monkeypatch):
+    """ensure_filter_chain_healthy() enters safe mode when NRestarts >= 3 (systemd)."""
+    import subprocess
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    monkeypatch.setattr(stp, "_filter_chain_safe_mode", False)
+    monkeypatch.setattr(stp, "_SAFE_MODE_MARKER", tmp_path / "marker.json")
+    monkeypatch.setattr(stp, "_CONF_DIR", tmp_path)
+    monkeypatch.setattr(stp, "_CONF_DIR_DISABLED", tmp_path.parent / "fc_disabled")
+
+    mock_result = type("R", (), {"stdout": "NRestarts=5\n", "returncode": 0})()
+
+    with patch("arctis_sound_manager.service_control.is_active", return_value=True), \
+         patch("arctis_sound_manager.service_control.restart", return_value=True), \
+         patch("subprocess.run", return_value=mock_result), \
+         patch("arctis_sound_manager.init_system.detect_init", return_value="systemd"):
+        result = stp.ensure_filter_chain_healthy()
+
+    assert result is False
+    assert stp._filter_chain_safe_mode is True
+
+
+# ── Correctif 2 — safe-mode disk marker persistence ───────────────────────────
+
+
+def test_enter_safe_mode_writes_marker(tmp_path, monkeypatch):
+    """_enter_filter_chain_safe_mode() writes a JSON marker to disk."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    marker = tmp_path / "marker.json"
+    monkeypatch.setattr(stp, "_filter_chain_safe_mode", False)
+    monkeypatch.setattr(stp, "_SAFE_MODE_MARKER", marker)
+    monkeypatch.setattr(stp, "_CONF_DIR", tmp_path)
+    monkeypatch.setattr(stp, "_CONF_DIR_DISABLED", tmp_path.parent / "fc_disabled")
+
+    with patch("arctis_sound_manager.service_control.restart", return_value=True):
+        stp._enter_filter_chain_safe_mode()
+
+    assert marker.exists(), "marker should be written to disk"
+    import json
+    data = json.loads(marker.read_text())
+    assert "timestamp" in data
+    assert "reason" in data
+
+
+def test_reset_safe_mode_removes_marker(tmp_path, monkeypatch):
+    """reset_filter_chain_safe_mode() removes the disk marker."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    marker = tmp_path / "marker.json"
+    marker.write_text('{"timestamp": "x", "reason": "test"}')
+    monkeypatch.setattr(stp, "_filter_chain_safe_mode", True)
+    monkeypatch.setattr(stp, "_SAFE_MODE_MARKER", marker)
+
+    stp.reset_filter_chain_safe_mode()
+
+    assert not marker.exists(), "marker should be deleted on reset"
+    assert stp._filter_chain_safe_mode is False
+
+
+def test_check_and_fix_stale_configs_skips_in_safe_mode(tmp_path, monkeypatch):
+    """check_and_fix_stale_configs() is a no-op when safe mode is active."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    marker = tmp_path / "marker.json"
+    marker.write_text('{"timestamp": "x", "reason": "test"}')
+    monkeypatch.setattr(stp, "_filter_chain_safe_mode", True)
+    monkeypatch.setattr(stp, "_SAFE_MODE_MARKER", marker)
+
+    with patch("arctis_sound_manager.sonar_to_pipewire._CONF_DIR", tmp_path):
+        fixed, needs_restart = stp.check_and_fix_stale_configs()
+
+    assert fixed is False
+    assert needs_restart is False
+
+
+def test_ensure_sonar_eq_configs_skips_in_safe_mode(tmp_path, monkeypatch):
+    """ensure_sonar_eq_configs() returns False without regenerating when safe mode is active."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    marker = tmp_path / "marker.json"
+    marker.write_text('{"timestamp": "x", "reason": "test"}')
+    monkeypatch.setattr(stp, "_filter_chain_safe_mode", True)
+    monkeypatch.setattr(stp, "_SAFE_MODE_MARKER", marker)
+
+    # If the function tries to regenerate it would need device_state set — the
+    # fact that it returns without error proves the early-return is working.
+    result = stp.ensure_sonar_eq_configs()
+    assert result is False
+
+
+# ── Correctif 3 — anti-flap window ────────────────────────────────────────────
+
+
+def test_flap_window_is_60_seconds():
+    """_FLAP_WINDOW constant documents the fix: raised from 30 → 60 s so that 3
+    orphan recreations spaced ~15 s apart all fall within the observation window
+    and correctly trigger the anti-flap cooldown (issue #88 Correctif 3)."""
+    # This is validated by reading core.py at import time: the constant is local
+    # to the coroutine and not directly importable.  The test verifies the
+    # documented intent via a regression note (change is detectable via grep).
+    import re
+    from pathlib import Path
+    core_text = (Path(__file__).parent.parent /
+                 "src" / "arctis_sound_manager" / "core.py").read_text()
+    # Should find "_FLAP_WINDOW: float = 60.0"
+    assert re.search(r"_FLAP_WINDOW\s*:\s*float\s*=\s*60\.0", core_text), (
+        "_FLAP_WINDOW should be 60.0 (raised from 30.0 for issue #88 Correctif 3)"
+    )
+
+
+# ── Correctif 4 — LADSPA guards ───────────────────────────────────────────────
+
+
+def test_ladspa_sc4m_absent_skips_smart_volume_8ch():
+    """When sc4m_1916.so is missing, smart volume node is omitted from 8ch config."""
+    from arctis_sound_manager.eq_types import EqBand
+    from arctis_sound_manager.sonar_to_pipewire import _active_conf_8ch
+
+    bands = [("bq0", EqBand(freq=1000, gain=3.0, q=0.7, type="peakingEQ", enabled=True))]
+    smart_volume = {"enabled": True, "loudness": "balanced", "level": 50}
+
+    with patch("arctis_sound_manager.sonar_to_pipewire._ladspa_plugin_available",
+               return_value=False):
+        text = _active_conf_8ch(
+            "game", "effect_input.sonar-game-eq", "effect_input.virtual-surround",
+            "FL FR FC LFE RL RR SL SR", bands, [], [], 0.0, smart_volume,
+        )
+
+    # Smart volume LADSPA node must be absent
+    assert "sc4m_1916" not in text
+    assert "compressor" not in text
+
+
+def test_ladspa_sc4m_absent_skips_smart_volume_2ch():
+    """When sc4m_1916.so is missing, smart volume nodes are omitted from 2ch config
+    and the output port uses builtin 'Out' (not LADSPA 'Output')."""
+    from arctis_sound_manager.eq_types import EqBand
+    from arctis_sound_manager.sonar_to_pipewire import _active_conf_2ch
+
+    bands = [("bq0", EqBand(freq=1000, gain=3.0, q=0.7, type="peakingEQ", enabled=True))]
+    smart_volume = {"enabled": True, "loudness": "balanced", "level": 50}
+
+    with patch("arctis_sound_manager.sonar_to_pipewire._ladspa_plugin_available",
+               return_value=False):
+        text = _active_conf_2ch(
+            "chat", "effect_input.sonar-chat-eq", "alsa_output.test",
+            "FL FR", bands, [], [], 0.0, smart_volume,
+        )
+
+    assert "sc4m_1916" not in text
+    assert "comp_L" not in text
+    # Output port must use builtin "Out", not LADSPA "Output"
+    assert ":Out\"" in text
+    assert ":Output\"" not in text
+
+
+def test_ladspa_gate_absent_skips_noise_gate():
+    """When gate_1410.so is missing, noise gate node is omitted from micro config."""
+    from arctis_sound_manager.sonar_to_pipewire import generate_sonar_micro_conf
+
+    noise_reduction = {"noiseGate": {"enabled": True, "value": -40.0}}
+
+    with patch("arctis_sound_manager.sonar_to_pipewire._ladspa_plugin_available",
+               return_value=False):
+        text = generate_sonar_micro_conf(
+            [], 0.0, 0.0, 0.0,
+            output_path=Path("/dev/null"),
+            noise_reduction=noise_reduction,
+        )
+
+    assert "gate_1410" not in text
+    assert "ngate" not in text
+
+
+def test_ladspa_rnnoise_absent_skips_noise_cancellation():
+    """When librnnoise_ladspa.so is missing, rnnoise node is omitted."""
+    from arctis_sound_manager.sonar_to_pipewire import generate_sonar_micro_conf
+
+    noise_canceling = {"enabled": True, "value": 0.5}
+
+    with patch("arctis_sound_manager.sonar_to_pipewire._ladspa_plugin_available",
+               return_value=False):
+        text = generate_sonar_micro_conf(
+            [], 0.0, 0.0, 0.0,
+            output_path=Path("/dev/null"),
+            noise_canceling=noise_canceling,
+        )
+
+    assert "librnnoise_ladspa" not in text
+    assert "rnnoise" not in text
+
+
+def test_ladspa_all_available_includes_nodes():
+    """When all LADSPA plugins are available, smart volume and micro processing
+    nodes ARE included in the generated configs."""
+    from arctis_sound_manager.eq_types import EqBand
+    from arctis_sound_manager.sonar_to_pipewire import _active_conf_8ch
+
+    bands = [("bq0", EqBand(freq=1000, gain=3.0, q=0.7, type="peakingEQ", enabled=True))]
+    smart_volume = {"enabled": True, "loudness": "balanced", "level": 50}
+
+    with patch("arctis_sound_manager.sonar_to_pipewire._ladspa_plugin_available",
+               return_value=True):
+        text = _active_conf_8ch(
+            "game", "effect_input.sonar-game-eq", "effect_input.virtual-surround",
+            "FL FR FC LFE RL RR SL SR", bands, [], [], 0.0, smart_volume,
+        )
+
+    assert "sc4m_1916" in text
+    assert "compressor" in text
