@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.88] - 2 July 2026
+
+### Fixed
+
+- **Apps did not stay in their assigned channel on WirePlumber 0.5.x (Nova Pro Wireless)** — the Game and Chat `pw-loopback` playback nodes only set `node.target`, whose string-name fallback in WirePlumber 0.5.x is unreliable and sometimes linked the loopback to the physical ALSA output instead of the Sonar EQ node. They now set `target.object` (the reliable object lookup honoured first by WirePlumber ≥ 0.5) while keeping `node.target` for 0.4.x compatibility. (#102)
+- **The routing override daemon did not restart after being killed** — `arctis-video-router.service` used `Restart=on-failure`, which systemd never triggers when a process is terminated by `SIGTERM` (treated as a clean exit), so the router stayed dead and channel assignments were no longer enforced. The router units now use `Restart=always`. (#102)
+- **WirePlumber-induced sink flips were saved as manual overrides** — when a stream bounced between the virtual channels, `video_router` recorded each move as a user choice and overwrote `routing_overrides.json` with the last random target. A debounce now ignores moves that repeat too rapidly (WirePlumber-induced) so the user's actual channel choice is preserved. (#102)
+
+### Improved
+
+- **Hardened the PipeWire filter-chain against crash-loops (Steam Deck / SteamOS).** ASM now detects a filter-chain that systemd is restart-looping at session start — not only when ASM itself restarts it — and falls back to a stable flat-audio safe mode that persists across sessions. LADSPA effect nodes (Smart Volume, mic gate / noise suppression) are now skipped with a warning when their plugin is missing, instead of risking a filter-chain segfault. The loopback watchdog no longer recreates orphan loopbacks endlessly when their target EQ node is absent. Investigation of the underlying SteamOS segfault is still ongoing. (#88)
+- **Reduced audio churn when changing Spatial Audio / EQ settings (Arctis Nova Elite).** A single Sonar control change (or preset load) no longer triggers several filter-chain restarts in a row (previously 3–4, up to ~10 on a preset load), and an unchanged configuration now skips the restart entirely. Loopback and EQ nodes also advertise `target.object` so WirePlumber 0.5.x links them to the Sonar EQ reliably instead of the physical output. A full Spatial Audio fix is pending user diagnostics. (#100, #102)
+
 ## [1.1.87] - 30 June 2026
 
 ### Fixed
