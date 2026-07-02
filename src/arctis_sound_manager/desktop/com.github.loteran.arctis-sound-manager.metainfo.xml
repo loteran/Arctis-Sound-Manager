@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.88" date="2026-07-02">
+      <description>
+        <p>Apps did not stay in their assigned channel on WirePlumber 0.5.x (Nova Pro Wireless) — the Game and Chat pw-loopback playback nodes only set node.target, whose string-name fallback in WirePlumber 0.5.x is unreliable and sometimes linked the loopback to the physical ALSA output instead of the Sonar EQ node. They now set target.object (the reliable object lookup honoured first by WirePlumber ≥ 0.5) while keeping node.target for 0.4.x compatibility. (#102). The routing override daemon did not restart after being killed — arctis-video-router.service used Restart=on-failure, which systemd never triggers when a process is terminated by SIGTERM (treated as a clean exit), so the router stayed dead and channel assignments were no longer enforced. The router units now use Restart=always. (#102). WirePlumber-induced sink flips were saved as manual overrides — when a stream bounced between the virtual channels, video_router recorded each move as a user choice and overwrote routing_overrides.json with the last random target. A debounce now ignores moves that repeat too rapidly (WirePlumber-induced) so the user's actual channel choice is preserved. (#102).</p>
+      </description>
+    </release>
     <release version="1.1.87" date="2026-06-30">
       <description>
         <p>Sonar devices (e.g. Arctis Nova Elite) went silent when Spatial Audio was enabled — with surround on, the loopback watchdog mistook a single-cycle transient (the Sonar EQ → HeSuVi surround chain rebuilding) for a mis-routed loopback and killed/recreated the pw-loopback, which churned the graph and fed a self-sustaining loop that muted the channel (and spammed the OLED with Resource busy). The watchdog now waits for the mismatch to persist before acting, and corrects a genuine mislink with a non-destructive pw-metadata relink instead of tearing the loopback down. (#100)</p>
@@ -199,11 +204,6 @@
     <release version="1.1.59" date="2026-06-07">
       <description>
         <p>Arctis Nova Pro Omni: gain and mic sidetone now work — re-analysing the USB capture by opcode showed the Omni uses opcode 0x18 for sidetone (not 0x39, which it ignores) and shifted gain values (low=0x00/high=0x01 instead of 0x01/0x02). The device profile is corrected accordingly. (#70). Arctis Nova Pro Omni: OLED screen support — the OLED driver is now parameterised per device (HID interface, report id, SET_REPORT wValue, dimensions) instead of being hard-coded for the Nova Pro Wireless. The Omni's screen is driven on interface 3 with report id 0x01 / wValue 0x0200, which also stops the OLED Resource busy errors it was logging. The Nova Pro Wireless path is unchanged.</p>
-      </description>
-    </release>
-    <release version="1.1.58" date="2026-06-06">
-      <description>
-        <p>Arctis Nova Pro Omni controls had no effect — a real Windows USB capture of SteelSeries GG driving the Omni (firmware 1.32.0) revealed its HID control commands lead with report id 0x01, not 0x06 (Nova Pro Wireless) nor 0x07 (previously inferred from third-party OLED drivers). The device profile now leads every command with 0x01 and polls status with 0x01b0; the per-setting opcodes are byte-for-byte identical to the Nova Pro Wireless. Gain, mic, sidetone, EQ, ANC and the other controls should now take effect on the Omni. (#70)</p>
       </description>
     </release>
   </releases>
