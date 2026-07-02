@@ -79,6 +79,27 @@ _pa_placed: dict[str, int] = {}
 # Same for native PipeWire streams (sink node name).
 _native_placed: dict[str, str] = {}
 
+# Anti-flap guard (issue #102): WirePlumber can bounce a stream between the
+# Arctis virtual sinks (Game<->Chat<->Media). Those induced moves must not be
+# saved as user overrides. If the same app changes target >= _FLAP_THRESHOLD
+# times within _FLAP_WINDOW seconds, treat the move as WirePlumber-induced.
+# 30 s window: the native-PW path is only polled every NATIVE_INTERVAL (5 s),
+# so a shorter window could never accumulate 3 detections there.
+_FLAP_WINDOW = 30.0     # seconds
+_FLAP_THRESHOLD = 3     # detected moves within the window
+_move_times: dict[str, list[float]] = {}
+
+
+def _is_flapping(app: str, now: float | None = None) -> bool:
+    """Record a detected external move for *app*; True when it exceeds the
+    anti-flap threshold (WirePlumber-induced — do not save an override)."""
+    if now is None:
+        now = time.monotonic()
+    times = [t for t in _move_times.get(app, []) if now - t < _FLAP_WINDOW]
+    times.append(now)
+    _move_times[app] = times
+    return len(times) >= _FLAP_THRESHOLD
+
 
 def load_overrides() -> dict:
     if OVERRIDES_FILE.exists():
@@ -199,6 +220,7 @@ def _main_loop():
                             pulse.sink_input_move(si.index, default_sink.index)
                 _pa_placed.clear()
                 _native_placed.clear()
+                _move_times.clear()
                 continue
 
             overrides = load_overrides()
@@ -222,6 +244,11 @@ def _main_loop():
                             # WirePlumber restoring its target.object preference —
                             # not a user move, do not overwrite the virtual-channel override.
                             log.debug("Ignoring WirePlumber move of '%s' -> %s", app, save_name)
+                        elif _is_flapping(app):
+                            # WirePlumber bouncing the stream between sinks —
+                            # keep the existing override, the enforcement pass
+                            # below will move the stream back (issue #102).
+                            log.info("Anti-flap: ignoring move of '%s' -> %s (override kept)", app, save_name)
                         else:
                             log.info("Manual move detected: '%s' -> %s (saving override)", app, save_name)
                             overrides[app] = save_name
@@ -293,6 +320,8 @@ def _main_loop():
                         save_name = _EFFECT_REMAP.get(current, current)
                         if _is_physical_arctis(save_name):
                             log.debug("Ignoring WirePlumber move (native) of '%s' -> %s", app, save_name)
+                        elif _is_flapping(app):
+                            log.info("Anti-flap (native): ignoring move of '%s' -> %s (override kept)", app, save_name)
                         else:
                             log.info("Manual move detected (native): '%s' -> %s (saving override)", app, save_name)
                             overrides[app] = save_name
@@ -370,6 +399,7 @@ def _main_loop():
             last_native_check = 0.0
             _pa_placed.clear()
             _native_placed.clear()
+            _move_times.clear()
         except Exception as e:
             log.error("Error: %s", e)
             time.sleep(1)

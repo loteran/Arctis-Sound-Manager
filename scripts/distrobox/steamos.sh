@@ -247,7 +247,7 @@ Requires=pipewire.service
 [Service]
 Type=simple
 ExecStart=/usr/bin/distrobox enter ${_CONTAINER} -- /usr/bin/asm-router
-Restart=on-failure
+Restart=always
 RestartSec=3
 
 [Install]

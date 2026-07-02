@@ -148,7 +148,7 @@ class LoopbackSpec:
         ``node.name`` of the playback side (hidden output port, e.g.
         ``"Arctis_Game_sink_out"``).
     target:
-        ``node.target`` for the playback side — the downstream node that
+        ``target.object``/``node.target`` for the playback side — the downstream node that
         PipeWire links this loopback into (e.g.
         ``"effect_input.sonar-game-eq"`` in Sonar mode, or the physical ALSA
         output in simple mode).
@@ -199,7 +199,8 @@ def _build_pw_loopback_argv(spec: LoopbackSpec) -> list[str]:
 
     The capture side is always 2ch [FL FR] with ``media.class=Audio/Sink``
     so that applications can route audio to it.  The playback side carries
-    ``node.target``, ``stream.dont-remix=false`` (which lets PipeWire expand
+    ``target.object`` (WirePlumber >= 0.5) plus ``node.target`` (0.4.x compat),
+    ``stream.dont-remix=false`` (which lets PipeWire expand
     2→8ch when linking to an 8ch EQ node), and the standard linger/fallback
     flags used throughout this project.
 
@@ -215,6 +216,7 @@ def _build_pw_loopback_argv(spec: LoopbackSpec) -> list[str]:
                             node.description=Media
                             audio.channels=2 audio.position=[FL FR]
                             stream.dont-remix=false
+                            target.object=effect_input.sonar-media-eq
                             node.target=effect_input.sonar-media-eq
                             node.dont-fallback=true node.linger=true
                             latency.msec=50'
@@ -241,7 +243,11 @@ def _build_pw_loopback_argv(spec: LoopbackSpec) -> list[str]:
         f" audio.channels=2"
         f" audio.position=[FL FR]"
         f" stream.dont-remix=false"
-        f" node.target={spec.target}"
+        # WirePlumber >= 0.5 resolves target.object (object.serial / node.name
+        # lookup) with priority over node.target; without it the stream can be
+        # linked to the physical ALSA sink instead of the EQ (issue #102).
+        f" target.object={spec.target}"
+        f" node.target={spec.target}"   # kept for WirePlumber 0.4.x compat
         f" node.dont-fallback=true"
         f" node.linger=true"
         f" latency.msec=50"

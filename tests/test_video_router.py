@@ -12,6 +12,8 @@ from arctis_sound_manager.scripts.video_router import (
     load_overrides,
     save_overrides,
     _auto_route,
+    _is_flapping,
+    _move_times,
 )
 
 
@@ -76,3 +78,32 @@ def test_save_then_load_roundtrip(tmp_path):
         save_overrides(data)
         loaded = load_overrides()
     assert loaded == data
+
+
+# ── Anti-flap guard (issue #102) ──────────────────────────────────────────────
+
+def test_is_flapping_under_threshold():
+    _move_times.clear()
+    assert _is_flapping("mpv", now=0.0) is False
+    assert _is_flapping("mpv", now=1.0) is False
+
+
+def test_is_flapping_at_threshold():
+    _move_times.clear()
+    _is_flapping("mpv", now=0.0)
+    _is_flapping("mpv", now=5.0)
+    assert _is_flapping("mpv", now=10.0) is True
+
+
+def test_is_flapping_window_expiry():
+    _move_times.clear()
+    _is_flapping("mpv", now=0.0)
+    _is_flapping("mpv", now=1.0)
+    assert _is_flapping("mpv", now=40.0) is False
+
+
+def test_is_flapping_per_app_isolation():
+    _move_times.clear()
+    _is_flapping("mpv", now=0.0)
+    _is_flapping("mpv", now=1.0)
+    assert _is_flapping("firefox", now=2.0) is False

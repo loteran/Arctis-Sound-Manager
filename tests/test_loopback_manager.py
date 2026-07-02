@@ -125,6 +125,12 @@ class TestBuildArgv:
         argv = _build_pw_loopback_argv(media_spec)
         assert "node.target=effect_input.sonar-media-eq" in argv[2]
 
+    def test_playback_target_object(self, media_spec: LoopbackSpec) -> None:
+        """WirePlumber >= 0.5 needs target.object — node.target alone is not
+        authoritative and can mislink to the physical ALSA sink (issue #102)."""
+        argv = _build_pw_loopback_argv(media_spec)
+        assert "target.object=effect_input.sonar-media-eq" in argv[2]
+
     def test_playback_dont_remix_false(self, media_spec: LoopbackSpec) -> None:
         """stream.dont-remix=false is required to allow 2ch → 8ch expansion."""
         argv = _build_pw_loopback_argv(media_spec)
@@ -160,12 +166,14 @@ class TestBuildArgv:
         assert "node.name=Arctis_Game" in argv[1]
         assert "node.name=Arctis_Game_sink_out" in argv[2]
         assert "node.target=effect_input.sonar-game-eq" in argv[2]
+        assert "target.object=effect_input.sonar-game-eq" in argv[2]
 
     def test_chat_channel_names(self, chat_spec: LoopbackSpec) -> None:
         argv = _build_pw_loopback_argv(chat_spec)
         assert "node.name=Arctis_Chat" in argv[1]
         assert "node.name=Arctis_Chat_sink_out" in argv[2]
         assert "node.target=effect_input.sonar-chat-eq" in argv[2]
+        assert "target.object=effect_input.sonar-chat-eq" in argv[2]
 
     def test_custom_target_in_playback(self) -> None:
         """Verify that the target field is faithfully forwarded."""
@@ -181,6 +189,7 @@ class TestBuildArgv:
             "node.target=alsa_output.usb-SteelSeries_Arctis.HiFi__hw_Arctis__sink"
             in argv[2]
         )
+        assert "target.object=alsa_output.usb-SteelSeries_Arctis.HiFi__hw_Arctis__sink " in argv[2]
 
 
 # ── LoopbackManager.start / stop / is_running ─────────────────────────────────
