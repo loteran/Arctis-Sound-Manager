@@ -416,12 +416,22 @@ class _ApplyWorker(QThread):
                 log.warning("smart_volume load failed: %s — using default", e)
                 smart_state = {"enabled": False, "level": 0.0, "loudness": "balanced"}
 
+            # ── Guard: read existing conf before regenerating (1c) ───────────
+            _conf_dir = Path.home() / ".config" / "pipewire" / "filter-chain.conf.d"
+            _eq_conf_path = _conf_dir / (
+                "sonar-micro-eq.conf" if self._channel == "micro"
+                else f"sonar-{self._channel}-eq.conf"
+            )
+            _old_eq_conf = _eq_conf_path.read_text() if _eq_conf_path.exists() else None
+
             if self._channel == "micro":
                 micro_proc = _load_micro_proc()
-                generate_sonar_micro_conf(self._bands, self._basses, self._voix, self._aigus,
-                                          boost_db=boost_db,
-                                          noise_canceling=micro_proc.get("noiseCanceling"),
-                                          noise_reduction=micro_proc)
+                _new_eq_conf = generate_sonar_micro_conf(
+                    self._bands, self._basses, self._voix, self._aigus,
+                    boost_db=boost_db,
+                    noise_canceling=micro_proc.get("noiseCanceling"),
+                    noise_reduction=micro_proc,
+                )
             else:
                 if self._channel == "game":
                     spatial = _load_spatial_audio("game")["enabled"]
@@ -429,23 +439,43 @@ class _ApplyWorker(QThread):
                     spatial = _load_spatial_audio("media")["enabled"]
                 else:
                     spatial = True
-                generate_sonar_eq_conf(self._channel, self._bands,
-                                       self._basses, self._voix, self._aigus,
-                                       spatial_audio=spatial if self._channel == "game" else True,
-                                       media_spatial_audio=spatial if self._channel == "media" else True,
-                                       boost_db=boost_db,
-                                       smart_volume=smart_state,
-                                       target_override=self._target_override)
+                _new_eq_conf = generate_sonar_eq_conf(
+                    self._channel, self._bands,
+                    self._basses, self._voix, self._aigus,
+                    spatial_audio=spatial if self._channel == "game" else True,
+                    media_spatial_audio=spatial if self._channel == "media" else True,
+                    boost_db=boost_db,
+                    smart_volume=smart_state,
+                    target_override=self._target_override,
+                )
 
             # ── Regenerate HeSuVi config with current Spatial Audio parameters ──
+            _hesuvi_unchanged = True
             if self._channel in ("game", "media"):
                 spatial_state = _load_spatial_audio(self._channel)
                 if spatial_state["enabled"]:
                     from arctis_sound_manager.sonar_to_pipewire import generate_hesuvi_conf
-                    generate_hesuvi_conf(
+                    _hesuvi_path = _conf_dir / "sink-virtual-surround-7.1-hesuvi.conf"
+                    _old_hesuvi = _hesuvi_path.read_text() if _hesuvi_path.exists() else None
+                    _new_hesuvi = generate_hesuvi_conf(
                         immersion_pct=spatial_state.get("immersion", 50),
                         distance_pct=spatial_state.get("distance", 50),
                     )
+                    # generate_hesuvi_conf returns "" when no device is attached
+                    # (skips write) — treat as unchanged in that case.
+                    if _new_hesuvi:
+                        _hesuvi_unchanged = (
+                            _old_hesuvi is not None and _new_hesuvi == _old_hesuvi
+                        )
+
+            # ── Guard: skip filter-chain restart if nothing changed on disk ──
+            if _old_eq_conf is not None and _new_eq_conf == _old_eq_conf and _hesuvi_unchanged:
+                log.debug(
+                    "_ApplyWorker: conf unchanged for channel=%s — skipping restart",
+                    self._channel,
+                )
+                self.done.emit(True)
+                return
 
             # Snapshot active streams BEFORE restart so we can restore them
             saved_sink_inputs = self._snapshot_sink_inputs(log)
@@ -1314,14 +1344,16 @@ class _MacroSliders(QWidget):
             self._sliders["aigus"].value() / 10.0,
         )
 
-    def set_values(self, basses: float, voix: float, aigus: float) -> None:
+    def set_values(self, basses: float, voix: float, aigus: float,
+                   emit: bool = True) -> None:
         for key, val in (("basses", basses), ("voix", voix), ("aigus", aigus)):
             self._sliders[key].blockSignals(True)
             self._sliders[key].setValue(int(val * 10))
             self._labels[key].setText(self._fmt(val))
             self._sliders[key].blockSignals(False)
         _save_macro(self._channel, {"basses": basses, "voix": voix, "aigus": aigus})
-        self.macros_changed.emit(basses, voix, aigus)
+        if emit:
+            self.macros_changed.emit(basses, voix, aigus)
 
 
 # ── Channel widget ────────────────────────────────────────────────────────────
@@ -1355,7 +1387,7 @@ class SonarChannelWidget(QWidget):
         self._preset_bar.preset_selected.connect(self._on_preset_selected)
         self._preset_bar.save_requested.connect(self._on_save_custom_preset)
         self._preset_bar.macros_loaded.connect(
-            lambda b, v, a: self._macros.set_values(b, v, a)
+            lambda b, v, a: self._macros.set_values(b, v, a, emit=False)
         )
         self._preset_bar.settings_loaded.connect(self._on_settings_loaded)
         pcl.addWidget(self._preset_bar)
@@ -1614,14 +1646,18 @@ class SonarChannelWidget(QWidget):
         self._preset_bar.notify_saved(dlg.name)
 
     def _on_settings_loaded(self, settings: dict) -> None:
+        # Called when a preset is loaded; _on_preset_selected already scheduled
+        # an apply via _schedule_apply(), so suppressing the state_changed /
+        # macros_changed re-emissions prevents ~10 redundant filter-chain restarts
+        # per preset click (emit=False on all sub-widget set_state calls).
         if not settings:
             return
         if hasattr(self, "_spatial") and "spatial" in settings:
-            self._spatial.set_state(settings["spatial"])
+            self._spatial.set_state(settings["spatial"], emit=False)
         if hasattr(self, "_boost") and "boost" in settings:
-            self._boost.set_state(settings["boost"])
+            self._boost.set_state(settings["boost"], emit=False)
         if hasattr(self, "_smart") and "smart_volume" in settings:
-            self._smart.set_state(settings["smart_volume"])
+            self._smart.set_state(settings["smart_volume"], emit=False)
 
     def _on_macros_changed(self, basses: float, voix: float, aigus: float):
         self._update_macro_curve()
@@ -1869,7 +1905,7 @@ class SpatialAudioWidget(QWidget):
     def get_state(self) -> dict:
         return dict(self._state)
 
-    def set_state(self, state: dict) -> None:
+    def set_state(self, state: dict, emit: bool = True) -> None:
         if not state:
             return
         self._state.update(state)
@@ -1888,7 +1924,8 @@ class SpatialAudioWidget(QWidget):
                 slider.blockSignals(False)
             if lbl:
                 lbl.setText(str(val))
-        self.state_changed.emit()
+        if emit:
+            self.state_changed.emit()
 
 
 # ── Boost de Volume widget ────────────────────────────────────────────────────
@@ -2001,7 +2038,7 @@ class BoostVolumeWidget(QWidget):
     def get_state(self) -> dict:
         return dict(self._state)
 
-    def set_state(self, state: dict) -> None:
+    def set_state(self, state: dict, emit: bool = True) -> None:
         if not state:
             return
         self._state.update(state)
@@ -2014,7 +2051,8 @@ class BoostVolumeWidget(QWidget):
         self._slider.blockSignals(False)
         self._db_label.setText(self._fmt(self._state.get("db", 0.0)))
         self._detail.setVisible(self._state.get("enabled", False))
-        self.state_changed.emit()
+        if emit:
+            self.state_changed.emit()
 
 
 # ── Smart Volume widget ────────────────────────────────────────────────────────
@@ -2158,7 +2196,7 @@ class SmartVolumeWidget(QWidget):
     def get_state(self) -> dict:
         return dict(self._state)
 
-    def set_state(self, state: dict) -> None:
+    def set_state(self, state: dict, emit: bool = True) -> None:
         if not state:
             return
         self._state.update(state)
@@ -2172,7 +2210,8 @@ class SmartVolumeWidget(QWidget):
         self._level_val.setText(str(int(self._state.get("level", 50))))
         self._detail.setVisible(self._state.get("enabled", False))
         self._refresh_loudness()
-        self.state_changed.emit()
+        if emit:
+            self.state_changed.emit()
 
 
 # ── Micro processing persistence ──────────────────────────────────────────────
@@ -2687,6 +2726,10 @@ class SonarPage(QWidget):
     def __init__(self, embedded: bool = False, parent: QWidget | None = None):
         super().__init__(parent)
 
+        # Anti-amplification state for boost/smart global apply (1a)
+        self._apply_all_worker: _ApplyAllWorker | None = None
+        self._pending_apply_all: bool = False
+
         # Fix stale configs (broken builtins, wrong locations, duplicate HeSuVi node, …)
         fixed, needs_pw_restart = check_and_fix_stale_configs()
         if fixed:
@@ -2823,17 +2866,49 @@ class SonarPage(QWidget):
         self._media_widget._schedule_apply()
 
     def _on_boost_changed(self):
-        """Boost changed — re-apply all EQ channels."""
-        self._game_widget._schedule_apply()
-        self._media_widget._schedule_apply()
-        self._chat_widget._schedule_apply()
-        self._micro_widget._schedule_apply()
+        """Boost changed — re-apply all EQ channels via a single ApplyAll restart."""
+        self._schedule_apply_all()
 
     def _on_smart_changed(self):
-        """Smart Volume changed — re-apply game, media and chat channels."""
-        self._game_widget._schedule_apply()
-        self._media_widget._schedule_apply()
-        self._chat_widget._schedule_apply()
+        """Smart Volume changed — re-apply all EQ channels via a single ApplyAll restart."""
+        self._schedule_apply_all()
+
+    def _schedule_apply_all(self) -> None:
+        """Start (or queue) a single _ApplyAllWorker, coalescing rapid calls.
+
+        Anti-amplification debounce (fix #100 / LOT 1a): boost or smart-volume
+        changes used to fan out to 3–4 individual _ApplyWorkers, each triggering
+        its own filter-chain restart.  This method ensures at most ONE restart is
+        in flight at any time; a second call while a worker is running sets the
+        _pending_apply_all flag so that exactly one more restart is scheduled
+        when the current worker finishes.
+        """
+        if self._apply_all_worker is not None:
+            # A restart is already in flight — remember to run one more after.
+            self._pending_apply_all = True
+            return
+        self._pending_apply_all = False
+        worker = _ApplyAllWorker()
+        self._apply_all_worker = worker
+        worker.done.connect(self._on_apply_all_done)
+        worker.finished.connect(self._on_apply_all_finished)
+        worker.start()
+
+    @Slot(bool)
+    def _on_apply_all_done(self, ok: bool):
+        import logging
+        if not ok:
+            logging.getLogger(__name__).warning("_ApplyAllWorker reported failure")
+
+    @Slot()
+    def _on_apply_all_finished(self):
+        worker = self._apply_all_worker
+        self._apply_all_worker = None
+        if worker is not None:
+            worker.deleteLater()
+        if self._pending_apply_all:
+            self._pending_apply_all = False
+            self._schedule_apply_all()
 
     def apply_theme(self, t=None) -> None:
         """Restyle the Sonar page and all its channel widgets for the active theme."""
