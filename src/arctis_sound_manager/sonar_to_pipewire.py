@@ -440,9 +440,9 @@ def ensure_filter_chain_healthy() -> bool:
     if not sc.is_active("filter-chain"):
         _log.warning(
             "ensure_filter_chain_healthy: filter-chain is not active at "
-            "boot/attach — entering safe mode to prevent crash-loop audio cut"
+            "boot/attach — attempting to start it (not entering safe mode)"
         )
-        _enter_filter_chain_safe_mode()
+        sc.start("filter-chain")
         return False
 
     # Secondary check (systemd only): NRestarts — a high restart count means
