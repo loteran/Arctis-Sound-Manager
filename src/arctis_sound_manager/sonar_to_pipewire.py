@@ -436,6 +436,11 @@ def ensure_filter_chain_healthy() -> bool:
     if _filter_chain_safe_mode:
         return False  # already in safe mode — nothing more to do
 
+    # If no ASM configs exist on disk, we couldn't have caused any crash loop.
+    any_exists = any((_CONF_DIR / name).exists() for name in _ASM_CONF_NAMES)
+    if not any_exists:
+        return True
+
     # Primary check: is the service running right now?
     if not sc.is_active("filter-chain"):
         _log.warning(
