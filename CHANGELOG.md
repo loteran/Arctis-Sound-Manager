@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.89] - 3 July 2026
+
+### Fixed
+
+- **ASM could crash when the "update available" dialog was closed quickly** — the "Copy command" button scheduled a 2-second timer to reset its label, and if the dialog was dismissed before it fired the timer touched an already-deleted Qt button, raising `libshiboken: Internal C++ object already deleted`. Every such timer is now bound to its widget's lifetime and cancelled when the dialog closes. (#100)
+- **Endless loopback relink/recreate loop on WirePlumber 0.5.x (Nova Elite, Distrobox / Steam Deck).** WirePlumber's restore-stream could re-pin a virtual-channel loopback (Game / Chat / Media) to the physical headset output on every recreate; the watchdog then fought it in a tight loop, restarting the filter-chain over and over. The loopbacks now opt out of target restoration (`state.restore-target=false`), and the bug report surfaces any stored Arctis targets so a stale one can be spotted and cleared. (#100)
+
+### Improved
+
+- **LADSPA plugin detection now works on read-only-rootfs distros (SteamOS / Steam Deck).** ASM now searches `LADSPA_PATH` and `~/.ladspa` — the only place a user can add plugins when `/usr` is immutable — alongside the system directories, so it no longer reports a plugin as missing when the filter-chain can actually load it. The blocking dependency check also verifies the Smart Volume (`sc4m_1916`) and mic noise-gate (`gate_1410`) plugins, not just the reverb one, since all three ship in the same package and a single missing `.so` can crash the whole filter-chain. (#88)
+
 ## [1.1.88] - 2 July 2026
 
 ### Fixed
