@@ -187,12 +187,27 @@ _LADSPA_DIRS = (
 )
 
 
+def _ladspa_search_dirs() -> tuple[str, ...]:
+    """Full LADSPA search path, honouring the same lookup that pipewire's
+    module-filter-chain uses: the LADSPA_PATH env var and ~/.ladspa, then the
+    standard system dirs. On read-only rootfs distros (SteamOS) the only place a
+    user can add plugins is their HOME + LADSPA_PATH, so those must be searched
+    or ASM would report a missing plugin the filter-chain can actually load."""
+    dirs: list[str] = []
+    for d in os.environ.get("LADSPA_PATH", "").split(os.pathsep):
+        if d:
+            dirs.append(d)
+    dirs.append(str(Path.home() / ".ladspa"))
+    dirs.extend(_LADSPA_DIRS)
+    return tuple(dict.fromkeys(dirs))  # de-dup, preserve order
+
+
 def _find_ladspa_plugin(name_pattern: str) -> str | None:
     """Return the absolute path of the first LADSPA .so matching `name_pattern`,
     or None if not found. `name_pattern` is a filename glob, e.g. `plate_1423.so`
     or `librnnoise*.so` (rnnoise has different basenames per build)."""
     import fnmatch
-    for d in _LADSPA_DIRS:
+    for d in _ladspa_search_dirs():
         p = Path(d)
         if not p.is_dir():
             continue
@@ -360,10 +375,17 @@ def _build_checks() -> list[DepCheck]:
         # Audio chain — BLOCKING because Spatial Audio + Sonar are the
         # core selling points and break silently without these.
         DepCheck(
-            name="LADSPA SWH plugins (plate_1423)",
+            # plate_1423 (Spatial Audio reverb), sc4m_1916 (Smart Volume) and
+            # gate_1410 (mic noise gate) all ship in the same swh-plugins
+            # package. A referenced-but-missing .so can SEGV the whole
+            # filter-chain (issue #88), so require all three, not just plate.
+            name="LADSPA SWH plugins (plate_1423 / sc4m_1916 / gate_1410)",
             severity=Severity.BLOCKING,
-            feature="Spatial Audio (HeSuVi 7.1 surround)",
-            detect=lambda: _find_ladspa_plugin("plate_1423.so") is not None,
+            feature="Spatial Audio, Smart Volume, mic noise gate",
+            detect=lambda: all(
+                _find_ladspa_plugin(p) is not None
+                for p in ("plate_1423.so", "sc4m_1916.so", "gate_1410.so")
+            ),
             install_commands={
                 "fedora": ["dnf", "install", "-y", "ladspa-swh-plugins"],
                 "debian": ["apt-get", "install", "-y", "swh-plugins"],

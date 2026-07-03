@@ -37,8 +37,6 @@ def _ladspa_plugin_available(name_pattern: str) -> bool:
     We warn but do not disable LADSPA in containers, since the user may have
     installed the plugins on the host too.
     """
-    import fnmatch
-    from pathlib import Path
     try:
         from arctis_sound_manager.bug_reporter import _detect_container_env
         _container = _detect_container_env()
@@ -51,21 +49,10 @@ def _ladspa_plugin_available(name_pattern: str) -> bool:
             "Install the LADSPA plugins on the host if filter-chain fails to start.",
             name_pattern, _container,
         )
-    _dirs = (
-        "/usr/lib64/ladspa",
-        "/usr/lib/ladspa",
-        "/usr/lib/x86_64-linux-gnu/ladspa",
-    )
-    for d in _dirs:
-        p = Path(d)
-        if not p.is_dir():
-            continue
-        try:
-            if any(fnmatch.fnmatch(e.name, name_pattern) for e in p.iterdir() if e.is_file()):
-                return True
-        except OSError:
-            continue
-    return False
+    # Single source of truth for the search path (LADSPA_PATH + ~/.ladspa +
+    # system dirs) lives in system_deps_checker; reuse it here.
+    from arctis_sound_manager.system_deps_checker import _find_ladspa_plugin
+    return _find_ladspa_plugin(name_pattern) is not None
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────
