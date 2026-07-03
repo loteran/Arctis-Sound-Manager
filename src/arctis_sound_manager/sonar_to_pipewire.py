@@ -28,8 +28,13 @@ from arctis_sound_manager.eq_types import EqBand, PW_LABEL
 _log = logging.getLogger(__name__)
 
 
-def _ladspa_plugin_available(name_pattern: str) -> bool:
-    """Return True if a LADSPA .so matching name_pattern is found in standard dirs.
+def _resolve_ladspa_plugin(name_pattern: str) -> str | None:
+    """Return the absolute path of the first LADSPA .so matching *name_pattern*.
+
+    Returns ``None`` if no matching plugin is found.  The absolute path is used
+    in generated PipeWire filter-chain configs so that ``dlopen()`` loads the
+    plugin directly, bypassing ``LADSPA_PATH`` lookup — which is often unset
+    inside a systemd user unit on Fedora (``/usr/lib64/ladspa/``).
 
     NOTE: under Distrobox/Flatpak the filter-chain service runs on the HOST while
     this scan sees the CONTAINER filesystem. A plugin found here may be absent on
@@ -61,11 +66,17 @@ def _ladspa_plugin_available(name_pattern: str) -> bool:
         if not p.is_dir():
             continue
         try:
-            if any(fnmatch.fnmatch(e.name, name_pattern) for e in p.iterdir() if e.is_file()):
-                return True
+            for entry in p.iterdir():
+                if entry.is_file() and fnmatch.fnmatch(entry.name, name_pattern):
+                    return str(entry)
         except OSError:
             continue
-    return False
+    return None
+
+
+def _ladspa_plugin_available(name_pattern: str) -> bool:
+    """Backward-compat wrapper: True if a LADSPA .so matching *name_pattern* exists."""
+    return _resolve_ladspa_plugin(name_pattern) is not None
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -211,17 +222,21 @@ def _node_block(name: str, label: str, freq: float, q: float, gain: float) -> st
     )
 
 
-def _sc4m_node(name: str, preset: dict, level: float) -> str:
+def _sc4m_node(name: str, preset: dict, level: float, plugin_path: str = "sc4m_1916") -> str:
     """Generate a LADSPA SC4M compressor node.
 
     *level* (0-100) scales ratio from 1.0 to the preset's max and adjusts
     makeup gain proportionally.
+
+    *plugin_path* should be the absolute path to sc4m_1916.so (e.g.
+    ``/usr/lib64/ladspa/sc4m_1916.so``).  Falls back to the bare name
+    ``sc4m_1916`` if not provided (PipeWire will search LADSPA_PATH).
     """
     t = max(0.0, min(100.0, level)) / 100.0
     ratio  = 1.0 + (preset["ratio"] - 1.0) * t
     makeup = preset["makeup"] * t
     return (
-        f'                    {{ type = ladspa  name = {name}  plugin = sc4m_1916  label = sc4m\n'
+        f'                    {{ type = ladspa  name = {name}  plugin = {plugin_path}  label = sc4m\n'
         f'                      control = {{ "RMS/peak" = 0  "Attack time (ms)" = {preset["attack"]}'
         f'  "Release time (ms)" = {preset["release"]}'
         f'  "Threshold level (dB)" = {preset["threshold"]}'
@@ -614,7 +629,8 @@ def _active_conf_8ch(
     if smart_volume and smart_volume.get("enabled"):
         # Correctif 4 (issue #88): guard LADSPA node behind plugin availability
         # check. A missing sc4m_1916.so causes dlopen() SEGV in filter-chain.
-        if not _ladspa_plugin_available("sc4m_1916.so"):
+        _sc4m_path = _resolve_ladspa_plugin("sc4m_1916.so")
+        if not _sc4m_path:
             _log.warning(
                 "LADSPA plugin sc4m_1916 not found — skipping Smart Volume "
                 "compressor node, feature degraded; install swh-plugins on the host"
@@ -623,7 +639,7 @@ def _active_conf_8ch(
             mode = smart_volume.get("loudness", "balanced")
             level = smart_volume.get("level", 50)
             preset = _SMART_PRESETS.get(mode, _SMART_PRESETS["balanced"])
-            node_lines.append(_sc4m_node("compressor", preset, level))
+            node_lines.append(_sc4m_node("compressor", preset, level, _sc4m_path))
             link_lines.append(_link_to_ladspa(last_name, "compressor"))
 
     nodes_text = "\n".join(node_lines)
@@ -719,7 +735,8 @@ def _active_conf_2ch(
     _smart_vol_ladspa = False
     if smart_volume and smart_volume.get("enabled"):
         # Guard: a missing sc4m_1916.so causes dlopen() SEGV in filter-chain.
-        if not _ladspa_plugin_available("sc4m_1916.so"):
+        _sc4m_path = _resolve_ladspa_plugin("sc4m_1916.so")
+        if not _sc4m_path:
             _log.warning(
                 "LADSPA plugin sc4m_1916 not found — skipping Smart Volume "
                 "compressor nodes, feature degraded; install swh-plugins on the host"
@@ -728,8 +745,8 @@ def _active_conf_2ch(
             mode = smart_volume.get("loudness", "balanced")
             level = smart_volume.get("level", 50)
             preset = _SMART_PRESETS.get(mode, _SMART_PRESETS["balanced"])
-            node_lines.append(_sc4m_node("comp_L", preset, level))
-            node_lines.append(_sc4m_node("comp_R", preset, level))
+            node_lines.append(_sc4m_node("comp_L", preset, level, _sc4m_path))
+            node_lines.append(_sc4m_node("comp_R", preset, level, _sc4m_path))
             link_lines.append(_link_to_ladspa(last_L, "comp_L"))
             link_lines.append(_link_to_ladspa(last_R, "comp_R"))
             last_L, last_R = "comp_L", "comp_R"
@@ -923,7 +940,8 @@ def generate_sonar_micro_conf(
     # Correctif 4 (issue #88): guard LADSPA node. A missing gate_1410.so causes
     # dlopen() SEGV in filter-chain; omit node gracefully if plugin not found.
     if ng.get("enabled", False):
-        if not _ladspa_plugin_available("gate_1410.so"):
+        _gate_path = _resolve_ladspa_plugin("gate_1410.so")
+        if not _gate_path:
             _log.warning(
                 "LADSPA plugin gate_1410 not found — skipping noise gate node, "
                 "feature degraded; install swh-plugins on the host"
@@ -931,7 +949,7 @@ def generate_sonar_micro_conf(
         else:
             threshold = max(-60.0, min(-10.0, ng.get("value", -40.0)))
             node_lines.append(
-                f"                    {{ type = ladspa  name = ngate  plugin = gate_1410  label = gate\n"
+                f"                    {{ type = ladspa  name = ngate  plugin = {_gate_path}  label = gate\n"
                 f"                      control = {{ \"Threshold (dB)\" = {threshold:.1f}"
                 f"  \"Attack (ms)\" = 5.0  \"Hold (ms)\" = 50.0  \"Decay (ms)\" = 100.0"
                 f"  \"Range (dB)\" = -90.0"
@@ -946,7 +964,8 @@ def generate_sonar_micro_conf(
     # Correctif 4 (issue #88): guard LADSPA node. A missing librnnoise_ladspa.so
     # causes dlopen() SEGV in filter-chain; omit node gracefully if not found.
     if nc.get("enabled", False):
-        if not _ladspa_plugin_available("librnnoise_ladspa.so"):
+        _rnnoise_path = _resolve_ladspa_plugin("librnnoise_ladspa.so")
+        if not _rnnoise_path:
             _log.warning(
                 "LADSPA plugin librnnoise_ladspa not found — skipping noise "
                 "cancellation node, feature degraded; install "
@@ -956,7 +975,7 @@ def generate_sonar_micro_conf(
             vad_threshold = max(0.0, min(100.0, nc.get("value", 0.5) * 100))
             node_lines.append(
                 f"                    {{ type = ladspa  name = rnnoise\n"
-                f"                      plugin = librnnoise_ladspa  label = noise_suppressor_mono\n"
+                f"                      plugin = {_rnnoise_path}  label = noise_suppressor_mono\n"
                 f"                      control = {{ \"VAD Threshold (%)\" = {vad_threshold:.1f} }} }}"
             )
             link_lines.append(_smart_link("rnnoise", True))
@@ -967,7 +986,8 @@ def generate_sonar_micro_conf(
     # Correctif 4 (issue #88): guard LADSPA node. A missing sc4m_1916.so causes
     # dlopen() SEGV in filter-chain; omit node gracefully if plugin not found.
     if comp.get("enabled", False):
-        if not _ladspa_plugin_available("sc4m_1916.so"):
+        _sc4m_path_micro = _resolve_ladspa_plugin("sc4m_1916.so")
+        if not _sc4m_path_micro:
             _log.warning(
                 "LADSPA plugin sc4m_1916 not found — skipping micro compressor "
                 "node, feature degraded; install swh-plugins on the host"
@@ -979,7 +999,7 @@ def generate_sonar_micro_conf(
             comp_ratio = 2.0 + comp_val * 6.0           # 2:1 → 8:1
             comp_makeup = comp_val * 10.0                # 0 → 10 dB
             node_lines.append(
-                f"                    {{ type = ladspa  name = comp  plugin = sc4m_1916  label = sc4m\n"
+                f"                    {{ type = ladspa  name = comp  plugin = {_sc4m_path_micro}  label = sc4m\n"
                 f"                      control = {{ \"RMS/peak\" = 0.5"
                 f"  \"Attack time (ms)\" = 10.0  \"Release time (ms)\" = 150.0"
                 f"  \"Threshold level (dB)\" = {comp_threshold:.1f}"
@@ -1631,15 +1651,16 @@ def generate_hesuvi_conf(
     node_lines.append(f"{I}{{ type = builtin  label = mixer  name = mixR }}")
 
     # 5. Plate reverb nodes (Distance) — only if distance_pct > 0 and swh-plugins available
-    use_plate = distance_pct > 0 and _ladspa_plugin_available("plate_1423.so")
+    _plate_path = _resolve_ladspa_plugin("plate_1423.so") if distance_pct > 0 else None
+    use_plate = _plate_path is not None
     if use_plate:
         node_lines.append(f"{I}# distance reverb (LADSPA plate — requires swh-plugins)")
         node_lines.append(
-            f'{I}{{ type = ladspa  name = plate_L  plugin = plate_1423  label = plate'
+            f'{I}{{ type = ladspa  name = plate_L  plugin = {_plate_path}  label = plate'
             f'  control = {{ "Reverb time" = 2.5  "Damping" = 0.5  "Dry/wet mix" = {distance_wet:.2f} }} }}'
         )
         node_lines.append(
-            f'{I}{{ type = ladspa  name = plate_R  plugin = plate_1423  label = plate'
+            f'{I}{{ type = ladspa  name = plate_R  plugin = {_plate_path}  label = plate'
             f'  control = {{ "Reverb time" = 2.5  "Damping" = 0.5  "Dry/wet mix" = {distance_wet:.2f} }} }}'
         )
 

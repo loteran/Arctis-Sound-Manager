@@ -832,6 +832,9 @@ class CoreEngine:
     def on_device_connected(self, vendor_id: int, product_id: int) -> None:
         for device_config in self.device_configurations:
             if device_config.vendor_id == vendor_id and product_id in device_config.product_ids:
+                if self._detect_lock.locked():
+                    self.logger.debug("on_device_connected: detection already in progress, skipping")
+                    return
                 self.configure_virtual_sinks()
                 return
 

@@ -149,3 +149,30 @@ class ObservableDict(dict[K, V], Generic[K, V], JsonSerializable):
 
         for k, v in kwargs.items():
             self[k] = v
+
+    def __delitem__(self, key):
+        if key in self:
+            super().__delitem__(key)
+            for observer in self._observers:
+                observer(key, None)
+
+    def pop(self, key, *args):
+        had_key = key in self
+        val = super().pop(key, *args)
+        if had_key:
+            for observer in self._observers:
+                observer(key, None)
+        return val
+
+    def popitem(self):
+        key, val = super().popitem()
+        for observer in self._observers:
+            observer(key, None)
+        return key, val
+
+    def clear(self):
+        keys = list(self.keys())
+        super().clear()
+        for key in keys:
+            for observer in self._observers:
+                observer(key, None)

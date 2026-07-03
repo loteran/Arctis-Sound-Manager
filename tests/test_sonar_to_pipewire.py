@@ -766,15 +766,15 @@ def test_ladspa_sc4m_absent_skips_smart_volume_8ch():
     bands = [("bq0", EqBand(freq=1000, gain=3.0, q=0.7, type="peakingEQ", enabled=True))]
     smart_volume = {"enabled": True, "loudness": "balanced", "level": 50}
 
-    with patch("arctis_sound_manager.sonar_to_pipewire._ladspa_plugin_available",
-               return_value=False):
+    with patch("arctis_sound_manager.sonar_to_pipewire._resolve_ladspa_plugin",
+               return_value=None):
         text = _active_conf_8ch(
             "game", "effect_input.sonar-game-eq", "effect_input.virtual-surround",
             "FL FR FC LFE RL RR SL SR", bands, [], [], 0.0, smart_volume,
         )
 
     # Smart volume LADSPA node must be absent
-    assert "sc4m_1916" not in text
+    assert "sc4m" not in text
     assert "compressor" not in text
 
 
@@ -787,28 +787,29 @@ def test_ladspa_sc4m_absent_skips_smart_volume_2ch():
     bands = [("bq0", EqBand(freq=1000, gain=3.0, q=0.7, type="peakingEQ", enabled=True))]
     smart_volume = {"enabled": True, "loudness": "balanced", "level": 50}
 
-    with patch("arctis_sound_manager.sonar_to_pipewire._ladspa_plugin_available",
-               return_value=False):
+    with patch("arctis_sound_manager.sonar_to_pipewire._resolve_ladspa_plugin",
+               return_value=None):
         text = _active_conf_2ch(
             "chat", "effect_input.sonar-chat-eq", "alsa_output.test",
             "FL FR", bands, [], [], 0.0, smart_volume,
         )
 
-    assert "sc4m_1916" not in text
+    assert "sc4m" not in text
     assert "comp_L" not in text
     # Output port must use builtin "Out", not LADSPA "Output"
-    assert ":Out\"" in text
-    assert ":Output\"" not in text
+    assert ':Out"' in text
+    assert ':Output"' not in text
 
 
 def test_ladspa_gate_absent_skips_noise_gate():
     """When gate_1410.so is missing, noise gate node is omitted from micro config."""
     from arctis_sound_manager.sonar_to_pipewire import generate_sonar_micro_conf
+    from pathlib import Path
 
     noise_reduction = {"noiseGate": {"enabled": True, "value": -40.0}}
 
-    with patch("arctis_sound_manager.sonar_to_pipewire._ladspa_plugin_available",
-               return_value=False):
+    with patch("arctis_sound_manager.sonar_to_pipewire._resolve_ladspa_plugin",
+               return_value=None):
         text = generate_sonar_micro_conf(
             [], 0.0, 0.0, 0.0,
             output_path=Path("/dev/null"),
@@ -822,11 +823,12 @@ def test_ladspa_gate_absent_skips_noise_gate():
 def test_ladspa_rnnoise_absent_skips_noise_cancellation():
     """When librnnoise_ladspa.so is missing, rnnoise node is omitted."""
     from arctis_sound_manager.sonar_to_pipewire import generate_sonar_micro_conf
+    from pathlib import Path
 
     noise_canceling = {"enabled": True, "value": 0.5}
 
-    with patch("arctis_sound_manager.sonar_to_pipewire._ladspa_plugin_available",
-               return_value=False):
+    with patch("arctis_sound_manager.sonar_to_pipewire._resolve_ladspa_plugin",
+               return_value=None):
         text = generate_sonar_micro_conf(
             [], 0.0, 0.0, 0.0,
             output_path=Path("/dev/null"),
@@ -839,19 +841,20 @@ def test_ladspa_rnnoise_absent_skips_noise_cancellation():
 
 def test_ladspa_all_available_includes_nodes():
     """When all LADSPA plugins are available, smart volume and micro processing
-    nodes ARE included in the generated configs."""
+    nodes ARE included in the generated configs (with absolute paths)."""
     from arctis_sound_manager.eq_types import EqBand
     from arctis_sound_manager.sonar_to_pipewire import _active_conf_8ch
 
     bands = [("bq0", EqBand(freq=1000, gain=3.0, q=0.7, type="peakingEQ", enabled=True))]
     smart_volume = {"enabled": True, "loudness": "balanced", "level": 50}
 
-    with patch("arctis_sound_manager.sonar_to_pipewire._ladspa_plugin_available",
-               return_value=True):
+    with patch("arctis_sound_manager.sonar_to_pipewire._resolve_ladspa_plugin",
+               return_value="/usr/lib64/ladspa/sc4m_1916.so"):
         text = _active_conf_8ch(
             "game", "effect_input.sonar-game-eq", "effect_input.virtual-surround",
             "FL FR FC LFE RL RR SL SR", bands, [], [], 0.0, smart_volume,
         )
 
-    assert "sc4m_1916" in text
+    assert "/usr/lib64/ladspa/sc4m_1916.so" in text
     assert "compressor" in text
+
