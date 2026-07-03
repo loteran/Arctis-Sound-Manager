@@ -5,7 +5,7 @@
 ANC / Transparent mode — interactive control.
 Sends USB commands to change mode and transparent level via D-Bus.
 """
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Slot, QTimer
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget
 
 import arctis_sound_manager.gui.theme as _theme
@@ -52,6 +52,12 @@ class QAncWidget(QWidget):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self._current_mode = 'off'
+        self._pending_mode = None
+        self._pending_level = None
+
+        self._timeout_timer = QTimer(self)
+        self._timeout_timer.setSingleShot(True)
+        self._timeout_timer.timeout.connect(self._on_timeout)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -139,9 +145,39 @@ class QAncWidget(QWidget):
         tr_entry = headset.get('transparent_noise_cancelling_level', {})
         level = tr_entry.get('value', None) if isinstance(tr_entry, dict) else None
 
+        # Check if we are waiting for a pending mode/level change
+        is_waiting = False
+        if self._pending_mode is not None:
+            if mode == self._pending_mode:
+                self._pending_mode = None
+            else:
+                is_waiting = True
+
+        if self._pending_level is not None and level is not None:
+            if int(level) == self._pending_level:
+                self._pending_level = None
+            else:
+                is_waiting = True
+
+        if is_waiting:
+            return
+
+        self._timeout_timer.stop()
+        self._set_widgets_enabled(True)
         self._set_state(mode, level)
 
     # ── Private ───────────────────────────────────────────────────────────────
+
+    def _set_widgets_enabled(self, enabled: bool) -> None:
+        for pill in self._pills.values():
+            pill.setEnabled(enabled)
+        self._level_slider.setEnabled(enabled)
+
+    @Slot()
+    def _on_timeout(self) -> None:
+        self._pending_mode = None
+        self._pending_level = None
+        self._set_widgets_enabled(True)
 
     def _set_state(self, mode: str, level) -> None:
         self._current_mode = mode
@@ -161,11 +197,17 @@ class QAncWidget(QWidget):
         if mode_key == self._current_mode:
             return
         self._current_mode = mode_key
+        self._pending_mode = mode_key
         for key, pill in self._pills.items():
             pill._set_active(key == mode_key)
         self._level_row.setVisible(mode_key == 'transparent')
+        self._set_widgets_enabled(False)
+        self._timeout_timer.start(5000) # 5 second block
         DbusWrapper.change_setting('noise_cancelling', mode_value)
 
     def _on_level_changed(self, value: int) -> None:
         self._level_label.setText(f"{value * 10}%")
+        self._pending_level = value * 10
+        self._set_widgets_enabled(False)
+        self._timeout_timer.start(5000) # 5 second block
         DbusWrapper.change_setting('transparent_level', value)
