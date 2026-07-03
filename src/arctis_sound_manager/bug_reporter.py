@@ -260,6 +260,21 @@ def collect_system_info() -> dict:
     except Exception:
         info['wpctl'] = ''
 
+    # WirePlumber restore-stream state — an entry that pins an Arctis loopback
+    # (Arctis_*_sink_out) to the physical ALSA sink is re-applied at every
+    # recreate and drives the endless mislink loop on WirePlumber 0.5.x (#100).
+    info['wp_restore_stream_arctis'] = ''
+    try:
+        _rs = Path.home() / '.local' / 'state' / 'wireplumber' / 'restore-stream'
+        if _rs.is_file():
+            _hits = [
+                ln for ln in _rs.read_text(errors='replace').splitlines()
+                if 'Arctis' in ln and ('target' in ln or 'alsa_output' in ln)
+            ]
+            info['wp_restore_stream_arctis'] = '\n'.join(_hits[:40])
+    except Exception:
+        info['wp_restore_stream_arctis'] = ''
+
     # --- PipeWire runtime / container diagnostics (issue #74) ----------------
     # When ASM runs inside Distrobox/Flatpak, PipeWire is only reachable
     # through forwarded sockets. These fields show whether the sockets are
@@ -537,6 +552,21 @@ def format_bug_report(traceback_str: Optional[str] = None) -> str:
             '## WirePlumber (`wpctl status`)',
             '```',
             wpctl[-3000:],
+            '```',
+            '',
+        ]
+
+    restore_stream = info.get('wp_restore_stream_arctis', '')
+    if restore_stream:
+        lines += [
+            '## WirePlumber restore-stream — Arctis targets',
+            '<!-- A stored target pointing at alsa_output...analog-stereo here is the',
+            '     restore-stream poison that pins the loopback to the physical sink',
+            '     and drives the endless mislink loop (#100). Fix: stop wireplumber,',
+            '     remove the Arctis lines from ~/.local/state/wireplumber/restore-stream,',
+            '     restart wireplumber. -->',
+            '```',
+            restore_stream,
             '```',
             '',
         ]

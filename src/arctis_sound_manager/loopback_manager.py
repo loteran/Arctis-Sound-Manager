@@ -248,6 +248,12 @@ def _build_pw_loopback_argv(spec: LoopbackSpec) -> list[str]:
         # linked to the physical ALSA sink instead of the EQ (issue #102).
         f" target.object={spec.target}"
         f" node.target={spec.target}"   # kept for WirePlumber 0.4.x compat
+        # WirePlumber's restore-stream (node.stream.restore-target, default true)
+        # re-applies a previously stored target for streams with a stable
+        # node.name, overriding target.object at every recreate. A poisoned entry
+        # (e.g. a past manual move to the physical ALSA sink) then feeds an endless
+        # mislink → watchdog-recreate → restore loop. Opt out per-stream (#100).
+        f" state.restore-target=false"
         f" node.dont-fallback=true"
         f" node.linger=true"
         f" latency.msec=50"

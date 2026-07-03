@@ -228,7 +228,9 @@ class ReportBugDialog(QDialog):
         QApplication.clipboard().setText(self._editor.toPlainText(), QClipboard.Mode.Clipboard)
         self._copy_btn.setText(I18n.translate('ui', 'copied'))
         self._copy_btn.setEnabled(False)
-        QTimer.singleShot(2000, lambda: (self._copy_btn.setText(I18n.translate('ui', 'copy_full_report')), self._copy_btn.setEnabled(True)))
+        # context=self: cancels the timer if the dialog is destroyed before it
+        # fires, avoiding a shiboken use-after-free on the button (issue #100).
+        QTimer.singleShot(2000, self, lambda: (self._copy_btn.setText(I18n.translate('ui', 'copy_full_report')), self._copy_btn.setEnabled(True)))
 
     def _open_folder(self) -> None:
         if self._report_path is None:

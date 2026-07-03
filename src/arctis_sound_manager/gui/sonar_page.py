@@ -1708,7 +1708,7 @@ class SonarChannelWidget(QWidget):
     @Slot(bool)
     def _on_apply_result(self, ok: bool):
         self._status_lbl.setText(_t("applied") if ok else _t("error"))
-        QTimer.singleShot(2000, lambda: self._status_lbl.setText(""))
+        QTimer.singleShot(2000, self, lambda: self._status_lbl.setText(""))
 
     @Slot()
     def _on_worker_finished(self):

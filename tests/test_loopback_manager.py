@@ -131,6 +131,13 @@ class TestBuildArgv:
         argv = _build_pw_loopback_argv(media_spec)
         assert "target.object=effect_input.sonar-media-eq" in argv[2]
 
+    def test_playback_restore_target_false(self, media_spec: LoopbackSpec) -> None:
+        """state.restore-target=false opts the loopback out of WirePlumber's
+        restore-stream, so a stored target can't override target.object and
+        drive the endless mislink loop on WirePlumber 0.5.x (issue #100)."""
+        argv = _build_pw_loopback_argv(media_spec)
+        assert "state.restore-target=false" in argv[2]
+
     def test_playback_dont_remix_false(self, media_spec: LoopbackSpec) -> None:
         """stream.dont-remix=false is required to allow 2ch → 8ch expansion."""
         argv = _build_pw_loopback_argv(media_spec)

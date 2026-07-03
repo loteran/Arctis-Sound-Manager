@@ -726,7 +726,9 @@ class DevicePage(QWidget):
                 QApplication.clipboard().setText(cmd, QClipboard.Mode.Clipboard)
                 copy_btn.setText("Copied!")
                 copy_btn.setEnabled(False)
-                QTimer.singleShot(2000, lambda: (copy_btn.setText("Copy command"), copy_btn.setEnabled(True)))
+                # context=copy_btn: cancels the timer if the dialog is closed
+                # before it fires, avoiding a shiboken use-after-free (issue #100).
+                QTimer.singleShot(2000, copy_btn, lambda: (copy_btn.setText("Copy command"), copy_btn.setEnabled(True)))
             copy_btn.clicked.connect(_copy)
             btn_row.addWidget(copy_btn)
 

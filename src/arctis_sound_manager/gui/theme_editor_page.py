@@ -376,7 +376,7 @@ class ThemeEditorPage(QWidget):
         self._schedule_preview()
 
     def _schedule_preview(self) -> None:
-        QTimer.singleShot(150, lambda: self.sig_preview.emit(dict(self._colors)))
+        QTimer.singleShot(150, self, lambda: self.sig_preview.emit(dict(self._colors)))
 
     def _current_colors(self) -> dict[str, str]:
         return {key: self._colors.get(key, "#000000") for key in THEME_KEYS}
