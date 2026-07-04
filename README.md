@@ -136,13 +136,13 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
 | Arctis 7+ / PS5 / Xbox / Destiny | ✅ | 10 | $\color{royalblue}{\textbf{220e}}$, $\color{royalblue}{\textbf{2212}}$, 2216, 2236 |
 | Arctis 9 Wireless | ✅ | 6 | $\color{royalblue}{\textbf{12c2}}$ |
 | Arctis Pro Wireless | ✅ | 18 | $\color{royalblue}{\textbf{1290}}$, $\color{royalblue}{\textbf{1294}}$ |
-| Arctis Nova Pro Wireless / X | ✅ | 104 | $\color{royalblue}{\textbf{12e0}}$, $\color{royalblue}{\textbf{12e5}}$, $\color{royalblue}{\textbf{225d}}$ |
+| Arctis Nova Pro Wireless / X | ✅ | 106 | $\color{royalblue}{\textbf{12e0}}$, $\color{royalblue}{\textbf{12e5}}$, $\color{royalblue}{\textbf{225d}}$ |
 | Arctis Nova Pro Wired / Xbox Wired | ✅ | 11 | $\color{royalblue}{\textbf{12cb}}$, $\color{royalblue}{\textbf{12cd}}$ |
 | Arctis Nova Pro Omni | ✅ | 4 | $\color{royalblue}{\textbf{2290}}$ |
 | Arctis Nova 3 | ✅ | 2 | $\color{royalblue}{\textbf{12ec}}$ |
 | Arctis Nova 3P / 3X Wireless | ✅ | 9 | $\color{royalblue}{\textbf{2269}}$, $\color{royalblue}{\textbf{226d}}$ |
-| Arctis Nova 5 / 5X | ✅ | 22 | $\color{royalblue}{\textbf{2232}}$, $\color{royalblue}{\textbf{2253}}$, $\color{royalblue}{\textbf{2255}}$, $\color{royalblue}{\textbf{2264}}$ |
-| Arctis Nova 7 Gen 1 | ✅ | 18 | $\color{royalblue}{\textbf{2202}}$, $\color{royalblue}{\textbf{2206}}$, 223a, 227a, 22ab, $\color{royalblue}{\textbf{22a4}}$ |
+| Arctis Nova 5 / 5X | ✅ | 23 | $\color{royalblue}{\textbf{2232}}$, $\color{royalblue}{\textbf{2253}}$, $\color{royalblue}{\textbf{2255}}$, $\color{royalblue}{\textbf{2264}}$ |
+| Arctis Nova 7 Gen 1 | ✅ | 19 | $\color{royalblue}{\textbf{2202}}$, $\color{royalblue}{\textbf{2206}}$, 223a, 227a, 22ab, $\color{royalblue}{\textbf{22a4}}$ |
 | Arctis Nova 7 Gen 2 | ✅ | 46 | $\color{royalblue}{\textbf{22a1}}$, $\color{royalblue}{\textbf{227e}}$, 2258, $\color{royalblue}{\textbf{229e}}$, 22a9, $\color{royalblue}{\textbf{22a5}}$ |
 | Arctis Nova 7P | ✅ | 9 | $\color{royalblue}{\textbf{220a}}$, $\color{royalblue}{\textbf{22a7}}$ |
 | Arctis Nova Elite | ✅ | 6 | $\color{royalblue}{\textbf{2244}}$, 2249, $\color{royalblue}{\textbf{2270}}$ |
@@ -604,7 +604,7 @@ To request a new language, open a [GitHub issue](https://github.com/loteran/Arct
 ## Community stats
 
 <!-- STATS:META:START -->
-_Based on **283** unique users (**58069** anonymous data points) — last updated 2026-07-03_
+_Based on **287** unique users (**58127** anonymous data points) — last updated 2026-07-04_
 <!-- STATS:META:END -->
 
 > Anonymous usage data shared voluntarily by opted-in users.
@@ -616,11 +616,11 @@ _Based on **283** unique users (**58069** anonymous data points) — last update
 <!-- STATS:TESTED_DISTROS:START -->
 | Distribution | Install method | Users |
 |---|---|---|
-| CachyOS | 🎯 AUR | 👥 131 |
+| CachyOS | 🎯 AUR | 👥 134 |
 | Arch Linux | 🎯 AUR | 👥 51 |
 | Nobara Linux 43 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 18 |
 | Fedora Linux 44 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 13 |
-| Linux Mint 22.3 | 🎯 PPA | 👥 10 |
+| Linux Mint 22.3 | 🎯 PPA | 👥 11 |
 | Ubuntu 26.04 LTS | 🎯 PPA | 👥 9 |
 | Ubuntu 24.04.4 LTS | 🎯 PPA | 👥 6 |
 | Pop!_OS 24.04 LTS | 🎯 PPA | 👥 6 |
@@ -650,11 +650,11 @@ _Based on **283** unique users (**58069** anonymous data points) — last update
 <!-- STATS:HEADSETS:START -->
 | Headset | Installs |
 |---|---|
-| Arctis Nova Pro Wireless | 104 |
+| Arctis Nova Pro Wireless | 106 |
 | Arctis Nova 7 (Gen 2) | 46 |
-| Arctis Nova 5 Wireless | 21 |
+| Arctis Nova 5 Wireless | 22 |
+| Arctis Nova 7 (Gen 1) | 19 |
 | Arctis Pro Wireless | 18 |
-| Arctis Nova 7 (Gen 1) | 18 |
 | Arctis Nova Pro Wired | 11 |
 | Arctis Nova 3 | 11 |
 | Arctis 7+ | 10 |
@@ -672,11 +672,11 @@ _Based on **283** unique users (**58069** anonymous data points) — last update
 <!-- STATS:DISTROS:START -->
 | Distribution | Installs |
 |---|---|
-| CachyOS | 131 |
+| CachyOS | 134 |
 | Arch Linux | 51 |
 | Nobara Linux 43 (KDE Plasma Desktop Edition) | 18 |
 | Fedora Linux 44 (KDE Plasma Desktop Edition) | 13 |
-| Linux Mint 22.3 | 10 |
+| Linux Mint 22.3 | 11 |
 | Ubuntu 26.04 LTS | 9 |
 | Ubuntu 24.04.4 LTS | 6 |
 | Pop!_OS 24.04 LTS | 6 |
