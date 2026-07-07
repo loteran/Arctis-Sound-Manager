@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import errno
 import logging
 import threading
 import time
@@ -55,6 +56,15 @@ _SCROLL_PAUSE_BOTTOM_S = 3.0    # seconds to pause at bottom before resetting
 _SCROLL_VERTICAL_DEADZONE_PX = 3
 _EQ_SCROLL_PAUSE_START_S = 2.0  # pause before EQ marquee starts (readability)
 _EQ_SCROLL_PAUSE_END_S = 2.0    # pause at end before snapping back
+
+# Circuit breaker for the OLED USB transport (issue #100): when the
+# interface stays EBUSY (errno 16 — e.g. distrobox/container USB
+# passthrough holding the handle, or another process claiming it), retrying
+# every packet of every frame floods the log with "Resource busy" warnings.
+# After this many consecutive *frames* fail with EBUSY, stop hammering the
+# device for a while and emit a single warning instead of one per packet.
+_OLED_BUSY_FAIL_THRESHOLD = 3
+_OLED_BUSY_SUSPEND_S = 60.0
 
 _BURN_IN_INTERVAL_S = 60.0
 _BURN_IN_POSITIONS: list[tuple[int, int]] = [
@@ -132,6 +142,18 @@ class OledManager:
         self._eq_chat_scroll_offset: int = 0
         self._eq_chat_reset_event = threading.Event()
         self._eq_chat_scroll_thread: threading.Thread | None = None
+
+        # OLED USB circuit breaker state (issue #100).
+        self._frame_fail_streak: int = 0
+        self._suspend_until: float = 0.0
+        self._last_send_errno: int | None = None
+        # Tracked purely to reset the breaker if the same manager instance
+        # ever outlives a device re-attach (belt-and-suspenders: today
+        # CoreEngine always builds a fresh OledManager on re-attach, which
+        # already resets these via __init__).
+        self._last_usb_device_id: int | None = (
+            id(core.usb_device) if core.usb_device is not None else None
+        )
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -319,7 +341,29 @@ class OledManager:
 
         self._send_current_frame()
 
+    def _check_usb_device_reattached(self) -> None:
+        """Reset the circuit breaker if the underlying USB device object changed.
+
+        CoreEngine always builds a fresh OledManager on re-attach today (its
+        instance attributes already start at zero), but this guard keeps the
+        breaker correct even if that ever changes, without touching core.py.
+        """
+        current = self._core.usb_device
+        current_id = id(current) if current is not None else None
+        if current_id != self._last_usb_device_id:
+            self._last_usb_device_id = current_id
+            self._frame_fail_streak = 0
+            self._suspend_until = 0.0
+
     def _send_current_frame(self) -> None:
+        self._check_usb_device_reattached()
+
+        now = datetime.now().timestamp()
+        if now < self._suspend_until:
+            # Circuit breaker open: interface is known busy, don't hammer it.
+            logger.debug("OLED frame skipped: suspended until %.0f (interface busy)", self._suspend_until)
+            return
+
         with self._image_lock:
             if self._current_image is None:
                 return
@@ -330,10 +374,33 @@ class OledManager:
         packets = self._protocol.build_frame_packets(
             frame, self._protocol.DISPLAY_WIDTH, self._protocol.DISPLAY_HEIGHT
         )
-        for packet in packets:
-            self._send_oled_packet(packet)
 
-    def _send_oled_packet(self, packet: list[int], *, control: bool = False) -> None:
+        frame_ok = True
+        for packet in packets:
+            if not self._send_oled_packet(packet):
+                frame_ok = False
+                break
+
+        if frame_ok:
+            self._frame_fail_streak = 0
+            return
+
+        if self._last_send_errno == errno.EBUSY:
+            self._frame_fail_streak += 1
+        else:
+            # Not the EBUSY spam scenario this breaker targets — don't count
+            # it towards the busy-streak.
+            self._frame_fail_streak = 0
+
+        if self._frame_fail_streak >= _OLED_BUSY_FAIL_THRESHOLD:
+            self._suspend_until = now + _OLED_BUSY_SUSPEND_S
+            self._frame_fail_streak = 0
+            logger.warning(
+                "OLED suspended for 60s: interface busy — likely another "
+                "process or container USB passthrough"
+            )
+
+    def _send_oled_packet(self, packet: list[int], *, control: bool = False) -> bool:
         """Send one HID SET_REPORT packet to the OLED controller.
 
         Args:
@@ -342,6 +409,13 @@ class OledManager:
                      False (default) for image frames (Feature report, type 0x03).
                      The distinction is required by the Wired GameDAC Gen 2 firmware
                      (issue #76, derived from ggoled reference implementation).
+
+        Returns:
+            True if the device accepted the packet, False if all retries
+            were exhausted (or the device was gone). Callers that send a
+            whole frame worth of packets are responsible for deciding what
+            to log/suspend at the frame level (issue #100) — this method
+            only logs at DEBUG to avoid per-packet spam.
         """
         # wValue = (report_type << 8) | report_id — correct HID SET_REPORT semantics.
         report_type = _OLED_REPORT_TYPE_OUTPUT if control else self._oled_frame_report_type
@@ -359,21 +433,26 @@ class OledManager:
             with self._core._usb_write_lock:
                 usb_device = self._core.usb_device
                 if usb_device is None:
-                    return
+                    # No device to talk to (mid-disconnect) — not the EBUSY
+                    # scenario the breaker targets, so clear any stale errno.
+                    self._last_send_errno = None
+                    return False
                 try:
                     usb_device.ctrl_transfer(
                         bmRequestType, 0x09,
                         wvalue, self._oled_interface,
                         packet,
                     )
-                    return
+                    return True
                 except usb.core.USBError as e:
                     last_err = e
             # Back-off outside the lock so other USB users are not blocked.
             if attempt + 1 < _MAX_ATTEMPTS:
                 time.sleep(min((attempt + 1) ** 2, 50) / 1000.0)
 
-        logger.warning("OLED USB error after %d attempts: %s", _MAX_ATTEMPTS, last_err)
+        self._last_send_errno = getattr(last_err, "errno", None)
+        logger.debug("OLED USB error after %d attempts: %s", _MAX_ATTEMPTS, last_err)
+        return False
 
     def _advance_burn_in(self) -> None:
         now = datetime.now().timestamp()
