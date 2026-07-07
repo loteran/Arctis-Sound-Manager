@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.90] - 7 July 2026
+
+### Added
+
+- **Arctis Nova Elite is now recognised when the PC is on the GameHub's rear USB ports 2/3** — in that wiring the base station enumerates with product id `0x2246` instead of `0x2244`, which ASM did not know about. (#110)
+- **The external output device list refreshes when you open the settings panel** — a device plugged in after ASM started now appears without restarting the app, instead of being stuck with the list captured at launch. (#106)
+
+### Fixed
+
+- **Rhythmic crackle / growing xruns on Arctis Nova Pro Wireless.** The headset's USB playback endpoint is synchronous (no clock feedback), so the loopback clock drifts against the free-running USB clock and the default ALSA headroom is too small to absorb it. ASM now raises `api.alsa.headroom` on this device automatically (via a WirePlumber drop-in it only rewrites when it changes), eliminating the crackle out of the box. (#105)
+- **AI Noise Cancellation (ClearCast / rnnoise) and the other filter-chain plugins could fail to load on Fedora.** ASM now writes the plugin's absolute path into the generated filter-chain config so `dlopen()` succeeds even when the systemd user unit does not inherit `LADSPA_PATH` (`/usr/lib64/ladspa`). Under Distrobox / Flatpak, where the filter-chain runs on the host, ASM keeps using the bare plugin name for system-wide plugins so the host resolves them itself. (#88)
+- **The Sonar EQ could be disabled at boot when the filter-chain had simply not started yet.** The startup health check now starts the filter-chain and waits to see whether it stays up before deciding anything; it only falls back to flat/safe mode if the service genuinely keeps crashing. (#88)
+- **Two apps with the same generic name (e.g. two "Chromium" clients like Vesktop and a music app) could not be routed to different channels** — they shared a single routing override. Overrides for generically-named apps are now keyed by application plus binary, so each app keeps its own channel. (#108)
+- **Rapid WirePlumber sink flips no longer poison the saved routing.** A detected move is only stored once its target has stayed stable for a moment, so a transient flip that is immediately reverted never overwrites your chosen channel. (#102)
+- **The OLED could flood the log with "Resource busy" warnings** when its USB interface was held by another process or a container passthrough. Repeated failures now suspend OLED updates for 60 seconds with a single warning instead of retrying every frame. (#100)
+- **A pyudev monitor thread leaked on each USB monitor cycle**, and the weather widget could be blocked by CDN security filters — the monitor observer is now stopped cleanly and the weather request sends a proper User-Agent.
+
 ## [1.1.89] - 3 July 2026
 
 ### Fixed
