@@ -28,31 +28,67 @@ from arctis_sound_manager.eq_types import EqBand, PW_LABEL
 _log = logging.getLogger(__name__)
 
 
-def _ladspa_plugin_available(name_pattern: str) -> bool:
-    """Return True if a LADSPA .so matching name_pattern is found in standard dirs.
+def _ladspa_plugin_ref(name_pattern: str) -> str | None:
+    """Return the reference to write into a filter-chain ``plugin =`` directive
+    for the first LADSPA .so matching *name_pattern*, or ``None`` if no plugin
+    was found (adapted from PR #104's ``_resolve_ladspa_plugin``).
 
-    NOTE: under Distrobox/Flatpak the filter-chain service runs on the HOST while
-    this scan sees the CONTAINER filesystem. A plugin found here may be absent on
-    the host, making filter-chain SEGV when it tries to dlopen() it (issue #88).
-    We warn but do not disable LADSPA in containers, since the user may have
-    installed the plugins on the host too.
+    Single source of truth for the search itself (LADSPA_PATH + ~/.ladspa +
+    system dirs) lives in ``system_deps_checker._find_ladspa_plugin``, which
+    already returns an absolute path — reused here.
+
+    NOTE: under Distrobox/Flatpak the filter-chain service runs on the HOST
+    while this scan sees the CONTAINER filesystem. A plugin found here may be
+    absent on the host, making filter-chain SEGV when it tries to dlopen() it
+    (issue #88). Writing the CONTAINER's absolute path into the config would
+    make that worse (the host has no reason to have that exact path), so:
+
+    - native (no container) → absolute path is safe, use it. This fixes
+      LADSPA_PATH lookups failing inside a systemd user unit that doesn't
+      inherit the shell's environment (e.g. Fedora's /usr/lib64/ladspa/).
+    - container + path under ``~/.ladspa`` → HOME is bind-mounted into the
+      container, so the host sees the same file at the same path — absolute
+      path stays safe.
+    - container + system-wide path (e.g. /usr/lib64/ladspa/…) → the host may
+      not have that path at all. Fall back to the bare plugin name so the
+      HOST's own filter-chain process resolves it via its own LADSPA_PATH /
+      system dirs, exactly as before this function existed.
     """
+    from arctis_sound_manager.system_deps_checker import _find_ladspa_plugin
+    resolved = _find_ladspa_plugin(name_pattern)
+    if resolved is None:
+        return None
+
     try:
         from arctis_sound_manager.bug_reporter import _detect_container_env
         _container = _detect_container_env()
     except Exception:
         _container = 'native'
-    if _container != 'native':
-        _log.warning(
-            "LADSPA scan for '%s' runs inside a container (%s); a plugin found "
-            "here may be missing on the host, which can crash filter-chain. "
-            "Install the LADSPA plugins on the host if filter-chain fails to start.",
-            name_pattern, _container,
-        )
-    # Single source of truth for the search path (LADSPA_PATH + ~/.ladspa +
-    # system dirs) lives in system_deps_checker; reuse it here.
-    from arctis_sound_manager.system_deps_checker import _find_ladspa_plugin
-    return _find_ladspa_plugin(name_pattern) is not None
+
+    if _container == 'native':
+        return resolved
+
+    _log.warning(
+        "LADSPA scan for '%s' runs inside a container (%s); a plugin found "
+        "here may be missing on the host, which can crash filter-chain. "
+        "Install the LADSPA plugins on the host if filter-chain fails to start.",
+        name_pattern, _container,
+    )
+
+    resolved_path = Path(resolved)
+    try:
+        resolved_path.relative_to(Path.home())
+        return resolved  # under ~/.ladspa (or elsewhere in HOME) — shared with the host
+    except ValueError:
+        # System-wide container path: not guaranteed to exist on the host —
+        # fall back to the bare plugin name (basename without extension).
+        return resolved_path.stem
+
+
+def _ladspa_plugin_available(name_pattern: str) -> bool:
+    """Return True if a LADSPA .so matching name_pattern is found in standard
+    dirs. Back-compat boolean wrapper around :func:`_ladspa_plugin_ref`."""
+    return _ladspa_plugin_ref(name_pattern) is not None
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -198,17 +234,21 @@ def _node_block(name: str, label: str, freq: float, q: float, gain: float) -> st
     )
 
 
-def _sc4m_node(name: str, preset: dict, level: float) -> str:
+def _sc4m_node(name: str, preset: dict, level: float, plugin_ref: str = "sc4m_1916") -> str:
     """Generate a LADSPA SC4M compressor node.
 
     *level* (0-100) scales ratio from 1.0 to the preset's max and adjusts
     makeup gain proportionally.
+
+    *plugin_ref* is the value written to the ``plugin =`` directive — either
+    the bare plugin name (default, PipeWire resolves via LADSPA_PATH) or an
+    absolute path resolved by :func:`_ladspa_plugin_ref`.
     """
     t = max(0.0, min(100.0, level)) / 100.0
     ratio  = 1.0 + (preset["ratio"] - 1.0) * t
     makeup = preset["makeup"] * t
     return (
-        f'                    {{ type = ladspa  name = {name}  plugin = sc4m_1916  label = sc4m\n'
+        f'                    {{ type = ladspa  name = {name}  plugin = {plugin_ref}  label = sc4m\n'
         f'                      control = {{ "RMS/peak" = 0  "Attack time (ms)" = {preset["attack"]}'
         f'  "Release time (ms)" = {preset["release"]}'
         f'  "Threshold level (dB)" = {preset["threshold"]}'
@@ -386,10 +426,21 @@ def _restart_filter_chain() -> None:
 
 def ensure_filter_chain_healthy() -> bool:
     """Detect a crash-looping filter-chain at boot or device-attach time and arm
-    the safe-mode fallback if needed (Correctif 1, issue #88).
+    the safe-mode fallback if needed (Correctif 1, issue #88; start-then-poll
+    behaviour adapted from PR #104 for issue #88's Fedora reports).
 
     Checks (in order):
-    1. ``sc.is_active("filter-chain")`` — if False the service is already down.
+    0. If none of ``_ASM_CONF_NAMES`` exist on disk in ``_CONF_DIR``, ASM
+       cannot be the cause of whatever state filter-chain is in — return True
+       immediately without touching the service at all.
+    1. ``sc.is_active("filter-chain")`` — if False, the service may simply not
+       have started yet (a boot-ordering race, or it was disabled). Instead of
+       treating that alone as a crash-loop, call ``sc.start("filter-chain")``
+       and poll for stability via ``_poll_filter_chain_stable()``: if it comes
+       up and stays up, return True without ever entering safe mode. If it
+       stays down (or crashes again), that *is* a crash-loop — enter safe mode
+       exactly as before. This avoids disabling the EQ on a merely-not-yet-
+       started service while still catching a genuine crash-loop.
     2. ``NRestarts`` (systemd only) — if >= 3 the service has restarted at
        least 3 times, which strongly indicates a crash-loop.
 
@@ -397,9 +448,9 @@ def ensure_filter_chain_healthy() -> bool:
     configs aside and restarts filter-chain without them so audio is flat but
     stable rather than permanently cut.
 
-    Returns True when the filter-chain appears healthy (or the init system is
-    not systemd and a live check is not possible).  Returns False when safe mode
-    was entered or was already active.
+    Returns True when the filter-chain appears healthy (or there is nothing
+    ASM could have broken).  Returns False when safe mode was entered or was
+    already active.
 
     Callers must not call this in a tight loop — each call may block up to
     ``3 × 1 s`` for the poll and ``5 s`` for the NRestarts subprocess."""
@@ -408,11 +459,24 @@ def ensure_filter_chain_healthy() -> bool:
     if _filter_chain_safe_mode:
         return False  # already in safe mode — nothing more to do
 
+    # If ASM never wrote any config, it cannot have caused a crash loop —
+    # skip touching the service entirely.
+    if not any((_CONF_DIR / name).exists() for name in _ASM_CONF_NAMES):
+        return True
+
     # Primary check: is the service running right now?
     if not sc.is_active("filter-chain"):
         _log.warning(
             "ensure_filter_chain_healthy: filter-chain is not active at "
-            "boot/attach — entering safe mode to prevent crash-loop audio cut"
+            "boot/attach — starting it and checking for stability before "
+            "deciding on safe mode"
+        )
+        sc.start("filter-chain")
+        if _poll_filter_chain_stable():
+            return True
+        _log.warning(
+            "ensure_filter_chain_healthy: filter-chain did not stay active "
+            "after start (crash-loop detected) — entering safe mode"
         )
         _enter_filter_chain_safe_mode()
         return False
@@ -601,7 +665,8 @@ def _active_conf_8ch(
     if smart_volume and smart_volume.get("enabled"):
         # Correctif 4 (issue #88): guard LADSPA node behind plugin availability
         # check. A missing sc4m_1916.so causes dlopen() SEGV in filter-chain.
-        if not _ladspa_plugin_available("sc4m_1916.so"):
+        _sc4m_ref = _ladspa_plugin_ref("sc4m_1916.so")
+        if not _sc4m_ref:
             _log.warning(
                 "LADSPA plugin sc4m_1916 not found — skipping Smart Volume "
                 "compressor node, feature degraded; install swh-plugins on the host"
@@ -610,7 +675,7 @@ def _active_conf_8ch(
             mode = smart_volume.get("loudness", "balanced")
             level = smart_volume.get("level", 50)
             preset = _SMART_PRESETS.get(mode, _SMART_PRESETS["balanced"])
-            node_lines.append(_sc4m_node("compressor", preset, level))
+            node_lines.append(_sc4m_node("compressor", preset, level, _sc4m_ref))
             link_lines.append(_link_to_ladspa(last_name, "compressor"))
 
     nodes_text = "\n".join(node_lines)
@@ -706,7 +771,8 @@ def _active_conf_2ch(
     _smart_vol_ladspa = False
     if smart_volume and smart_volume.get("enabled"):
         # Guard: a missing sc4m_1916.so causes dlopen() SEGV in filter-chain.
-        if not _ladspa_plugin_available("sc4m_1916.so"):
+        _sc4m_ref = _ladspa_plugin_ref("sc4m_1916.so")
+        if not _sc4m_ref:
             _log.warning(
                 "LADSPA plugin sc4m_1916 not found — skipping Smart Volume "
                 "compressor nodes, feature degraded; install swh-plugins on the host"
@@ -715,8 +781,8 @@ def _active_conf_2ch(
             mode = smart_volume.get("loudness", "balanced")
             level = smart_volume.get("level", 50)
             preset = _SMART_PRESETS.get(mode, _SMART_PRESETS["balanced"])
-            node_lines.append(_sc4m_node("comp_L", preset, level))
-            node_lines.append(_sc4m_node("comp_R", preset, level))
+            node_lines.append(_sc4m_node("comp_L", preset, level, _sc4m_ref))
+            node_lines.append(_sc4m_node("comp_R", preset, level, _sc4m_ref))
             link_lines.append(_link_to_ladspa(last_L, "comp_L"))
             link_lines.append(_link_to_ladspa(last_R, "comp_R"))
             last_L, last_R = "comp_L", "comp_R"
@@ -910,7 +976,8 @@ def generate_sonar_micro_conf(
     # Correctif 4 (issue #88): guard LADSPA node. A missing gate_1410.so causes
     # dlopen() SEGV in filter-chain; omit node gracefully if plugin not found.
     if ng.get("enabled", False):
-        if not _ladspa_plugin_available("gate_1410.so"):
+        _gate_ref = _ladspa_plugin_ref("gate_1410.so")
+        if not _gate_ref:
             _log.warning(
                 "LADSPA plugin gate_1410 not found — skipping noise gate node, "
                 "feature degraded; install swh-plugins on the host"
@@ -918,7 +985,7 @@ def generate_sonar_micro_conf(
         else:
             threshold = max(-60.0, min(-10.0, ng.get("value", -40.0)))
             node_lines.append(
-                f"                    {{ type = ladspa  name = ngate  plugin = gate_1410  label = gate\n"
+                f"                    {{ type = ladspa  name = ngate  plugin = {_gate_ref}  label = gate\n"
                 f"                      control = {{ \"Threshold (dB)\" = {threshold:.1f}"
                 f"  \"Attack (ms)\" = 5.0  \"Hold (ms)\" = 50.0  \"Decay (ms)\" = 100.0"
                 f"  \"Range (dB)\" = -90.0"
@@ -933,7 +1000,8 @@ def generate_sonar_micro_conf(
     # Correctif 4 (issue #88): guard LADSPA node. A missing librnnoise_ladspa.so
     # causes dlopen() SEGV in filter-chain; omit node gracefully if not found.
     if nc.get("enabled", False):
-        if not _ladspa_plugin_available("librnnoise_ladspa.so"):
+        _rnnoise_ref = _ladspa_plugin_ref("librnnoise_ladspa.so")
+        if not _rnnoise_ref:
             _log.warning(
                 "LADSPA plugin librnnoise_ladspa not found — skipping noise "
                 "cancellation node, feature degraded; install "
@@ -943,7 +1011,7 @@ def generate_sonar_micro_conf(
             vad_threshold = max(0.0, min(100.0, nc.get("value", 0.5) * 100))
             node_lines.append(
                 f"                    {{ type = ladspa  name = rnnoise\n"
-                f"                      plugin = librnnoise_ladspa  label = noise_suppressor_mono\n"
+                f"                      plugin = {_rnnoise_ref}  label = noise_suppressor_mono\n"
                 f"                      control = {{ \"VAD Threshold (%)\" = {vad_threshold:.1f} }} }}"
             )
             link_lines.append(_smart_link("rnnoise", True))
@@ -954,7 +1022,8 @@ def generate_sonar_micro_conf(
     # Correctif 4 (issue #88): guard LADSPA node. A missing sc4m_1916.so causes
     # dlopen() SEGV in filter-chain; omit node gracefully if plugin not found.
     if comp.get("enabled", False):
-        if not _ladspa_plugin_available("sc4m_1916.so"):
+        _comp_ref = _ladspa_plugin_ref("sc4m_1916.so")
+        if not _comp_ref:
             _log.warning(
                 "LADSPA plugin sc4m_1916 not found — skipping micro compressor "
                 "node, feature degraded; install swh-plugins on the host"
@@ -966,7 +1035,7 @@ def generate_sonar_micro_conf(
             comp_ratio = 2.0 + comp_val * 6.0           # 2:1 → 8:1
             comp_makeup = comp_val * 10.0                # 0 → 10 dB
             node_lines.append(
-                f"                    {{ type = ladspa  name = comp  plugin = sc4m_1916  label = sc4m\n"
+                f"                    {{ type = ladspa  name = comp  plugin = {_comp_ref}  label = sc4m\n"
                 f"                      control = {{ \"RMS/peak\" = 0.5"
                 f"  \"Attack time (ms)\" = 10.0  \"Release time (ms)\" = 150.0"
                 f"  \"Threshold level (dB)\" = {comp_threshold:.1f}"
@@ -1618,15 +1687,16 @@ def generate_hesuvi_conf(
     node_lines.append(f"{I}{{ type = builtin  label = mixer  name = mixR }}")
 
     # 5. Plate reverb nodes (Distance) — only if distance_pct > 0 and swh-plugins available
-    use_plate = distance_pct > 0 and _ladspa_plugin_available("plate_1423.so")
+    _plate_ref = _ladspa_plugin_ref("plate_1423.so") if distance_pct > 0 else None
+    use_plate = _plate_ref is not None
     if use_plate:
         node_lines.append(f"{I}# distance reverb (LADSPA plate — requires swh-plugins)")
         node_lines.append(
-            f'{I}{{ type = ladspa  name = plate_L  plugin = plate_1423  label = plate'
+            f'{I}{{ type = ladspa  name = plate_L  plugin = {_plate_ref}  label = plate'
             f'  control = {{ "Reverb time" = 2.5  "Damping" = 0.5  "Dry/wet mix" = {distance_wet:.2f} }} }}'
         )
         node_lines.append(
-            f'{I}{{ type = ladspa  name = plate_R  plugin = plate_1423  label = plate'
+            f'{I}{{ type = ladspa  name = plate_R  plugin = {_plate_ref}  label = plate'
             f'  control = {{ "Reverb time" = 2.5  "Damping" = 0.5  "Dry/wet mix" = {distance_wet:.2f} }} }}'
         )
 

@@ -617,20 +617,71 @@ def test_poll_filter_chain_stable_returns_false_in_crash_loop(monkeypatch):
     assert result is False
 
 
-def test_ensure_filter_chain_healthy_enters_safe_mode_when_inactive(tmp_path, monkeypatch):
-    """ensure_filter_chain_healthy() enters safe mode if filter-chain is not active."""
+def test_ensure_filter_chain_healthy_no_asm_conf_returns_true_without_action(tmp_path, monkeypatch):
+    """No ASM config exists on disk → ASM cannot have caused a crash loop.
+    Returns True immediately without calling is_active/start/restart at all
+    (adapted from PR #104's early-return, kept from the original review)."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    monkeypatch.setattr(stp, "_filter_chain_safe_mode", False)
+    monkeypatch.setattr(stp, "_SAFE_MODE_MARKER", tmp_path / "marker.json")
+    monkeypatch.setattr(stp, "_CONF_DIR", tmp_path)  # empty dir — no ASM conf files
+    monkeypatch.setattr(stp, "_CONF_DIR_DISABLED", tmp_path.parent / "fc_disabled")
+
+    with patch("arctis_sound_manager.service_control.is_active") as mock_active, \
+         patch("arctis_sound_manager.service_control.start") as mock_start, \
+         patch("arctis_sound_manager.service_control.restart") as mock_restart:
+        result = stp.ensure_filter_chain_healthy()
+
+    assert result is True
+    assert stp._filter_chain_safe_mode is False
+    mock_active.assert_not_called()
+    mock_start.assert_not_called()
+    mock_restart.assert_not_called()
+
+
+def test_ensure_filter_chain_healthy_inactive_starts_and_recovers(tmp_path, monkeypatch):
+    """Inactive filter-chain that comes back up after sc.start() (e.g. a boot
+    ordering race rather than a real crash-loop) recovers without entering
+    safe mode — the start-then-poll behaviour adapted from PR #104."""
     import arctis_sound_manager.sonar_to_pipewire as stp
     monkeypatch.setattr(stp, "_filter_chain_safe_mode", False)
     monkeypatch.setattr(stp, "_SAFE_MODE_MARKER", tmp_path / "marker.json")
     monkeypatch.setattr(stp, "_CONF_DIR", tmp_path)
     monkeypatch.setattr(stp, "_CONF_DIR_DISABLED", tmp_path.parent / "fc_disabled")
+    (tmp_path / "sonar-game-eq.conf").write_text("# dummy ASM conf")
 
     with patch("arctis_sound_manager.service_control.is_active", return_value=False), \
-         patch("arctis_sound_manager.service_control.restart", return_value=True):
+         patch("arctis_sound_manager.service_control.start", return_value=True) as mock_start, \
+         patch("arctis_sound_manager.service_control.restart") as mock_restart, \
+         patch("arctis_sound_manager.sonar_to_pipewire._poll_filter_chain_stable", return_value=True):
+        result = stp.ensure_filter_chain_healthy()
+
+    assert result is True
+    assert stp._filter_chain_safe_mode is False
+    mock_start.assert_called_once()
+    mock_restart.assert_not_called()  # safe mode never entered → no restart
+
+
+def test_ensure_filter_chain_healthy_inactive_stays_down_enters_safe_mode(tmp_path, monkeypatch):
+    """Inactive filter-chain that a start-then-poll fails to bring up is a real
+    crash-loop — still enters safe mode. The #88 protection must not be
+    weakened by the start-then-poll adaptation."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    monkeypatch.setattr(stp, "_filter_chain_safe_mode", False)
+    monkeypatch.setattr(stp, "_SAFE_MODE_MARKER", tmp_path / "marker.json")
+    monkeypatch.setattr(stp, "_CONF_DIR", tmp_path)
+    monkeypatch.setattr(stp, "_CONF_DIR_DISABLED", tmp_path.parent / "fc_disabled")
+    (tmp_path / "sonar-game-eq.conf").write_text("# dummy ASM conf")
+
+    with patch("arctis_sound_manager.service_control.is_active", return_value=False), \
+         patch("arctis_sound_manager.service_control.start", return_value=True) as mock_start, \
+         patch("arctis_sound_manager.service_control.restart", return_value=True), \
+         patch("arctis_sound_manager.sonar_to_pipewire._poll_filter_chain_stable", return_value=False):
         result = stp.ensure_filter_chain_healthy()
 
     assert result is False
     assert stp._filter_chain_safe_mode is True
+    mock_start.assert_called_once()
 
 
 def test_ensure_filter_chain_healthy_returns_true_when_healthy(tmp_path, monkeypatch):
@@ -639,6 +690,9 @@ def test_ensure_filter_chain_healthy_returns_true_when_healthy(tmp_path, monkeyp
     import arctis_sound_manager.sonar_to_pipewire as stp
     monkeypatch.setattr(stp, "_filter_chain_safe_mode", False)
     monkeypatch.setattr(stp, "_SAFE_MODE_MARKER", tmp_path / "marker.json")
+    monkeypatch.setattr(stp, "_CONF_DIR", tmp_path)
+    monkeypatch.setattr(stp, "_CONF_DIR_DISABLED", tmp_path.parent / "fc_disabled")
+    (tmp_path / "sonar-game-eq.conf").write_text("# dummy ASM conf")
 
     with patch("arctis_sound_manager.service_control.is_active", return_value=True), \
          patch("arctis_sound_manager.init_system.detect_init", return_value="unknown"):
@@ -657,6 +711,7 @@ def test_ensure_filter_chain_healthy_enters_safe_mode_on_high_nrestarts(tmp_path
     monkeypatch.setattr(stp, "_SAFE_MODE_MARKER", tmp_path / "marker.json")
     monkeypatch.setattr(stp, "_CONF_DIR", tmp_path)
     monkeypatch.setattr(stp, "_CONF_DIR_DISABLED", tmp_path.parent / "fc_disabled")
+    (tmp_path / "sonar-game-eq.conf").write_text("# dummy ASM conf")
 
     mock_result = type("R", (), {"stdout": "NRestarts=5\n", "returncode": 0})()
 
@@ -756,6 +811,12 @@ def test_flap_window_is_60_seconds():
 
 
 # ── Correctif 4 — LADSPA guards ───────────────────────────────────────────────
+#
+# _ladspa_plugin_available() is now a boolean wrapper around
+# _ladspa_plugin_ref(), which itself resolves through
+# system_deps_checker._find_ladspa_plugin() (the single source of truth,
+# v1.1.89) — so tests patch that function (and, for container-path tests,
+# bug_reporter._detect_container_env), not a plugin-generator-local stub.
 
 
 def test_ladspa_sc4m_absent_skips_smart_volume_8ch():
@@ -766,15 +827,15 @@ def test_ladspa_sc4m_absent_skips_smart_volume_8ch():
     bands = [("bq0", EqBand(freq=1000, gain=3.0, q=0.7, type="peakingEQ", enabled=True))]
     smart_volume = {"enabled": True, "loudness": "balanced", "level": 50}
 
-    with patch("arctis_sound_manager.sonar_to_pipewire._ladspa_plugin_available",
-               return_value=False):
+    with patch("arctis_sound_manager.system_deps_checker._find_ladspa_plugin",
+               return_value=None):
         text = _active_conf_8ch(
             "game", "effect_input.sonar-game-eq", "effect_input.virtual-surround",
             "FL FR FC LFE RL RR SL SR", bands, [], [], 0.0, smart_volume,
         )
 
     # Smart volume LADSPA node must be absent
-    assert "sc4m_1916" not in text
+    assert "sc4m" not in text
     assert "compressor" not in text
 
 
@@ -787,14 +848,14 @@ def test_ladspa_sc4m_absent_skips_smart_volume_2ch():
     bands = [("bq0", EqBand(freq=1000, gain=3.0, q=0.7, type="peakingEQ", enabled=True))]
     smart_volume = {"enabled": True, "loudness": "balanced", "level": 50}
 
-    with patch("arctis_sound_manager.sonar_to_pipewire._ladspa_plugin_available",
-               return_value=False):
+    with patch("arctis_sound_manager.system_deps_checker._find_ladspa_plugin",
+               return_value=None):
         text = _active_conf_2ch(
             "chat", "effect_input.sonar-chat-eq", "alsa_output.test",
             "FL FR", bands, [], [], 0.0, smart_volume,
         )
 
-    assert "sc4m_1916" not in text
+    assert "sc4m" not in text
     assert "comp_L" not in text
     # Output port must use builtin "Out", not LADSPA "Output"
     assert ":Out\"" in text
@@ -807,8 +868,8 @@ def test_ladspa_gate_absent_skips_noise_gate():
 
     noise_reduction = {"noiseGate": {"enabled": True, "value": -40.0}}
 
-    with patch("arctis_sound_manager.sonar_to_pipewire._ladspa_plugin_available",
-               return_value=False):
+    with patch("arctis_sound_manager.system_deps_checker._find_ladspa_plugin",
+               return_value=None):
         text = generate_sonar_micro_conf(
             [], 0.0, 0.0, 0.0,
             output_path=Path("/dev/null"),
@@ -825,8 +886,8 @@ def test_ladspa_rnnoise_absent_skips_noise_cancellation():
 
     noise_canceling = {"enabled": True, "value": 0.5}
 
-    with patch("arctis_sound_manager.sonar_to_pipewire._ladspa_plugin_available",
-               return_value=False):
+    with patch("arctis_sound_manager.system_deps_checker._find_ladspa_plugin",
+               return_value=None):
         text = generate_sonar_micro_conf(
             [], 0.0, 0.0, 0.0,
             output_path=Path("/dev/null"),
@@ -837,21 +898,72 @@ def test_ladspa_rnnoise_absent_skips_noise_cancellation():
     assert "rnnoise" not in text
 
 
-def test_ladspa_all_available_includes_nodes():
-    """When all LADSPA plugins are available, smart volume and micro processing
-    nodes ARE included in the generated configs."""
+def test_ladspa_all_available_includes_nodes_with_absolute_path():
+    """When all LADSPA plugins are available natively, smart volume and micro
+    processing nodes ARE included in the generated configs, using the
+    absolute path resolved by _find_ladspa_plugin (not the bare name) —
+    issue #88-adjacent Fedora LADSPA_PATH fix, adapted from PR #104."""
     from arctis_sound_manager.eq_types import EqBand
     from arctis_sound_manager.sonar_to_pipewire import _active_conf_8ch
 
     bands = [("bq0", EqBand(freq=1000, gain=3.0, q=0.7, type="peakingEQ", enabled=True))]
     smart_volume = {"enabled": True, "loudness": "balanced", "level": 50}
 
-    with patch("arctis_sound_manager.sonar_to_pipewire._ladspa_plugin_available",
-               return_value=True):
+    with patch("arctis_sound_manager.system_deps_checker._find_ladspa_plugin",
+               return_value="/usr/lib64/ladspa/sc4m_1916.so"), \
+         patch("arctis_sound_manager.bug_reporter._detect_container_env",
+               return_value="native"):
         text = _active_conf_8ch(
             "game", "effect_input.sonar-game-eq", "effect_input.virtual-surround",
             "FL FR FC LFE RL RR SL SR", bands, [], [], 0.0, smart_volume,
         )
 
-    assert "sc4m_1916" in text
+    assert "/usr/lib64/ladspa/sc4m_1916.so" in text
     assert "compressor" in text
+
+
+def test_ladspa_ref_native_keeps_absolute_path():
+    """Native (no container) — _ladspa_plugin_ref() always keeps the absolute
+    path; there is no host/container filesystem mismatch to worry about."""
+    from arctis_sound_manager.sonar_to_pipewire import _ladspa_plugin_ref
+
+    with patch("arctis_sound_manager.system_deps_checker._find_ladspa_plugin",
+               return_value="/usr/lib64/ladspa/sc4m_1916.so"), \
+         patch("arctis_sound_manager.bug_reporter._detect_container_env",
+               return_value="native"):
+        ref = _ladspa_plugin_ref("sc4m_1916.so")
+
+    assert ref == "/usr/lib64/ladspa/sc4m_1916.so"
+
+
+def test_ladspa_ref_container_system_path_falls_back_to_bare_name():
+    """Distrobox/Flatpak + a system-wide plugin path (e.g. /usr/lib64/ladspa/)
+    is NOT guaranteed to exist on the HOST, where filter-chain actually runs
+    — _ladspa_plugin_ref() must fall back to the bare plugin name so the
+    host's own filter-chain resolves it via its own search path (issue #88
+    distrobox risk identified in PR #104 review)."""
+    from arctis_sound_manager.sonar_to_pipewire import _ladspa_plugin_ref
+
+    with patch("arctis_sound_manager.system_deps_checker._find_ladspa_plugin",
+               return_value="/usr/lib64/ladspa/sc4m_1916.so"), \
+         patch("arctis_sound_manager.bug_reporter._detect_container_env",
+               return_value="distrobox (container=distrobox, CONTAINER_ID=?)"):
+        ref = _ladspa_plugin_ref("sc4m_1916.so")
+
+    assert ref == "sc4m_1916"
+
+
+def test_ladspa_ref_container_home_path_keeps_absolute():
+    """Distrobox/Flatpak + a plugin under ~/.ladspa is safe to keep as an
+    absolute path: HOME is bind-mounted into the container, so the host sees
+    the exact same file at the exact same path."""
+    from arctis_sound_manager.sonar_to_pipewire import _ladspa_plugin_ref
+
+    home_plugin = str(Path.home() / ".ladspa" / "sc4m_1916.so")
+    with patch("arctis_sound_manager.system_deps_checker._find_ladspa_plugin",
+               return_value=home_plugin), \
+         patch("arctis_sound_manager.bug_reporter._detect_container_env",
+               return_value="distrobox (container=distrobox, CONTAINER_ID=?)"):
+        ref = _ladspa_plugin_ref("sc4m_1916.so")
+
+    assert ref == home_plugin
