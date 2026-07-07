@@ -15,6 +15,14 @@ from arctis_sound_manager.gui.qt_widgets.q_dual_state import QDualState
 import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.i18n import I18n
 
+# options_source values whose backing list can change while the app is
+# running (external DACs / USB sound cards plugged in after startup,
+# PulseAudio/PipeWire sinks appearing or disappearing). The daemon side
+# (dbus_service.get_list_options) recomputes these fresh on every call, so
+# re-requesting them each time the panel becomes visible is enough to pick
+# up devices attached after the initial load (#106).
+_REFRESHABLE_OPTION_SOURCES = frozenset({'external_audio_devices', 'pulse_audio_devices'})
+
 
 class QSettingsWidget(QWidget):
     sig_list_received = Signal(object)
@@ -54,7 +62,26 @@ class QSettingsWidget(QWidget):
         self.sig_list_received.connect(self.on_options_list_received)
 
         self.refresh_lock = Lock()
-    
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._refresh_device_option_lists()
+
+    def _refresh_device_option_lists(self):
+        # Re-fetch the volatile option lists (external output device,
+        # redirect-on-disconnect device) every time the panel is (re)shown,
+        # instead of relying solely on the startup cache in update_settings.
+        # on_options_list_received() refreshes _option_lists and calls
+        # refresh_panel(), which rebuilds each SELECT widget from the
+        # current self.settings value, so the user's existing selection is
+        # preserved even if the underlying list changed (#106).
+        settings_config = getattr(self, 'settings_config', None)
+        if not settings_config:
+            return
+        for config in settings_config.values():
+            if config.type == SettingType.SELECT and getattr(config, 'options_source', None) in _REFRESHABLE_OPTION_SOURCES:
+                DbusWrapper.request_list_options(config.options_source, self.sig_list_received)
+
     def on_options_list_received(self, option_list: dict[str, str|list[dict[str, str]]]):
         name = option_list['name']
         lst = option_list['list']
