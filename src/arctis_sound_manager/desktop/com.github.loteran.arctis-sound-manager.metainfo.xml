@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.90" date="2026-07-07">
+      <description>
+        <p>Arctis Nova Elite is now recognised when the PC is on the GameHub's rear USB ports 2/3 — in that wiring the base station enumerates with product id 0x2246 instead of 0x2244, which ASM did not know about. (#110). The external output device list refreshes when you open the settings panel — a device plugged in after ASM started now appears without restarting the app, instead of being stuck with the list captured at launch. (#106). Rhythmic crackle / growing xruns on Arctis Nova Pro Wireless. The headset's USB playback endpoint is synchronous (no clock feedback), so the loopback clock drifts against the free-running USB clock and the default ALSA headroom is too small to absorb it. ASM now raises api.alsa.headroom on this device automatically (via a WirePlumber drop-in it only rewrites when it changes), eliminating the crackle out of the box. (#105).</p>
+      </description>
+    </release>
     <release version="1.1.89" date="2026-07-03">
       <description>
         <p>ASM could crash when the "update available" dialog was closed quickly — the "Copy command" button scheduled a 2-second timer to reset its label, and if the dialog was dismissed before it fired the timer touched an already-deleted Qt button, raising libshiboken: Internal C++ object already deleted. Every such timer is now bound to its widget's lifetime and cancelled when the dialog closes. (#100). Endless loopback relink/recreate loop on WirePlumber 0.5.x (Nova Elite, Distrobox / Steam Deck). WirePlumber's restore-stream could re-pin a virtual-channel loopback (Game / Chat / Media) to the physical headset output on every recreate; the watchdog then fought it in a tight loop, restarting the filter-chain over and over. The loopbacks now opt out of target restoration (state.restore-target=false), and the bug report surfaces any stored Arctis targets so a stale one can be spotted and cleared. (#100). LADSPA plugin detection now works on read-only-rootfs distros (SteamOS / Steam Deck). ASM now searches LADSPA_PATH and ~/.ladspa — the only place a user can add plugins when /usr is immutable — alongside the system directories, so it no longer reports a plugin as missing when the filter-chain can actually load it. The blocking dependency check also verifies the Smart Volume (sc4m_1916) and mic noise-gate (gate_1410) plugins, not just the reverb one, since all three ship in the same package and a single missing .so can crash the whole filter-chain. (#88).</p>
@@ -199,11 +204,6 @@
     <release version="1.1.61" date="2026-06-08">
       <description>
         <p>Automatic Sonar preset sync — ASM now downloads new SteelSeries Sonar presets automatically at startup (once per 24 h). A  lists all official presets; the new  fetches it, detects missing presets, and downloads them silently in background to . 3 new Sonar game presets: Forza Horizon 6, Lineage 2, Deep Rock Galactic: Rogue Core. GitHub Action —  auto-regenerates  whenever preset files are pushed to  or .</p>
-      </description>
-    </release>
-    <release version="1.1.60" date="2026-06-08">
-      <description>
-        <p>Fedora COPR install failed with a python3-dbus-next file conflict — the RPM bundled the dbus_next module, which collides with Fedora's own python3-dbus-next package (shipped since F40). ASM now bundles dbus-next only on distros whose repos don't provide it, and depends on the system package otherwise: Fedora ≥ 40 use python3-dbus-next, older Fedora still bundle, and the Debian/Ubuntu build auto-detects availability per series. (#73)</p>
       </description>
     </release>
   </releases>
