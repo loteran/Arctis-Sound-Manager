@@ -23,6 +23,9 @@ def test_config_parse():
 
     assert config.command_interface_index == [4, 0]
     assert config.listen_interface_indexes == [4]
+
+    # issue #105 — USB SYNC endpoint crackle quirk
+    assert config.alsa_headroom == 4096
     
     assert config.command_padding.length == 64
     assert config.command_padding.position == PaddingPosition.END
@@ -97,3 +100,31 @@ def test_ConfigStatusResponseMapping_get_status_values():
 
     assert status.get('status1', None) == 0x10
     assert status.get('status2', None) == 0x11
+
+
+def test_nova_elite_product_ids_include_issue_110_pid():
+    """issue #110: the GameHub reports PID 0x2246 when the PC is on USB ports
+    2/3. Udev is not hardcoded anywhere for this — udev_rules.py reads
+    product_ids straight from this YAML (single source of truth)."""
+    config_path = Path(__file__).parent.parent / 'src' / 'arctis_sound_manager' / 'devices' / 'nova_elite.yaml'
+    yaml = YAML(typ='safe')
+    config = DeviceConfiguration(yaml.load(config_path))
+
+    assert config.name == "SteelSeries Arctis Nova Elite"
+    for expected_pid in (0x2244, 0x2246, 0x2249, 0x2270):
+        assert expected_pid in config.product_ids, (
+            f"Expected PID {hex(expected_pid)} in Nova Elite product_ids, got "
+            f"{[hex(p) for p in config.product_ids]}"
+        )
+    # 0x2247 (XBOX mode) is explicitly NOT supported yet — protocol unconfirmed.
+    assert 0x2247 not in config.product_ids
+
+
+def test_config_alsa_headroom_defaults_to_none():
+    """Devices without an 'alsa_headroom' YAML key (the common case) must not
+    get a WirePlumber quirk fragment written for them."""
+    config_path = Path(__file__).parent.parent / 'src' / 'arctis_sound_manager' / 'devices' / 'nova_elite.yaml'
+    yaml = YAML(typ='safe')
+    config = DeviceConfiguration(yaml.load(config_path))
+
+    assert config.alsa_headroom is None

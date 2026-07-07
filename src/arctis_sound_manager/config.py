@@ -168,6 +168,8 @@ class DeviceConfiguration:
     online_status: OnlineStatusConfig | None
     settings: dict[str, list[ConfigSetting]]
     oled: OledConfig | None  # None for screenless devices
+    spatial_engine: str
+    alsa_headroom: int | None  # None unless the device YAML declares a quirk (issue #105)
 
     def __init__(self, raw_configuration: dict[str, Any]):
         raw_config: dict[str, Any] | None = raw_configuration.get('device', None)
@@ -238,6 +240,12 @@ class DeviceConfiguration:
 
         raw_audio = raw_config.get('audio', {})
         self.spatial_engine: str = raw_audio.get('spatial_engine', 'hesuvi')
+
+        # Optional per-device WirePlumber ALSA headroom quirk (issue #105 —
+        # Nova Pro Wireless USB SYNC endpoint crackle). None for devices that
+        # don't declare it (the common case): pw_quirks.apply_alsa_headroom_quirk
+        # then removes any stale fragment instead of writing one.
+        self.alsa_headroom: int | None = raw_config.get('alsa_headroom', None)
 
         raw_oled = raw_config.get('oled', None)
         if raw_oled is not None:

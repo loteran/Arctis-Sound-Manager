@@ -6,8 +6,12 @@ device:
   vendor_id: 0x1038
   product_ids:
     - 0x2244 # SteelSeries Arctis Nova Elite GameHub (vendor HID)
+    - 0x2246 # SteelSeries Arctis Nova Elite GameHub USB ports 2/3 (PC on ports 2&3) — confirmed via lsusb, issue #110
     - 0x2249 # SteelSeries Arctis Nova Elite secondary HID (ASM addition)
     - 0x2270 # SteelSeries Arctis Nova Elite (Sage & Gold colorway) — confirmed via lsusb capture, issue #101
+    # 0x2247 (XBOX mode) intentionally NOT added: reporter confirms it doesn't
+    # work with the current protocol; needs a USB capture before it can be
+    # supported (issue #110).
 
   command_padding:
     length: 64

@@ -832,6 +832,17 @@ class CoreEngine:
     def on_device_connected(self, vendor_id: int, product_id: int) -> None:
         for device_config in self.device_configurations:
             if device_config.vendor_id == vendor_id and product_id in device_config.product_ids:
+                if self._detect_lock.locked():
+                    # A detection is already in progress (e.g. a burst of udev
+                    # 'add' events for the same device) — skip this one instead
+                    # of blocking on the lock, which would call
+                    # configure_virtual_sinks() again right after the running
+                    # one finishes and re-release the just-claimed USB handle
+                    # (EBUSY window). If this event turns out to have been
+                    # needed, the periodic _rescan_for_device() retry catches
+                    # it (issue #90-adjacent, adapted from PR #104).
+                    self.logger.debug("on_device_connected: detection already in progress, skipping")
+                    return
                 self.configure_virtual_sinks()
                 return
 
@@ -926,6 +937,16 @@ class CoreEngine:
                 self.device_config = device_config
                 self.device_status = self.new_device_status()
                 self.device_settings = DeviceSettings(self.usb_device.idVendor, self.usb_device.idProduct)
+
+            # Apply (or clean up) per-device WirePlumber quirks now that the config
+            # is resolved — e.g. the ALSA headroom fix for the Nova Pro Wireless USB
+            # SYNC endpoint crackle (issue #105). No-op if the device YAML doesn't
+            # declare alsa_headroom, or if the fragment on disk is already correct.
+            try:
+                from arctis_sound_manager.pw_quirks import apply_alsa_headroom_quirk
+                apply_alsa_headroom_quirk(self.device_config)
+            except Exception as e:
+                self.logger.warning(f"Failed to apply WirePlumber ALSA headroom quirk: {e!r}")
 
             # Load defaults
             for _, section in self.device_config.settings.items():

@@ -130,6 +130,13 @@ device:
   audio:
     spatial_engine: hesuvi
 
+  # WirePlumber ALSA headroom quirk (issue #105): this device's USB playback
+  # SYNC endpoint has no explicit feedback, which causes audible crackle on
+  # some systems. Forcing api.alsa.headroom compensates for the missing
+  # feedback. 4096 frames ≈ +85 ms of latency — only set this on devices with
+  # a confirmed report of the crackle, not by default on every headset.
+  alsa_headroom: 4096
+
   # OLED screen transport parameters — explicit values keep the config
   # self-documenting and let oled_manager.py fall back cleanly for devices
   # that omit this section.
