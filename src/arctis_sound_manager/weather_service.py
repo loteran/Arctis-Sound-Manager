@@ -101,8 +101,9 @@ class WeatherService:
             "forecast_days": 1,
         })
         url = f"{_OPENMETEO_URL}?{params}"
+        req = urllib.request.Request(url, headers={"User-Agent": "ArctisWeather/1.0"})
         try:
-            with urllib.request.urlopen(url, timeout=_TIMEOUT) as resp:
+            with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
                 data = json.loads(resp.read())
             current = data.get("current", {})
             temp = round(float(current.get("temperature_2m", 0)), 1)

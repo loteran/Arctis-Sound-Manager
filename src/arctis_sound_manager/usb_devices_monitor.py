@@ -51,6 +51,7 @@ class USBDevicesMonitor:
         self.context = None
         self.monitor = None
         self._poll_thread: threading.Thread | None = None
+        self._observer: 'pyudev.MonitorObserver | None' = None
         self._known_devices: set[tuple[int, int]] = set()
 
         if _PYUDEV_AVAILABLE:
@@ -83,12 +84,12 @@ class USBDevicesMonitor:
     def start(self):
         self.logger.info(f"Starting USB devices monitor (backend={self._backend})...")
         if self._backend == 'pyudev' and self.monitor is not None:
-            observer = pyudev.MonitorObserver(
+            self._observer = pyudev.MonitorObserver(
                 self.monitor,
                 callback=self._on_event,
                 name='usb-monitor',
             )
-            observer.start()
+            self._observer.start()
         elif self._backend == 'polling':
             self._poll_thread = threading.Thread(
                 target=self._poll_loop, name='usb-poll-monitor', daemon=True,
@@ -104,6 +105,16 @@ class USBDevicesMonitor:
     def stop(self):
         self.logger.info("Stopping USB devices monitor...")
         self._stopping = True
+        if self._observer is not None:
+            # The MonitorObserver thread was previously never stopped — a fresh
+            # thread leaked every time the monitor was (re)started (e.g. daemon
+            # reload), since register_on_disconnect()'s stop() only flipped
+            # _stopping and never touched the observer thread itself.
+            try:
+                self._observer.stop()
+            except Exception as e:
+                self.logger.warning(f"Failed to stop pyudev MonitorObserver: {e!r}")
+            self._observer = None
 
     def _on_event(self, device):
         if device.device_type != 'usb_device':
