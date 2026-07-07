@@ -24,6 +24,35 @@ _EFFECT_REMAP = {
     "effect_input.sonar-media-eq": "Arctis_Media",
 }
 
+# application.name is often a generic audio-engine label shared by several
+# unrelated Electron apps (e.g. Vesktop and Pear Desktop both report
+# "Chromium") rather than the actual program name. Keep in sync with
+# gui/home_page.py HomePage._GENERIC_APP_NAMES, which drives the same
+# disambiguation for the GUI's app tags.
+_GENERIC_APP_NAMES = {
+    "WEBRTC VoiceEngine", "AudioStream", "Playback", "audio stream",
+    "Chromium", "cras", "libcanberra", "speech-dispatcher",
+}
+
+
+def app_override_key(name: str, binary: str) -> str:
+    """Return the dict key used to index routing overrides for a stream.
+
+    ``application.name`` alone is not a reliable identity for apps that
+    report a generic audio-engine label (issue #108): two unrelated Electron
+    apps (e.g. Vesktop and Pear Desktop) can both set ``application.name`` to
+    "Chromium", so keying overrides on that name alone made the router treat
+    them as a single app and bounce them between each other's targets.
+
+    When *name* is one of those generic names and *binary* is known, return a
+    composite ``"name|binary"`` key so each app gets its own override entry.
+    Otherwise return *name* unchanged — this is also the legacy key format
+    already used in ``routing_overrides.json`` for every non-generic app.
+    """
+    if name in _GENERIC_APP_NAMES and binary:
+        return f"{name}|{binary}"
+    return name
+
 
 def _load_overrides() -> dict:
     if OVERRIDES_FILE.exists():
@@ -95,36 +124,45 @@ def reapply_routing_overrides(timeout_s: float = 6.0) -> int:
             name_to_index = {s.name: s.index for s in sinks}
             sink_inputs = pulse.sink_input_list()
 
-            for app_name, sink_name in overrides.items():
+            for app_key, sink_name in overrides.items():
                 target_name = _EFFECT_REMAP.get(sink_name, sink_name)
                 target_idx = name_to_index.get(target_name)
                 if target_idx is None:
                     logger.warning(
                         "Override target '%s' for '%s' not found — skipping",
-                        target_name, app_name,
+                        target_name, app_key,
                     )
                     continue
+                # Composite key (issue #108): "name|binary" disambiguates apps
+                # that share a generic application.name (e.g. two "Chromium"
+                # Electron apps). Legacy keys (no "|") have no binary part.
+                app_name, sep, app_binary = app_key.partition("|")
                 for si in sink_inputs:
-                    # Match on application.name first; fall back to
-                    # application.process.binary for Electron apps (Discord,
-                    # Slack, …) that set application.name to their internal
-                    # WebRTC node name rather than the product name.
                     si_app = si.proplist.get("application.name", "")
                     si_binary = si.proplist.get("application.process.binary", "")
-                    if si_app != app_name and si_binary != app_name:
-                        continue
+                    if sep:
+                        if si_app != app_name or (app_binary and si_binary != app_binary):
+                            continue
+                    else:
+                        # Match on application.name first; fall back to
+                        # application.process.binary for Electron apps
+                        # (Discord, Slack, …) that set application.name to
+                        # their internal WebRTC node name rather than the
+                        # product name.
+                        if si_app != app_key and si_binary != app_key:
+                            continue
                     if si.sink == target_idx:
                         continue
                     try:
                         pulse.sink_input_move(si.index, target_idx)
                         moved += 1
                         logger.info(
-                            "Reapplied override: '%s' -> %s", app_name, target_name,
+                            "Reapplied override: '%s' -> %s", app_key, target_name,
                         )
                     except Exception as exc:
                         logger.warning(
                             "Failed to move '%s' -> %s: %s",
-                            app_name, target_name, exc,
+                            app_key, target_name, exc,
                         )
     except Exception as exc:
         logger.warning("reapply_routing_overrides failed: %s", exc)

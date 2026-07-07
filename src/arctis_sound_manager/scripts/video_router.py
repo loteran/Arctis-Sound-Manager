@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pulsectl
 
-from arctis_sound_manager.pw_utils import get_native_streams, move_native_stream
+from arctis_sound_manager.pw_utils import app_override_key, get_native_streams, move_native_stream
 
 from arctis_sound_manager.log_setup import configure_logging
 configure_logging(default=logging.INFO, fmt="[%(levelname)s] %(message)s")
@@ -72,11 +72,13 @@ def _auto_route(app: str, proplist: dict) -> str | None:
         return "Arctis_Chat"
     return None
 
-# Tracks where the router last placed each app (PA sink index).
+# Tracks where the router last placed each app (PA sink index), keyed by
+# app_override_key() (issue #108: composite "name|binary" for apps that
+# share a generic application.name, plain name otherwise).
 # Used to detect manual moves done outside the router (e.g. KDE audio mixer).
 _pa_placed: dict[str, int] = {}
 
-# Same for native PipeWire streams (sink node name).
+# Same for native PipeWire streams (sink node name), same keying.
 _native_placed: dict[str, str] = {}
 
 # Anti-flap guard (issue #102): WirePlumber can bounce a stream between the
@@ -99,6 +101,76 @@ def _is_flapping(app: str, now: float | None = None) -> bool:
     times.append(now)
     _move_times[app] = times
     return len(times) >= _FLAP_THRESHOLD
+
+
+# Stability gate (issue #102, residual gap): _FLAP_THRESHOLD only catches a
+# move once it has recurred >= 3 times within _FLAP_WINDOW, so the first one
+# or two WirePlumber-induced flips in a burst used to be saved as overrides
+# immediately, before the anti-flap guard had a chance to arm. A detected
+# move is now only persisted once it has remained on the same target for
+# _STABILITY_DELAY seconds without being displaced again.
+_STABILITY_DELAY = 2.0  # seconds
+_pending_moves: dict[str, tuple[str, float]] = {}
+
+
+def _confirm_manual_move(
+    key: str, app: str, save_name: str, overrides: dict, now: float | None = None,
+) -> bool:
+    """Handle a detected drift of *app* away from its last known placement.
+
+    Returns True when the caller should treat *key*'s tracked placement as
+    settled at the new sink — either because the override was just written,
+    or because the move was classified as noise (WirePlumber restoring its
+    own preference, or flapping) and should not be re-evaluated every tick.
+    Returns False when the move is still an unconfirmed candidate: the
+    caller must leave its placement tracking untouched so the discrepancy is
+    detected again on the next tick and re-checked for stability.
+    """
+    if now is None:
+        now = time.monotonic()
+
+    pending = _pending_moves.get(key)
+    if pending is not None and pending[0] == save_name:
+        # Same candidate as the previous tick(s) — not a new move, just
+        # check whether it has now been stable long enough to persist.
+        if now - pending[1] >= _STABILITY_DELAY:
+            log.info("Manual move detected: '%s' -> %s (saving override)", app, save_name)
+            overrides[key] = save_name
+            save_overrides(overrides)
+            _pending_moves.pop(key, None)
+            return True
+        return False
+
+    # A genuinely new move (no pending candidate, or a different target).
+    if _is_physical_arctis(save_name):
+        # WirePlumber restoring its target.object preference — not a user
+        # move, do not save and drop any stale pending candidate.
+        log.debug("Ignoring WirePlumber move of '%s' -> %s", app, save_name)
+        _pending_moves.pop(key, None)
+        return True
+    if _is_flapping(key, now=now):
+        # WirePlumber bouncing the stream between sinks — keep the existing
+        # override, the enforcement pass below will move the stream back.
+        log.info("Anti-flap: ignoring move of '%s' -> %s (override kept)", app, save_name)
+        _pending_moves.pop(key, None)
+        return True
+    log.debug("Manual move candidate: '%s' -> %s (awaiting stability)", app, save_name)
+    _pending_moves[key] = (save_name, now)
+    return False
+
+
+def _lookup_override(overrides: dict, key: str, app: str) -> str | None:
+    """Look up a saved override target: composite key first (issue #108),
+    then the legacy (name-only) key for entries written before that fix.
+
+    For non-generic apps *key* and *app* are identical, so the legacy lookup
+    is a harmless no-op.
+    """
+    if key in overrides:
+        return overrides[key]
+    if app != key:
+        return overrides.get(app)
+    return None
 
 
 def load_overrides() -> dict:
@@ -221,6 +293,7 @@ def _main_loop():
                 _pa_placed.clear()
                 _native_placed.clear()
                 _move_times.clear()
+                _pending_moves.clear()
                 continue
 
             overrides = load_overrides()
@@ -229,34 +302,41 @@ def _main_loop():
             sink_idx_to_name = {s.index: s.name for s in sinks}
 
             # ── PulseAudio streams ────────────────────────────────────────────
+            pa_now = time.monotonic()
             for si in sink_inputs:
                 app = si.proplist.get("application.name", "")
                 if not app:
                     continue
+                # Composite key (issue #108): disambiguates apps that share a
+                # generic application.name such as "Chromium".
+                key = app_override_key(app, si.proplist.get("application.process.binary", ""))
 
                 # Detect manual move: app was placed by router but is now elsewhere
-                if app in _pa_placed and si.sink != _pa_placed[app]:
+                if key in _pa_placed and si.sink != _pa_placed[key]:
                     current_name = _sink_name(sinks, si.sink)
                     if current_name:
                         # Never save effect_input sinks as overrides
                         save_name = _EFFECT_REMAP.get(current_name, current_name)
-                        if _is_physical_arctis(save_name):
-                            # WirePlumber restoring its target.object preference —
-                            # not a user move, do not overwrite the virtual-channel override.
-                            log.debug("Ignoring WirePlumber move of '%s' -> %s", app, save_name)
-                        elif _is_flapping(app):
-                            # WirePlumber bouncing the stream between sinks —
-                            # keep the existing override, the enforcement pass
-                            # below will move the stream back (issue #102).
-                            log.info("Anti-flap: ignoring move of '%s' -> %s (override kept)", app, save_name)
-                        else:
-                            log.info("Manual move detected: '%s' -> %s (saving override)", app, save_name)
-                            overrides[app] = save_name
-                            save_overrides(overrides)
-                    _pa_placed[app] = si.sink
+                        if _confirm_manual_move(key, app, save_name, overrides, now=pa_now):
+                            _pa_placed[key] = si.sink
+                        # else: still an unconfirmed candidate (issue #102) —
+                        # leave the tracked placement stale so the next tick
+                        # re-checks it for stability.
+                    else:
+                        _pa_placed[key] = si.sink
+                elif key in _pa_placed:
+                    # No drift this tick — invalidate any stale pending candidate.
+                    _pending_moves.pop(key, None)
+
+                if key in _pending_moves:
+                    # Awaiting stability confirmation (issue #102): do not let
+                    # enforcement or auto-route fight the pending manual move.
+                    continue
+
+                wanted = _lookup_override(overrides, key, app)
 
                 # Auto-route new apps that have no override yet
-                if app not in overrides:
+                if wanted is None:
                     auto = _auto_route(app, si.proplist)
                     if not auto:
                         # Fallback adoption (issue #20): when Arctis is default
@@ -279,18 +359,18 @@ def _main_loop():
                             )
                     if auto:
                         log.info("Auto-route: '%s' -> %s", app, auto)
-                        overrides[app] = auto
+                        overrides[key] = auto
                         save_overrides(overrides)
+                        wanted = auto
 
-                if app in overrides:
-                    wanted_sink_name = overrides[app]
-                    wanted_index = sink_map.get(wanted_sink_name)
+                if wanted is not None:
+                    wanted_index = sink_map.get(wanted)
                     if wanted_index is not None and si.sink != wanted_index:
-                        log.info("Override: moving '%s' -> %s", app, wanted_sink_name)
+                        log.info("Override: moving '%s' -> %s", app, wanted)
                         pulse.sink_input_move(si.index, wanted_index)
-                        _pa_placed[app] = wanted_index
+                        _pa_placed[key] = wanted_index
                     else:
-                        _pa_placed[app] = si.sink
+                        _pa_placed[key] = si.sink
                 else:
                     # App we neither auto-route nor have an override for (e.g. a
                     # browser not in _BROWSER_APPS that already sits on an Arctis
@@ -298,7 +378,7 @@ def _main_loop():
                     # move (KDE mixer → another channel) is detected next tick and
                     # saved as an override. Without this the move is never seen and
                     # the channel choice is "forgotten" (issue #64).
-                    _pa_placed[app] = si.sink
+                    _pa_placed[key] = si.sink
 
             # ── Native PipeWire streams (mpv, haruna…) ────────────────────────
             # pw-dump is expensive — only run every NATIVE_INTERVAL seconds
@@ -310,26 +390,34 @@ def _main_loop():
             native_streams = get_native_streams()
             for s in native_streams:
                 app = s["app_name"]
+                binary = s.get("props", {}).get("application.process.binary", "")
+                key = app_override_key(app, binary)
 
                 # Detect manual move for native streams
-                if app in _native_placed:
-                    placed = _native_placed[app]
+                if key in _native_placed:
+                    placed = _native_placed[key]
                     current = s["sink_name"]
                     if current and current != placed:
                         # Never save effect_input sinks as overrides
                         save_name = _EFFECT_REMAP.get(current, current)
-                        if _is_physical_arctis(save_name):
-                            log.debug("Ignoring WirePlumber move (native) of '%s' -> %s", app, save_name)
-                        elif _is_flapping(app):
-                            log.info("Anti-flap (native): ignoring move of '%s' -> %s (override kept)", app, save_name)
-                        else:
-                            log.info("Manual move detected (native): '%s' -> %s (saving override)", app, save_name)
-                            overrides[app] = save_name
-                            save_overrides(overrides)
-                        _native_placed[app] = current
+                        if _confirm_manual_move(key, app, save_name, overrides, now=now):
+                            _native_placed[key] = current
+                        # else: still an unconfirmed candidate (issue #102) —
+                        # leave the tracked placement stale so the next check
+                        # re-evaluates it for stability.
+                    else:
+                        # No drift this tick — invalidate any stale pending candidate.
+                        _pending_moves.pop(key, None)
+
+                if key in _pending_moves:
+                    # Awaiting stability confirmation (issue #102): do not let
+                    # enforcement or auto-route fight the pending manual move.
+                    continue
+
+                wanted = _lookup_override(overrides, key, app)
 
                 # Auto-route new native apps that have no override yet
-                if app and app not in overrides:
+                if app and wanted is None:
                     auto = _auto_route(app, s.get("props", {}))
                     if not auto:
                         # Same adoption fallback as for PA streams (issue #20):
@@ -350,17 +438,17 @@ def _main_loop():
                             )
                     if auto:
                         log.info("Auto-route (native): '%s' -> %s", app, auto)
-                        overrides[app] = auto
+                        overrides[key] = auto
                         save_overrides(overrides)
+                        wanted = auto
 
-                if app in overrides:
-                    wanted = overrides[app]
+                if wanted is not None:
                     if s["sink_name"] is None or s["sink_name"] != wanted:
                         log.info("Override native: moving '%s' -> %s", app, wanted)
                         move_native_stream(s["id"], wanted)
-                        _native_placed[app] = wanted
+                        _native_placed[key] = wanted
                     else:
-                        _native_placed[app] = s["sink_name"]
+                        _native_placed[key] = s["sink_name"]
                     continue
 
             # ── Per-channel output device enforcement ─────────────────────────
@@ -378,12 +466,13 @@ def _main_loop():
                         _app = _si.proplist.get("application.name", "")
                         if not _app:
                             continue
+                        _key = app_override_key(_app, _si.proplist.get("application.process.binary", ""))
                         _current_name = sink_idx_to_name.get(_si.sink, "")
                         if _virtual_frag in _current_name and _si.sink != _target_idx:
                             log.info("Channel output: '%s' %s -> %s", _app, _current_name, _target_name)
                             try:
                                 pulse.sink_input_move(_si.index, _target_idx)
-                                _pa_placed[_app] = _target_idx
+                                _pa_placed[_key] = _target_idx
                             except Exception:
                                 pass
 
@@ -400,6 +489,7 @@ def _main_loop():
             _pa_placed.clear()
             _native_placed.clear()
             _move_times.clear()
+            _pending_moves.clear()
         except Exception as e:
             log.error("Error: %s", e)
             time.sleep(1)
