@@ -275,6 +275,41 @@ def collect_system_info() -> dict:
     except Exception:
         info['wp_restore_stream_arctis'] = ''
 
+    # Filter-chain safe mode + config presence (issue #88). Safe mode gates
+    # EQ config regeneration (sonar_to_pipewire.ensure_sonar_eq_configs): while
+    # it is armed ASM will NOT recreate missing sonar-*-eq.conf, so the EQ nodes
+    # never load and every loopback orphans on an absent target = no audio. This
+    # is invisible without surfacing the marker, so collect it plus the active
+    # and ASM-disabled config directories to tell "safe mode armed" apart from
+    # "user moved the configs away".
+    info['filter_chain_safe_mode'] = ''
+    info['filter_chain_conf_active'] = ''
+    info['filter_chain_conf_disabled'] = ''
+    try:
+        _marker = Path.home() / '.config' / 'arctis_manager' / 'filter_chain_safe_mode.json'
+        if _marker.is_file():
+            info['filter_chain_safe_mode'] = (
+                'ARMED — EQ config regeneration is suppressed\n'
+                + _marker.read_text(errors='replace').strip()
+            )
+        else:
+            info['filter_chain_safe_mode'] = 'not armed'
+    except Exception:
+        info['filter_chain_safe_mode'] = ''
+    try:
+        _cdir = Path.home() / '.config' / 'pipewire' / 'filter-chain.conf.d'
+        if _cdir.is_dir():
+            info['filter_chain_conf_active'] = '\n'.join(
+                sorted(p.name for p in _cdir.glob('*.conf'))
+            )
+        _ddir = _cdir.parent / 'filter-chain.conf.d.disabled'
+        if _ddir.is_dir():
+            info['filter_chain_conf_disabled'] = '\n'.join(
+                sorted(p.name for p in _ddir.glob('*.conf'))
+            )
+    except Exception:
+        pass
+
     # --- PipeWire runtime / container diagnostics (issue #74) ----------------
     # When ASM runs inside Distrobox/Flatpak, PipeWire is only reachable
     # through forwarded sockets. These fields show whether the sockets are
@@ -567,6 +602,44 @@ def format_bug_report(traceback_str: Optional[str] = None) -> str:
             '     restart wireplumber. -->',
             '```',
             restore_stream,
+            '```',
+            '',
+        ]
+
+    safe_mode = info.get('filter_chain_safe_mode', '')
+    active_conf = info.get('filter_chain_conf_active', '')
+    disabled_conf = info.get('filter_chain_conf_disabled', '')
+    if safe_mode or active_conf or disabled_conf:
+        # Flag the common failure: EQ nodes can't load if their .conf is not in
+        # the active dir. If any sonar-*-eq.conf is missing here, the loopbacks
+        # will orphan on an absent target and there will be no audio (#88).
+        _expected_eq = {
+            'sonar-game-eq.conf', 'sonar-chat-eq.conf',
+            'sonar-media-eq.conf', 'sonar-output-eq.conf',
+        }
+        _present = set(active_conf.splitlines())
+        _missing = sorted(_expected_eq - _present)
+        lines += [
+            '## Filter-chain safe mode & config presence',
+            '<!-- Safe mode ARMED suppresses EQ config regeneration (#88): missing',
+            '     sonar-*-eq.conf below means those EQ nodes never load and every',
+            '     loopback orphans on an absent target = no audio. Recovery: reset',
+            '     safe mode from the app (re-enables EQ), then restart the daemon. -->',
+            f'- **Safe mode**: {safe_mode or "(unknown)"}',
+        ]
+        if _missing:
+            lines.append(
+                f'- ⚠️ **Missing EQ configs (no audio on these channels)**: `{", ".join(_missing)}`'
+            )
+        lines += [
+            '',
+            '`filter-chain.conf.d/` (active):',
+            '```',
+            active_conf or '(empty — no ASM filter-chain configs loaded)',
+            '```',
+            '`filter-chain.conf.d.disabled/` (moved aside by ASM safe mode):',
+            '```',
+            disabled_conf or '(none)',
             '```',
             '',
         ]
