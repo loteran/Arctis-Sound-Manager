@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.91" date="2026-07-08">
+      <description>
+        <p>Passthrough toggle on the Output tab. You can now send audio to the external output device exactly as-is, bypassing the Output EQ profile. When enabled, the EQ curve and macro sliders are greyed out since they no longer affect anything. (#111). Two Electron apps that both report as "Chromium" (e.g. Vesktop and Pear Desktop) would not keep their channels across restarts. The GUI saved the manual routing override under the app's display name instead of the same name+binary key the router reads, so the choice never persisted deterministically. The GUI now stores overrides under the exact key the router uses. (#108). Virtual-channel loopbacks could be stolen by another output device. When a second USB DAC (or any competing sink) was present, WirePlumber kept re-routing the Game/Chat/Media loopbacks to it while the watchdog fought back — an unwinnable, hardware-specific tug-of-war. The loopbacks are now taken out of WirePlumber's routing entirely (node.autoconnect=false) and ASM owns their link to the Sonar EQ directly, so no other device can ever steal them regardless of what is plugged in. (#100).</p>
+      </description>
+    </release>
     <release version="1.1.90" date="2026-07-07">
       <description>
         <p>Arctis Nova Elite is now recognised when the PC is on the GameHub's rear USB ports 2/3 — in that wiring the base station enumerates with product id 0x2246 instead of 0x2244, which ASM did not know about. (#110). The external output device list refreshes when you open the settings panel — a device plugged in after ASM started now appears without restarting the app, instead of being stuck with the list captured at launch. (#106). Rhythmic crackle / growing xruns on Arctis Nova Pro Wireless. The headset's USB playback endpoint is synchronous (no clock feedback), so the loopback clock drifts against the free-running USB clock and the default ALSA headroom is too small to absorb it. ASM now raises api.alsa.headroom on this device automatically (via a WirePlumber drop-in it only rewrites when it changes), eliminating the crackle out of the box. (#105).</p>
@@ -199,11 +204,6 @@
     <release version="1.1.62" date="2026-06-09">
       <description>
         <p>Font rendering on Bazzite/Linux — all text displayed as blocks — Qt's QSS parser does not support the CSS Level 4 system-ui keyword; it treated it as a literal font name, found nothing, and fell back to a font rendering all glyphs as tofu squares. Replaced with sans-serif, which Qt resolves correctly via fontconfig on all Linux distributions.</p>
-      </description>
-    </release>
-    <release version="1.1.61" date="2026-06-08">
-      <description>
-        <p>Automatic Sonar preset sync — ASM now downloads new SteelSeries Sonar presets automatically at startup (once per 24 h). A  lists all official presets; the new  fetches it, detects missing presets, and downloads them silently in background to . 3 new Sonar game presets: Forza Horizon 6, Lineage 2, Deep Rock Galactic: Rogue Core. GitHub Action —  auto-regenerates  whenever preset files are pushed to  or .</p>
       </description>
     </release>
   </releases>
