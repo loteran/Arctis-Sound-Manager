@@ -247,3 +247,107 @@ class TestLoopbackLinkTarget:
             links=[(50, 60)],
         )
         assert loopback_link_target("Arctis_Media_sink_out", data=data) == "effect_input.sonar-media-eq"
+
+
+# ── ensure_loopback_link (issue #100) ─────────────────────────────────────────
+import types
+
+from arctis_sound_manager import pw_utils
+
+
+def _node(node_id: int, name: str) -> dict:
+    return {"id": node_id, "type": "PipeWire:Interface:Node",
+            "info": {"props": {"node.name": name}}}
+
+
+def _port(port_id: int, node_id: int, direction: str, channel: str) -> dict:
+    return {"id": port_id, "type": "PipeWire:Interface:Port",
+            "info": {"props": {"node.id": node_id, "port.direction": direction,
+                               "audio.channel": channel}}}
+
+
+def _link(link_id: int, out_node: int, out_port: int, in_node: int, in_port: int) -> dict:
+    return {"id": link_id, "type": "PipeWire:Interface:Link",
+            "info": {"props": {"link.output.node": out_node, "link.output.port": out_port,
+                               "link.input.node": in_node, "link.input.port": in_port}}}
+
+
+# Stereo loopback (node 100, out ports FL=101 FR=102) → stereo EQ
+# (node 200, in ports FL=201 FR=202).
+def _stereo_graph(links=None):
+    data = [
+        _node(100, "Arctis_Media_sink_out"),
+        _node(200, "effect_input.sonar-media-eq"),
+        _port(101, 100, "out", "FL"), _port(102, 100, "out", "FR"),
+        _port(201, 200, "in", "FL"), _port(202, 200, "in", "FR"),
+    ]
+    data.extend(links or [])
+    return data
+
+
+def _patch_pwlink(monkeypatch):
+    """Record every pw-link invocation; make them all succeed."""
+    calls: list[list[str]] = []
+
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        return types.SimpleNamespace(returncode=0, stderr=b"")
+
+    monkeypatch.setattr(pw_utils.subprocess, "run", fake_run)
+    return calls
+
+
+class TestEnsureLoopbackLink:
+    def test_creates_missing_channel_links(self, monkeypatch):
+        calls = _patch_pwlink(monkeypatch)
+        ok = pw_utils.ensure_loopback_link(
+            "Arctis_Media_sink_out", "effect_input.sonar-media-eq", data=_stereo_graph(),
+        )
+        assert ok is True
+        created = {(c[1], c[2]) for c in calls if "-d" not in c}
+        assert created == {("101", "201"), ("102", "202")}
+
+    def test_idempotent_when_already_linked(self, monkeypatch):
+        calls = _patch_pwlink(monkeypatch)
+        links = [_link(5001, 100, 101, 200, 201), _link(5002, 100, 102, 200, 202)]
+        ok = pw_utils.ensure_loopback_link(
+            "Arctis_Media_sink_out", "effect_input.sonar-media-eq",
+            data=_stereo_graph(links),
+        )
+        assert ok is True
+        assert calls == []  # nothing to create, nothing stray to remove
+
+    def test_removes_stray_link_and_relinks(self, monkeypatch):
+        calls = _patch_pwlink(monkeypatch)
+        # FL is wrongly linked to a foreign node (999) — must be torn down,
+        # and both correct channel links (re)created.
+        stray = [_link(5001, 100, 101, 999, 901)]
+        ok = pw_utils.ensure_loopback_link(
+            "Arctis_Media_sink_out", "effect_input.sonar-media-eq",
+            data=_stereo_graph(stray),
+        )
+        assert ok is True
+        disconnects = [c for c in calls if "-d" in c]
+        assert disconnects == [["pw-link", "-d", "101", "901"]]
+        created = {(c[1], c[2]) for c in calls if "-d" not in c}
+        assert created == {("101", "201"), ("102", "202")}
+
+    def test_returns_false_when_target_absent(self, monkeypatch):
+        calls = _patch_pwlink(monkeypatch)
+        data = [_node(100, "Arctis_Media_sink_out"),
+                _port(101, 100, "out", "FL"), _port(102, 100, "out", "FR")]
+        ok = pw_utils.ensure_loopback_link(
+            "Arctis_Media_sink_out", "effect_input.sonar-media-eq", data=data,
+        )
+        assert ok is False
+        assert calls == []
+
+    def test_returns_false_when_playback_absent(self, monkeypatch):
+        calls = _patch_pwlink(monkeypatch)
+        data = [_node(200, "effect_input.sonar-media-eq"),
+                _port(201, 200, "in", "FL"), _port(202, 200, "in", "FR")]
+        ok = pw_utils.ensure_loopback_link(
+            "Arctis_Media_sink_out", "effect_input.sonar-media-eq", data=data,
+        )
+        assert ok is False
+        assert calls == []

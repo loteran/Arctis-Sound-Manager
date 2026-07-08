@@ -218,8 +218,12 @@ def _build_pw_loopback_argv(spec: LoopbackSpec) -> list[str]:
                             stream.dont-remix=false
                             target.object=effect_input.sonar-media-eq
                             node.target=effect_input.sonar-media-eq
-                            node.dont-fallback=true node.linger=true
-                            latency.msec=50'
+                            node.dont-fallback=true node.autoconnect=false
+                            node.linger=true latency.msec=50'
+
+    The playback node uses ``node.autoconnect=false`` so WirePlumber never
+    routes it: ASM owns the playback→EQ link itself (issue #100), which makes
+    the routing immune to any competing output device on the system.
 
     Returns
     -------
@@ -255,6 +259,17 @@ def _build_pw_loopback_argv(spec: LoopbackSpec) -> list[str]:
         # mislink → watchdog-recreate → restore loop. Opt out per-stream (#100).
         f" state.restore-target=false"
         f" node.dont-fallback=true"
+        # Take the playback node OUT of WirePlumber's session policy entirely
+        # (issue #100). With autoconnect=false WirePlumber never links this node,
+        # so no competing output device — a second USB DAC (e.g. Creative Pebble
+        # Nova), the physical headset, whatever the user's default sink is — can
+        # ever steal it. ASM owns the link instead and creates it directly
+        # (pw_utils.ensure_loopback_link), matched channel-for-channel. The
+        # target.object / node.target hints above are kept for documentation and
+        # for the brief window before ASM links, but they are no longer relied on
+        # to win the tug-of-war against WirePlumber's policy — because there is no
+        # tug-of-war anymore.
+        f" node.autoconnect=false"
         f" node.linger=true"
         f" latency.msec=50"
     )

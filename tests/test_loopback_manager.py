@@ -147,6 +147,13 @@ class TestBuildArgv:
         argv = _build_pw_loopback_argv(media_spec)
         assert "node.dont-fallback=true" in argv[2]
 
+    def test_playback_autoconnect_false(self, media_spec: LoopbackSpec) -> None:
+        """node.autoconnect=false takes the playback node out of WirePlumber's
+        session policy so no competing output device can steal it; ASM owns the
+        playback→EQ link itself (issue #100)."""
+        argv = _build_pw_loopback_argv(media_spec)
+        assert "node.autoconnect=false" in argv[2]
+
     def test_playback_linger_true(self, media_spec: LoopbackSpec) -> None:
         argv = _build_pw_loopback_argv(media_spec)
         assert "node.linger=true" in argv[2]

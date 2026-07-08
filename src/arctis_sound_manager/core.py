@@ -153,8 +153,43 @@ class CoreEngine:
                 "setup_loopbacks: loopbacks recreated (sonar=%s, game=%s, chat=%s)",
                 sonar, physical_game, physical_chat,
             )
+            self._link_loopbacks(specs)
         except Exception as exc:
             self.logger.error("setup_loopbacks: failed to recreate loopbacks: %r", exc)
+
+    def _link_loopbacks(self, specs, attempts: int = 6, delay: float = 0.2) -> None:
+        """Establish the ASM-owned playback→EQ links for *specs* (issue #100).
+
+        The loopbacks run with ``node.autoconnect=false``, so WirePlumber never
+        links them and nothing gets routed until ASM creates the links. The
+        ``pw-loopback`` nodes appear in the graph a short moment after their
+        processes are spawned, so we retry briefly until each links (or give up
+        and leave it to the watchdog, which owns these links durably). This just
+        avoids a ~5 s silence between plugging the headset in and the first
+        watchdog tick.
+
+        Best-effort and synchronous: callers reach this off the asyncio event
+        loop (daemon start, or the D-Bus reload/recreate handlers dispatched via
+        run_in_executor), so the short sleeps here never stall the loop.
+        """
+        from arctis_sound_manager.pw_utils import ensure_loopback_link
+        pending = {s.playback_name: s.target for s in specs if getattr(s, "target", None)}
+        for _ in range(max(1, attempts)):
+            if not pending:
+                break
+            for pb_name, target in list(pending.items()):
+                try:
+                    if ensure_loopback_link(pb_name, target):
+                        pending.pop(pb_name, None)
+                except Exception:
+                    pass
+            if pending:
+                time.sleep(delay)
+        if pending:
+            self.logger.info(
+                "_link_loopbacks: %d loopback(s) not linkable yet, leaving to "
+                "watchdog: %s", len(pending), list(pending),
+            )
 
     _RECREATE_DEBOUNCE_S = 5.0
 
@@ -221,10 +256,10 @@ class CoreEngine:
                 physical_chat=physical_chat,
                 device_name=dev_name,
             )
-            for spec in specs:
-                if spec.channel == "chat":
-                    continue  # keep Arctis_Chat alive — Discord-safe
-                self.loopback_manager.recreate(spec)
+            recreated = [s for s in specs if s.channel != "chat"]
+            for spec in recreated:
+                self.loopback_manager.recreate(spec)  # keep Arctis_Chat alive — Discord-safe
+            self._link_loopbacks(recreated)
 
             self.logger.info(
                 "recreate_loopbacks_game_media: game+media recreated, chat preserved"
@@ -276,6 +311,7 @@ class CoreEngine:
             for spec in specs:
                 if spec.channel == channel:
                     self.loopback_manager.recreate(spec)
+                    self._link_loopbacks([spec])
                     self.logger.info(
                         "recreate_loopback_single: channel=%r recreated", channel,
                     )
@@ -298,28 +334,30 @@ class CoreEngine:
            skipped so they have one full cycle to bind to the new socket.
         1. **Dead-process pass** — calls :meth:`LoopbackManager.restart_dead`
            to revive any crashed ``pw-loopback`` processes.
-        2. **Mislink pass** — for every loopback that was *not* just restarted
-           and is still running, queries PipeWire (via
-           :func:`~arctis_sound_manager.pw_utils.loopback_link_target`) to see
-           which sink it is actually wired to.  If the actual link target differs
-           from the expected ``spec.target`` for ``_MISLINK_GRACE_TICKS``
-           consecutive ticks, WirePlumber is asked to re-point ``node.target``
-           via a non-destructive ``pw-metadata`` relink (the loopback process and
-           its PA sink stay alive); only if that relink fails is the loopback
-           recreated.  Orphan loopbacks (not yet linked to anything,
-           ``actual is None``) are given a grace period of ``_ORPHAN_GRACE_TICKS``
-           consecutive ticks (15 s at the default interval) before being
-           recreated.  Both grace counters exist because a single-tick mismatch
-           or ``None`` is a normal transient PipeWire state (e.g. the surround
-           chain rebuilding when Spatial Audio toggles) and must not trigger a
-           spurious recreate that would feed a self-sustaining churn loop.
+        2. **Link-enforcement pass** — for every loopback that was *not* just
+           restarted and is still running, calls
+           :func:`~arctis_sound_manager.pw_utils.ensure_loopback_link` to make
+           sure the playback node is linked, channel-for-channel, to its EQ
+           target.  Because the loopbacks run with ``node.autoconnect=false``
+           (issue #100), WirePlumber never links or moves them: ASM owns the
+           links.  A loopback can therefore only be *correctly linked* or
+           *not-yet-linked* — never "mislinked to a physical DAC" — so no
+           competing output device (a second USB DAC, the default sink, …) can
+           ever steal it, and there is no WirePlumber tug-of-war to fight.  When
+           the link cannot be established the loopback is treated as an orphan:
+           it is given ``_ORPHAN_GRACE_TICKS`` consecutive failing ticks (15 s at
+           the default interval) before action, because a one-tick failure is a
+           normal transient (e.g. the surround chain rebuilding when Spatial
+           Audio toggles).  After the grace period, if the target EQ node is
+           absent the filter-chain is assumed dead and
+           :func:`~arctis_sound_manager.sonar_to_pipewire.ensure_filter_chain_healthy`
+           is called instead of a pointless recreate; otherwise the loopback is
+           recreated.
 
-        **Anti-flapping guard** — under Gamescope / Steam Game Mode, WirePlumber
-        routing policy may continuously mis-route loopbacks, causing the watchdog
-        to recreate them in a tight loop and producing sustained audio cuts.  To
-        break this cycle, the watchdog tracks recent interventions per channel and
-        applies an exponential-backoff cooldown when a channel is recreated too
-        often.  During cooldown, the channel is skipped entirely (no restart, no
+        **Anti-flapping guard** — a recreate is still a heavyweight action, so
+        the watchdog tracks recent interventions per channel and applies an
+        exponential-backoff cooldown when a channel is recreated too often.
+        During cooldown the channel is skipped entirely (no restart, no
         recreate).  A muted-but-stable loopback is less disruptive than constant
         cuts.
 
@@ -328,23 +366,20 @@ class CoreEngine:
         handler).  Errors are always caught and logged — this coroutine must
         never crash the daemon.
         """
-        from arctis_sound_manager.pw_utils import loopback_link_target
+        from arctis_sound_manager.pw_utils import _pw_dump, ensure_loopback_link
 
         _WATCHDOG_INTERVAL: float = 5.0
         # Number of consecutive ticks a loopback may be None-linked before we
         # treat it as a permanent orphan and recreate it.  One tick = 5 s, so
         # 3 ticks = 15 s of grace before action.  Transient None states (one
         # PipeWire graph cycle) are ignored entirely.
+        # A loopback that cannot be linked to its EQ target is treated the same
+        # way: with node.autoconnect=false (issue #100) an unlinked loopback is
+        # the only failure mode, and a single failing tick is a normal transient
+        # (e.g. the Sonar EQ → HeSuVi surround chain being rebuilt on a Spatial
+        # Audio toggle), so it must NOT trigger a recreate that would itself
+        # churn the graph and silence the channel.
         _ORPHAN_GRACE_TICKS: int = 3
-        # Number of consecutive ticks a loopback may be mislinked (linked to a
-        # node other than spec.target) before we intervene.  When Spatial Audio
-        # is enabled the Sonar EQ → HeSuVi surround chain is rebuilt on toggle,
-        # and during that window WirePlumber briefly relocates the loopback to
-        # the physical sink.  A single-tick mismatch is a normal transient and
-        # must NOT trigger a recreate — otherwise the recreate itself churns the
-        # graph and feeds a self-sustaining loop that silences the channel
-        # (issue #100, "surround on = thrash, surround off = stable").
-        _MISLINK_GRACE_TICKS: int = 3
 
         # ── Anti-flapping constants ───────────────────────────────────────────
         # Threshold: how many interventions (restart OR recreate) within the
@@ -363,14 +398,10 @@ class CoreEngine:
         _COOLDOWN_MAX: float = 300.0
 
         # ── Per-channel state ─────────────────────────────────────────────────
-        # Per-channel count of consecutive ticks where loopback_link_target
-        # returned None.  Reset to 0 whenever the link becomes non-None or the
-        # loopback is restarted.
+        # Per-channel count of consecutive ticks where the loopback could not be
+        # linked to its EQ target.  Reset to 0 as soon as the link succeeds or
+        # the loopback is restarted.
         _none_ticks: dict[str, int] = {}
-        # Per-channel count of consecutive ticks where the loopback was linked to
-        # the wrong node (mislinked).  Reset to 0 once the link matches
-        # spec.target, the loopback goes orphan, or it is recreated.
-        _mislink_ticks: dict[str, int] = {}
         # Timestamps of recent interventions per channel (monotonic clock).
         _flap_history: dict[str, list[float]] = {}
         # Monotonic timestamp past which the channel is in cooldown.
@@ -521,89 +552,69 @@ class CoreEngine:
                     )
                     continue
 
-                # Mislink detection pass: verify that each running loopback is
-                # wired to the expected node.target.  Skip channels that were
-                # just restarted — give them one watchdog tick to get linked.
+                # Link-enforcement pass: make sure every running loopback's
+                # playback node is linked to its EQ target. Because the loopbacks
+                # run with node.autoconnect=false (issue #100), ASM owns these
+                # links — WirePlumber never creates or moves them, so a loopback
+                # can only be either correctly linked or not-yet-linked, never
+                # "mislinked to a physical DAC". One pw-dump is shared across all
+                # channels this tick. Skip channels that were just restarted —
+                # give them one tick to appear in the graph.
                 try:
+                    link_data = await asyncio.get_running_loop().run_in_executor(
+                        None, _pw_dump,
+                    )
                     for channel, spec in self.loopback_manager.specs().items():
                         if channel in cooled_channels:
                             # In anti-flap cooldown — do not intervene this tick.
                             continue
                         if channel in restarted:
-                            # Just recreated — node.target will bind next cycle.
-                            _mislink_ticks.pop(channel, None)
+                            # Just recreated — give it one tick to appear in the
+                            # graph, then the next tick will link it.
+                            _none_ticks.pop(channel, None)
                             continue
                         if not self.loopback_manager.is_running(channel):
                             continue
-                        actual = loopback_link_target(spec.playback_name)
-                        _is_orphan = False
-                        if actual is None:
-                            # Orphan: may be a transient one-tick PipeWire state.
-                            # Accumulate ticks; only act after _ORPHAN_GRACE_TICKS
-                            # consecutive None results (= permanent orphan).
-                            count = _none_ticks.get(channel, 0) + 1
-                            _none_ticks[channel] = count
-                            if count < _ORPHAN_GRACE_TICKS:
-                                continue
-                            self.logger.warning(
-                                "_loopback_watchdog: loopback '%s' orphaned for "
-                                "%d ticks — checking target",
-                                channel, count,
-                            )
-                            _none_ticks.pop(channel, None)
-                            _mislink_ticks.pop(channel, None)
-                            _is_orphan = True
-                        else:
+                        # ASM owns the link (node.autoconnect=false, issue #100):
+                        # (re)create the channel-matched playback→EQ port links
+                        # directly. Idempotent — a no-op when already linked, and
+                        # it tears down any stray link. This replaces the old
+                        # pw-metadata relink that fought WirePlumber's policy; with
+                        # autoconnect off there is nothing to fight.
+                        linked = await asyncio.get_running_loop().run_in_executor(
+                            None,
+                            ensure_loopback_link,
+                            spec.playback_name,
+                            spec.target,
+                            link_data,
+                        )
+                        if linked:
                             _none_ticks.pop(channel, None)
                             _target_absent_ticks.pop(channel, None)
-                            if actual == spec.target:
-                                _mislink_ticks.pop(channel, None)
-                                continue
-                            # Mislink grace: a single-tick mismatch is a normal
-                            # transient (e.g. the surround chain rebuilding when
-                            # Spatial Audio toggles). Only act after the mislink
-                            # persists, mirroring the orphan grace above.
-                            count = _mislink_ticks.get(channel, 0) + 1
-                            _mislink_ticks[channel] = count
-                            if count < _MISLINK_GRACE_TICKS:
-                                continue
-                            _mislink_ticks.pop(channel, None)
-                            # Prefer a non-destructive relink via pw-metadata over
-                            # a full process recreate: re-pointing node.target keeps
-                            # the pw-loopback (and its PA sink) alive, so we don't
-                            # restart the dropout cycle. Only recreate if the
-                            # metadata relink fails.
-                            from arctis_sound_manager.pw_utils import (
-                                relink_loopback_playback,
-                            )
-                            relinked = await asyncio.get_running_loop().run_in_executor(
-                                None,
-                                relink_loopback_playback,
-                                spec.playback_name,
-                                spec.target,
-                            )
-                            if relinked:
-                                self.logger.info(
-                                    "_loopback_watchdog: loopback '%s' mislinked to "
-                                    "%s (want %s) — relinked via pw-metadata",
-                                    channel, actual, spec.target,
-                                )
-                                continue
-                            self.logger.warning(
-                                "_loopback_watchdog: loopback '%s' mislinked to %s "
-                                "(want %s) — recreating",
-                                channel, actual, spec.target,
-                            )
+                            continue
 
-                        # Correctif 3 (issue #88): for orphan loopbacks, check if
-                        # the expected target EQ node exists in the PipeWire graph.
-                        # If the filter-chain is dead/crash-looping, spec.target
-                        # (e.g. effect_input.sonar-game-eq) will be absent from the
-                        # graph and recreating the loopback is pointless — it will
-                        # remain orphaned until filter-chain comes back. Instead,
-                        # count "target absent" ticks and escalate to
-                        # ensure_filter_chain_healthy() so safe mode can be armed.
-                        if _is_orphan and spec.target:
+                        # Could not link: the loopback node is not in the graph yet,
+                        # or the target EQ node is absent (filter-chain still
+                        # starting, or dead). Apply the orphan grace so a one-tick
+                        # transient (e.g. the surround chain rebuilding on a Spatial
+                        # Audio toggle) never triggers a churn-inducing recreate.
+                        count = _none_ticks.get(channel, 0) + 1
+                        _none_ticks[channel] = count
+                        if count < _ORPHAN_GRACE_TICKS:
+                            continue
+                        _none_ticks.pop(channel, None)
+                        self.logger.warning(
+                            "_loopback_watchdog: loopback '%s' unlinkable for %d "
+                            "ticks — checking target", channel, count,
+                        )
+
+                        # Correctif 3 (issue #88): if the expected target EQ node is
+                        # absent from the PipeWire graph, the filter-chain is
+                        # dead/crash-looping and recreating the loopback is pointless
+                        # — it would just re-orphan. Count "target absent" ticks and
+                        # escalate to ensure_filter_chain_healthy() so safe mode can
+                        # be armed.
+                        if spec.target:
                             from arctis_sound_manager.pw_utils import pw_node_exists
                             target_exists = await asyncio.get_running_loop().run_in_executor(
                                 None, pw_node_exists, spec.target,
@@ -612,7 +623,7 @@ class CoreEngine:
                                 ta_count = _target_absent_ticks.get(channel, 0) + 1
                                 _target_absent_ticks[channel] = ta_count
                                 self.logger.warning(
-                                    "_loopback_watchdog: loopback '%s' orphaned and "
+                                    "_loopback_watchdog: loopback '%s' unlinkable and "
                                     "target '%s' absent from PW graph (filter-chain "
                                     "dead?) — ticks=%d, skipping recreate",
                                     channel, spec.target, ta_count,
@@ -640,7 +651,7 @@ class CoreEngine:
                             else:
                                 _target_absent_ticks.pop(channel, None)
                                 self.logger.warning(
-                                    "_loopback_watchdog: loopback '%s' orphaned for "
+                                    "_loopback_watchdog: loopback '%s' unlinkable for "
                                     "%d ticks (target present) — recreating",
                                     channel, count,
                                 )

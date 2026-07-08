@@ -378,6 +378,159 @@ def relink_loopback_playback(playback_name: str, target_name: str, data: list | 
         return False
 
 
+def _node_ports(data: list, node_id: int, direction: str) -> dict[str, int]:
+    """Map ``audio.channel`` → global port id for the ports of *node_id*.
+
+    *direction* is the PipeWire ``port.direction`` ("in" or "out"). Ports with
+    no ``audio.channel`` (control/monitor ports) are skipped. When a node has
+    two ports sharing a channel (should not happen for our loopbacks) the last
+    one wins — the caller only needs one link per channel.
+    """
+    ports: dict[str, int] = {}
+    for obj in data:
+        if not obj.get("type", "").endswith("Port"):
+            continue
+        props = obj.get("info", {}).get("props", {})
+        if props.get("node.id") != node_id:
+            continue
+        if props.get("port.direction") != direction:
+            continue
+        channel = props.get("audio.channel")
+        if not channel or channel == "UNK":
+            continue
+        ports[channel] = obj["id"]
+    return ports
+
+
+def ensure_loopback_link(
+    playback_name: str, target_name: str, data: list | None = None,
+) -> bool:
+    """Ensure the playback side of a ``pw-loopback`` is linked to *target_name*.
+
+    The loopbacks run with ``node.autoconnect=false`` (issue #100), so
+    WirePlumber never links their playback node and no competing output device
+    (a second USB DAC such as a Creative Pebble Nova, the physical headset, the
+    user's default sink…) can ever steal it. ASM owns the link and creates it
+    here, matched channel-for-channel (FL→FL, FR→FR, …). The operation is
+    idempotent: correct links already present are left untouched, missing ones
+    are created, and any link from the playback node to a node *other* than
+    *target_name* is torn down.
+
+    Parameters
+    ----------
+    playback_name:
+        ``node.name`` of the loopback playback node (e.g. ``Arctis_Media_sink_out``).
+    target_name:
+        ``node.name`` of the downstream EQ input (e.g. ``effect_input.sonar-media-eq``).
+    data:
+        Optional pre-fetched ``pw-dump`` payload; a fresh dump is executed when
+        *None*. May be reused across channels within one watchdog tick — links
+        for different channels are independent, so slightly stale data is safe.
+
+    Returns
+    -------
+    bool
+        True when every source channel that also exists on the target is linked
+        to it. False when either node is absent from the graph (the loopback is
+        not up yet, or the filter-chain that owns *target_name* is dead) or no
+        channel could be matched, so the caller can retry or escalate.
+    """
+    try:
+        if data is None:
+            data = _pw_dump()
+
+        node_ids: dict[str, int] = {}
+        for obj in data:
+            if not obj.get("type", "").endswith("Node"):
+                continue
+            props = obj.get("info", {}).get("props", {})
+            name = props.get("node.name", "")
+            if name:
+                node_ids[name] = obj["id"]
+
+        playback_id = node_ids.get(playback_name)
+        target_id = node_ids.get(target_name)
+        if playback_id is None:
+            logger.debug("ensure_loopback_link: playback '%s' not in graph", playback_name)
+            return False
+        if target_id is None:
+            logger.debug("ensure_loopback_link: target '%s' not in graph", target_name)
+            return False
+
+        out_ports = _node_ports(data, playback_id, "out")
+        in_ports = _node_ports(data, target_id, "in")
+        if not out_ports or not in_ports:
+            logger.warning(
+                "ensure_loopback_link: no matchable ports for '%s'→'%s' (out=%s in=%s)",
+                playback_name, target_name, list(out_ports), list(in_ports),
+            )
+            return False
+
+        # Index links whose OUTPUT node is the playback node: keep the ones that
+        # already point at the target, and collect any stray links to remove.
+        existing: set[tuple[int, int]] = set()
+        stray: list[tuple[int, int]] = []
+        for obj in data:
+            if not obj.get("type", "").endswith("Link"):
+                continue
+            props = obj.get("info", {}).get("props", {})
+            if props.get("link.output.node") != playback_id:
+                continue
+            pair = (props.get("link.output.port"), props.get("link.input.port"))
+            if props.get("link.input.node") == target_id:
+                existing.add(pair)
+            else:
+                stray.append(pair)
+
+        # Tear down any link to a node other than the intended target. With
+        # autoconnect=false there should be none, but this keeps the graph clean
+        # if a stray link was created before the flag took effect or by a user.
+        for out_port, in_port in stray:
+            subprocess.run(
+                ["pw-link", "-d", str(out_port), str(in_port)],
+                check=False, timeout=3, capture_output=True,
+            )
+
+        # Create the missing channel-matched links.
+        ok = True
+        linked_any = False
+        created = 0
+        for channel, out_port in out_ports.items():
+            in_port = in_ports.get(channel)
+            if in_port is None:
+                # A source channel the target does not expose (e.g. a 2ch loopback
+                # into a hypothetical 8ch EQ would leave FC/LFE/… unfed). All
+                # shipped EQ nodes are stereo, so this branch is defensive only.
+                continue
+            if (out_port, in_port) in existing:
+                linked_any = True
+                continue
+            r = subprocess.run(
+                ["pw-link", str(out_port), str(in_port)],
+                check=False, timeout=3, capture_output=True,
+            )
+            if r.returncode == 0:
+                linked_any = True
+                created += 1
+            else:
+                ok = False
+                logger.warning(
+                    "ensure_loopback_link: pw-link %s→%s (%s) failed: %s",
+                    out_port, in_port, channel,
+                    (r.stderr or b"").decode(errors="replace").strip(),
+                )
+
+        if created:
+            logger.info(
+                "ensure_loopback_link: '%s' → '%s' (%d/%d channels linked)",
+                playback_name, target_name, created, len(out_ports),
+            )
+        return linked_any and ok
+    except Exception as exc:
+        logger.warning("ensure_loopback_link failed: %s", exc)
+        return False
+
+
 def move_native_stream(stream_node_id: int, target_sink_name: str, data: list | None = None) -> bool:
     """Move a native PipeWire stream to target_sink_name using pw-metadata."""
     if data is None:
