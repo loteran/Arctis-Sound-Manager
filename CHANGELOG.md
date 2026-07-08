@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.91] - 8 July 2026
+
+### Added
+
+- **Passthrough toggle on the Output tab.** You can now send audio to the external output device exactly as-is, bypassing the Output EQ profile. When enabled, the EQ curve and macro sliders are greyed out since they no longer affect anything. (#111)
+
+### Fixed
+
+- **Two Electron apps that both report as "Chromium" (e.g. Vesktop and Pear Desktop) would not keep their channels across restarts.** The GUI saved the manual routing override under the app's display name instead of the same name+binary key the router reads, so the choice never persisted deterministically. The GUI now stores overrides under the exact key the router uses. (#108)
+- **Virtual-channel loopbacks could be stolen by another output device.** When a second USB DAC (or any competing sink) was present, WirePlumber kept re-routing the Game/Chat/Media loopbacks to it while the watchdog fought back — an unwinnable, hardware-specific tug-of-war. The loopbacks are now taken out of WirePlumber's routing entirely (`node.autoconnect=false`) and ASM owns their link to the Sonar EQ directly, so no other device can ever steal them regardless of what is plugged in. (#100)
+- **A missing per-channel EQ config no longer causes an endless "target absent" loop with no audio.** When a `sonar-*-eq.conf` was simply missing, the watchdog kept health-checking a perfectly healthy filter-chain, which could never bring the node back. It now regenerates the missing config and reloads the filter-chain first, only treating it as a crash-loop when there is genuinely nothing to regenerate. (#111, #88)
+- **The Output channel is now regenerated reliably** — on startup, on device attach, and on every global apply — instead of only when its EQ tab is opened, so `sonar-output-eq.conf` no longer goes stale or missing. It keeps applying the Sonar EQ and adapts its channel count (2.0–7.1) to the external sink's real capability. (#111)
+
+### Improved
+
+- **Bug reports now surface the filter-chain safe-mode state and which EQ configs are present or missing.** A stuck safe mode (which suppresses EQ config regeneration) is now visible at a glance instead of being indistinguishable from configs a user moved away by hand. (#88)
+
 ## [1.1.90] - 7 July 2026
 
 ### Added
