@@ -6,6 +6,7 @@
 from pathlib import Path
 from unittest.mock import patch
 
+from arctis_sound_manager import sonar_to_pipewire as _s2p
 from arctis_sound_manager.eq_types import EqBand
 from arctis_sound_manager.sonar_to_pipewire import (
     check_and_fix_stale_configs,
@@ -13,6 +14,32 @@ from arctis_sound_manager.sonar_to_pipewire import (
     generate_sonar_micro_conf,
     generate_virtual_sinks_conf,
 )
+
+
+def test_output_eq_adapts_to_external_sink_channel_count():
+    """Output EQ uses the external sink's native channel count (2.0–7.1), so a
+    7.1 sink keeps native surround rather than being downmixed (#111)."""
+    bands = [EqBand(freq=1000, gain=3.0, q=0.7, type="peakingEQ", enabled=True)]
+    with patch.object(_s2p, "_resolve_external_output",
+                      return_value=("alsa_output.hdmi-7-1", 8, "FL FR FC LFE RL RR SL SR")):
+        text = generate_sonar_eq_conf("output", bands, 0.0, 0.0, 0.0,
+                                      output_path=Path("/dev/null"))
+    assert "audio.channels = 8" in text
+    assert "FL FR FC LFE RL RR SL SR" in text
+    assert "alsa_output.hdmi-7-1" in text
+
+
+def test_output_passthrough_is_copy_at_native_channels():
+    """Output passthrough (no bands) = a plain copy at the sink's native channel
+    count — no EQ nodes. This is what the Output passthrough toggle emits."""
+    with patch.object(_s2p, "_resolve_external_output",
+                      return_value=("alsa_output.hdmi-7-1", 8, "FL FR FC LFE RL RR SL SR")):
+        text = generate_sonar_eq_conf("output", [], 0.0, 0.0, 0.0,
+                                      output_path=Path("/dev/null"))
+    assert "label = copy" in text
+    assert "bq_peaking" not in text
+    assert "audio.channels = 8" in text
+    assert "alsa_output.hdmi-7-1" in text
 
 
 def test_bypass_game_uses_copy_not_gain():

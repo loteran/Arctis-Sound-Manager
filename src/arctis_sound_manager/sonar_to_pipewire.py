@@ -1523,7 +1523,17 @@ def ensure_sonar_eq_configs() -> bool:
         },
     }
 
-    for channel in ("game", "media", "chat"):
+    # Output is a passthrough to the external sink at its native channel count
+    # (2.0–7.1). Include it so its node is (re)created if missing — its config
+    # is otherwise only written when the user opens the Output EQ tab (#111).
+    _out_target, _out_channels, _out_position = _resolve_external_output()
+    expected["output"] = {
+        "channels": _out_channels,
+        "position": _out_position,
+        "target":   _out_target,
+    }
+
+    for channel in ("game", "media", "chat", "output"):
         conf_path = _CONF_DIR / f"sonar-{channel}-eq.conf"
         sink_name = f"effect_input.sonar-{channel}-eq"
         exp = expected[channel]

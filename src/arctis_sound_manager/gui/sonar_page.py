@@ -432,6 +432,16 @@ class _ApplyWorker(QThread):
                     noise_canceling=micro_proc.get("noiseCanceling"),
                     noise_reduction=micro_proc,
                 )
+            elif self._channel == "output" and _load_output_passthrough():
+                # Output passthrough: send audio to the external sink as-is, no
+                # EQ. Empty bands + zero macros/boost → generate_sonar_eq_conf
+                # emits a plain copy at the sink's native channel count (2.0–7.1).
+                _new_eq_conf = generate_sonar_eq_conf(
+                    "output", [], 0.0, 0.0, 0.0,
+                    boost_db=0.0,
+                    smart_volume=None,
+                    target_override=self._target_override,
+                )
             else:
                 if self._channel == "game":
                     spatial = _load_spatial_audio("game")["enabled"]
@@ -636,10 +646,17 @@ class _ApplyAllWorker(QThread):
             game_spatial = _load_spatial_audio("game")
             media_spatial = _load_spatial_audio("media")
 
-            # Generate conf for each channel
-            for channel in ("game", "media", "chat"):
+            # Generate conf for each channel. "output" is included so its EQ
+            # profile is (re)applied on every global apply and its config never
+            # goes stale/missing (it also adapts 2.0–7.1 to the external sink).
+            for channel in ("game", "media", "chat", "output"):
                 game_sp_on = game_spatial["enabled"]
                 media_sp_on = media_spatial["enabled"]
+                # Output passthrough: bypass the EQ profile (empty bands/macros).
+                if channel == "output" and _load_output_passthrough():
+                    generate_sonar_eq_conf("output", [], 0.0, 0.0, 0.0,
+                                           boost_db=0.0, smart_volume=None)
+                    continue
                 try:
                     bands = _parse_preset(
                         _list_presets(channel).get(_active_preset_name(channel),
@@ -1391,6 +1408,19 @@ class SonarChannelWidget(QWidget):
         )
         self._preset_bar.settings_loaded.connect(self._on_settings_loaded)
         pcl.addWidget(self._preset_bar)
+
+        # ── Output passthrough toggle ─────────────────────────────────────────
+        # On the Output tab, let the user send audio to the external sink as-is,
+        # bypassing the EQ profile entirely. When enabled the EQ curve/macros are
+        # greyed out because they no longer affect anything.
+        self._passthrough_cb: QCheckBox | None = None
+        if channel == "output":
+            self._passthrough_cb = QCheckBox(_t("output_passthrough"))
+            self._passthrough_cb.setToolTip(_t("output_passthrough_hint"))
+            self._passthrough_cb.setChecked(_load_output_passthrough())
+            self._passthrough_cb.toggled.connect(self._on_passthrough_toggled)
+            pcl.addWidget(self._passthrough_cb)
+
         root.addWidget(preset_card)
 
         # ── EQ curve card ─────────────────────────────────────────────────────
@@ -1512,6 +1542,11 @@ class SonarChannelWidget(QWidget):
 
         # Load initial preset
         self._load_initial()
+
+        # Output tab: reflect the persisted passthrough state (grey out the EQ
+        # controls when passthrough is already on).
+        if self._passthrough_cb is not None and self._passthrough_cb.isChecked():
+            self._set_eq_controls_enabled(False)
 
         # Apply the currently-active theme on first paint.
         self.apply_theme()
@@ -1663,6 +1698,22 @@ class SonarChannelWidget(QWidget):
         self._update_macro_curve()
         self._schedule_apply()
 
+    def _on_passthrough_toggled(self, on: bool):
+        """Output tab: toggle EQ-bypass passthrough to the external sink."""
+        _save_output_passthrough(on)
+        self._set_eq_controls_enabled(not on)
+        # Regenerate the output config immediately in the new mode.
+        self._committed_bands = list(self._cur_bands)
+        self._do_apply()
+
+    def _set_eq_controls_enabled(self, enabled: bool) -> None:
+        """Grey out the EQ curve + macros — used when Output passthrough is on,
+        since the EQ profile no longer affects anything in that mode."""
+        if hasattr(self, "_eq_widget"):
+            self._eq_widget.setEnabled(enabled)
+        if hasattr(self, "_macros"):
+            self._macros.setEnabled(enabled)
+
     # ── Curve update ──────────────────────────────────────────────────────────
 
     def _update_macro_curve(self):
@@ -1725,9 +1776,27 @@ class SonarChannelWidget(QWidget):
 
 _BOOST_FILE  = _CFG / "sonar_boost.json"
 _SMART_FILE  = _CFG / "sonar_smart_volume.json"
+# Output-channel passthrough: when enabled, sonar-output-eq is a plain copy of
+# the audio to the external sink (no EQ profile applied), at the sink's native
+# channel count. Kept per-channel-independent so only the Output tab uses it.
+_OUTPUT_PASSTHROUGH_FILE = _CFG / "sonar_output_passthrough.json"
 
 _BOOST_DEFAULTS: dict  = {"enabled": False, "db": 0.0}
 _SMART_DEFAULTS: dict  = {"enabled": False, "level": 0.0, "loudness": "balanced"}
+
+
+def _load_output_passthrough() -> bool:
+    if _OUTPUT_PASSTHROUGH_FILE.exists():
+        try:
+            return bool(json.loads(_OUTPUT_PASSTHROUGH_FILE.read_text()).get("enabled", False))
+        except Exception:
+            pass
+    return False
+
+
+def _save_output_passthrough(enabled: bool) -> None:
+    _CFG.mkdir(parents=True, exist_ok=True)
+    _OUTPUT_PASSTHROUGH_FILE.write_text(json.dumps({"enabled": bool(enabled)}))
 
 
 def _load_boost() -> dict:
