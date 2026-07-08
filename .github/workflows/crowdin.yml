@@ -24,10 +24,12 @@ jobs:
           upload_sources: true
           upload_translations: false
           download_translations: true
-          # Auto-merge (below) removes the human review gate, so only ship
-          # translations that have been approved on Crowdin. Set to false to
-          # ship every translated string regardless of approval.
-          export_only_approved: true
+          # Ship every translated string, not only Crowdin-approved ones: this
+          # project relies on community translations that are rarely formally
+          # approved, so approved-only would strip most languages down to a
+          # handful of strings. Auto-merge (below) therefore ships whatever is
+          # translated on Crowdin — quality is managed on Crowdin itself.
+          export_only_approved: false
           skip_untranslated_strings: true
           push_translations: true
           create_pull_request: true
