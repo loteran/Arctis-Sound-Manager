@@ -81,7 +81,7 @@ from arctis_sound_manager.gui.theme import (
 )
 
 from arctis_sound_manager.i18n import I18n
-from arctis_sound_manager.pw_utils import get_native_streams
+from arctis_sound_manager.pw_utils import app_override_key, get_native_streams
 
 logger = logging.getLogger("HomePage")
 
@@ -1469,11 +1469,29 @@ class HomePage(QWidget):
             if target is None:
                 logger.warning("Sink %s not found", target_sink_name)
                 return
+            # Resolve the real PipeWire identity of the stream (issue #108).
+            # ``app_name`` here is the friendly display label (often the process
+            # binary), which does NOT match the key video_router.py stores the
+            # override under. We must key on application.name + binary via the
+            # shared app_override_key() so GUI-set channels persist across
+            # restarts. Two Electron apps that both report application.name
+            # "Chromium" (e.g. Vesktop and Pear Desktop) otherwise collide.
+            si = next((x for x in pulse.sink_input_list() if x.index == si_index), None)
+            if si is not None:
+                key = app_override_key(
+                    si.proplist.get("application.name", "") or app_name,
+                    si.proplist.get("application.process.binary", ""),
+                )
+            else:
+                # Native/PipeWire stream without a matching PA sink-input:
+                # fall back to the label so behaviour is unchanged for it.
+                key = app_name
             pulse.sink_input_move(si_index, target.index)
-            logger.info("Moved '%s' (pid=%d) -> %s", app_name, pid, target_sink_name)
-            # Record manual override — keyed by app name so it persists across restarts
+            logger.info("Moved '%s' (pid=%d) -> %s [key=%s]", app_name, pid, target_sink_name, key)
+            # Record manual override — keyed identically to video_router.py so
+            # it persists across restarts (issue #108).
             overrides = _load_overrides()
-            overrides[app_name] = target_sink_name
+            overrides[key] = target_sink_name
             _save_overrides(overrides)
         except Exception as exc:
             logger.warning("Error moving stream: %s", exc)
