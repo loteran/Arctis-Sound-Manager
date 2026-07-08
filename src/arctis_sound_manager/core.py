@@ -630,22 +630,50 @@ class CoreEngine:
                                 )
                                 if ta_count >= _TARGET_ABSENT_TICKS:
                                     _target_absent_ticks.pop(channel, None)
-                                    self.logger.warning(
-                                        "_loopback_watchdog: target '%s' absent for "
-                                        "%d ticks — calling ensure_filter_chain_healthy()",
-                                        spec.target, ta_count,
-                                    )
                                     try:
                                         from arctis_sound_manager.sonar_to_pipewire import (
                                             ensure_filter_chain_healthy,
+                                            ensure_sonar_eq_configs,
+                                            _restart_filter_chain,
                                         )
-                                        await asyncio.get_running_loop().run_in_executor(
-                                            None, ensure_filter_chain_healthy
+                                        # A target node is absent for one of two
+                                        # reasons: (a) its sonar-*-eq.conf is simply
+                                        # missing — never written, or moved aside —
+                                        # so no amount of restarting a healthy
+                                        # filter-chain will bring it back; or (b) the
+                                        # filter-chain is genuinely crash-looping.
+                                        # Try (a) first: regenerate any missing config
+                                        # and restart so PipeWire loads it (#111/#88).
+                                        # Only if there was nothing to regenerate is
+                                        # this a real crash-loop → hand off to the
+                                        # safe-mode handler.
+                                        regenerated = await asyncio.get_running_loop().run_in_executor(
+                                            None, ensure_sonar_eq_configs,
                                         )
+                                        if regenerated:
+                                            self.logger.warning(
+                                                "_loopback_watchdog: target '%s' absent — "
+                                                "regenerated missing EQ config(s), "
+                                                "restarting filter-chain to load them",
+                                                spec.target,
+                                            )
+                                            await asyncio.get_running_loop().run_in_executor(
+                                                None, _restart_filter_chain,
+                                            )
+                                        else:
+                                            self.logger.warning(
+                                                "_loopback_watchdog: target '%s' absent for "
+                                                "%d ticks and no config to regenerate — "
+                                                "calling ensure_filter_chain_healthy()",
+                                                spec.target, ta_count,
+                                            )
+                                            await asyncio.get_running_loop().run_in_executor(
+                                                None, ensure_filter_chain_healthy,
+                                            )
                                     except Exception as _ehc_exc:
                                         self.logger.error(
-                                            "_loopback_watchdog: ensure_filter_chain_healthy "
-                                            "failed: %r", _ehc_exc
+                                            "_loopback_watchdog: config regen / health "
+                                            "check failed: %r", _ehc_exc
                                         )
                                 continue  # do NOT recreate — target doesn't exist yet
                             else:
