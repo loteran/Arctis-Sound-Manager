@@ -6,12 +6,15 @@ on:
     paths:
       - "src/arctis_sound_manager/lang/en.ini"
   schedule:
-    - cron: "0 6 * * *"   # every day 06:00 UTC
+    - cron: "0 * * * *"   # hourly, on the hour
   workflow_dispatch:
 
 jobs:
   crowdin:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write        # push the localization branch + merge to main
+      pull-requests: write    # create and merge the Crowdin PR
     steps:
       - uses: actions/checkout@v4
 
@@ -21,7 +24,10 @@ jobs:
           upload_sources: true
           upload_translations: false
           download_translations: true
-          export_only_approved: false
+          # Auto-merge (below) removes the human review gate, so only ship
+          # translations that have been approved on Crowdin. Set to false to
+          # ship every translated string regardless of approval.
+          export_only_approved: true
           skip_untranslated_strings: true
           push_translations: true
           create_pull_request: true
@@ -36,3 +42,32 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CROWDIN_PROJECT_ID: ${{ secrets.CROWDIN_PROJECT_ID }}
           CROWDIN_PERSONAL_TOKEN: ${{ secrets.CROWDIN_PERSONAL_TOKEN }}
+
+      - name: Auto-merge the Crowdin PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # The Crowdin action only opens a PR when there are approved-translation
+          # changes; when there are none, there is nothing to merge.
+          PR=$(gh pr list --repo "$GITHUB_REPOSITORY" \
+                 --head i18n/crowdin-translations --base main \
+                 --state open --json number --jq '.[0].number // empty')
+          if [ -z "$PR" ]; then
+            echo "No open Crowdin PR — nothing to merge."
+            exit 0
+          fi
+          echo "Merging Crowdin PR #$PR into main..."
+          # GitHub may still be computing mergeability right after the PR is
+          # (re)created — retry a few times before giving up (the PR persists,
+          # so the next hourly run would merge it anyway).
+          for attempt in 1 2 3 4 5; do
+            if gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --merge; then
+              echo "Merged PR #$PR."
+              exit 0
+            fi
+            echo "Merge attempt $attempt failed (mergeability not ready?) — retrying in 15s"
+            sleep 15
+          done
+          echo "Could not merge PR #$PR this run; it will be retried next hour."
+          exit 0
