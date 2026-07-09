@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.93] - 10 July 2026
+
+### Fixed
+
+- **Phantom "Multiple ASM installations detected".** On usr-merge distros (modern Arch/Fedora/Ubuntu) `/bin` is a symlink to `/usr/bin`, so a single `asm-daemon` was counted twice and the app wrongly hid the "Update now" button and warned about a duplicate install. Distinct real paths are now counted, so a normal single install is no longer flagged. (#114)
+- **The tray battery percentage now hides immediately when you turn it off.** Toggling "Battery % in system tray" off previously left the number on screen until the next status change or an ASM restart; it now updates as soon as the setting changes. (#119)
+- **Settings toggles are now aligned.** The General settings rows were indented slightly more than the Startup/Telemetry rows, so their switches didn't line up.
+
+### Internal
+
+- The runtime dependency self-healing checker now knows about `pw-link` and `wireplumber`, so a missing one is detected and can be offered for install per distro.
+
 ## [1.1.92] - 9 July 2026
 
 ### Added
