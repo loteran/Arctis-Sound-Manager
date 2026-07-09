@@ -74,30 +74,27 @@ def get_tray_icon_pixmap(battery_percent: int | None = None,
 
     from PySide6.QtCore import QRect
 
-    size = 64
+    h = 64
     text = f"{int(battery_percent)}"
 
-    image = QImage(size, size, QImage.Format.Format_ARGB32_Premultiplied)
+    # 2:1 canvas — "two icons wide": ASM glyph on the left at full height, the
+    # battery number on the right at full height. A host that honours the icon
+    # aspect ratio (renders it two slots wide) then keeps both crisp instead of
+    # squashing a wide icon into one square slot.
+    image = QImage(2 * h, h, QImage.Format.Format_ARGB32_Premultiplied)
     image.fill(Qt.GlobalColor.transparent)
     painter = QPainter(image)
 
-    # ASM glyph on top, battery number below — both stacked inside a square so
-    # KDE/Plasma (StatusNotifierItem) doesn't shrink a wide icon into its square
-    # panel slot until it's unreadable. The number takes the larger share so it
-    # stays legible at ~22 px.
-    glyph_h = 26
-    glyph = get_icon_pixmap(color=color).scaledToHeight(
-        glyph_h, Qt.TransformationMode.SmoothTransformation)
-    painter.drawPixmap((size - glyph.width()) // 2, 1, glyph)
+    painter.drawPixmap(0, 0, get_icon_pixmap(color=color))  # left cell, 64×64
 
-    text_rect = QRect(0, glyph_h, size, size - glyph_h)
+    text_rect = QRect(h, 0, h, h)  # right cell
     painter.setPen(QColor(color))
     font = QFont()
     font.setBold(True)
-    px = text_rect.height() + 4
+    px = h - 6
     font.setPixelSize(px)
     painter.setFont(font)
-    while px > 8 and painter.fontMetrics().horizontalAdvance(text) > size - 2:
+    while px > 8 and painter.fontMetrics().horizontalAdvance(text) > h - 4:
         px -= 2
         font.setPixelSize(px)
         painter.setFont(font)
