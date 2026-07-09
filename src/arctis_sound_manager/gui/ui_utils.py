@@ -57,49 +57,33 @@ def get_icon_pixmap(icon_path: Path = ICON_PATH, color: str = '#ffffff') -> QPix
     return pixmap
 
 
-def get_tray_icon_pixmap(battery_percent: int | None = None,
-                         color: str = '#ffffff') -> QPixmap:
-    """Tray icon pixmap, optionally showing the battery percentage (#119).
+def get_battery_number_pixmap(battery_percent: int, color: str = '#ffffff') -> QPixmap:
+    """A square pixmap of the battery number, sized to fill the tray slot (#119).
 
-    When *battery_percent* is None the plain ASM icon is returned. Otherwise the
-    percentage is rendered as a large number filling a **square** canvas. A
-    square is deliberate: KDE/Plasma (and other StatusNotifierItem hosts) scale
-    the tray icon down into a square panel slot, so a wide "icon + text" layout
-    would shrink until unreadable. Filling the square with the digits keeps them
-    legible at ~22 px. The font auto-shrinks so 3-digit values ("100") still
-    fit.
+    Used by a dedicated second tray item so the number gets its own full-size
+    slot next to the ASM icon (StatusNotifierItem hosts give each item one
+    square slot; a wide "icon + text" pixmap gets squashed into one slot). The
+    font auto-shrinks so 3-digit values ("100") still fit.
     """
-    if battery_percent is None:
-        return get_icon_pixmap(color=color)
+    size = 64
+    text = f"{int(battery_percent)}%"
 
-    from PySide6.QtCore import QRect
-
-    h = 64
-    text = f"{int(battery_percent)}"
-
-    # 2:1 canvas — "two icons wide": ASM glyph on the left at full height, the
-    # battery number on the right at full height. A host that honours the icon
-    # aspect ratio (renders it two slots wide) then keeps both crisp instead of
-    # squashing a wide icon into one square slot.
-    image = QImage(2 * h, h, QImage.Format.Format_ARGB32_Premultiplied)
+    image = QImage(size, size, QImage.Format.Format_ARGB32_Premultiplied)
     image.fill(Qt.GlobalColor.transparent)
     painter = QPainter(image)
-
-    painter.drawPixmap(0, 0, get_icon_pixmap(color=color))  # left cell, 64×64
-
-    text_rect = QRect(h, 0, h, h)  # right cell
     painter.setPen(QColor(color))
+
     font = QFont()
     font.setBold(True)
-    px = h - 6
+    px = size - 4
     font.setPixelSize(px)
     painter.setFont(font)
-    while px > 8 and painter.fontMetrics().horizontalAdvance(text) > h - 4:
+    while px > 10 and painter.fontMetrics().horizontalAdvance(text) > size - 4:
         px -= 2
         font.setPixelSize(px)
         painter.setFont(font)
 
-    painter.drawText(text_rect, int(Qt.AlignmentFlag.AlignCenter), text)
+    painter.drawText(image.rect(), int(Qt.AlignmentFlag.AlignCenter), text)
     painter.end()
 
     return QPixmap.fromImage(image)

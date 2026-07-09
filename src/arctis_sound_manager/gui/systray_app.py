@@ -35,7 +35,7 @@ from arctis_sound_manager.gui.tray_eq_presets import (
     list_custom_presets,
     list_sonar_channel_presets,
 )
-from arctis_sound_manager.gui.ui_utils import get_icon_pixmap, get_tray_icon_pixmap
+from arctis_sound_manager.gui.ui_utils import get_battery_number_pixmap, get_icon_pixmap
 from arctis_sound_manager.i18n import I18n
 
 # Background tray-icon refresh cadence (seconds) when the menu is closed. The
@@ -85,6 +85,13 @@ class QSystrayApp(QBaseDesktopApp):
         self.tray_icon = QSystemTrayIcon(QIcon(pixmap), parent=self.app)
         self.tray_icon.setToolTip('Arctis Sound Manager')
 
+        # A separate tray item shows the battery % as a full-size number in its
+        # own slot next to the ASM icon (#119) — a single item can only occupy
+        # one square slot, so a second one is how we get "two icons wide". Hidden
+        # until a battery level is known and the setting is on.
+        self.battery_icon = QSystemTrayIcon(parent=self.app)
+        self.battery_icon.activated.connect(self._on_tray_activated)
+
         lang_code, _ = locale.getdefaultlocale()
         lang_code = lang_code.split('_')[0] if lang_code else 'en'
 
@@ -99,6 +106,7 @@ class QSystrayApp(QBaseDesktopApp):
         self.menu.aboutToShow.connect(self.start_polling)
         self.menu.aboutToHide.connect(self.stop_polling)
         self.tray_icon.setContextMenu(self.menu)
+        self.battery_icon.setContextMenu(self.menu)
         # Left single-click on the tray icon opens the main window (launching it
         # the first time, raising it on later clicks). Right-click still shows
         # the context menu.
@@ -177,15 +185,22 @@ class QSystrayApp(QBaseDesktopApp):
         # creates the popup surface.
 
     def _update_tray_icon(self, status: dict) -> None:
-        """Refresh the tray icon, drawing the battery % beside it when enabled
-        and available (#119)."""
+        """Show/refresh the dedicated battery-% tray item next to the ASM icon
+        when enabled and a level is known (#119). The main icon stays the plain
+        ASM logo."""
         pct = None
         if _show_battery_in_tray():
             pct = self._extract_battery_percent(status)
         try:
-            self.tray_icon.setIcon(QIcon(get_tray_icon_pixmap(pct)))
+            if pct is None:
+                self.battery_icon.hide()
+            else:
+                self.battery_icon.setIcon(QIcon(get_battery_number_pixmap(pct)))
+                self.battery_icon.setToolTip(f'Arctis — {pct}%')
+                if not self.battery_icon.isVisible():
+                    self.battery_icon.show()
         except Exception as e:
-            self.logger.debug('Could not update tray icon: %s', e)
+            self.logger.debug('Could not update battery tray item: %s', e)
 
     @staticmethod
     def _extract_battery_percent(status: dict) -> int | None:
