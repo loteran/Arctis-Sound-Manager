@@ -8,12 +8,34 @@ from configparser import ConfigParser, RawConfigParser
 from pathlib import Path
 
 from arctis_sound_manager.constants import HOME_LANG_FOLDER
+from arctis_sound_manager.lang_sanitize import sanitize_ini_text
 
 _BUILTIN_LANG_DIR = Path(__file__).parent / 'lang'
 
 
 _LANG_FILE = Path.home() / ".config" / "arctis_manager" / ".language"
 _logger = logging.getLogger('I18n')
+
+
+def _read_lang_file(cp: RawConfigParser, path: Path) -> bool:
+    """Read a lang .ini into *cp*, tolerating stray translator line breaks.
+
+    Returns True on success. A single un-indented spill line (common when a
+    Crowdin translator hits Enter mid-string) no longer discards the whole
+    file — it is folded back onto the preceding value before parsing, so one
+    bad newline can't hide an entire translation from the language menu.
+    """
+    try:
+        text = path.read_text(encoding='utf-8')
+    except Exception as e:
+        _logger.warning(f'Could not read lang file {path}: {e!r}')
+        return False
+    try:
+        cp.read_string(sanitize_ini_text(text), source=str(path))
+        return True
+    except Exception as e:
+        _logger.warning(f'Could not parse lang file {path} even after sanitize: {e!r}')
+        return False
 
 try:
     from babel import Locale as _BabelLocale
@@ -50,10 +72,7 @@ class I18n:
         # Pre-load EN once so we can fall back when the active locale lacks a key.
         en_path = Path(__file__).parent / 'lang' / 'en.ini'
         if en_path.is_file():
-            try:
-                self._en_translations.read(en_path)
-            except Exception as e:
-                _logger.warning(f'Failed to pre-load en.ini for fallback: {e!r}')
+            _read_lang_file(self._en_translations, en_path)
         self._callbacks = []
         saved = self._load_saved_lang()
         self.set_language(saved)
@@ -88,7 +107,14 @@ class I18n:
 
         self._lang = lang_code or default
         self.translations = RawConfigParser()
-        self.translations.read(lang_file)
+        if not _read_lang_file(self.translations, lang_file) and self._lang != default:
+            # Selected locale is unreadable even after sanitizing — fall back to
+            # the default rather than leaving the UI with an empty catalogue.
+            fallback = Path(__file__).parent / 'lang' / f'{default}.ini'
+            logger.warning(f'Falling back to {fallback} after failing to load {lang_file}')
+            self._lang = default
+            self.translations = RawConfigParser()
+            _read_lang_file(self.translations, fallback)
         self._save_lang(self._lang)
 
         for cb in self._callbacks:
@@ -105,7 +131,7 @@ class I18n:
         Scans built-in lang dir first, then HOME_LANG_FOLDER for community downloads.
         """
         en_cp = RawConfigParser()
-        en_cp.read(_BUILTIN_LANG_DIR / 'en.ini')
+        _read_lang_file(en_cp, _BUILTIN_LANG_DIR / 'en.ini')
         en_key_count = sum(len(list(en_cp.items(s))) for s in en_cp.sections())
         threshold = int(en_key_count * 0.40)
 
@@ -129,9 +155,7 @@ class I18n:
                 seen['en'] = 'English'
                 continue
             cp = RawConfigParser()
-            try:
-                cp.read(path)
-            except Exception:
+            if not _read_lang_file(cp, path):
                 continue
             if _key_count(cp) >= threshold:
                 seen[code] = _native_name(code)
@@ -142,9 +166,7 @@ class I18n:
                 if code in seen:
                     continue
                 cp = RawConfigParser()
-                try:
-                    cp.read(path)
-                except Exception:
+                if not _read_lang_file(cp, path):
                     continue
                 if _key_count(cp) >= threshold:
                     seen[code] = _native_name(code)

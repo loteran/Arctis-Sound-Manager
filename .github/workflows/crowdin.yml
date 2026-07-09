@@ -31,27 +31,43 @@ jobs:
           # translated on Crowdin — quality is managed on Crowdin itself.
           export_only_approved: false
           skip_untranslated_strings: true
-          push_translations: true
-          create_pull_request: true
-          pull_request_title: "i18n: new Crowdin translations"
-          pull_request_body: |
-            Automatic translation update from Crowdin.
-            Strings translated below the 80 % threshold are skipped.
-          pull_request_base_branch_name: main
-          localization_branch_name: i18n/crowdin-translations
-          commit_message: "i18n: update translations from Crowdin [skip ci]"
+          # Download into the working tree only; sanitize before opening the PR.
+          push_translations: false
+          create_pull_request: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CROWDIN_PROJECT_ID: ${{ secrets.CROWDIN_PROJECT_ID }}
           CROWDIN_PERSONAL_TOKEN: ${{ secrets.CROWDIN_PERSONAL_TOKEN }}
+
+      - name: Sanitize downloaded translations
+        # Fold stray translator line breaks back onto their value so a single
+        # bad newline can't make a whole language file unparseable (and thus
+        # silently vanish from the language menu). Shares the exact logic the
+        # runtime loader uses. See src/arctis_sound_manager/lang_sanitize.py.
+        run: python3 -m arctis_sound_manager.lang_sanitize src/arctis_sound_manager/lang
+        env:
+          PYTHONPATH: src
+
+      - name: Create translations pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          base: main
+          branch: i18n/crowdin-translations
+          title: "i18n: new Crowdin translations"
+          body: |
+            Automatic translation update from Crowdin.
+            Strings translated below the 80 % threshold are skipped.
+            Downloaded files are sanitized to repair stray line breaks.
+          commit-message: "i18n: update translations from Crowdin [skip ci]"
+          delete-branch: true
 
       - name: Auto-merge the Crowdin PR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          # The Crowdin action only opens a PR when there are approved-translation
-          # changes; when there are none, there is nothing to merge.
+          # A PR only exists when there were translation changes to commit;
+          # when there are none, there is nothing to merge.
           PR=$(gh pr list --repo "$GITHUB_REPOSITORY" \
                  --head i18n/crowdin-translations --base main \
                  --state open --json number --jq '.[0].number // empty')
