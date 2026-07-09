@@ -391,7 +391,17 @@ HELP_CONTENT: dict[str, dict] = {
                     "System tray not appearing at login:\n"
                     "• Enable \"Launch at startup\" in Settings, or check:\n"
                     "  systemd: systemctl --user status arctis-gui.service\n"
-                    "  dinit:   check ~/.config/autostart/arctis-gui-autostart.desktop"
+                    "  dinit:   check ~/.config/autostart/arctis-gui-autostart.desktop\n\n"
+                    "No sound / flat audio and a \"Safe mode is on\" banner on the Sonar page:\n"
+                    "• Safe mode is a safety net: if the PipeWire audio filter-chain crashes\n"
+                    "  in a loop, ASM disables the EQ so you keep stable (flat) audio instead\n"
+                    "  of constant cuts. The 7.1 surround and Sonar EQ are turned off while it\n"
+                    "  is active.\n"
+                    "• Once the cause is gone (usually an ASM or PipeWire update), click\n"
+                    "  \"Re-enable EQ\" on the banner: ASM restores the EQ configs and restarts\n"
+                    "  the filter-chain. If it still crashes, safe mode re-arms automatically.\n"
+                    "• ASM also clears safe mode on its own after an ASM/PipeWire version\n"
+                    "  change, so most users never need the button."
                 ),
             },
         ],
@@ -762,7 +772,19 @@ HELP_CONTENT: dict[str, dict] = {
                     "Tray absent au démarrage :\n"
                     "• Activez \"Lancer au démarrage\" dans Paramètres, ou vérifiez :\n"
                     "  systemd : systemctl --user status arctis-gui.service\n"
-                    "  dinit   : vérifiez ~/.config/autostart/arctis-gui-autostart.desktop"
+                    "  dinit   : vérifiez ~/.config/autostart/arctis-gui-autostart.desktop\n\n"
+                    "Pas de son / son plat et une bannière « Mode sans échec actif » sur la page Sonar :\n"
+                    "• Le mode sans échec est un filet de sécurité : si la chaîne de filtres\n"
+                    "  audio PipeWire crashe en boucle, ASM désactive l'EQ pour garder un son\n"
+                    "  stable (plat) au lieu de coupures constantes. Le surround 7.1 et l'EQ\n"
+                    "  Sonar sont désactivés tant qu'il est actif.\n"
+                    "• Une fois la cause disparue (en général une mise à jour d'ASM ou de\n"
+                    "  PipeWire), cliquez sur « Réactiver l'EQ » dans la bannière : ASM restaure\n"
+                    "  les configs EQ et redémarre la chaîne de filtres. Si ça crashe encore,\n"
+                    "  le mode sans échec se réarme automatiquement.\n"
+                    "• ASM désarme aussi le mode sans échec tout seul après un changement de\n"
+                    "  version ASM/PipeWire, donc la plupart des utilisateurs n'ont jamais\n"
+                    "  besoin du bouton."
                 ),
             },
         ],

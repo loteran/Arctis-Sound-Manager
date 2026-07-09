@@ -75,6 +75,17 @@ class ArctisManagerDbusConfigService(ServiceInterface):
         )
         return True
 
+    @method('ResetFilterChainSafeMode')
+    async def reset_filter_chain_safe_mode(self) -> 'b':  # type: ignore
+        """Clear filter-chain safe mode and re-enable the EQ (issue #88).
+
+        Triggered by the GUI 'Re-enable EQ' banner. Runs off the event loop
+        since it restores configs and restarts the filter-chain service.
+        """
+        return await asyncio.get_running_loop().run_in_executor(
+            None, self.core_engine.reset_filter_chain_safe_mode
+        )
+
 class ArctisManagerDbusStatusService(ServiceInterface):
     def __init__(self, core: CoreEngine):
         super().__init__(DBUS_STATUS_INTERFACE_NAME)

@@ -939,7 +939,21 @@ class CoreEngine:
     def reload_device_configurations(self) -> None:
         self.device_configurations = load_device_configurations()
         self.configure_virtual_sinks()
-    
+
+    def reset_filter_chain_safe_mode(self) -> bool:
+        """User-initiated: clear filter-chain safe mode and bring EQ back (#88).
+
+        Restores the EQ configs safe mode disabled, clears the latch and
+        restarts the filter-chain. If the graph still genuinely crashes it
+        re-arms safe mode. Returns True on success."""
+        try:
+            from arctis_sound_manager.sonar_to_pipewire import clear_safe_mode_and_restore
+            clear_safe_mode_and_restore()
+            return True
+        except Exception as exc:
+            self.logger.warning("reset_filter_chain_safe_mode failed: %r", exc)
+            return False
+
     def configure_virtual_sinks(self) -> None:
         with self._detect_lock:
             usb_device: Device | Any | None = None

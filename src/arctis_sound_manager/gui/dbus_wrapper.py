@@ -458,3 +458,34 @@ class DbusWrapper(QObject):
         except Exception as e:
             DbusWrapper.logger.error('Error in recreate_loopback_single_sync: %s', e)
             return False
+
+    @staticmethod
+    async def _reset_filter_chain_safe_mode_async() -> None:
+        dbus_bus = None
+        try:
+            dbus_bus = await MessageBus().connect()
+            await dbus_bus.call(Message(
+                destination=DBUS_BUS_NAME,
+                path=DBUS_CONFIG_OBJECT_PATH,
+                interface=DBUS_CONFIG_INTERFACE_NAME,
+                member='ResetFilterChainSafeMode',
+                message_type=MessageType.METHOD_CALL,
+            ))
+        except Exception as e:
+            DbusWrapper.logger.error('Error in reset_filter_chain_safe_mode: %s', e)
+        finally:
+            if dbus_bus is not None:
+                dbus_bus.disconnect()
+
+    @staticmethod
+    def reset_filter_chain_safe_mode_sync() -> bool:
+        """Clear filter-chain safe mode via the daemon so EQ is re-enabled (#88).
+
+        MUST be called off the Qt UI thread (the daemon restarts the
+        filter-chain service, which blocks)."""
+        try:
+            asyncio.run(DbusWrapper._reset_filter_chain_safe_mode_async())
+            return True
+        except Exception as e:
+            DbusWrapper.logger.error('Error in reset_filter_chain_safe_mode_sync: %s', e)
+            return False

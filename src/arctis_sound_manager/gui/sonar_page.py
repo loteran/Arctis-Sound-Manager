@@ -89,6 +89,7 @@ from arctis_sound_manager.sonar_to_pipewire import (
     check_and_fix_stale_configs,
     generate_sonar_eq_conf,
     generate_sonar_micro_conf,
+    is_filter_chain_safe_mode_armed,
 )
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -2791,9 +2792,23 @@ class SonarMicroWidget(SonarChannelWidget):
 
 # ── Sonar page (top-level) ────────────────────────────────────────────────────
 
+class _SafeModeResetWorker(QThread):
+    """Off-UI-thread reset of filter-chain safe mode (issue #88).
+
+    The daemon call restores the EQ configs and restarts the filter-chain,
+    which blocks — so it must not run on the Qt UI thread."""
+    done = Signal(bool)
+
+    def run(self) -> None:
+        from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
+        ok = DbusWrapper.reset_filter_chain_safe_mode_sync()
+        self.done.emit(ok)
+
+
 class SonarPage(QWidget):
     def __init__(self, embedded: bool = False, parent: QWidget | None = None):
         super().__init__(parent)
+        self._safe_mode_worker: _SafeModeResetWorker | None = None
 
         # Anti-amplification state for boost/smart global apply (1a)
         self._apply_all_worker: _ApplyAllWorker | None = None
@@ -2832,6 +2847,18 @@ class SonarPage(QWidget):
             subtitle.setStyleSheet("color: #666666; font-size: 20pt; font-weight: bold; background: transparent;")
             root.addWidget(subtitle)
             root.addSpacing(20)
+
+        # ── Safe-mode banner (issue #88) ──────────────────────────────────────
+        # Shown only while the filter-chain crash-loop safety latch has disabled
+        # the EQ. Gives the user a one-click way to re-enable it once the cause
+        # is gone (the auto-recovery only fires on an ASM/PipeWire version bump).
+        self._safe_mode_banner = self._build_safe_mode_banner()
+        root.addWidget(self._safe_mode_banner)
+        self._safe_mode_timer = QTimer(self)
+        self._safe_mode_timer.setInterval(3000)
+        self._safe_mode_timer.timeout.connect(self._refresh_safe_mode_banner)
+        self._safe_mode_timer.start()
+        self._refresh_safe_mode_banner()
 
         # ── Channel tabs ──────────────────────────────────────────────────────
         from PySide6.QtWidgets import QTabWidget
@@ -2892,6 +2919,79 @@ class SonarPage(QWidget):
         # Apply the currently-active theme so a saved non-default theme renders
         # correctly on first paint.
         self.apply_theme()
+
+    # ── Safe-mode banner (issue #88) ──────────────────────────────────────────
+    def _build_safe_mode_banner(self) -> QFrame:
+        banner = QFrame()
+        banner.setObjectName("safeModeBanner")
+        banner.setStyleSheet(
+            "#safeModeBanner {"
+            f"  background: {BG_CARD};"
+            "   border: 1px solid #e6a817;"
+            "   border-left: 4px solid #e6a817;"
+            "   border-radius: 8px;"
+            "}"
+        )
+        lay = QHBoxLayout(banner)
+        lay.setContentsMargins(14, 10, 12, 10)
+        lay.setSpacing(12)
+
+        self._safe_mode_label = QLabel(_t("safe_mode_banner"))
+        self._safe_mode_label.setWordWrap(True)
+        self._safe_mode_label.setStyleSheet(
+            f"color: {TEXT_PRIMARY}; font-size: 10pt; background: transparent; border: none;")
+        lay.addWidget(self._safe_mode_label, 1)
+
+        self._safe_mode_btn = QPushButton(_t("safe_mode_reset_btn"))
+        self._safe_mode_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._safe_mode_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #e6a817; color: #1a1a1a; font-weight: bold;"
+            "  border: none; border-radius: 6px; padding: 7px 16px; font-size: 10pt;"
+            "}"
+            "QPushButton:hover { background: #f2b62a; }"
+            "QPushButton:disabled { background: #7a6320; color: #cccccc; }"
+        )
+        self._safe_mode_btn.clicked.connect(self._on_reset_safe_mode)
+        lay.addWidget(self._safe_mode_btn)
+
+        banner.setVisible(False)
+        return banner
+
+    def _refresh_safe_mode_banner(self) -> None:
+        """Poll the on-disk safe-mode marker and show/hide the banner."""
+        try:
+            armed = is_filter_chain_safe_mode_armed()
+        except Exception:
+            armed = False
+        # Don't flip visibility back while a reset is mid-flight.
+        if self._safe_mode_worker is not None:
+            return
+        self._safe_mode_banner.setVisible(armed)
+
+    def _on_reset_safe_mode(self) -> None:
+        if self._safe_mode_worker is not None:
+            return
+        self._safe_mode_btn.setEnabled(False)
+        self._safe_mode_btn.setText(_t("safe_mode_reset_btn_working"))
+        self._safe_mode_worker = _SafeModeResetWorker()
+        self._safe_mode_worker.done.connect(self._on_safe_mode_reset_done)
+        self._safe_mode_worker.finished.connect(self._on_safe_mode_worker_finished)
+        self._safe_mode_worker.start()
+
+    def _on_safe_mode_reset_done(self, ok: bool) -> None:
+        self._safe_mode_btn.setEnabled(True)
+        self._safe_mode_btn.setText(_t("safe_mode_reset_btn"))
+        # Hide immediately on success; the timer confirms from the marker.
+        if ok and not is_filter_chain_safe_mode_armed():
+            self._safe_mode_banner.setVisible(False)
+
+    def _on_safe_mode_worker_finished(self) -> None:
+        worker = self._safe_mode_worker
+        self._safe_mode_worker = None
+        if worker is not None:
+            worker.deleteLater()
+        self._refresh_safe_mode_banner()
 
     def _load_output_target(self):
         """Read external_output_device from settings and set it on the output widget.

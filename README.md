@@ -51,6 +51,8 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
   - [Translations](#translations)
   - [Community stats](#community-stats)
   - [Uninstall](#uninstall)
+  - [Troubleshooting](#troubleshooting)
+    - [Safe mode (EQ auto-disabled after a crash)](#safe-mode-eq-auto-disabled-after-a-crash)
   - [Reporting a bug](#reporting-a-bug)
     - [In-app reporter (recommended)](#in-app-reporter-recommended)
     - [CLI equivalents](#cli-equivalents)
@@ -725,6 +727,31 @@ curl -fsSL https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/s
 
 `--purge` still preserves `~/.config/arctis_manager/profiles/`. A final prompt offers to delete them too for a true clean slate.
 </details>
+
+---
+
+## Troubleshooting
+
+### Safe mode (EQ auto-disabled after a crash)
+
+ASM has a safety net for the PipeWire audio **filter-chain**. If that service
+crashes in a loop (a known issue with very large HeSuVi 7.1 graphs on some
+builds, e.g. SteamOS), instead of leaving you with audio that cuts in and out,
+ASM **disables the EQ configs and keeps a stable, flat audio path** — this is
+*safe mode*. While it's active, the Sonar EQ and the virtual 7.1 surround are
+turned off.
+
+When safe mode is on, a banner appears at the top of the **Sonar** page:
+
+- Click **Re-enable EQ** to clear it: ASM restores the EQ configs and restarts
+  the filter-chain. If the graph genuinely still crashes, safe mode re-arms
+  automatically, so you can't get stuck in a crash loop.
+- You usually won't need the button: ASM **auto-clears safe mode** on its own
+  after an ASM or PipeWire version change (the most common way the underlying
+  crash gets fixed), then re-tests the audio graph.
+
+The safe-mode state (and the disabled configs) also show up in the in-app bug
+report, under *Filter-chain safe mode & config presence*.
 
 ---
 

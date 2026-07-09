@@ -348,6 +348,51 @@ def _current_env_versions() -> dict[str, str]:
     return {"asm_version": asm, "pipewire_version": pipewire}
 
 
+def is_filter_chain_safe_mode_armed() -> bool:
+    """True when the on-disk safe-mode marker exists (issue #88).
+
+    Cheap file stat the GUI can poll to surface a 'safe mode is on / re-enable
+    EQ' banner, even though it runs in a different process from the daemon."""
+    return _SAFE_MODE_MARKER.exists()
+
+
+def _restore_disabled_configs() -> None:
+    """Move the ASM configs safe mode set aside back into the active dir.
+
+    Overwrites any stale copy already present and removes the (now-empty)
+    disabled dir. Downstream regeneration refreshes their contents."""
+    try:
+        if not _CONF_DIR_DISABLED.exists():
+            return
+        _CONF_DIR.mkdir(parents=True, exist_ok=True)
+        for name in _ASM_CONF_NAMES:
+            src = _CONF_DIR_DISABLED / name
+            if src.exists():
+                try:
+                    src.replace(_CONF_DIR / name)  # overwrites any stale copy
+                except OSError as exc:
+                    _log.warning("safe mode: could not restore %s: %s", name, exc)
+        try:
+            _CONF_DIR_DISABLED.rmdir()  # only succeeds once empty
+        except OSError:
+            pass
+    except Exception as exc:
+        _log.debug("safe mode: restore step failed: %s", exc)
+
+
+def clear_safe_mode_and_restore() -> None:
+    """User-initiated safe-mode reset: restore the disabled EQ configs, clear
+    the latch, and restart the filter-chain so EQ audio returns.
+
+    Unlike maybe_recover_from_safe_mode() this is unconditional (no version
+    gate) — it's what the GUI 'Re-enable EQ' button triggers. The restart goes
+    through _restart_filter_chain(), so if the graph genuinely still crashes it
+    re-arms safe mode rather than crash-looping."""
+    _restore_disabled_configs()
+    reset_filter_chain_safe_mode()
+    _restart_filter_chain()
+
+
 def maybe_recover_from_safe_mode() -> bool:
     """Auto-clear safe mode when the environment changed since it was armed.
 
@@ -396,24 +441,7 @@ def maybe_recover_from_safe_mode() -> bool:
 
     # Restore the configs safe mode moved aside so the re-test runs the full
     # graph; regeneration downstream will refresh their contents.
-    try:
-        if _CONF_DIR_DISABLED.exists():
-            _CONF_DIR.mkdir(parents=True, exist_ok=True)
-            for name in _ASM_CONF_NAMES:
-                src = _CONF_DIR_DISABLED / name
-                if src.exists():
-                    try:
-                        src.replace(_CONF_DIR / name)  # overwrites any stale copy
-                    except OSError as exc:
-                        _log.warning(
-                            "safe mode recovery: could not restore %s: %s", name, exc)
-            try:
-                _CONF_DIR_DISABLED.rmdir()  # only succeeds once empty
-            except OSError:
-                pass
-    except Exception as exc:
-        _log.debug("safe mode recovery: restore step failed: %s", exc)
-
+    _restore_disabled_configs()
     reset_filter_chain_safe_mode()
     return True
 
