@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PySide6 import QtSvg
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
+from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPixmap
 
 ICON_PATH = Path(__file__).parent / 'images' / 'steelseries_logo.svg'
 _LOGO_PATH = Path(__file__).parent / 'images' / 'asm_logo.png'
@@ -55,3 +55,46 @@ def get_icon_pixmap(icon_path: Path = ICON_PATH, color: str = '#ffffff') -> QPix
     pixmap = QPixmap.fromImage(image)
 
     return pixmap
+
+
+def get_tray_icon_pixmap(battery_percent: int | None = None,
+                         color: str = '#ffffff') -> QPixmap:
+    """Tray icon pixmap, optionally with the battery percentage next to it.
+
+    When *battery_percent* is None the plain ASM icon is returned. Otherwise the
+    icon is drawn on the left and "<n>%" to its right on a wider canvas, so the
+    number rides alongside the icon in the system tray (discussion #119).
+    """
+    base = get_icon_pixmap(color=color)  # 64×64 ASM glyph
+    if battery_percent is None:
+        return base
+
+    text = f"{int(battery_percent)}%"
+    font = QFont()
+    font.setPixelSize(46)
+    font.setBold(True)
+
+    # Measure the text to size the canvas so nothing is clipped.
+    probe = QImage(1, 1, QImage.Format.Format_ARGB32_Premultiplied)
+    fm_painter = QPainter(probe)
+    fm_painter.setFont(font)
+    text_w = fm_painter.fontMetrics().horizontalAdvance(text)
+    fm_painter.end()
+
+    gap = 10
+    total_w = 64 + gap + text_w + 4
+    image = QImage(total_w, 64, QImage.Format.Format_ARGB32_Premultiplied)
+    image.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(image)
+    painter.drawPixmap(0, 0, base)
+    painter.setPen(QColor(color))
+    painter.setFont(font)
+    painter.drawText(
+        64 + gap, 0, text_w + 4, 64,
+        int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+        text,
+    )
+    painter.end()
+
+    return QPixmap.fromImage(image)

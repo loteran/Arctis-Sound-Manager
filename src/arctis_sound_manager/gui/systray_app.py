@@ -10,7 +10,7 @@ import subprocess
 from logging import Logger
 from pathlib import Path
 from threading import Thread
-from time import sleep
+from time import monotonic, sleep
 
 from dbus_next.aio.message_bus import MessageBus
 from dbus_next.constants import MessageType
@@ -35,8 +35,30 @@ from arctis_sound_manager.gui.tray_eq_presets import (
     list_custom_presets,
     list_sonar_channel_presets,
 )
-from arctis_sound_manager.gui.ui_utils import get_icon_pixmap
+from arctis_sound_manager.gui.ui_utils import get_icon_pixmap, get_tray_icon_pixmap
 from arctis_sound_manager.i18n import I18n
+
+# Background tray-icon refresh cadence (seconds) when the menu is closed. The
+# poll only reads the daemon's cached device status over D-Bus — it never wakes
+# the headset — so this is cheap. Keeps the battery-% icon current (#119).
+_BG_POLL_INTERVAL = 30.0
+
+
+def _show_battery_in_tray() -> bool:
+    """Whether to draw the battery % on the tray icon (setting, default True).
+
+    The tray runs in a separate process from the daemon, so it reads the shared
+    settings file directly rather than holding a GeneralSettings instance."""
+    try:
+        from arctis_sound_manager.constants import SETTINGS_FOLDER
+        from ruamel.yaml import YAML
+        f = SETTINGS_FOLDER / 'general_settings.yaml'
+        if f.is_file():
+            data = YAML(typ='safe').load(f.read_text(encoding='utf-8')) or {}
+            return bool(data.get('systray_show_battery', True))
+    except Exception:
+        pass
+    return True
 
 
 class QSystrayApp(QBaseDesktopApp):
@@ -99,12 +121,20 @@ class QSystrayApp(QBaseDesktopApp):
         self.do_polling = False
 
     def poll_dbus_thread(self):
+        last_bg = 0.0
         while not self.is_stopping():
             if self.do_polling:
                 asyncio.run(self.dbus_poll())
                 sleep(2)
             else:
-                # Wait for do_polling faster
+                # Background refresh so the battery-% tray icon stays current
+                # even with the menu closed (#119). Stays responsive to
+                # do_polling by looping every 0.5 s and only polling on the
+                # slower _BG_POLL_INTERVAL cadence.
+                now = monotonic()
+                if now - last_bg >= _BG_POLL_INTERVAL:
+                    last_bg = now
+                    asyncio.run(self.dbus_poll())
                 sleep(.5)
 
     async def dbus_poll(self):
@@ -139,11 +169,39 @@ class QSystrayApp(QBaseDesktopApp):
             return
 
         self.last_device_status = status
+        self._update_tray_icon(status)
         # Do NOT call menu_setup() here: the menu popup window may already be
         # visible (Wayland surface exists) and clear()-ing it while paint events
         # are queued causes a use-after-free SIGSEGV in QWaylandWindow.
         # menu_setup() is called in start_polling() instead, just before Qt
         # creates the popup surface.
+
+    def _update_tray_icon(self, status: dict) -> None:
+        """Refresh the tray icon, drawing the battery % beside it when enabled
+        and available (#119)."""
+        pct = None
+        if _show_battery_in_tray():
+            pct = self._extract_battery_percent(status)
+        try:
+            self.tray_icon.setIcon(QIcon(get_tray_icon_pixmap(pct)))
+        except Exception as e:
+            self.logger.debug('Could not update tray icon: %s', e)
+
+    @staticmethod
+    def _extract_battery_percent(status: dict) -> int | None:
+        """Pull the headset battery percentage out of a GetStatus payload."""
+        if not isinstance(status, dict):
+            return None
+        for category in status.values():
+            if not isinstance(category, dict):
+                continue
+            bat = category.get('headset_battery_charge')
+            if isinstance(bat, dict) and bat.get('type') == 'percentage':
+                try:
+                    return int(bat['value'])
+                except (KeyError, TypeError, ValueError):
+                    return None
+        return None
 
     async def start(self):
         self.logger.info('Starting Systray app.')

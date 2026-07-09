@@ -142,6 +142,9 @@ class GeneralSettings(JsonSerializable):
     weather_units: str = "celsius"   # "celsius" | "fahrenheit"
     weather_city_display: str = ""   # short name returned by geocoding
 
+    # Draw the headset battery percentage next to the system-tray icon (#119)
+    systray_show_battery: bool = True
+
     # UI theme
     theme: str = "steelseries"
 
@@ -151,6 +154,7 @@ class GeneralSettings(JsonSerializable):
         ConfigSetting('redirect_audio_on_disconnect_device', SettingType.SELECT, None, options_source='pulse_audio_devices', options_mapping={ 'value': 'id', 'label': 'description' }),
         ConfigSetting('external_output_device', SettingType.SELECT, None, options_source='external_audio_devices', options_mapping={ 'value': 'id', 'label': 'description' }),
         ConfigSetting('hrir_id', SettingType.SELECT, None, options_source='hrir_files', options_mapping={ 'value': 'id', 'label': 'name' }),
+        ConfigSetting('systray_show_battery', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
     ]
 
     dac_settings_config: list[ConfigSetting] = [
