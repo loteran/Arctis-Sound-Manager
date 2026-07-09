@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.92" date="2026-07-09">
+      <description>
+        <p>Battery percentage in the system tray. The headset battery level is shown as its own full-size item next to the ASM tray icon. Can be turned off with the new Battery % in system tray toggle in Settings → General. (#119). 24-hour / 12-hour clock toggle for the OLED. A new option under the Time element in the DAC tab switches the on-screen clock between 24-hour (14:05) and 12-hour (2:05 PM). "Re-enable EQ" button for safe mode. When the audio filter-chain crash-loop safety net has disabled the EQ, a banner on the Sonar page now lets you re-enable it in one click (previously there was no in-app way out). See the new Troubleshooting section in the README. (#88).</p>
+      </description>
+    </release>
     <release version="1.1.91" date="2026-07-08">
       <description>
         <p>Passthrough toggle on the Output tab. You can now send audio to the external output device exactly as-is, bypassing the Output EQ profile. When enabled, the EQ curve and macro sliders are greyed out since they no longer affect anything. (#111). Two Electron apps that both report as "Chromium" (e.g. Vesktop and Pear Desktop) would not keep their channels across restarts. The GUI saved the manual routing override under the app's display name instead of the same name+binary key the router reads, so the choice never persisted deterministically. The GUI now stores overrides under the exact key the router uses. (#108). Virtual-channel loopbacks could be stolen by another output device. When a second USB DAC (or any competing sink) was present, WirePlumber kept re-routing the Game/Chat/Media loopbacks to it while the watchdog fought back — an unwinnable, hardware-specific tug-of-war. The loopbacks are now taken out of WirePlumber's routing entirely (node.autoconnect=false) and ASM owns their link to the Sonar EQ directly, so no other device can ever steal them regardless of what is plugged in. (#100).</p>
@@ -199,11 +204,6 @@
     <release version="1.1.63" date="2026-06-09">
       <description>
         <p>Arctis Nova Pro Wired — OLED screen never updated and the daemon spammed OLED USB error: [Errno 110] Operation timed out — the GameDAC Gen 2 firmware validates the HID SET_REPORT wValue strictly, but ASM sent report id 0 in its low byte, so the base station rejected every OLED transfer. The wValue is now built as (report_type &lt;&lt; 8) | report_id (0x0306 for image frames, 0x0206 for brightness/return-to-UI), matching the protocol proven by working third-party tools. (#76). Arctis Nova Pro Wired — headset not detected after boot/login until audio activity (e.g. joining a call) woke the device — a device already plugged in at startup fires no udev add event, so a single failed initial scan was never retried. The daemon now re-scans periodically until the device is fully configured instead of waiting for a hotplug or USB wake event. (#76). Arctis Nova Pro Wired — audio near-inaudible unless volume was cranked to ~95% — control-transfer device commands carried the same incorrect wValue, so the high-gain initialisation never reached the GameDAC. Commands now embed the correct report id in the wValue for devices that require it, opt-in per device so the Nova 7 family and others are unaffected. (#76).</p>
-      </description>
-    </release>
-    <release version="1.1.62" date="2026-06-09">
-      <description>
-        <p>Font rendering on Bazzite/Linux — all text displayed as blocks — Qt's QSS parser does not support the CSS Level 4 system-ui keyword; it treated it as a literal font name, found nothing, and fell back to a font rendering all glyphs as tofu squares. Replaced with sans-serif, which Qt resolves correctly via fontconfig on all Linux distributions.</p>
       </description>
     </release>
   </releases>
