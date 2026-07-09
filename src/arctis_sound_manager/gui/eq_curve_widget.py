@@ -451,8 +451,13 @@ class _BandInspector(QWidget):
         self._band: EqBand | None = None
         self._updating = False
 
+        # A plain QWidget ignores the stylesheet's background-color unless
+        # WA_StyledBackground is set — without it the inspector renders
+        # transparent and the EQ curve/dots show through, making the values
+        # unreadable (#120). This also lets the border-radius clip cleanly,
+        # unlike autoFillBackground which paints an opaque square underneath.
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._refresh_inspector_style()
-        self.setAutoFillBackground(True)
 
         self._build_layout()
 
