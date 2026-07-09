@@ -45,6 +45,10 @@ Requires:       pipewire-pulseaudio
 Requires:       wireplumber
 Requires:       libusb1
 Requires:       pulseaudio-libs
+# The `pactl` CLI (used at GUI startup and for EQ/Sonar routing) ships in
+# pulseaudio-utils, NOT in pipewire-pulseaudio or pulseaudio-libs. Without it
+# a clean install crashes on launch with FileNotFoundError: 'pactl' (#117).
+Requires:       pulseaudio-utils
 # Used by asm-setup to download the HRIR file (~/.local/share/pipewire/
 # hrir_hesuvi/EAC_Default.wav) on first run. asm-setup tries curl first,
 # then wget — but if both are missing the HRIR never lands and Spatial

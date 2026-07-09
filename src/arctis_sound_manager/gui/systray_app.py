@@ -154,10 +154,20 @@ class QSystrayApp(QBaseDesktopApp):
 
         # Save the current default sink so sig_stop() can restore it.
         # The daemon owns redirect logic (redirect_audio_on_connect / on_disconnect).
-        result = subprocess.run(
-            ["pactl", "get-default-sink"], capture_output=True, text=True
-        )
-        self._previous_default_sink = result.stdout.strip()
+        try:
+            result = subprocess.run(
+                ["pactl", "get-default-sink"], capture_output=True, text=True
+            )
+            self._previous_default_sink = result.stdout.strip()
+        except FileNotFoundError:
+            # pactl (pulseaudio-utils) missing — degrade gracefully instead of
+            # crashing at startup (#117). Default-sink save/restore is skipped;
+            # the system-deps check surfaces the missing package to the user.
+            self.logger.warning(
+                'pactl not found (install pulseaudio-utils) — '
+                'skipping default-sink save/restore'
+            )
+            self._previous_default_sink = ''
 
         self.dbus_bus = await MessageBus().connect()
 
@@ -428,9 +438,12 @@ class QSystrayApp(QBaseDesktopApp):
         # so EasyEffects (or hardware) takes over immediately after exit.
         prev = getattr(self, '_previous_default_sink', '')
         if prev and not prev.startswith(('Arctis_', 'effect_input.')):
-            subprocess.run(
-                ["pactl", "set-default-sink", prev], capture_output=True, timeout=2
-            )
+            try:
+                subprocess.run(
+                    ["pactl", "set-default-sink", prev], capture_output=True, timeout=2
+                )
+            except FileNotFoundError:
+                pass  # pactl gone (pulseaudio-utils) — nothing to restore
 
         # Stop all ASM services and schedule a pipewire restart
         # so the system behaves as if ASM was not installed.

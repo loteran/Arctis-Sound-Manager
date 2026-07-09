@@ -30,6 +30,7 @@ Depends: ${misc:Depends},
          pipewire,
          pipewire-pulse,
          wireplumber,
+         pulseaudio-utils,
          libusb-1.0-0,
          curl,
          swh-plugins

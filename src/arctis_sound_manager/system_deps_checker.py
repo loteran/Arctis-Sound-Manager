@@ -449,6 +449,21 @@ def _build_checks() -> list[DepCheck]:
 
         # Audio runtime
         DepCheck(
+            # The `pactl` CLI is called at GUI startup (default-sink save) and
+            # for all EQ/Sonar sink-input routing. It ships in pulseaudio-utils
+            # (libpulse on Arch), NOT in pipewire-pulse — so a clean install can
+            # lack it and the GUI crashed on launch with FileNotFoundError (#117).
+            name="pactl CLI (pulseaudio-utils)",
+            severity=Severity.BLOCKING,
+            feature="audio routing + default-sink save/restore",
+            detect=lambda: shutil.which("pactl") is not None,
+            install_commands={
+                "fedora": ["dnf", "install", "-y", "pulseaudio-utils"],
+                "debian": ["apt-get", "install", "-y", "pulseaudio-utils"],
+                "arch":   ["pacman", "-S", "--noconfirm", "libpulse"],
+            },
+        ),
+        DepCheck(
             name="pipewire-pulse running",
             severity=Severity.BLOCKING,
             feature="all audio control (pulsectl)",
