@@ -39,6 +39,11 @@ class QSettingsWidget(QWidget):
 
         layout = QVBoxLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        # No left/right margin so the setting rows line up with the manually
+        # built toggle rows (Startup, Telemetry…) that are added straight to the
+        # page layout — otherwise the widget's default ~11 px indent misaligns
+        # every toggle in this section.
+        layout.setContentsMargins(0, 0, 0, 0)
         self.setLayout(layout)
 
         title = I18n.get_instance().translate('ui', i18n_section_name)
@@ -51,6 +56,7 @@ class QSettingsWidget(QWidget):
 
         self.main_layout = QVBoxLayout()
         self.main_layout.setSpacing(3)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
         layout.addLayout(self.main_layout)
 
         self.title = I18n.get_instance().translate('ui', i18n_section_name)
