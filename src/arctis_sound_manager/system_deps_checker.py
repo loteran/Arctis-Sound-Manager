@@ -464,6 +464,33 @@ def _build_checks() -> list[DepCheck]:
             },
         ),
         DepCheck(
+            # `pw-link` (used to detach stale loopback links) ships with the
+            # PipeWire CLI tools — in the base `pipewire` package on Arch/Fedora,
+            # in `pipewire-bin` on Debian/Ubuntu.
+            name="pw-link (PipeWire CLI)",
+            severity=Severity.DEGRADED,
+            feature="loopback link cleanup",
+            detect=lambda: _which("pw-link"),
+            install_commands={
+                "fedora": ["dnf", "install", "-y", "pipewire"],
+                "debian": ["apt-get", "install", "-y", "pipewire-bin"],
+                "arch":   ["pacman", "-S", "--noconfirm", "pipewire"],
+            },
+        ),
+        DepCheck(
+            # WirePlumber is the session manager ASM relies on for routing; its
+            # binary is invoked for version detection and restarts.
+            name="WirePlumber",
+            severity=Severity.BLOCKING,
+            feature="PipeWire session/policy management + routing",
+            detect=lambda: _which("wireplumber"),
+            install_commands={
+                "fedora": ["dnf", "install", "-y", "wireplumber"],
+                "debian": ["apt-get", "install", "-y", "wireplumber"],
+                "arch":   ["pacman", "-S", "--noconfirm", "wireplumber"],
+            },
+        ),
+        DepCheck(
             name="pipewire-pulse running",
             severity=Severity.BLOCKING,
             feature="all audio control (pulsectl)",
