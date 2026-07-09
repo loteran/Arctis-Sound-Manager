@@ -323,6 +323,101 @@ def reset_filter_chain_safe_mode() -> None:
         _log.warning("reset_filter_chain_safe_mode: could not remove marker: %s", exc)
 
 
+def _current_env_versions() -> dict[str, str]:
+    """Versions whose change could resolve a filter-chain crash (issue #88).
+
+    Recorded in the safe-mode marker so auto-recovery is retried only when the
+    environment actually changed (an ASM or PipeWire update), not on every boot
+    of a system that is still genuinely crashing."""
+    asm = "unknown"
+    try:
+        from importlib.metadata import version
+        asm = version("arctis-sound-manager")
+    except Exception:
+        pass
+    pipewire = "unknown"
+    try:
+        import subprocess as _sp
+        r = _sp.run(["pw-cli", "--version"], capture_output=True, text=True, timeout=2)
+        for line in r.stdout.splitlines():
+            if "libpipewire" in line:
+                pipewire = line.split()[-1]
+                break
+    except Exception:
+        pass
+    return {"asm_version": asm, "pipewire_version": pipewire}
+
+
+def maybe_recover_from_safe_mode() -> bool:
+    """Auto-clear safe mode when the environment changed since it was armed.
+
+    Safe mode (issue #88) latches on a filter-chain SEGV crash-loop and then
+    suppresses EQ config regeneration until cleared. Historically the only way
+    out was deleting the marker by hand, so a user stayed in flat/no-EQ audio
+    forever even after the crash cause was fixed by an ASM or PipeWire update.
+
+    This clears the latch once when the recorded ASM or PipeWire version differs
+    from the current one, restores the configs safe mode moved aside, and lets
+    the normal init path regenerate + re-test them. If the filter-chain still
+    crashes, ensure_filter_chain_healthy()/the watchdog simply re-arm — now
+    stamped with the new versions, so a still-broken system won't thrash on
+    every boot.
+
+    Returns True if safe mode was cleared for a recovery attempt."""
+    if not _filter_chain_safe_mode:
+        return False
+
+    try:
+        import json as _json
+        stored = _json.loads(_SAFE_MODE_MARKER.read_text())
+    except Exception:
+        stored = {}
+    current = _current_env_versions()
+
+    changed = any(
+        stored.get(k) != current.get(k)
+        for k in ("asm_version", "pipewire_version")
+    )
+    if not changed:
+        _log.info(
+            "safe mode armed, environment unchanged (asm=%s pipewire=%s) — "
+            "staying in safe mode, not re-testing",
+            current.get("asm_version"), current.get("pipewire_version"),
+        )
+        return False
+
+    _log.warning(
+        "safe mode: environment changed since arming (asm %s->%s, pipewire "
+        "%s->%s) — auto-clearing to re-test the filter-chain; it will re-arm "
+        "automatically if it still crashes",
+        stored.get("asm_version"), current.get("asm_version"),
+        stored.get("pipewire_version"), current.get("pipewire_version"),
+    )
+
+    # Restore the configs safe mode moved aside so the re-test runs the full
+    # graph; regeneration downstream will refresh their contents.
+    try:
+        if _CONF_DIR_DISABLED.exists():
+            _CONF_DIR.mkdir(parents=True, exist_ok=True)
+            for name in _ASM_CONF_NAMES:
+                src = _CONF_DIR_DISABLED / name
+                if src.exists():
+                    try:
+                        src.replace(_CONF_DIR / name)  # overwrites any stale copy
+                    except OSError as exc:
+                        _log.warning(
+                            "safe mode recovery: could not restore %s: %s", name, exc)
+            try:
+                _CONF_DIR_DISABLED.rmdir()  # only succeeds once empty
+            except OSError:
+                pass
+    except Exception as exc:
+        _log.debug("safe mode recovery: restore step failed: %s", exc)
+
+    reset_filter_chain_safe_mode()
+    return True
+
+
 def _enter_filter_chain_safe_mode() -> None:
     """Move ASM-generated configs out of filter-chain.conf.d/ and restart once.
 
@@ -346,6 +441,9 @@ def _enter_filter_chain_safe_mode() -> None:
         _SAFE_MODE_MARKER.write_text(_json.dumps({
             "timestamp": _dt.datetime.now().isoformat(),
             "reason": "crash-loop detected after filter-chain restart",
+            # Recorded so maybe_recover_from_safe_mode() only re-tests once the
+            # ASM/PipeWire version changes, not on every boot (issue #88).
+            **_current_env_versions(),
         }))
     except OSError as exc:
         _log.warning("safe_mode: could not write marker %s: %s", _SAFE_MODE_MARKER, exc)

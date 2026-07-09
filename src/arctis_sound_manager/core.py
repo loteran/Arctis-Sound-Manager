@@ -1055,6 +1055,17 @@ class CoreEngine:
             # safe mode here prevents check_and_fix_stale_configs from regenerating
             # the crashing configs and re-arming the crash.  Safe mode writes a
             # disk marker (Correctif 2) so the flag survives daemon restarts.
+            # Correctif 3 (issue #88): if safe mode is still armed from a prior
+            # crash-loop but the ASM/PipeWire version has changed since (i.e. the
+            # crash may now be fixed), auto-clear the latch and restore the EQ
+            # configs so the normal path below re-tests them. If it still
+            # crashes, ensure_filter_chain_healthy() / the watchdog re-arm.
+            try:
+                from arctis_sound_manager.sonar_to_pipewire import maybe_recover_from_safe_mode
+                maybe_recover_from_safe_mode()
+            except Exception as exc:
+                self.logger.warning("maybe_recover_from_safe_mode failed: %r", exc)
+
             try:
                 from arctis_sound_manager.sonar_to_pipewire import ensure_filter_chain_healthy
                 ensure_filter_chain_healthy()
