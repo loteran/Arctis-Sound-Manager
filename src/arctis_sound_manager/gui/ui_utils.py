@@ -66,6 +66,7 @@ def get_battery_number_pixmap(battery_percent: int, color: str = '#ffffff') -> Q
     font auto-shrinks so 3-digit values ("100") still fit.
     """
     size = 64
+    margin = 2
     text = f"{int(battery_percent)}%"
 
     image = QImage(size, size, QImage.Format.Format_ARGB32_Premultiplied)
@@ -75,15 +76,27 @@ def get_battery_number_pixmap(battery_percent: int, color: str = '#ffffff') -> Q
 
     font = QFont()
     font.setBold(True)
-    px = size - 4
+
+    # Grow the font until the *tight* glyph box nearly fills the square (fit to
+    # whichever of width/height binds — 3-digit "100%" is width-bound). Using
+    # the tight box (not pixelSize, which includes ascent/descent padding) makes
+    # the digits as large as possible so they read at tray size (#119).
+    px = 12
+    while px < 200:
+        font.setPixelSize(px + 2)
+        painter.setFont(font)
+        br = painter.fontMetrics().tightBoundingRect(text)
+        if br.width() > size - margin or br.height() > size - margin:
+            break
+        px += 2
     font.setPixelSize(px)
     painter.setFont(font)
-    while px > 10 and painter.fontMetrics().horizontalAdvance(text) > size - 4:
-        px -= 2
-        font.setPixelSize(px)
-        painter.setFont(font)
 
-    painter.drawText(image.rect(), int(Qt.AlignmentFlag.AlignCenter), text)
+    # Centre the tight box in the square (drawText positions on the baseline).
+    br = painter.fontMetrics().tightBoundingRect(text)
+    x = (size - br.width()) / 2 - br.x()
+    y = (size - br.height()) / 2 - br.y()
+    painter.drawText(int(round(x)), int(round(y)), text)
     painter.end()
 
     return QPixmap.fromImage(image)
