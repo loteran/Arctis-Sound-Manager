@@ -60,10 +60,16 @@ _ORDERABLE_ITEMS = [
 
 _DAC_WIDGET_EXCLUDE = {
     'oled_custom_display',
-    'oled_show_time', 'oled_show_battery', 'oled_show_profile',
+    'oled_show_time', 'oled_time_24h', 'oled_show_battery', 'oled_show_profile',
     'oled_show_eq', 'oled_show_mic_status',
     'oled_show_sonar_mode', 'oled_show_eq_chat',
     'oled_show_weather_city',
+}
+
+# Sub-options rendered indented below a FIXED display row (same shape as
+# _ORDERABLE_SUB_OPTIONS). Format: parent_setting_key → [(setting_key, label_key), ...]
+_FIXED_SUB_OPTIONS: dict[str, list[tuple[str, str]]] = {
+    'oled_show_time': [('oled_time_24h', 'oled_time_24h')],
 }
 
 # Sub-options rendered indented below their parent orderable row.
@@ -323,6 +329,10 @@ class DacPage(QWidget):
                 fixed_hl.addWidget(sp)
                 self._font_spinboxes[font_key] = sp
             col.addWidget(fixed_row)
+
+            # Indented sub-options (e.g. 24h/12h clock under the Time row).
+            for sub_key, sub_label in _FIXED_SUB_OPTIONS.get(key, []):
+                col.addWidget(self._build_sub_option_row(sub_key, sub_label, cb_style))
 
         # Separator
         sep = QFrame()

@@ -274,10 +274,15 @@ class OledManager:
         )
 
         self._blink = not self._blink
-        time_str = datetime.now().strftime("%H:%M")
         eq_preset = _active_eq_preset("game")
 
         gs = self._core.general_settings
+
+        # 24-hour ("14:05") or 12-hour ("2:05 PM") clock, per user setting.
+        if getattr(gs, "oled_time_24h", True):
+            time_str = datetime.now().strftime("%H:%M")
+        else:
+            time_str = datetime.now().strftime("%I:%M %p").lstrip("0")
 
         # New OLED data sources
         mic_status = str(parsed.get("mic_status", ""))

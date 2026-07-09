@@ -118,6 +118,9 @@ class GeneralSettings(JsonSerializable):
     oled_show_eq_chat: bool = False
     oled_show_weather_city: bool = True
 
+    # Clock format for the OLED time element: True = 24-hour, False = 12-hour (AM/PM)
+    oled_time_24h: bool = True
+
     # Display order for orderable elements below the time/battery row
     oled_display_order: list = None  # type: ignore — set per-instance in __init__
 
@@ -157,6 +160,7 @@ class GeneralSettings(JsonSerializable):
         ConfigSetting('oled_scroll_speed', SettingType.SLIDER, 2, min=0, max=5, step=1),
         ConfigSetting('oled_eq_scroll_speed', SettingType.SLIDER, 2, min=0, max=5, step=1),
         ConfigSetting('oled_show_time', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
+        ConfigSetting('oled_time_24h', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('oled_show_battery', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('oled_show_profile', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('oled_show_eq', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
