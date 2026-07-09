@@ -86,15 +86,20 @@ def _detect_install_methods() -> list[str]:
             pass
 
     # Every asm-daemon binary in PATH (catches pip --user installs that
-    # don't show up in any package manager).
+    # don't show up in any package manager). Canonicalise each hit before
+    # counting: on usr-merged distros /bin is a symlink to /usr/bin and both
+    # are on PATH, so `command -v -a` lists the same physical binary twice.
+    # Reporting that as a duplicate would send users chasing a nonexistent
+    # second install (issue #114) — dedupe by resolved path first.
     try:
         r = subprocess.run(
             ['bash', '-c', 'command -v -a asm-daemon'],
             capture_output=True, text=True, timeout=2,
         )
         bins = [b for b in r.stdout.strip().splitlines() if b]
-        if len(bins) > 1:
-            methods.append(f'asm-daemon binaries in PATH: {bins}')
+        distinct = sorted({os.path.realpath(b) for b in bins})
+        if len(distinct) > 1:
+            methods.append(f'asm-daemon binaries in PATH: {distinct}')
     except Exception:
         pass
     return methods
