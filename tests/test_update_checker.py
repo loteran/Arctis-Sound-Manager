@@ -122,6 +122,63 @@ def test_detect_pip_user_shadow_via_multiple_daemon_binaries(tmp_path):
     )
 
 
+def test_usrmerge_symlink_not_flagged_as_second_install(tmp_path):
+    """A single binary seen through /bin AND /usr/bin (usr-merge) is NOT a dup.
+
+    On modern Ubuntu/Fedora/Arch /bin is a symlink to /usr/bin and both are on
+    PATH, so `command -v -a asm-daemon` lists the same physical file twice
+    (/usr/bin/asm-daemon and /bin/asm-daemon). Before the fix this counted as a
+    second install and raised a phantom "Multiple ASM installations detected"
+    banner that blocked the update (issue #114).
+    """
+    # Simulate usr-merge: <root>/usr/bin/asm-daemon is the real file,
+    # <root>/bin is a symlink to <root>/usr/bin.
+    usr_bin = tmp_path / "usr" / "bin"
+    usr_bin.mkdir(parents=True)
+    real_daemon = usr_bin / "asm-daemon"
+    real_daemon.touch()
+    try:
+        (tmp_path / "bin").symlink_to(usr_bin, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not supported on this platform/privilege level")
+
+    # Package NOT under user-site (signal 1 must not fire)
+    sys_site = tmp_path / "sys_site"
+    pkg_dir = sys_site / "arctis_sound_manager"
+    pkg_dir.mkdir(parents=True)
+    fake_init = pkg_dir / "__init__.py"
+    fake_init.touch()
+
+    user_site = tmp_path / "user_site"
+    user_site.mkdir(parents=True)
+
+    fake_asm = types.ModuleType("arctis_sound_manager")
+    fake_asm.__file__ = str(fake_init)
+
+    def _run_side(cmd, **kwargs):
+        if cmd[0] == "dpkg":
+            return _ok()  # apt install present
+        if cmd[:2] == ["bash", "-c"]:
+            # Same binary, two PATH spellings via the /bin -> /usr/bin symlink
+            return _ok(stdout=f"{tmp_path / 'usr' / 'bin' / 'asm-daemon'}\n"
+                              f"{tmp_path / 'bin' / 'asm-daemon'}\n")
+        return _fail()
+
+    with (
+        mock.patch.dict("sys.modules", {"arctis_sound_manager": fake_asm}),
+        mock.patch("site.getusersitepackages", return_value=str(user_site)),
+        mock.patch("shutil.which", side_effect=lambda b: None),
+        mock.patch("subprocess.run", side_effect=_run_side),
+    ):
+        result = detect_all_install_methods()
+
+    assert InstallMethod.APT in result
+    assert InstallMethod.PIP not in result, (
+        "usr-merge /bin symlink must not be counted as a second (pip) install"
+    )
+    assert len(result) == 1
+
+
 def test_detect_no_pip_shadow_clean_rpm_install(tmp_path):
     """When RPM is installed and no pip shadow exists, only RPM is returned."""
     sys_site = tmp_path / "sys_site"

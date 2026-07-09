@@ -75,14 +75,26 @@ def detect_all_install_methods() -> list[InstallMethod]:
         _user_site = Path(site.getusersitepackages()).resolve()
         _pip_user_detected = running_path.is_relative_to(_user_site)
 
-        # Signal 2 — multiple asm-daemon binaries on PATH
+        # Signal 2 — multiple *distinct* asm-daemon binaries on PATH.
+        # We must canonicalise each hit before counting: on usr-merged distros
+        # (all modern Ubuntu/Fedora/Arch) /bin is a symlink to /usr/bin and both
+        # are on PATH, so `command -v -a` lists the SAME physical binary twice
+        # (/usr/bin/asm-daemon and /bin/asm-daemon). Counting raw lines flags a
+        # phantom "second install" and blocks the update with a "Multiple ASM
+        # installations detected" banner (issue #114). Resolve symlinks and
+        # dedupe so only genuinely separate binaries count.
         if not _pip_user_detected:
             try:
                 r2 = subprocess.run(
                     ["bash", "-c", "command -v -a asm-daemon 2>/dev/null"],
                     capture_output=True, text=True, timeout=5,
                 )
-                _pip_user_detected = r2.stdout.count("\n") > 1
+                real_bins = {
+                    str(Path(ln.strip()).resolve())
+                    for ln in r2.stdout.splitlines()
+                    if ln.strip()
+                }
+                _pip_user_detected = len(real_bins) > 1
             except Exception:
                 pass
 
