@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.92] - 9 July 2026
+
+### Added
+
+- **Battery percentage in the system tray.** The headset battery level is shown as its own full-size item next to the ASM tray icon. Can be turned off with the new **Battery % in system tray** toggle in Settings → General. (#119)
+- **24-hour / 12-hour clock toggle for the OLED.** A new option under the Time element in the DAC tab switches the on-screen clock between 24-hour (`14:05`) and 12-hour (`2:05 PM`).
+- **"Re-enable EQ" button for safe mode.** When the audio filter-chain crash-loop safety net has disabled the EQ, a banner on the Sonar page now lets you re-enable it in one click (previously there was no in-app way out). See the new Troubleshooting section in the README. (#88)
+
+### Fixed
+
+- **Clean installs no longer crash on startup with `pactl` not found.** `pulseaudio-utils` (which provides `pactl`, used at launch and for audio routing) is now a hard dependency of the `.deb`/RPM, and a missing `pactl` degrades gracefully instead of crashing. (#117)
+- **The EQ point editor is no longer transparent.** The popup that shows a band's Gain / Frequency / Q was see-through, so the EQ curve behind it made the values hard to read; it now has a solid background. (#120)
+- **Safe mode clears itself once the crash is fixed.** Previously, if the filter-chain crash-loop safety net disabled the EQ, it stayed off until manually reset — so a fixed crash (e.g. after an update) left you stuck with flat audio. ASM now automatically re-enables the EQ after an ASM or PipeWire version change and re-tests the audio graph. (#88)
+- **A single bad line break in a community translation no longer hides an entire language.** A stray newline in one string made the whole translation file unparseable, so a fully translated language (e.g. Turkish) silently disappeared from the language menu. Such files are now repaired automatically.
+
 ## [1.1.91] - 8 July 2026
 
 ### Added
