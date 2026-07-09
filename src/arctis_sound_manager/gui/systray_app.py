@@ -15,14 +15,15 @@ from time import monotonic, sleep
 from dbus_next.aio.message_bus import MessageBus
 from dbus_next.constants import MessageType
 from dbus_next.message import Message
-from PySide6.QtCore import Signal, Slot
+from PySide6.QtCore import QFileSystemWatcher, Signal, Slot
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from arctis_sound_manager import service_control as sc
 from arctis_sound_manager.constants import (DBUS_BUS_NAME,
                                             DBUS_STATUS_INTERFACE_NAME,
-                                            DBUS_STATUS_OBJECT_PATH)
+                                            DBUS_STATUS_OBJECT_PATH,
+                                            SETTINGS_FOLDER)
 from arctis_sound_manager.gui.base_app import QBaseDesktopApp
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
 from arctis_sound_manager.gui.main_app import QMainApp
@@ -91,6 +92,16 @@ class QSystrayApp(QBaseDesktopApp):
         # until a battery level is known and the setting is on.
         self.battery_icon = QSystemTrayIcon(parent=self.app)
         self.battery_icon.activated.connect(self._on_tray_activated)
+
+        # React immediately when the systray_show_battery toggle changes: the
+        # setting is written to the daemon's settings file (a different process),
+        # so watch that file and refresh the battery item on change — otherwise
+        # it would only update on the next device-status change (#119).
+        self._settings_file = str(SETTINGS_FOLDER / 'general_settings.yaml')
+        self._settings_watcher = QFileSystemWatcher()
+        if Path(self._settings_file).is_file():
+            self._settings_watcher.addPath(self._settings_file)
+        self._settings_watcher.fileChanged.connect(self._on_settings_file_changed)
 
         lang_code, _ = locale.getdefaultlocale()
         lang_code = lang_code.split('_')[0] if lang_code else 'en'
@@ -183,6 +194,13 @@ class QSystrayApp(QBaseDesktopApp):
         # are queued causes a use-after-free SIGSEGV in QWaylandWindow.
         # menu_setup() is called in start_polling() instead, just before Qt
         # creates the popup surface.
+
+    def _on_settings_file_changed(self, path: str) -> None:
+        # Settings are written atomically (temp + rename), which drops the
+        # watch — re-add it, then refresh the battery item from the last status.
+        if path not in self._settings_watcher.files() and Path(path).is_file():
+            self._settings_watcher.addPath(path)
+        self._update_tray_icon(self.last_device_status)
 
     def _update_tray_icon(self, status: dict) -> None:
         """Show/refresh the dedicated battery-% tray item next to the ASM icon
