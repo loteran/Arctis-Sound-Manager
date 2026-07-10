@@ -5,13 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.93] - 10 July 2026
+## [1.1.94] - 10 July 2026
+
+### Added
+
+- **"Bring audio to headset" button.** One click moves any application that ended up on the wrong output device (HDMI, S/PDIF, another sound card) back to your headset — handy when an app is silently playing to a device you're not wearing. Available on the Home page and in the system tray.
 
 ### Fixed
 
+- **Audio now follows your "redirect on disconnect" device when you quit ASM, not only when the headset powers off.** Closing ASM could previously leave sound on whatever output PipeWire happened to pick; it now switches to your configured device instantly.
 - **Phantom "Multiple ASM installations detected".** On usr-merge distros (modern Arch/Fedora/Ubuntu) `/bin` is a symlink to `/usr/bin`, so a single `asm-daemon` was counted twice and the app wrongly hid the "Update now" button and warned about a duplicate install. Distinct real paths are now counted, so a normal single install is no longer flagged. (#114)
 - **The tray battery percentage now hides immediately when you turn it off.** Toggling "Battery % in system tray" off previously left the number on screen until the next status change or an ASM restart; it now updates as soon as the setting changes. (#119)
-- **Settings toggles are now aligned.** The General settings rows were indented slightly more than the Startup/Telemetry rows, so their switches didn't line up.
+- **Settings toggles are now aligned.** The **Launch at startup** and **Telemetry** rows sat slightly to the left of the other setting rows, so their switches didn't line up with the General and Device toggles.
 
 ### Internal
 
