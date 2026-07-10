@@ -207,8 +207,21 @@ class QSystrayApp(QBaseDesktopApp):
         when enabled and a level is known (#119). The main icon stays the plain
         ASM logo."""
         pct = None
+
         if _show_battery_in_tray():
-            pct = self._extract_battery_percent(status)
+            # Default to True so we don't break if power_status disappears
+            is_powered_on = True
+            if isinstance(status, dict):
+                headset_data = status.get('headset', {})
+                power_status = headset_data.get('headset_power_status')
+
+                # Only explicitly turn it off if the key exists and says off
+                if isinstance(power_status, dict) and power_status.get('value') == 'off':
+                    is_powered_on = False
+
+            if is_powered_on:
+                pct = self._extract_battery_percent(status)
+
         try:
             if pct is None:
                 self.battery_icon.hide()
