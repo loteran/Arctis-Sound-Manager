@@ -713,6 +713,17 @@ class CoreEngine:
         self.logger.info("Stopping CoreEngine...")
         self._stopping = True
         self.usb_devices_monitor.stop()
+        # Honor "redirect on disconnect" *before* tearing down the loopbacks.
+        # redirect_audio_on_disconnect() only fires when the current default is
+        # still an Arctis-owned sink (its guard); once stop_all() removes the
+        # Arctis_* sinks below, PipeWire falls back to some other device and the
+        # guard no longer matches — which is why quitting ASM left audio on the
+        # wrong output instead of the user's configured disconnect device.
+        # teardown() calls this again later, but by then it's a no-op.
+        try:
+            self.redirect_audio_on_disconnect()
+        except Exception as exc:
+            self.logger.warning("stop(): redirect on disconnect failed: %r", exc)
         # Stop all pw-loopback child processes so they don't become orphans
         # when the daemon exits via SIGTERM/SIGINT.  Without this, every
         # `systemctl --user restart arctis-manager` leaves orphan processes

@@ -547,8 +547,27 @@ class QSystrayApp(QBaseDesktopApp):
 
         # Restore whichever default sink was active before ASM started,
         # so EasyEffects (or hardware) takes over immediately after exit.
+        #
+        # BUT: when the user configured "redirect on disconnect", the daemon's
+        # shutdown redirect (CoreEngine.stop → redirect_audio_on_disconnect)
+        # must win — it routes to the chosen device and resolves node.nick/name
+        # + persists via pw-metadata. If we set the pre-ASM default here first,
+        # the daemon's guard ("is the current default still an Arctis sink?")
+        # no longer matches and its redirect is skipped. So step aside and let
+        # the daemon handle the target sink in that case.
+        redirect_configured = False
+        try:
+            from arctis_sound_manager.settings import GeneralSettings
+            gs = GeneralSettings.read_from_file()
+            redirect_configured = bool(
+                gs.redirect_audio_on_disconnect
+                and gs.redirect_audio_on_disconnect_device
+            )
+        except Exception as exc:
+            self.logger.debug('could not read redirect-on-disconnect setting: %r', exc)
+
         prev = getattr(self, '_previous_default_sink', '')
-        if prev and not prev.startswith(('Arctis_', 'effect_input.')):
+        if not redirect_configured and prev and not prev.startswith(('Arctis_', 'effect_input.')):
             try:
                 subprocess.run(
                     ["pactl", "set-default-sink", prev], capture_output=True, timeout=2
