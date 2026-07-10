@@ -72,6 +72,7 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
 - **Automatic media routing** — browsers and video players (Firefox, VLC, mpv…) are automatically routed to the Media sink
 - **Smart stream adoption** — apps running when ASM starts are pulled into `Arctis_Media` instead of staying on a non-Arctis sink
 - **Manual stream control** — move any audio stream between channels via G / C / M / O buttons; choices persist across restarts
+- **Bring audio to headset** — one click moves any app that got stuck on the wrong output (HDMI, S/PDIF, another sound card) back to your headset; available on the Home page and in the system tray
 - **True multichannel output** — route apps directly to HDMI or external output (5.1 / 7.1 native passthrough)
 - **Volume sliders** per channel with live percentage display
 - **Native PipeWire support** — detects apps that bypass PulseAudio (mpv, Haruna…)
@@ -752,6 +753,26 @@ When safe mode is on, a banner appears at the top of the **Sonar** page:
 
 The safe-mode state (and the disabled configs) also show up in the in-app bug
 report, under *Filter-chain safe mode & config presence*.
+
+---
+
+### An app has no sound / plays on the wrong device
+
+Sometimes an application ends up playing to the wrong output — a TV over HDMI,
+an S/PDIF port, or another sound card — instead of your headset, so you hear
+nothing. This happens when PipeWire/WirePlumber remembers an old output for that
+app.
+
+Click **Bring audio to headset** to fix it in one click. It finds every app
+currently playing on a non-Arctis device and moves it back to your default
+Arctis sink; apps already on a Game / Chat / Media channel are left untouched.
+It is available in two places:
+
+- The button on the **Home page**, next to the volume-sliders toggle.
+- The **system tray** menu → *Bring audio to headset* (a notification reports
+  how many apps were moved).
+
+It is safe to click at any time — if nothing is misrouted, it does nothing.
 
 ---
 

@@ -95,6 +95,24 @@ HELP_CONTENT: dict[str, dict] = {
                 ),
             },
             {
+                "heading": "Bring audio to headset",
+                "body": (
+                    "If an app suddenly has no sound, it is usually because it is playing to the "
+                    "wrong output device — a TV over HDMI, an S/PDIF port, or another sound card — "
+                    "instead of your headset. This happens when the system (WirePlumber) remembers "
+                    "an old output for that app.\n\n"
+                    "The \"Bring audio to headset\" button fixes this in one click. It finds every "
+                    "application currently playing on a non-Arctis device and moves it back to your "
+                    "default Arctis sink. Applications already routed to a Game / Chat / Media "
+                    "channel are left untouched.\n\n"
+                    "You can trigger it from two places:\n"
+                    "• The button on the Home page, next to the volume-sliders toggle.\n"
+                    "• The system tray menu → \"Bring audio to headset\" — a notification tells you "
+                    "how many apps were moved.\n\n"
+                    "It is safe to click at any time: if nothing is misrouted, it does nothing."
+                ),
+            },
+            {
                 "heading": "Profiles",
                 "body": (
                     "Profiles let you save and restore your complete audio configuration in one click.\n\n"
@@ -466,6 +484,27 @@ HELP_CONTENT: dict[str, dict] = {
                     "── Tags d'application ──\n"
                     "Chaque carte affiche les applications qui jouent du son à travers elle. "
                     "Les boutons G / C / M / O permettent de reroutage instantané."
+                ),
+            },
+            {
+                "heading": "Ramener l'audio vers le casque",
+                "body": (
+                    "Si une application n'a soudainement plus de son, c'est généralement parce "
+                    "qu'elle joue sur le mauvais périphérique de sortie — un téléviseur en HDMI, un "
+                    "port S/PDIF ou une autre carte son — au lieu de votre casque. Cela arrive "
+                    "quand le système (WirePlumber) a mémorisé une ancienne sortie pour cette "
+                    "application.\n\n"
+                    "Le bouton « Ramener l'audio vers le casque » corrige ça en un clic. Il repère "
+                    "toutes les applications qui jouent sur un périphérique non-Arctis et les "
+                    "redirige vers votre sink Arctis par défaut. Les applications déjà routées vers "
+                    "un canal Jeu / Chat / Média ne sont pas touchées.\n\n"
+                    "Vous pouvez le déclencher à deux endroits :\n"
+                    "• Le bouton sur la page d'accueil, à côté de l'interrupteur des curseurs de "
+                    "volume.\n"
+                    "• Le menu du systray → « Ramener l'audio vers le casque » — une notification "
+                    "indique combien d'applications ont été déplacées.\n\n"
+                    "Vous pouvez cliquer à tout moment sans risque : s'il n'y a rien de mal routé, "
+                    "il ne se passe rien."
                 ),
             },
             {
@@ -851,6 +890,27 @@ HELP_CONTENT: dict[str, dict] = {
                     "── Pastillas de aplicación ──\n"
                     "Cada tarjeta muestra las aplicaciones que reproducen audio a través de ella. "
                     "Los botones G / C / M / O permiten reenrutar al instante."
+                ),
+            },
+            {
+                "heading": "Devolver el audio a los auriculares",
+                "body": (
+                    "Si una aplicación se queda de repente sin sonido, normalmente se debe a que "
+                    "está reproduciendo en el dispositivo de salida equivocado —un televisor por "
+                    "HDMI, un puerto S/PDIF u otra tarjeta de sonido— en lugar de tus auriculares. "
+                    "Esto ocurre cuando el sistema (WirePlumber) recuerda una salida antigua para "
+                    "esa aplicación.\n\n"
+                    "El botón «Devolver el audio a los auriculares» lo soluciona con un clic. "
+                    "Detecta todas las aplicaciones que están reproduciendo en un dispositivo que "
+                    "no es Arctis y las devuelve a tu sink Arctis predeterminado. Las aplicaciones "
+                    "ya dirigidas a un canal Juego / Chat / Multimedia no se modifican.\n\n"
+                    "Puedes activarlo desde dos lugares:\n"
+                    "• El botón de la página de inicio, junto al interruptor de los controles de "
+                    "volumen.\n"
+                    "• El menú de la bandeja del sistema → «Devolver el audio a los auriculares» — "
+                    "una notificación indica cuántas aplicaciones se han movido.\n\n"
+                    "Puedes pulsarlo en cualquier momento sin riesgo: si no hay nada mal enrutado, "
+                    "no hace nada."
                 ),
             },
             {
