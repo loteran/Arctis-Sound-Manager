@@ -350,7 +350,17 @@ class DevicePage(QWidget):
         content_layout.addWidget(self._general_widget)
 
         # ── Startup toggle ─────────────────────────────────────────────────────
+        # Mirror QSettingsWidget.get_widget() row structure exactly so this
+        # manual toggle lines up with the general/device-settings toggles above.
+        # The row layout must be *set on a QWidget* (not added to content_layout
+        # via addLayout): a sub-layout added with addLayout inherits the parent
+        # layout's spacing (0 here), whereas a layout set on a widget resolves to
+        # the style's default label→control spacing (6px) — the same value
+        # get_widget() gets. Without this the toggle sat 6px to the left.
+        startup_roww = QWidget()
         startup_row = QHBoxLayout()
+        startup_row.setContentsMargins(0, 4, 0, 4)
+        startup_roww.setLayout(startup_row)
         startup_label = QLabel(I18n.translate("ui", "launch_at_startup"))
         startup_label.setFixedWidth(260)
         startup_label.setWordWrap(True)
@@ -368,14 +378,17 @@ class DevicePage(QWidget):
         self._startup_toggle.checkStateChanged.connect(self._on_autostart_toggled)
         startup_row.addWidget(self._startup_toggle)
         startup_row.addStretch(1)
-        content_layout.addLayout(startup_row)
+        content_layout.addWidget(startup_roww)
 
         content_layout.addSpacing(16)
 
         # ── Telemetry toggle ───────────────────────────────────────────────────
         from arctis_sound_manager.telemetry import get_consent, set_consent
 
+        telemetry_roww = QWidget()
         telemetry_row = QHBoxLayout()
+        telemetry_row.setContentsMargins(0, 4, 0, 4)
+        telemetry_roww.setLayout(telemetry_row)
         telemetry_label = QLabel("Telemetry — share anonymous usage data")
         telemetry_label.setFixedWidth(260)
         telemetry_label.setWordWrap(True)
@@ -395,7 +408,7 @@ class DevicePage(QWidget):
         )
         telemetry_row.addWidget(self._telemetry_toggle)
         telemetry_row.addStretch(1)
-        content_layout.addLayout(telemetry_row)
+        content_layout.addWidget(telemetry_roww)
 
         content_layout.addStretch(1)
 
