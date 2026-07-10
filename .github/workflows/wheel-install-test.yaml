@@ -116,10 +116,11 @@ jobs:
           # follow-up [skip ci] commits that run in parallel, so at the release
           # commit (and its tag) the packaging files still lag pyproject.toml —
           # the drift is expected and transient. Match every commit subject that
-          # bumps the version: `release: vX`, `Merge develop for vX`, and the
-          # legacy `chore: bump version`.
+          # bumps the version: `chore(release): X.Y.Z` (the format release-please
+          # / our release flow emits), `release: vX`, `Merge develop for vX`, and
+          # the legacy `chore: bump version`.
           MSG=$(git log -1 --pretty=%s)
-          if echo "$MSG" | grep -qE "^(chore(\([^)]*\))?: bump version|release: v[0-9]|Merge develop for v[0-9])"; then
+          if echo "$MSG" | grep -qE "^(chore(\([^)]*\))?: (bump version|[0-9])|release: v[0-9]|Merge develop for v[0-9])"; then
             echo "Release/version-bump commit — skipping packaging drift check (sync job will fix it)."
             exit 0
           fi
