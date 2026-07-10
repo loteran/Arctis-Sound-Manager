@@ -545,29 +545,36 @@ class QSystrayApp(QBaseDesktopApp):
         self._stopping = True
         self.logger.debug('Received shutdown signal, shutting down.')
 
-        # Restore whichever default sink was active before ASM started,
-        # so EasyEffects (or hardware) takes over immediately after exit.
-        #
-        # BUT: when the user configured "redirect on disconnect", the daemon's
-        # shutdown redirect (CoreEngine.stop → redirect_audio_on_disconnect)
-        # must win — it routes to the chosen device and resolves node.nick/name
-        # + persists via pw-metadata. If we set the pre-ASM default here first,
-        # the daemon's guard ("is the current default still an Arctis sink?")
-        # no longer matches and its redirect is skipped. So step aside and let
-        # the daemon handle the target sink in that case.
-        redirect_configured = False
+        # On quit we either restore the pre-ASM default sink (so EasyEffects or
+        # hardware takes over), or — when the user configured "redirect on
+        # disconnect" — route to their chosen device. The daemon's own shutdown
+        # redirect cannot handle the latter here: the tray restarts pipewire/
+        # wireplumber right after, which wipes any default it set. So resolve
+        # the target sink now (while ASM is still up) and re-assert it *after*
+        # the restart settles (see below). The setting stores node.nick, but
+        # pactl needs node.name, so resolve nick -> name via pulsectl.
+        redirect_target_name = ''
         try:
             from arctis_sound_manager.settings import GeneralSettings
             gs = GeneralSettings.read_from_file()
-            redirect_configured = bool(
-                gs.redirect_audio_on_disconnect
-                and gs.redirect_audio_on_disconnect_device
-            )
+            if gs.redirect_audio_on_disconnect and gs.redirect_audio_on_disconnect_device:
+                dev = gs.redirect_audio_on_disconnect_device
+                import pulsectl
+                with pulsectl.Pulse('asm-quit-redirect') as _p:
+                    _sink = next(
+                        (s for s in _p.sink_list()
+                         if s.proplist.get('node.nick', '') == dev
+                         or s.proplist.get('node.name', '') == dev
+                         or s.name == dev),
+                        None,
+                    )
+                    if _sink is not None:
+                        redirect_target_name = _sink.proplist.get('node.name', '') or _sink.name
         except Exception as exc:
-            self.logger.debug('could not read redirect-on-disconnect setting: %r', exc)
+            self.logger.debug('could not resolve redirect-on-disconnect device: %r', exc)
 
         prev = getattr(self, '_previous_default_sink', '')
-        if not redirect_configured and prev and not prev.startswith(('Arctis_', 'effect_input.')):
+        if not redirect_target_name and prev and not prev.startswith(('Arctis_', 'effect_input.')):
             try:
                 subprocess.run(
                     ["pactl", "set-default-sink", prev], capture_output=True, timeout=2
@@ -592,5 +599,25 @@ class QSystrayApp(QBaseDesktopApp):
         # Deferred restart: the app exits first, then pipewire restarts
         # without ASM configs (filter-chain is already stopped).
         sc.restart_detached("pipewire", "wireplumber", "pipewire-pulse", delay=1.0)
+
+        # That restart wipes the default sink, so re-assert the user's
+        # disconnect device once the audio stack is back. Detached so it
+        # outlives the GUI; retry a few times since the target sink only
+        # re-appears once pipewire/wireplumber have finished restarting.
+        if redirect_target_name:
+            import shlex
+            target = shlex.quote(redirect_target_name)
+            script = (
+                f"sleep 3; for i in 1 2 3 4 5 6; do "
+                f"pactl set-default-sink {target} && exit 0; sleep 1; done"
+            )
+            try:
+                subprocess.Popen(
+                    ["sh", "-c", script],
+                    start_new_session=True,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                )
+            except OSError as e:
+                self.logger.warning('detached redirect set-default failed: %s', e)
 
         self.app.quit()
