@@ -596,28 +596,24 @@ class QSystrayApp(QBaseDesktopApp):
                  "arctis-manager.service", "arctis-video-router.service", "filter-chain"],
                 capture_output=True,
             )
-        # Deferred restart: the app exits first, then pipewire restarts
-        # without ASM configs (filter-chain is already stopped).
-        sc.restart_detached("pipewire", "wireplumber", "pipewire-pulse", delay=1.0)
-
-        # That restart wipes the default sink, so re-assert the user's
-        # disconnect device once the audio stack is back. Detached so it
-        # outlives the GUI; retry a few times since the target sink only
-        # re-appears once pipewire/wireplumber have finished restarting.
         if redirect_target_name:
-            import shlex
-            target = shlex.quote(redirect_target_name)
-            script = (
-                f"sleep 3; for i in 1 2 3 4 5 6; do "
-                f"pactl set-default-sink {target} && exit 0; sleep 1; done"
-            )
+            # Redirect-on-disconnect is configured. The daemon's shutdown
+            # redirect (CoreEngine.stop) already pointed the default at the
+            # chosen device *before* removing the Arctis sinks, so the orphaned
+            # streams follow it immediately. Skip the pipewire restart here — it
+            # would tear the graph down and bounce audio off the target for a
+            # few seconds. Re-assert the default synchronously as a safety net;
+            # no restart means the switch is instant.
             try:
-                subprocess.Popen(
-                    ["sh", "-c", script],
-                    start_new_session=True,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                subprocess.run(
+                    ["pactl", "set-default-sink", redirect_target_name],
+                    capture_output=True, timeout=2,
                 )
-            except OSError as e:
-                self.logger.warning('detached redirect set-default failed: %s', e)
+            except FileNotFoundError:
+                pass  # pactl gone (pulseaudio-utils) — daemon redirect stands
+        else:
+            # Deferred restart: the app exits first, then pipewire restarts
+            # without ASM configs (filter-chain is already stopped).
+            sc.restart_detached("pipewire", "wireplumber", "pipewire-pulse", delay=1.0)
 
         self.app.quit()
