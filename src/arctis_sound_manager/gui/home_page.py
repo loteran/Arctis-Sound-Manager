@@ -745,6 +745,19 @@ class HomePage(QWidget):
         self.profile_bar = ProfileBar()
         toggle_layout.addWidget(self.profile_bar, stretch=1)
 
+        # Reclaim audio — one-click fix for apps stuck on a non-ASM output
+        # device (HDMI, S/PDIF, another DAC…)
+        self._reclaim_btn = QPushButton(I18n.translate("ui", "reclaim_audio"))
+        self._reclaim_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._reclaim_btn.setToolTip(I18n.translate("ui", "reclaim_audio_tip"))
+        self._reclaim_btn.setStyleSheet(
+            f"QPushButton {{ background: {ACCENT}; border: none; border-radius: 4px; "
+            f"color: #fff; font-size: 10pt; padding: 4px 14px; }}"
+            f"QPushButton:hover {{ background: #FF6A28; }}"
+        )
+        self._reclaim_btn.clicked.connect(self._on_reclaim_audio)
+        toggle_layout.addWidget(self._reclaim_btn)
+
         root.addWidget(toggle_row)
         root.addSpacing(24)
 
@@ -992,6 +1005,22 @@ class HomePage(QWidget):
         self._game_card.setEnabled(enabled)
         self._chat_card.setEnabled(enabled)
         self._media_card.setEnabled(enabled)
+
+    # ── Reclaim audio handler ────────────────────────────────────────────────
+
+    def _on_reclaim_audio(self):
+        try:
+            from arctis_sound_manager.pw_utils import reclaim_misrouted_streams
+            count, names = reclaim_misrouted_streams()
+            if count > 0:
+                logger.info("Reclaimed %d misrouted stream(s): %s", count, ", ".join(names))
+            else:
+                logger.debug("Reclaim audio: nothing to move, all apps already on headset")
+            # Refresh the app lists shown on the cards immediately rather than
+            # waiting for the next poll tick.
+            self._poll_volumes()
+        except Exception as exc:
+            logger.warning("_on_reclaim_audio failed: %s", exc)
 
     # ── D-Bus status signal handler ───────────────────────────────────────────
 

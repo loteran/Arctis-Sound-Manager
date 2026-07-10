@@ -531,6 +531,104 @@ def ensure_loopback_link(
         return False
 
 
+def _is_asm_sink(name: str) -> bool:
+    """Return True if *name* (a PulseAudio sink name) belongs to ASM.
+
+    Covers both the virtual ``Arctis_*`` pw-loopback sinks created by ASM
+    (Game/Chat/Media/…) and the physical headset sink itself, whose
+    ``node.name`` on the ALSA card is something like
+    ``alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-...``.
+    """
+    if not name:
+        return False
+    if name.startswith("Arctis_"):
+        return True
+    return "SteelSeries" in name or "Arctis" in name
+
+
+def reclaim_misrouted_streams() -> tuple[int, list[str]]:
+    """Move application streams that are playing on a non-ASM output device
+    (HDMI, S/PDIF, another DAC…) back onto the default ASM headset sink.
+
+    Real-world trigger: an app (e.g. Firefox) ends up routed to a S/PDIF or
+    HDMI output — silence, since the user is wearing the headset — and this
+    one-shot brings it back without the user hunting through pavucontrol.
+
+    Returns (count_moved, [app display names moved]). Never raises — logs and
+    returns (0, []) on any failure (pulsectl missing, no ASM sink found, …).
+    """
+    try:
+        import pulsectl  # type: ignore
+    except Exception as exc:
+        logger.debug("pulsectl unavailable, cannot reclaim streams: %s", exc)
+        return 0, []
+
+    moved = 0
+    names: list[str] = []
+    try:
+        with pulsectl.Pulse("asm-reclaim") as pulse:
+            sinks = pulse.sink_list()
+            sink_inputs = pulse.sink_input_list()
+
+            # Pick the target ASM sink: prefer the current default if it is
+            # already an ASM sink, then the Game virtual sink, then any
+            # physical headset sink.
+            target = None
+            default_name = pulse.server_info().default_sink_name
+            if default_name and _is_asm_sink(default_name):
+                target = next((s for s in sinks if s.name == default_name), None)
+            if target is None:
+                target = next((s for s in sinks if s.name == "Arctis_Game"), None)
+            if target is None:
+                target = next((s for s in sinks if _is_asm_sink(s.name)), None)
+
+            if target is None:
+                logger.warning("reclaim_misrouted_streams: no ASM sink found — skipping")
+                return 0, []
+
+            sinks_by_index = {s.index: s for s in sinks}
+
+            for si in sink_inputs:
+                props = si.proplist
+                binary = props.get("application.process.binary", "")
+                app_name = props.get("application.name", "")
+                media_name = props.get("media.name", "")
+
+                # Skip ASM's own internal nodes (filter-chain EQ, virtual
+                # surround, Sonar loopbacks) — never move those.
+                if not binary or binary in ("pipewire", "pw-loopback"):
+                    continue
+                if any(tag in media_name for tag in ("EQ output", "Virtual Surround", "Sonar")):
+                    continue
+                if not app_name:
+                    continue
+
+                current_sink = sinks_by_index.get(si.sink)
+                if current_sink is None:
+                    continue
+                if _is_asm_sink(current_sink.name):
+                    continue  # already on the headset
+
+                try:
+                    pulse.sink_input_move(si.index, target.index)
+                    moved += 1
+                    names.append(app_name or binary)
+                    logger.info(
+                        "reclaim_misrouted_streams: moved '%s' from '%s' to '%s'",
+                        app_name or binary, current_sink.name, target.name,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "reclaim_misrouted_streams: failed to move '%s': %s",
+                        app_name or binary, exc,
+                    )
+    except Exception as exc:
+        logger.warning("reclaim_misrouted_streams failed: %s", exc)
+        return 0, []
+
+    return moved, names
+
+
 def move_native_stream(stream_node_id: int, target_sink_name: str, data: list | None = None) -> bool:
     """Move a native PipeWire stream to target_sink_name using pw-metadata."""
     if data is None:

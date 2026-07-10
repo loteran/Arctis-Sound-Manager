@@ -348,6 +348,11 @@ class QSystrayApp(QBaseDesktopApp):
         except Exception as e:
             self.logger.error('EQ presets section failed: %s', e, exc_info=True)
 
+        # Reclaim audio (move misrouted app streams back to the headset)
+        _sep()
+        self._menu_actions['reclaim_audio'] = _add(QAction(I18n.translate('ui', 'reclaim_audio')))
+        self._menu_actions['reclaim_audio'].triggered.connect(self._on_reclaim_audio)
+
         # Output Routing (per-channel physical sink selection)
         try:
             import pulsectl
@@ -441,6 +446,21 @@ class QSystrayApp(QBaseDesktopApp):
                 f"{I18n.translate('ui', 'applying_preset')} {name}"
             )
             self._sonar_applier.apply(channel, name)
+
+    def _on_reclaim_audio(self) -> None:
+        try:
+            from arctis_sound_manager.pw_utils import reclaim_misrouted_streams
+            count, _names = reclaim_misrouted_streams()
+            title = "Arctis Sound Manager"
+            if count > 0:
+                body = f"{count} — {I18n.translate('ui', 'reclaim_audio_done')}"
+            else:
+                body = I18n.translate('ui', 'reclaim_audio_none')
+            self.tray_icon.showMessage(
+                title, body, QSystemTrayIcon.MessageIcon.Information, 4000,
+            )
+        except Exception as e:
+            self.logger.error('_on_reclaim_audio failed: %s', e, exc_info=True)
 
     def _on_tray_channel_output(self, channel: str, sink_name: str) -> None:
         try:
