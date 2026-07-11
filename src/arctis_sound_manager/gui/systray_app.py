@@ -222,7 +222,15 @@ class QSystrayApp(QBaseDesktopApp):
 
     @staticmethod
     def _extract_battery_percent(status: dict) -> int | None:
-        """Pull the headset battery percentage out of a GetStatus payload."""
+        """Pull the headset battery percentage out of a GetStatus payload.
+
+        Returns None when the headset is explicitly powered off: the wireless
+        adapter keeps reporting a battery percentage even after the headset is
+        switched off, so the percentage alone is not a reliable "present"
+        signal. We therefore consult headset_power_status in the same status
+        category and treat the level as unknown when it says 'off' (#124).
+        Original diagnosis and fix by @isaki (PR #125).
+        """
         if not isinstance(status, dict):
             return None
         for category in status.values():
@@ -230,6 +238,9 @@ class QSystrayApp(QBaseDesktopApp):
                 continue
             bat = category.get('headset_battery_charge')
             if isinstance(bat, dict) and bat.get('type') == 'percentage':
+                power = category.get('headset_power_status')
+                if isinstance(power, dict) and power.get('value') == 'off':
+                    return None
                 try:
                     return int(bat['value'])
                 except (KeyError, TypeError, ValueError):
