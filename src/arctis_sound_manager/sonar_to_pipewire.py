@@ -21,6 +21,7 @@ Arctis device is currently attached (`device_state.is_device_set()` == False).
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 from arctis_sound_manager.eq_types import EqBand, PW_LABEL
@@ -712,12 +713,26 @@ def generate_sonar_eq_conf(
 
     boost_db = max(-12.0, min(12.0, boost_db))
 
-    # Collect active filter nodes: preset bands + macro sliders (if non-zero)
+    # Collect active filter nodes: preset bands (only enabled ones) + macro
+    # sliders. Once the channel is not fully flat, the 3 macro nodes are
+    # ALWAYS emitted — even at Gain=0.0 — instead of only when non-zero
+    # (Phase 1, issue #100/#88): a bq_peaking node at Gain=0.0 is a true unity
+    # passthrough, so this keeps the node count/order stable while the user
+    # drags a macro slider across zero, which previously added/removed a node
+    # and forced a filter-chain restart on every crossing. The fully-flat case
+    # (no bands, all macros/boost at 0) still takes the cheap _bypass_conf
+    # "copy" path below — the one-time transition in/out of that state is the
+    # only structural change left for macros/boost.
     active_bands: list[EqBand] = [b for b in bands if b.enabled]
     macro_values = {"basses": basses_db, "voix": voix_db, "aigus": aigus_db}
+    is_flat = (
+        not active_bands
+        and all(abs(v) < 0.01 for v in macro_values.values())
+        and abs(boost_db) < 0.01
+    )
     macro_bands: list[tuple[str, EqBand]] = []
-    for macro, db in macro_values.items():
-        if abs(db) >= 0.01:
+    if not is_flat:
+        for macro, db in macro_values.items():
             p = _MACRO_PARAMS[macro]
             macro_bands.append((macro, EqBand(
                 freq=p["freq"], gain=db, q=p["q"], type="peakingEQ", enabled=True,
@@ -769,13 +784,16 @@ def _active_conf_8ch(
     for i in range(len(all_filters) - 1):
         link_lines.append(_link(names[i], names[i + 1]))
 
-    if abs(boost_db) >= 0.01:
-        node_lines.append(
-            f"                    {{ type = builtin  name = boost  label = bq_highshelf\n"
-            f"                      control = {{ Freq = 10.0  Q = 0.7071  Gain = {boost_db} }} }}"
-        )
-        link_lines.append(_link(last_name, "boost"))
-        last_name = "boost"
+    # Boost: always present (Phase 1, issue #100/#88) — bq_highshelf at
+    # Gain=0.0 is a true unity passthrough, so adjusting/toggling the boost
+    # slider never changes the node count and never needs a filter-chain
+    # restart on its own.
+    node_lines.append(
+        f"                    {{ type = builtin  name = boost  label = bq_highshelf\n"
+        f"                      control = {{ Freq = 10.0  Q = 0.7071  Gain = {boost_db} }} }}"
+    )
+    link_lines.append(_link(last_name, "boost"))
+    last_name = "boost"
 
     if smart_volume and smart_volume.get("enabled"):
         # Correctif 4 (issue #88): guard LADSPA node behind plugin availability
@@ -866,20 +884,18 @@ def _active_conf_2ch(
         link_lines.append(_link(names_L[i], names_L[i + 1]))
         link_lines.append(_link(names_R[i], names_R[i + 1]))
 
-    if abs(boost_db) >= 0.01:
-        node_lines.append(
-            f"                    {{ type = builtin  name = boost_L  label = bq_highshelf\n"
-            f"                      control = {{ Freq = 10.0  Q = 0.7071  Gain = {boost_db} }} }}"
-        )
-        node_lines.append(
-            f"                    {{ type = builtin  name = boost_R  label = bq_highshelf\n"
-            f"                      control = {{ Freq = 10.0  Q = 0.7071  Gain = {boost_db} }} }}"
-        )
-        link_lines.append(_link(names_L[-1], "boost_L"))
-        link_lines.append(_link(names_R[-1], "boost_R"))
-        last_L, last_R = "boost_L", "boost_R"
-    else:
-        last_L, last_R = names_L[-1], names_R[-1]
+    # Boost: always present (Phase 1, issue #100/#88) — see _active_conf_8ch.
+    node_lines.append(
+        f"                    {{ type = builtin  name = boost_L  label = bq_highshelf\n"
+        f"                      control = {{ Freq = 10.0  Q = 0.7071  Gain = {boost_db} }} }}"
+    )
+    node_lines.append(
+        f"                    {{ type = builtin  name = boost_R  label = bq_highshelf\n"
+        f"                      control = {{ Freq = 10.0  Q = 0.7071  Gain = {boost_db} }} }}"
+    )
+    link_lines.append(_link(names_L[-1], "boost_L"))
+    link_lines.append(_link(names_R[-1], "boost_R"))
+    last_L, last_R = "boost_L", "boost_R"
 
     # Correctif 4 (issue #88): track whether LADSPA comp nodes were actually
     # added — affects port name ("Output" vs "Out") used in outputs_text below.
@@ -987,18 +1003,6 @@ def generate_sonar_micro_conf(
 
     active_bands = [b for b in bands if b.enabled]
     macro_values = {"basses": basses_db, "voix": voix_db, "aigus": aigus_db}
-    macro_bands: list[tuple[str, EqBand]] = []
-    for macro, db in macro_values.items():
-        if abs(db) >= 0.01:
-            p = _MACRO_PARAMS[macro]
-            macro_bands.append((macro, EqBand(
-                freq=p["freq"], gain=db, q=p["q"], type="peakingEQ", enabled=True,
-            )))
-
-    all_filters = (
-        [(f"bq{i}", b) for i, b in enumerate(active_bands)]
-        + [(f"macro_{name}", b) for name, b in macro_bands]
-    )
 
     nc = noise_canceling or {}
     nr = noise_reduction or {}
@@ -1012,7 +1016,32 @@ def generate_sonar_micro_conf(
                       or ng.get("enabled", False)
                       or comp.get("enabled", False))
 
-    if not all_filters and not has_processing:
+    # Phase 1 (issue #100/#88): once the mic channel is not fully flat, the 3
+    # macro nodes are ALWAYS emitted (Gain=0.0 is a true bq_peaking unity
+    # passthrough) instead of only when non-zero — see generate_sonar_eq_conf
+    # for the full rationale. This also removes the need for the old 0 dB
+    # "pass" placeholder node: the macros already guarantee all_filters is
+    # non-empty whenever has_processing alone makes the channel non-flat.
+    is_flat = (
+        not active_bands
+        and all(abs(v) < 0.01 for v in macro_values.values())
+        and abs(boost_db) < 0.01
+        and not has_processing
+    )
+    macro_bands: list[tuple[str, EqBand]] = []
+    if not is_flat:
+        for macro, db in macro_values.items():
+            p = _MACRO_PARAMS[macro]
+            macro_bands.append((macro, EqBand(
+                freq=p["freq"], gain=db, q=p["q"], type="peakingEQ", enabled=True,
+            )))
+
+    all_filters = (
+        [(f"bq{i}", b) for i, b in enumerate(active_bands)]
+        + [(f"macro_{name}", b) for name, b in macro_bands]
+    )
+
+    if is_flat:
         text = _bypass_micro_conf()
         _write_conf(output_path, text)
         return text
@@ -1020,9 +1049,8 @@ def generate_sonar_micro_conf(
     node_lines: list[str] = []
     link_lines: list[str] = []
 
-    # If no EQ filters but processing nodes are enabled, insert a 0 dB passthrough
-    if not all_filters:
-        all_filters = [("pass", EqBand(freq=10.0, gain=0.0, q=0.707, type="peakingEQ", enabled=True))]
+    # all_filters is guaranteed non-empty here: is_flat is False, and it is
+    # only False when active_bands is non-empty or the macros were forced in.
     names = [n for n, _ in all_filters]
 
     for (name, band), nm in zip(all_filters, names):
@@ -1032,15 +1060,13 @@ def generate_sonar_micro_conf(
     for i in range(len(all_filters) - 1):
         link_lines.append(_link(names[i], names[i + 1]))
 
-    if abs(boost_db) >= 0.01:
-        node_lines.append(
-            f"                    {{ type = builtin  name = boost  label = bq_highshelf\n"
-            f"                      control = {{ Freq = 10.0  Q = 0.7071  Gain = {boost_db} }} }}"
-        )
-        link_lines.append(_link(names[-1], "boost"))
-        last_node = "boost"
-    else:
-        last_node = names[-1]
+    # Boost: always present (Phase 1) — see generate_sonar_eq_conf.
+    node_lines.append(
+        f"                    {{ type = builtin  name = boost  label = bq_highshelf\n"
+        f"                      control = {{ Freq = 10.0  Q = 0.7071  Gain = {boost_db} }} }}"
+    )
+    link_lines.append(_link(names[-1], "boost"))
+    last_node = "boost"
 
     # Track whether last_node is LADSPA (uses Input/Output ports) or builtin (In/Out)
     last_is_ladspa = False
@@ -1375,6 +1401,84 @@ def generate_virtual_sinks_conf(sonar: bool) -> str:
 def _write_conf(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
+
+
+# ── Live-apply diff (Phase 2, issue #100/#88) ────────────────────────────────
+#
+# _node_block() always emits a builtin bq_* node as exactly two lines:
+#   { type = builtin  name = <name>  label = <label>
+#     control = { Freq = <f>  Q = <q>  Gain = <g> } }
+# This format is fully under our control, so a plain line-by-line diff of two
+# generated conf texts can reliably tell "only Freq/Q/Gain literals changed"
+# (safe to live-apply via pw-cli set-param) apart from any other difference —
+# a node added/removed/reordered/retyped, a LADSPA node's params changed, a
+# target/channel-count/link change, … — all of which require a full restart.
+
+_BQ_HEADER_RE = re.compile(
+    r'^\s*\{\s*type\s*=\s*builtin\s+name\s*=\s*(\S+)\s+label\s*=\s*(\S+)\s*$'
+)
+_BQ_CONTROL_RE = re.compile(
+    r'^\s*control\s*=\s*\{\s*Freq\s*=\s*([-\d.eE]+)\s+Q\s*=\s*([-\d.eE]+)'
+    r'\s+Gain\s*=\s*([-\d.eE]+)\s*\}\s*\}\s*$'
+)
+
+
+def diff_filter_conf(old_text: str, new_text: str) -> dict[str, dict[str, float]] | None:
+    """Compare two generated filter-chain conf texts.
+
+    Returns ``{internal_node_name: {"Freq": f, "Q": q, "Gain": g}}`` — only
+    the fields that actually changed — for every builtin bq_* node whose
+    control literals differ between *old_text* and *new_text*, when the two
+    texts are otherwise byte-identical (same nodes, in the same order, same
+    links/targets/channels/LADSPA params).
+
+    Returns ``None`` when any other difference is found: a node was added,
+    removed, reordered, or retyped; a LADSPA node's params changed; a target,
+    channel count, or link changed; etc. — the caller must fall back to a
+    full filter-chain restart in that case, since the graph shape itself
+    changed and a simple ``pw-cli set-param`` cannot express that.
+    """
+    old_lines = old_text.splitlines()
+    new_lines = new_text.splitlines()
+    if len(old_lines) != len(new_lines):
+        return None
+
+    changed: dict[str, dict[str, float]] = {}
+    pending_name: str | None = None
+
+    for old_line, new_line in zip(old_lines, new_lines):
+        header = _BQ_HEADER_RE.match(old_line)
+        if old_line == new_line:
+            if header:
+                pending_name = header.group(1)
+            continue
+
+        # Lines differ. The only acceptable difference is a bq_* control
+        # block (Freq/Q/Gain literals) belonging to the node named on the
+        # immediately preceding (identical) header line. A header line itself
+        # is never expected to differ (that would mean a node was renamed or
+        # retyped) — if _BQ_HEADER_RE matched old_line here, new_line must be
+        # a different header, i.e. a structural change.
+        if header is not None:
+            return None
+        old_m = _BQ_CONTROL_RE.match(old_line)
+        new_m = _BQ_CONTROL_RE.match(new_line)
+        if not old_m or not new_m or pending_name is None:
+            return None
+
+        fields: dict[str, float] = {}
+        for key, old_val, new_val in (
+            ("Freq", float(old_m.group(1)), float(new_m.group(1))),
+            ("Q",    float(old_m.group(2)), float(new_m.group(2))),
+            ("Gain", float(old_m.group(3)), float(new_m.group(3))),
+        ):
+            if old_val != new_val:
+                fields[key] = new_val
+        if fields:
+            changed[pending_name] = fields
+        pending_name = None
+
+    return changed
 
 
 def check_and_fix_stale_configs() -> tuple[bool, bool]:

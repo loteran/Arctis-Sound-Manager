@@ -352,3 +352,53 @@ class TestEnsureLoopbackLink:
         )
         assert ok is False
         assert calls == []
+
+
+# ── set_filter_gain (Phase 2, issue #100/#88) ─────────────────────────────────
+#
+# Live-apply a single filter-chain control value via pw-cli set-param instead
+# of regenerating the conf + restarting the service. Verified interactively
+# against a live Sonar EQ node on PipeWire 1.6.7 (see the docstring in
+# pw_utils.set_filter_gain for the exact enum-params/set-param transcript).
+
+class TestSetFilterGain:
+    def test_builds_correct_pw_cli_command(self, monkeypatch):
+        monkeypatch.setattr(
+            pw_utils, "_pw_dump",
+            lambda: [_node(138, "effect_input.sonar-game-eq")],
+        )
+        calls = _patch_pwlink(monkeypatch)  # reuses the fake subprocess.run recorder
+
+        ok = pw_utils.set_filter_gain("effect_input.sonar-game-eq", "bq0:Gain", 6.5)
+
+        assert ok is True
+        assert len(calls) == 1
+        argv = calls[0]
+        assert argv[0] == pw_utils._abs_exe("pw-cli")
+        assert argv[1:3] == ["set-param", "138"]
+        assert argv[3] == "Props"
+        assert argv[4] == '{ params = [ "bq0:Gain" 6.5 ] }'
+
+    def test_returns_false_when_node_not_in_graph(self, monkeypatch):
+        monkeypatch.setattr(pw_utils, "_pw_dump", lambda: [_node(1, "some-other-node")])
+        calls = _patch_pwlink(monkeypatch)
+
+        ok = pw_utils.set_filter_gain("effect_input.sonar-game-eq", "bq0:Gain", 3.0)
+
+        assert ok is False
+        assert calls == []  # never even attempts pw-cli when the node is absent
+
+    def test_returns_false_when_pw_cli_exits_nonzero(self, monkeypatch):
+        monkeypatch.setattr(
+            pw_utils, "_pw_dump",
+            lambda: [_node(59, "effect_input.sonar-output-eq")],
+        )
+
+        def fake_run(argv, **kwargs):
+            return types.SimpleNamespace(returncode=1, stderr=b"no such param")
+
+        monkeypatch.setattr(pw_utils.subprocess, "run", fake_run)
+
+        ok = pw_utils.set_filter_gain("effect_input.sonar-output-eq", "boost:Gain", 1.0)
+
+        assert ok is False

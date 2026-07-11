@@ -215,6 +215,86 @@ def _pw_dump() -> list:
         return []
 
 
+def set_filter_gain(node_name: str, control: str, value: float) -> bool:
+    """Live-apply a single filter-chain control value, no restart required.
+
+    *node_name* is the ``node.name`` of the filter-chain's own outer node
+    (e.g. ``"effect_input.sonar-game-eq"``) — the individual biquad/LADSPA
+    nodes declared inside its ``filter.graph`` (``bq0``, ``macro_basses``,
+    ``boost``, …) are NOT separate PipeWire objects with their own id; their
+    controls are exposed as ``Props`` params on this one outer node, each
+    addressed as ``"<internal-name>:<Control>"`` (e.g. ``"bq0:Gain"``,
+    ``"macro_basses:Gain"``, ``"boost:Gain"``).
+
+    Verified against a live Sonar EQ node on PipeWire 1.6.7::
+
+        $ pw-cli enum-params <id> Props | grep bq0
+              String "bq0:Freq" / "bq0:Q" / "bq0:Gain" ...
+        $ pw-cli set-param <id> Props '{ params = [ "bq0:Gain" 6.0 ] }'
+        # readback via enum-params confirms the value took effect immediately
+
+    This sidesteps the SIGTERM-during-DSP race that SEGVs filter-chain on
+    PipeWire 1.6.7 when a control value change is instead applied by
+    regenerating the config and restarting the service (issue #100/#88).
+
+    Parameters
+    ----------
+    node_name:
+        ``node.name`` of the filter-chain's capture-side node, resolved to a
+        PipeWire object id via a fresh ``pw-dump`` (Correctif — issue #123:
+        the lookup goes through ``_pw_dump()``/``_pw_run()``, never a raw
+        subprocess spawn).
+    control:
+        The internal control key, e.g. ``"bq3:Gain"``, ``"macro_voix:Gain"``,
+        ``"boost:Freq"``.
+    value:
+        The new numeric value.
+
+    Returns
+    -------
+    bool
+        True when *node_name* was found in the graph and ``pw-cli set-param``
+        exited 0. False when the node is not currently present (filter-chain
+        not up yet, or this control belongs to a node that does not exist in
+        the running graph) or the call failed — the caller should treat this
+        as "cannot live-apply" and fall back to regenerating the conf +
+        ``ensure_filter_chain_healthy()`` rather than forcing a raw restart.
+    """
+    data = _pw_dump()
+    node_id: int | None = None
+    for obj in data:
+        if not obj.get("type", "").endswith("Node"):
+            continue
+        props = obj.get("info", {}).get("props", {})
+        if props.get("node.name") == node_name:
+            node_id = obj["id"]
+            break
+
+    if node_id is None:
+        logger.debug("set_filter_gain: node '%s' not in graph", node_name)
+        return False
+
+    try:
+        r = _pw_run(
+            ["pw-cli", "set-param", str(node_id), "Props",
+             f'{{ params = [ "{control}" {value} ] }}'],
+            capture_output=True, text=True, timeout=3,
+        )
+        if r.returncode != 0:
+            logger.warning(
+                "set_filter_gain: pw-cli set-param on '%s' (%s=%s) failed: %s",
+                node_name, control, value, (r.stderr or "").strip(),
+            )
+            return False
+        return True
+    except Exception as exc:
+        logger.warning(
+            "set_filter_gain: exception setting '%s' %s=%s: %s",
+            node_name, control, value, exc,
+        )
+        return False
+
+
 def pw_node_exists(name: str, data: list | None = None) -> bool:
     """Return True if a PipeWire node with ``node.name == name`` is currently
     present in the graph.

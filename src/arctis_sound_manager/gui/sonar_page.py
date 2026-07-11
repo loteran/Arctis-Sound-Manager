@@ -87,6 +87,8 @@ from arctis_sound_manager.gui.theme import (
 from arctis_sound_manager.sonar_to_pipewire import (
     _MACRO_PARAMS as MACRO_PARAMS,
     check_and_fix_stale_configs,
+    diff_filter_conf,
+    ensure_filter_chain_healthy,
     generate_sonar_eq_conf,
     generate_sonar_micro_conf,
     is_filter_chain_safe_mode_armed,
@@ -487,6 +489,54 @@ class _ApplyWorker(QThread):
                 )
                 self.done.emit(True)
                 return
+
+            # ── Live-apply path (Phase 2, issue #100/#88) ────────────────────
+            # generate_sonar_eq_conf()/generate_sonar_micro_conf() above have
+            # already written the new conf to disk. If it differs from the
+            # old one ONLY in Freq/Q/Gain control literals — the common case
+            # for macro/boost/band-gain edits now that macro and boost nodes
+            # are always present in the graph (Phase 1) — push the changed
+            # values straight to the running filter-chain via pw-cli
+            # set-param instead of restarting the service. This sidesteps the
+            # SIGTERM-during-DSP race that SEGVs filter-chain on PipeWire
+            # 1.6.7 (coredump, issue #100). diff_filter_conf() also covers
+            # micro: it safely returns None (forcing the full restart path)
+            # the moment a noise-processing toggle changes the LADSPA chain,
+            # so this is not limited to game/chat/media/output.
+            if _old_eq_conf is not None and _hesuvi_unchanged:
+                node_diff = diff_filter_conf(_old_eq_conf, _new_eq_conf)
+                if node_diff is not None:
+                    from arctis_sound_manager.pw_utils import set_filter_gain
+                    sink_name = f"effect_input.sonar-{self._channel}-eq"
+                    all_ok = True
+                    for internal_name, fields in node_diff.items():
+                        for control, val in fields.items():
+                            if not set_filter_gain(sink_name, f"{internal_name}:{control}", val):
+                                all_ok = False
+                    if all_ok:
+                        log.debug(
+                            "_ApplyWorker: live-applied %d control change(s) on "
+                            "channel=%s, no filter-chain restart needed",
+                            sum(len(f) for f in node_diff.values()), self._channel,
+                        )
+                        self.done.emit(True)
+                        return
+                    # A control could not be pushed — most likely the node is
+                    # not in the graph yet (filter-chain not up), not a real
+                    # crash. Heal instead of forcing a raw restart; the new
+                    # conf is already on disk and will be picked up once the
+                    # service is (re)started.
+                    log.warning(
+                        "_ApplyWorker: live-apply could not reach channel=%s "
+                        "(filter-chain node missing) — healing instead of a "
+                        "raw restart", self._channel,
+                    )
+                    ensure_filter_chain_healthy()
+                    self.done.emit(True)
+                    return
+                # else: a real structural change (band added/removed/retyped,
+                # preset switch, spatial/channel-count change, …) — fall
+                # through to the full restart path below.
 
             # Snapshot active streams BEFORE restart so we can restore them
             saved_sink_inputs = self._snapshot_sink_inputs(log)

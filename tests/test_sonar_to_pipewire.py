@@ -10,6 +10,7 @@ from arctis_sound_manager import sonar_to_pipewire as _s2p
 from arctis_sound_manager.eq_types import EqBand
 from arctis_sound_manager.sonar_to_pipewire import (
     check_and_fix_stale_configs,
+    diff_filter_conf,
     generate_sonar_eq_conf,
     generate_sonar_micro_conf,
     generate_virtual_sinks_conf,
@@ -110,8 +111,12 @@ def test_macro_sliders_game_single_nodes():
     # 8ch: no L/R suffixes
     assert "macro_basses_L" not in text
     assert "macro_aigus_L" not in text
-    # voix is 0.0, should not generate a filter
-    assert "macro_voix" not in text
+    # Phase 1 (issue #100/#88): once the channel is not fully flat (basses/
+    # aigus are non-zero here), ALL 3 macro nodes are always emitted — even
+    # voix at 0.0 — as a unity-gain bq_peaking passthrough, so the node count
+    # stays stable while the user drags a macro slider across zero.
+    assert "macro_voix" in text
+    assert "Gain = 0.0" in text
 
 
 def test_macro_sliders_chat_lr_nodes():
@@ -994,3 +999,137 @@ def test_ladspa_ref_container_home_path_keeps_absolute():
         ref = _ladspa_plugin_ref("sc4m_1916.so")
 
     assert ref == home_plugin
+
+
+# ── Phase 1 — stable graph across macro/boost/gain edits (issue #100/#88) ────
+#
+# generate_sonar_eq_conf() must emit the SAME set of node names, in the same
+# order, for a given active band set — regardless of macro/boost values, and
+# regardless of the exact Freq/Gain/Q of those bands. Only a real topology
+# change (band added/removed/retyped, preset switch, …) may change the node
+# names. This is what lets Phase 2's diff_filter_conf() distinguish a safe
+# live-apply from a case that genuinely needs a filter-chain restart.
+
+def _node_names(text: str) -> list[str]:
+    import re
+    return re.findall(r"\bname = (\S+)", text)
+
+
+def test_stable_graph_across_macro_and_boost_values():
+    """Same active bands, wildly different macro/boost values (crossing
+    zero in both directions) -> identical node names/order."""
+    bands = [
+        EqBand(freq=100, gain=2.0, q=0.7, type="peakingEQ", enabled=True),
+        EqBand(freq=1000, gain=-1.0, q=0.7, type="peakingEQ", enabled=True),
+    ]
+    text_a = generate_sonar_eq_conf("game", bands, basses_db=0.0, voix_db=0.0,
+                                     aigus_db=0.0, output_path=Path("/dev/null"),
+                                     boost_db=0.0)
+    text_b = generate_sonar_eq_conf("game", bands, basses_db=4.0, voix_db=-2.0,
+                                     aigus_db=1.5, output_path=Path("/dev/null"),
+                                     boost_db=5.0)
+    assert _node_names(text_a) == _node_names(text_b)
+
+
+def test_stable_graph_across_macro_values_chat_2ch():
+    """Same property holds for the 2ch (L/R) code path."""
+    bands = [EqBand(freq=250, gain=1.0, q=0.7, type="peakingEQ", enabled=True)]
+    text_a = generate_sonar_eq_conf("chat", bands, 0.0, 0.0, 0.0,
+                                     output_path=Path("/dev/null"))
+    text_b = generate_sonar_eq_conf("chat", bands, 3.0, -3.0, 2.0,
+                                     output_path=Path("/dev/null"), boost_db=6.0)
+    assert _node_names(text_a) == _node_names(text_b)
+
+
+def test_stable_graph_across_band_freq_gain_q_edits():
+    """Editing Freq/Gain/Q of an already-active band (curve drag) without
+    changing which bands are enabled must not change the node names."""
+    bands_a = [EqBand(freq=100, gain=2.0, q=0.7, type="peakingEQ", enabled=True)]
+    bands_b = [EqBand(freq=120, gain=5.0, q=1.2, type="peakingEQ", enabled=True)]
+    text_a = generate_sonar_eq_conf("chat", bands_a, 1.0, 0.0, 0.0,
+                                     output_path=Path("/dev/null"))
+    text_b = generate_sonar_eq_conf("chat", bands_b, 1.0, 0.0, 0.0,
+                                     output_path=Path("/dev/null"))
+    assert _node_names(text_a) == _node_names(text_b)
+
+
+def test_stable_graph_micro_across_macro_values():
+    """Same stability property for the microphone EQ config."""
+    bands = [EqBand(freq=300, gain=2.0, q=0.7, type="peakingEQ", enabled=True)]
+    text_a = generate_sonar_micro_conf(bands, 0.0, 0.0, 0.0,
+                                        output_path=Path("/dev/null"))
+    text_b = generate_sonar_micro_conf(bands, 4.0, -1.0, 2.0,
+                                        output_path=Path("/dev/null"), boost_db=3.0)
+    assert _node_names(text_a) == _node_names(text_b)
+
+
+# ── Phase 2 — diff_filter_conf (issue #100/#88) ───────────────────────────────
+
+def test_diff_filter_conf_identical_text_returns_empty_dict():
+    bands = [EqBand(freq=100, gain=2.0, q=0.7, type="peakingEQ", enabled=True)]
+    text = generate_sonar_eq_conf("game", bands, 1.0, 0.0, 0.0,
+                                  output_path=Path("/dev/null"))
+    assert diff_filter_conf(text, text) == {}
+
+
+def test_diff_filter_conf_detects_gain_only_change():
+    """Only the basses macro changed -> diff reports exactly that node."""
+    bands = [EqBand(freq=100, gain=2.0, q=0.7, type="peakingEQ", enabled=True)]
+    old_text = generate_sonar_eq_conf("game", bands, basses_db=0.0, voix_db=0.0,
+                                       aigus_db=0.0, output_path=Path("/dev/null"))
+    new_text = generate_sonar_eq_conf("game", bands, basses_db=3.0, voix_db=0.0,
+                                       aigus_db=0.0, output_path=Path("/dev/null"))
+    diff = diff_filter_conf(old_text, new_text)
+    assert diff == {"macro_basses": {"Gain": 3.0}}
+
+
+def test_diff_filter_conf_detects_band_freq_and_gain_change():
+    """A curve-drag edit (Freq + Gain both changed on the same band) is
+    reported per-field, and remains live-appliable (not None)."""
+    bands_a = [EqBand(freq=100, gain=2.0, q=0.7, type="peakingEQ", enabled=True)]
+    bands_b = [EqBand(freq=150, gain=5.0, q=0.7, type="peakingEQ", enabled=True)]
+    old_text = generate_sonar_eq_conf("chat", bands_a, 0.0, 0.0, 0.0,
+                                       output_path=Path("/dev/null"))
+    new_text = generate_sonar_eq_conf("chat", bands_b, 0.0, 0.0, 0.0,
+                                       output_path=Path("/dev/null"))
+    diff = diff_filter_conf(old_text, new_text)
+    assert diff == {
+        "bq0_L": {"Freq": 150.0, "Gain": 5.0},
+        "bq0_R": {"Freq": 150.0, "Gain": 5.0},
+    }
+
+
+def test_diff_filter_conf_returns_none_on_band_count_change():
+    """A band added/removed is a real topology change -> must restart."""
+    band_one = [EqBand(freq=100, gain=2.0, q=0.7, type="peakingEQ", enabled=True)]
+    band_two = band_one + [
+        EqBand(freq=2000, gain=1.0, q=0.7, type="peakingEQ", enabled=True),
+    ]
+    old_text = generate_sonar_eq_conf("chat", band_one, 0.0, 0.0, 0.0,
+                                       output_path=Path("/dev/null"))
+    new_text = generate_sonar_eq_conf("chat", band_two, 0.0, 0.0, 0.0,
+                                       output_path=Path("/dev/null"))
+    assert diff_filter_conf(old_text, new_text) is None
+
+
+def test_diff_filter_conf_returns_none_on_band_type_change():
+    """A band changing filter type (e.g. peakingEQ -> highPass) changes the
+    node's label, not just its control literals -> must restart."""
+    band_peaking = [EqBand(freq=100, gain=2.0, q=0.7, type="peakingEQ", enabled=True)]
+    band_highpass = [EqBand(freq=100, gain=2.0, q=0.7, type="highPass", enabled=True)]
+    old_text = generate_sonar_eq_conf("chat", band_peaking, 0.0, 0.0, 0.0,
+                                       output_path=Path("/dev/null"))
+    new_text = generate_sonar_eq_conf("chat", band_highpass, 0.0, 0.0, 0.0,
+                                       output_path=Path("/dev/null"))
+    assert diff_filter_conf(old_text, new_text) is None
+
+
+def test_diff_filter_conf_returns_none_on_flat_to_active_transition():
+    """Going from the fully-flat bypass ("copy" node) to an active graph is
+    a structural change -> must restart."""
+    old_text = generate_sonar_eq_conf("chat", [], 0.0, 0.0, 0.0,
+                                       output_path=Path("/dev/null"))
+    bands = [EqBand(freq=100, gain=2.0, q=0.7, type="peakingEQ", enabled=True)]
+    new_text = generate_sonar_eq_conf("chat", bands, 0.0, 0.0, 0.0,
+                                       output_path=Path("/dev/null"))
+    assert diff_filter_conf(old_text, new_text) is None
