@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.97" date="2026-07-11">
+      <description>
+        <p>The Sonar Micro EQ no longer steals your microphone. Adjusting any Sonar Micro EQ setting used to detach the EQ from your headset mic and re-attach it to a different input device (a second microphone), forcing you to fix the routing by hand after every change. ASM now takes the mic capture out of WirePlumber's routing and owns and continuously re-asserts the headset-mic → Micro EQ link, so it can no longer be stolen — while leaving any other app that uses your mic untouched. (#127)</p>
+      </description>
+    </release>
     <release version="1.1.96" date="2026-07-11">
       <description>
         <p>The runtime dependency self-healing checker now knows about pw-loopback (which implements the virtual Game/Chat/Media sinks), so a missing one is detected and can be offered for install per distro. (#123)</p>
@@ -199,11 +204,6 @@
     <release version="1.1.67" date="2026-06-12">
       <description>
         <p>Microphone monitor source selected instead of real mic — on some setups PipeWire exposes a monitor source before the real capture source, causing ASM to route apps to the monitor loopback instead of the physical microphone. The physical-source lookup now filters out device.class = monitor entries. (#80). Mic audio bypassed Sonar EQ — applications could connect directly to the ALSA source and skip the sonar-micro-eq filter chain. ASM now sets priority.session = 1010 on the Sonar virtual source and explicitly sets it as the default PulseAudio source at startup, so apps land on the EQ pipeline by default. D-Bus status returned {} when device was connected but status bytes unresolved — if the device was ready but device_status was None, the GUI showed "No device detected" even though the headset was online. The D-Bus GetStatus method now synthesises an online sentinel from online_status.online_value in that case.</p>
-      </description>
-    </release>
-    <release version="1.1.66" date="2026-06-12">
-      <description>
-        <p>HRIR selection silently failed on NixOS (and any read-only source) — apply_hrir_choice used shutil.copy2 which preserves source file permissions and mtime. Since HRIR WAVs live in the Nix store (read-only, epoch timestamp), the copied hrir.wav was also read-only; any subsequent profile selection in Settings → Spatial Audio would fail silently and the convolver would load an invalid file, leaving the Game and Media channels silent while Chat (which bypasses the convolver) still worked. Fixed by unlinking the destination before copying and using shutil.copy (no metadata). (#79). Uninstaller failed on Bazzite / immutable distros when run via curl | bash — the Distrobox delegation path resolved SCRIPT_DIR from BASH_SOURCE[0], which is stdin when piped through curl. The local scripts/distrobox/uninstall.sh was never found and the script exited with an error. Now fetches both _common.sh and distrobox/uninstall.sh to a temporary directory and delegates from there when the local path is unavailable. Added a dedicated NixOS installation section to the README covering both flake and classic (non-flake) paths, with a prominent warning that Settings → Spatial Audio must be opened on first launch to select an HRIR profile — without this step the Game and Media channels are silent.</p>
       </description>
     </release>
   </releases>
