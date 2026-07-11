@@ -76,3 +76,39 @@ def test_service_control_run_uses_posix_spawn_not_fork():
     with _SpawnSpy() as spy:
         service_control._run(["true"], 5, True)
     assert spy.hits == {"posix_spawn": 1, "fork_exec": 0}
+
+
+def test_service_control_nrestarts_uses_posix_spawn_not_fork():
+    import shutil
+
+    if shutil.which("systemctl") is None:
+        pytest.skip("systemctl not available")
+    with _SpawnSpy() as spy:
+        service_control.nrestarts("filter-chain")  # value irrelevant; spawn path is
+    assert spy.hits.get("fork_exec", 0) == 0
+    assert spy.hits.get("posix_spawn", 0) >= 1
+
+
+def test_pw_quirks_wireplumber_version_uses_posix_spawn_not_fork():
+    import shutil
+
+    from arctis_sound_manager import pw_quirks
+
+    if shutil.which("wireplumber") is None:
+        pytest.skip("wireplumber not available")
+    with _SpawnSpy() as spy:
+        pw_quirks._wireplumber_version()
+    assert spy.hits.get("fork_exec", 0) == 0
+    assert spy.hits.get("posix_spawn", 0) >= 1
+
+
+def test_pw_loopback_exe_is_absolute_when_present():
+    import shutil
+
+    from arctis_sound_manager import loopback_manager
+
+    if shutil.which("pw-loopback") is None:
+        pytest.skip("pw-loopback not available")
+    # loopback_manager spawns this via Popen(..., close_fds=False); an absolute
+    # argv[0] is what buys the posix_spawn path (issue #123).
+    assert os.path.isabs(loopback_manager._pw_loopback_exe())

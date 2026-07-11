@@ -78,7 +78,10 @@ def _mock_proc(returncode: int | None = None) -> MagicMock:
 class TestBuildArgv:
     def test_starts_with_pw_loopback(self, media_spec: LoopbackSpec) -> None:
         argv = _build_pw_loopback_argv(media_spec)
-        assert argv[0] == "pw-loopback"
+        # argv[0] is resolved to an absolute path when pw-loopback is on PATH so
+        # subprocess.Popen takes the posix_spawn path (issue #123); bare name is
+        # the fallback when it isn't installed (e.g. CI).
+        assert argv[0].endswith("pw-loopback")
 
     def test_has_three_elements(self, media_spec: LoopbackSpec) -> None:
         argv = _build_pw_loopback_argv(media_spec)
@@ -216,7 +219,7 @@ class TestStartStop:
             mgr.start(media_spec)
             mock_popen.assert_called_once()
             argv = mock_popen.call_args[0][0]
-            assert argv[0] == "pw-loopback"
+            assert argv[0].endswith("pw-loopback")
 
     def test_start_stores_handle(self, media_spec: LoopbackSpec) -> None:
         mgr = LoopbackManager()

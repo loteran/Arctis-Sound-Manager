@@ -27,11 +27,31 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import subprocess
 import threading
 from dataclasses import dataclass
 
 _log = logging.getLogger(__name__)
+
+
+# Resolve pw-loopback to an absolute path (cached) so subprocess.Popen can take
+# the posix_spawn (vfork) path instead of fork()+exec. This module spawns
+# pw-loopback from the daemon process, which also runs libusb device I/O in a
+# sibling thread; a fork() there replays libusb's pthread_atfork handlers and
+# COW-copies the VM mid-poll(), a heap-corruption vector (issue #123).
+# posix_spawn needs an absolute executable *and* close_fds=False at the Popen
+# site. close_fds=False is safe: the daemon's fds are all O_CLOEXEC (Python
+# opens fds O_CLOEXEC by default since PEP 446, and libusb sets it on usbfs
+# handles), so nothing leaks into the long-lived pw-loopback child past exec.
+_PW_LOOPBACK_EXE: str | None = None
+
+
+def _pw_loopback_exe() -> str:
+    global _PW_LOOPBACK_EXE
+    if _PW_LOOPBACK_EXE is None:
+        _PW_LOOPBACK_EXE = shutil.which("pw-loopback") or "pw-loopback"
+    return _PW_LOOPBACK_EXE
 
 
 # ── PipeWire socket resolution ────────────────────────────────────────────────
@@ -274,7 +294,7 @@ def _build_pw_loopback_argv(spec: LoopbackSpec) -> list[str]:
         f" latency.msec=50"
     )
     return [
-        "pw-loopback",
+        _pw_loopback_exe(),
         f"--capture-props={capture_props}",
         f"--playback-props={playback_props}",
     ]
@@ -335,7 +355,7 @@ class LoopbackManager:
             # daemon's environment is stale or container-relative (issue #90).
             # _pw_loopback_env() returns None when no socket is found, and
             # Popen(env=None) inherits the parent env unchanged — safe fallback.
-            proc = subprocess.Popen(argv, env=_pw_loopback_env())
+            proc = subprocess.Popen(argv, env=_pw_loopback_env(), close_fds=False)
             self._handles[spec.channel] = proc
             # Remember spec AFTER a successful Popen so a failed launch
             # (OSError) doesn't leave a stale entry that the watchdog would
@@ -486,7 +506,7 @@ class LoopbackManager:
                     argv = _build_pw_loopback_argv(spec)
                     # Same socket-pinning as in start() — ensures the revived
                     # process connects to the correct PipeWire socket (issue #90).
-                    new_proc = subprocess.Popen(argv, env=_pw_loopback_env())
+                    new_proc = subprocess.Popen(argv, env=_pw_loopback_env(), close_fds=False)
                     self._handles[channel] = new_proc
                     restarted.append(channel)
                     _log.info(

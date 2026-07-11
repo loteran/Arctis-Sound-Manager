@@ -243,6 +243,29 @@ def daemon_reload() -> bool:
     return _run(["systemctl", "--user", "daemon-reload"], None, True)
 
 
+def nrestarts(service: str) -> int | None:
+    """Return systemd's NRestarts counter for ``service`` (a crash-loop signal),
+    or None when it can't be determined (non-systemd, missing binary, parse
+    error). Routed through here so no module issues raw ``systemctl`` calls —
+    which also keeps every spawn on the posix_spawn path (issue #123)."""
+    if detect_init() != "systemd" or shutil.which("systemctl") is None:
+        return None
+    real = _resolve(service, "systemd")
+    if not real:
+        return None
+    try:
+        r = subprocess.run(
+            [_abs_exe("systemctl"), "--user", "show", real, "-p", "NRestarts"],
+            capture_output=True, text=True, timeout=5, close_fds=False,
+        )
+        for line in r.stdout.splitlines():
+            if line.startswith("NRestarts="):
+                return int(line.split("=", 1)[1].strip())
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired, ValueError) as exc:
+        logger.debug("service_control: NRestarts(%s) query failed: %s", service, exc)
+    return None
+
+
 def restart_detached(*services: str, delay: float = 1.0) -> None:
     """Restart services from a detached child that outlives the caller.
 

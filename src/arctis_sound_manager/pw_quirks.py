@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -44,9 +45,11 @@ def _wireplumber_version() -> tuple[int, int] | None:
     """Return the installed WirePlumber's (major, minor) version, or None if
     the binary is missing or its output could not be parsed."""
     try:
+        # Absolute path + close_fds=False pin the posix_spawn path so this never
+        # fork()s the libusb-active daemon (issue #123).
         result = subprocess.run(
-            ["wireplumber", "--version"],
-            capture_output=True, text=True, timeout=5,
+            [shutil.which("wireplumber") or "wireplumber", "--version"],
+            capture_output=True, text=True, timeout=5, close_fds=False,
         )
     except (FileNotFoundError, OSError, subprocess.TimeoutExpired) as exc:
         _log.info("pw_quirks: could not run 'wireplumber --version' (%s)", exc)

@@ -609,28 +609,17 @@ def ensure_filter_chain_healthy() -> bool:
 
     # Secondary check (systemd only): NRestarts — a high restart count means
     # the service has been repeatedly crashing even if it appears momentarily
-    # active between systemd's rapid auto-restarts.
-    try:
-        import subprocess as _sp
-        from arctis_sound_manager.init_system import detect_init
-        if detect_init() == "systemd":
-            r = _sp.run(
-                ["systemctl", "--user", "show", "filter-chain", "-p", "NRestarts"],
-                capture_output=True, text=True, timeout=5,
-            )
-            for line in r.stdout.splitlines():
-                if line.startswith("NRestarts="):
-                    n_restarts = int(line.split("=", 1)[1].strip())
-                    if n_restarts >= 3:
-                        _log.warning(
-                            "ensure_filter_chain_healthy: filter-chain NRestarts=%d "
-                            "(crash-loop detected) — entering safe mode",
-                            n_restarts,
-                        )
-                        _enter_filter_chain_safe_mode()
-                        return False
-    except Exception as exc:
-        _log.debug("ensure_filter_chain_healthy: NRestarts query failed: %s", exc)
+    # active between systemd's rapid auto-restarts. Goes through service_control
+    # so no raw systemctl spawn escapes the posix_spawn path (issue #123).
+    n_restarts = sc.nrestarts("filter-chain")
+    if n_restarts is not None and n_restarts >= 3:
+        _log.warning(
+            "ensure_filter_chain_healthy: filter-chain NRestarts=%d "
+            "(crash-loop detected) — entering safe mode",
+            n_restarts,
+        )
+        _enter_filter_chain_safe_mode()
+        return False
 
     return True
 

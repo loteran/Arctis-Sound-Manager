@@ -233,13 +233,17 @@ class PulseAudioManager:
         # On PipeWire, also persist via pw-metadata so the change survives
         # daemon restarts and isn't overridden by WirePlumber shortly after.
         target_name = sink.proplist.get('node.name', '') or sink.name
-        if target_name and shutil.which('pw-metadata'):
+        pw_metadata = shutil.which('pw-metadata')
+        if target_name and pw_metadata:
             payload = json.dumps({'name': target_name})
             for key in ('default.configured.audio.sink', 'default.audio.sink'):
                 try:
+                    # Absolute path + close_fds=False keep this on the posix_spawn
+                    # path so the daemon never fork()s while libusb I/O is in
+                    # flight in a sibling thread (issue #123).
                     subprocess.run(
-                        ['pw-metadata', '0', key, payload],
-                        check=False, timeout=3,
+                        [pw_metadata, '0', key, payload],
+                        check=False, timeout=3, close_fds=False,
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                     )
                 except Exception as e:
