@@ -478,6 +478,21 @@ def _build_checks() -> list[DepCheck]:
             },
         ),
         DepCheck(
+            # `pw-loopback` implements every Arctis virtual sink (Game/Chat/Media)
+            # — without it ASM cannot create the channels at all. Ships with the
+            # PipeWire CLI tools: base `pipewire` on Arch/Fedora, `pipewire-bin`
+            # on Debian/Ubuntu.
+            name="pw-loopback (PipeWire CLI)",
+            severity=Severity.BLOCKING,
+            feature="virtual Game/Chat/Media sinks",
+            detect=lambda: _which("pw-loopback"),
+            install_commands={
+                "fedora": ["dnf", "install", "-y", "pipewire"],
+                "debian": ["apt-get", "install", "-y", "pipewire-bin"],
+                "arch":   ["pacman", "-S", "--noconfirm", "pipewire"],
+            },
+        ),
+        DepCheck(
             # WirePlumber is the session manager ASM relies on for routing; its
             # binary is invoked for version detection and restarts.
             name="WirePlumber",
