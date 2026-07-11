@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.96] - 11 July 2026
+
+### Internal
+
+- The runtime dependency self-healing checker now knows about `pw-loopback` (which implements the virtual Game/Chat/Media sinks), so a missing one is detected and can be offered for install per distro. (#123)
+
 ## [1.1.95] - 11 July 2026
 
 ### Fixed
