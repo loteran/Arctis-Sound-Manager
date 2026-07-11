@@ -1133,3 +1133,229 @@ def test_diff_filter_conf_returns_none_on_flat_to_active_transition():
     new_text = generate_sonar_eq_conf("chat", bands, 0.0, 0.0, 0.0,
                                        output_path=Path("/dev/null"))
     assert diff_filter_conf(old_text, new_text) is None
+
+# ── Phase 3 — Spatial Audio toggle without a filter-chain restart (#100/#88) ──
+#
+# The Spatial Audio toggle no longer changes the game/media EQ's channel count
+# or static target, so a toggle produces a byte-identical conf and needs no
+# filter-chain restart. The live routing decision (HeSuVi vs. physical) is made
+# by ensure_spatial_eq_links(), which moves ASM's own EQ→target link.
+
+import arctis_sound_manager.sonar_to_pipewire as _s2p_p3  # noqa: E402
+
+
+def test_game_eq_always_8ch_regardless_of_spatial():
+    """Phase 3: game EQ is 8ch and targets HeSuVi whether spatial is on OR off
+    (the toggle no longer changes channel count — that is what makes it
+    restart-free)."""
+    on = generate_sonar_eq_conf("game", [], 0.0, 0.0, 0.0,
+                                output_path=Path("/dev/null"), spatial_audio=True)
+    off = generate_sonar_eq_conf("game", [], 0.0, 0.0, 0.0,
+                                 output_path=Path("/dev/null"), spatial_audio=False)
+    for text in (on, off):
+        assert "audio.channels = 8" in text
+        assert 'node.target         = "effect_input.virtual-surround-7.1-hesuvi"' in text
+    # The two are byte-identical → a toggle changes nothing on disk.
+    assert on == off
+
+
+def test_media_eq_always_8ch_regardless_of_spatial():
+    """Same as game for the media channel (independent Spatial Audio toggle)."""
+    on = generate_sonar_eq_conf("media", [], 0.0, 0.0, 0.0,
+                                output_path=Path("/dev/null"), media_spatial_audio=True)
+    off = generate_sonar_eq_conf("media", [], 0.0, 0.0, 0.0,
+                                 output_path=Path("/dev/null"), media_spatial_audio=False)
+    for text in (on, off):
+        assert "audio.channels = 8" in text
+        assert 'node.target         = "effect_input.virtual-surround-7.1-hesuvi"' in text
+    assert on == off
+
+
+def test_game_media_eq_own_their_output_link():
+    """Phase 3: game/media EQ playback runs with node.autoconnect=false +
+    state.restore-target=false so ASM owns the EQ→target link (issue #100
+    pattern) and can move it live on a Spatial toggle. Chat (physical target,
+    never toggled) does NOT get autoconnect=false."""
+    game = generate_sonar_eq_conf("game", [], 0.0, 0.0, 0.0, output_path=Path("/dev/null"))
+    media = generate_sonar_eq_conf("media", [], 0.0, 0.0, 0.0, output_path=Path("/dev/null"))
+    for text in (game, media):
+        assert "node.autoconnect     = false" in text
+        assert "state.restore-target = false" in text
+    chat = generate_sonar_eq_conf("chat", [], 0.0, 0.0, 0.0, output_path=Path("/dev/null"))
+    assert "node.autoconnect     = false" not in chat
+
+
+def test_active_game_eq_owns_link_with_bands():
+    """The autoconnect=false hint is present on the active (non-bypass) 8ch
+    path too, not only the bypass copy path."""
+    bands = [EqBand(freq=1000, gain=3.0, q=0.7, type="peakingEQ", enabled=True)]
+    text = generate_sonar_eq_conf("game", bands, 0.0, 0.0, 0.0, output_path=Path("/dev/null"))
+    assert "node.autoconnect     = false" in text
+    assert "state.restore-target = false" in text
+
+
+def test_spatial_toggle_produces_identical_conf():
+    """The core Phase 3 property: flipping the spatial flag on the SAME EQ
+    state yields a byte-identical conf, so _ApplyWorker's 'unchanged conf'
+    guard skips the restart entirely."""
+    bands = [EqBand(freq=250, gain=2.0, q=0.7, type="peakingEQ", enabled=True)]
+    a = generate_sonar_eq_conf("game", bands, 1.0, 0.0, 0.0,
+                               output_path=Path("/dev/null"), spatial_audio=True)
+    b = generate_sonar_eq_conf("game", bands, 1.0, 0.0, 0.0,
+                               output_path=Path("/dev/null"), spatial_audio=False)
+    assert a == b
+    assert diff_filter_conf(a, b) == {}
+
+
+# ── ensure_spatial_eq_links — live EQ→target reroute ──────────────────────────
+
+def test_ensure_spatial_eq_links_targets_hesuvi_when_enabled(monkeypatch):
+    """Spatial ON → EQ output is linked to the HeSuVi virtual-surround sink."""
+    monkeypatch.setattr(_s2p_p3, "_spatial_enabled", lambda ch: True)
+    calls = []
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.ensure_loopback_link",
+        lambda playback, target, data=None: calls.append((playback, target)) or True,
+    )
+    result = _s2p_p3.ensure_spatial_eq_links(("game",))
+    assert result == {"game": True}
+    assert calls == [("effect_output.sonar-game-eq",
+                      "effect_input.virtual-surround-7.1-hesuvi")]
+
+
+def test_ensure_spatial_eq_links_targets_physical_when_disabled(monkeypatch):
+    """Spatial OFF → EQ output is linked (channel-matched, FL/FR only) to the
+    physical output instead of HeSuVi. This is what a toggle-OFF does live,
+    with no filter-chain restart."""
+    monkeypatch.setattr(_s2p_p3, "_spatial_enabled", lambda ch: False)
+    monkeypatch.setattr(_s2p_p3, "_get_physical_out_game", lambda: "alsa_output.test-headset")
+    calls = []
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.ensure_loopback_link",
+        lambda playback, target, data=None: calls.append((playback, target)) or True,
+    )
+    result = _s2p_p3.ensure_spatial_eq_links(("game",))
+    assert result == {"game": True}
+    assert calls == [("effect_output.sonar-game-eq", "alsa_output.test-headset")]
+
+
+def test_ensure_spatial_eq_links_moves_link_on_toggle(monkeypatch):
+    """Toggling ON↔OFF moves the same EQ output link between HeSuVi and the
+    physical output (mock pw-link layer)."""
+    state = {"game": True}
+    monkeypatch.setattr(_s2p_p3, "_spatial_enabled", lambda ch: state[ch])
+    monkeypatch.setattr(_s2p_p3, "_get_physical_out_game", lambda: "alsa_output.test-headset")
+    targets = []
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.ensure_loopback_link",
+        lambda playback, target, data=None: targets.append(target) or True,
+    )
+    _s2p_p3.ensure_spatial_eq_links(("game",))            # ON
+    state["game"] = False
+    _s2p_p3.ensure_spatial_eq_links(("game",))            # OFF
+    state["game"] = True
+    _s2p_p3.ensure_spatial_eq_links(("game",))            # ON again
+    assert targets == [
+        "effect_input.virtual-surround-7.1-hesuvi",
+        "alsa_output.test-headset",
+        "effect_input.virtual-surround-7.1-hesuvi",
+    ]
+
+
+def test_ensure_spatial_eq_links_no_target_when_no_device(monkeypatch):
+    """Spatial OFF and no device attached → no physical target → reported as
+    not-linked (retry later), and ensure_loopback_link is never called."""
+    monkeypatch.setattr(_s2p_p3, "_spatial_enabled", lambda ch: False)
+    monkeypatch.setattr(_s2p_p3, "_get_physical_out_game", lambda: "")
+    called = []
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.ensure_loopback_link",
+        lambda *a, **kw: called.append(a) or True,
+    )
+    result = _s2p_p3.ensure_spatial_eq_links(("game",))
+    assert result == {"game": False}
+    assert called == []
+
+
+def test_ensure_spatial_eq_links_ignores_non_toggle_channels(monkeypatch):
+    """chat/output are not spatial-toggled channels → silently ignored."""
+    monkeypatch.setattr(_s2p_p3, "_spatial_enabled", lambda ch: True)
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.ensure_loopback_link",
+        lambda *a, **kw: True,
+    )
+    result = _s2p_p3.ensure_spatial_eq_links(("chat", "output"))
+    assert result == {}
+
+
+def test_spatial_enabled_defaults_to_true(monkeypatch, tmp_path):
+    """Missing spatial-state file → treated as enabled (on-by-default)."""
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    assert _s2p_p3._spatial_enabled("game") is True
+    assert _s2p_p3._spatial_enabled("media") is True
+
+
+def test_spatial_enabled_reads_disabled_state(monkeypatch, tmp_path):
+    """A saved {'enabled': false} is read back as disabled, for the right file
+    per channel (game → sonar_spatial_audio.json, media → *_media.json)."""
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    cfg = tmp_path / ".config" / "arctis_manager"
+    cfg.mkdir(parents=True)
+    (cfg / "sonar_spatial_audio.json").write_text('{"enabled": false}')
+    (cfg / "sonar_spatial_audio_media.json").write_text('{"enabled": true}')
+    assert _s2p_p3._spatial_enabled("game") is False
+    assert _s2p_p3._spatial_enabled("media") is True
+
+
+# ── HeSuVi always present (Phase 3) ──────────────────────────────────────────
+
+def test_check_and_fix_generates_hesuvi_even_when_spatial_disabled(tmp_path, monkeypatch):
+    """Phase 3: HeSuVi is generated unconditionally so it is always ready for a
+    live toggle-ON — even while Spatial Audio is currently DISABLED. Previously
+    it was only written when spatial was enabled."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    monkeypatch.setattr(stp, "_CONF_DIR", tmp_path)
+    monkeypatch.setattr(stp, "_SINKS_CONF_DIR", tmp_path / "pipewire.conf.d")
+    (tmp_path / "pipewire.conf.d").mkdir()
+    monkeypatch.setattr(stp, "_filter_chain_safe_mode", False)
+    monkeypatch.setattr(stp, "_SAFE_MODE_MARKER", tmp_path / "marker.json")
+    monkeypatch.setattr(stp, "_device_attached", lambda: True)
+    monkeypatch.setattr(stp, "_get_physical_out_game", lambda: "alsa_output.test-headset")
+    monkeypatch.setattr(stp, "_get_physical_out_chat", lambda: "alsa_output.test-headset")
+    # Sonar mode active, spatial DISABLED for both channels.
+    home = tmp_path / "home"
+    (home / ".config" / "arctis_manager").mkdir(parents=True)
+    (home / ".config" / "arctis_manager" / ".eq_mode").write_text("sonar")
+    (home / ".config" / "arctis_manager" / "sonar_spatial_audio.json").write_text('{"enabled": false}')
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    # Track whether HeSuVi was generated (device attached, so it writes).
+    generated = {}
+    real_gen = stp.generate_hesuvi_conf
+
+    def _spy(*a, **kw):
+        generated["called"] = True
+        # Write a stub file so the "exists" branch is satisfied afterwards.
+        (tmp_path / "sink-virtual-surround-7.1-hesuvi.conf").write_text("stub")
+        return "stub"
+    monkeypatch.setattr(stp, "generate_hesuvi_conf", _spy)
+
+    stp.check_and_fix_stale_configs()
+    assert generated.get("called"), "HeSuVi must be generated even when spatial is disabled"
+
+
+def test_apply_hrir_choice_triggers_single_restart(monkeypatch):
+    """Phase 4: an HRIR change is the ONE remaining case that legitimately
+    restarts filter-chain (the convolver only reads the WAV at load). It must
+    restart exactly once and then re-establish the ASM-owned EQ→target links."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    restart_calls = []
+    monkeypatch.setattr(stp, "_restart_filter_chain",
+                        lambda: restart_calls.append(1))
+    link_calls = []
+    monkeypatch.setattr(stp, "ensure_spatial_eq_links",
+                        lambda *a, **kw: link_calls.append(a) or {})
+    # hrir_id=None → skip the WAV copy, go straight to restart.
+    stp.apply_hrir_choice(None)
+    assert restart_calls == [1], "HRIR change must restart filter-chain exactly once"
+    assert link_calls, "HRIR change must re-establish the EQ→target links after restart"

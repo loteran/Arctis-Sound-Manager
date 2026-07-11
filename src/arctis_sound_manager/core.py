@@ -560,6 +560,7 @@ class CoreEngine:
                 # "mislinked to a physical DAC". One pw-dump is shared across all
                 # channels this tick. Skip channels that were just restarted —
                 # give them one tick to appear in the graph.
+                link_data = None  # guards the spatial-link pass below if pw-dump itself raises
                 try:
                     link_data = await asyncio.get_running_loop().run_in_executor(
                         None, _pw_dump,
@@ -699,6 +700,27 @@ class CoreEngine:
                 except Exception as exc:
                     self.logger.error(
                         "_loopback_watchdog: unexpected error in mislink check: %r", exc
+                    )
+
+                # ── Spatial EQ output link-enforcement (Phase 3, #100/#88) ───
+                # effect_output.sonar-{game,media}-eq run with
+                # node.autoconnect=false — the exact same tug-of-war fix as
+                # the loopback playback nodes above (issue #100): ASM must own
+                # this link too, since WirePlumber will never create or move
+                # it. This keeps the link in sync with the Spatial Audio
+                # toggle even across an out-of-band filter-chain restart (HRIR
+                # change, crash recovery, …) that recreated the node with
+                # nothing linked into it yet. Reuses link_data from the pass
+                # above when available; best-effort otherwise (a fresh
+                # pw-dump is cheap and this call never restarts anything).
+                try:
+                    from arctis_sound_manager.sonar_to_pipewire import ensure_spatial_eq_links
+                    await asyncio.get_running_loop().run_in_executor(
+                        None, ensure_spatial_eq_links, ("game", "media"), link_data,
+                    )
+                except Exception as exc:
+                    self.logger.error(
+                        "_loopback_watchdog: error enforcing spatial EQ links: %r", exc
                     )
         except asyncio.CancelledError:
             raise

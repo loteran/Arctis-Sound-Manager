@@ -463,23 +463,27 @@ class _ApplyWorker(QThread):
                 )
 
             # ── Regenerate HeSuVi config with current Spatial Audio parameters ──
+            # Phase 3 (issue #100/#88): HeSuVi is now generated unconditionally
+            # — no longer gated on spatial_state["enabled"] — so the node stays
+            # present (idle when nothing feeds it) whatever the toggle state,
+            # ready for ensure_spatial_eq_links() below to move the EQ→target
+            # link onto it live, with no filter-chain restart.
             _hesuvi_unchanged = True
             if self._channel in ("game", "media"):
                 spatial_state = _load_spatial_audio(self._channel)
-                if spatial_state["enabled"]:
-                    from arctis_sound_manager.sonar_to_pipewire import generate_hesuvi_conf
-                    _hesuvi_path = _conf_dir / "sink-virtual-surround-7.1-hesuvi.conf"
-                    _old_hesuvi = _hesuvi_path.read_text() if _hesuvi_path.exists() else None
-                    _new_hesuvi = generate_hesuvi_conf(
-                        immersion_pct=spatial_state.get("immersion", 50),
-                        distance_pct=spatial_state.get("distance", 50),
+                from arctis_sound_manager.sonar_to_pipewire import generate_hesuvi_conf
+                _hesuvi_path = _conf_dir / "sink-virtual-surround-7.1-hesuvi.conf"
+                _old_hesuvi = _hesuvi_path.read_text() if _hesuvi_path.exists() else None
+                _new_hesuvi = generate_hesuvi_conf(
+                    immersion_pct=spatial_state.get("immersion", 50),
+                    distance_pct=spatial_state.get("distance", 50),
+                )
+                # generate_hesuvi_conf returns "" when no device is attached
+                # (skips write) — treat as unchanged in that case.
+                if _new_hesuvi:
+                    _hesuvi_unchanged = (
+                        _old_hesuvi is not None and _new_hesuvi == _old_hesuvi
                     )
-                    # generate_hesuvi_conf returns "" when no device is attached
-                    # (skips write) — treat as unchanged in that case.
-                    if _new_hesuvi:
-                        _hesuvi_unchanged = (
-                            _old_hesuvi is not None and _new_hesuvi == _old_hesuvi
-                        )
 
             # ── Guard: skip filter-chain restart if nothing changed on disk ──
             if _old_eq_conf is not None and _new_eq_conf == _old_eq_conf and _hesuvi_unchanged:
@@ -487,6 +491,15 @@ class _ApplyWorker(QThread):
                     "_ApplyWorker: conf unchanged for channel=%s — skipping restart",
                     self._channel,
                 )
+                if self._channel in ("game", "media"):
+                    # Phase 3 (issue #100/#88): the conf itself never encodes
+                    # the Spatial Audio routing decision anymore (see
+                    # generate_sonar_eq_conf's docstring) — a toggle alone
+                    # produces a byte-identical conf and lands exactly here.
+                    # ensure_spatial_eq_links() is what actually moves the
+                    # EQ→target link, with no restart.
+                    from arctis_sound_manager.sonar_to_pipewire import ensure_spatial_eq_links
+                    ensure_spatial_eq_links((self._channel,))
                 self.done.emit(True)
                 return
 
@@ -519,6 +532,9 @@ class _ApplyWorker(QThread):
                             "channel=%s, no filter-chain restart needed",
                             sum(len(f) for f in node_diff.values()), self._channel,
                         )
+                        if self._channel in ("game", "media"):
+                            from arctis_sound_manager.sonar_to_pipewire import ensure_spatial_eq_links
+                            ensure_spatial_eq_links((self._channel,))
                         self.done.emit(True)
                         return
                     # A control could not be pushed — most likely the node is
@@ -532,6 +548,9 @@ class _ApplyWorker(QThread):
                         "raw restart", self._channel,
                     )
                     ensure_filter_chain_healthy()
+                    if self._channel in ("game", "media"):
+                        from arctis_sound_manager.sonar_to_pipewire import ensure_spatial_eq_links
+                        ensure_spatial_eq_links((self._channel,))
                     self.done.emit(True)
                     return
                 # else: a real structural change (band added/removed/retyped,
@@ -663,6 +682,14 @@ class _ApplyWorker(QThread):
                 from arctis_sound_manager.pw_utils import reapply_routing_overrides
                 reapply_routing_overrides()
 
+            if self._channel in ("game", "media"):
+                # The freshly-recreated EQ node runs with node.autoconnect=false
+                # (Phase 3, issue #100/#88) — nothing links it automatically,
+                # so ASM must establish the initial EQ→target link itself here,
+                # exactly once, right after the restart.
+                from arctis_sound_manager.sonar_to_pipewire import ensure_spatial_eq_links
+                ensure_spatial_eq_links((self._channel,))
+
             self.done.emit(True)
         except subprocess.TimeoutExpired:
             log.error("_ApplyWorker timeout (channel=%s)", self._channel)
@@ -747,19 +774,16 @@ class _ApplyAllWorker(QThread):
                 noise_reduction=micro_proc,
             )
 
-            # Regenerate HeSuVi: game spatial takes precedence; fall back to media
-            if game_spatial["enabled"]:
-                from arctis_sound_manager.sonar_to_pipewire import generate_hesuvi_conf
-                generate_hesuvi_conf(
-                    immersion_pct=game_spatial.get("immersion", 50),
-                    distance_pct=game_spatial.get("distance", 50),
-                )
-            elif media_spatial["enabled"]:
-                from arctis_sound_manager.sonar_to_pipewire import generate_hesuvi_conf
-                generate_hesuvi_conf(
-                    immersion_pct=media_spatial.get("immersion", 50),
-                    distance_pct=media_spatial.get("distance", 50),
-                )
+            # Regenerate HeSuVi (Phase 3, issue #100/#88): always present now,
+            # independent of either channel's Spatial Audio toggle — the node
+            # stays idle when nothing links into it. Game's immersion/distance
+            # values are authoritative (same precedence _ApplyWorker already
+            # uses for a single-channel apply).
+            from arctis_sound_manager.sonar_to_pipewire import generate_hesuvi_conf
+            generate_hesuvi_conf(
+                immersion_pct=game_spatial.get("immersion", 50),
+                distance_pct=game_spatial.get("distance", 50),
+            )
 
             # Profile-switch path (apply_all_from_files). Same Discord-safe
             # strategy as _ApplyWorker: restart filter-chain only (recreates all
@@ -788,6 +812,12 @@ class _ApplyAllWorker(QThread):
             # back onto their override target explicitly.
             from arctis_sound_manager.pw_utils import reapply_routing_overrides
             reapply_routing_overrides()
+
+            # The freshly-recreated game/media EQ nodes run with
+            # node.autoconnect=false (Phase 3, issue #100/#88) — establish
+            # their EQ→target link now that they are up.
+            from arctis_sound_manager.sonar_to_pipewire import ensure_spatial_eq_links
+            ensure_spatial_eq_links(("game", "media"))
 
             self.done.emit(True)
         except Exception as exc:

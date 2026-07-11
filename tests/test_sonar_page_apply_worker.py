@@ -137,3 +137,41 @@ def test_apply_worker_structural_change_still_restarts(monkeypatch, tmp_path):
 
     assert results == [True]
     assert len(restart_calls) == 1, "a band-count change must go through a full restart"
+
+
+def test_apply_worker_spatial_toggle_skips_restart(monkeypatch, tmp_path):
+    """Phase 3 (issue #100/#88): a Spatial Audio toggle produces a byte-identical
+    game/media conf (channel count & static target no longer depend on the
+    toggle), so _ApplyWorker's 'unchanged conf' guard must skip sc.restart and
+    instead move the ASM-owned EQ→target link via ensure_spatial_eq_links."""
+    _prepare_conf_dir(monkeypatch, tmp_path)
+    _stub_settings(monkeypatch)
+
+    bands = [EqBand(freq=100, gain=2.0, q=0.7, type="peakingEQ", enabled=True)]
+
+    # Spatial ON: seed the on-disk conf.
+    monkeypatch.setattr(sp, "_load_spatial_audio",
+                        lambda ch="game": {"enabled": True, "immersion": 50, "distance": 50})
+    stp.generate_sonar_eq_conf("game", bands, 0.0, 0.0, 0.0, spatial_audio=True)
+    # HeSuVi generation must not require a real device in this unit test.
+    monkeypatch.setattr(stp, "generate_hesuvi_conf", lambda **kw: "")
+
+    restart_calls = []
+    monkeypatch.setattr(sp.sc, "restart", lambda *a, **kw: restart_calls.append(a) or True)
+    link_calls = []
+    monkeypatch.setattr(
+        "arctis_sound_manager.sonar_to_pipewire.ensure_spatial_eq_links",
+        lambda channels, data=None: link_calls.append(tuple(channels)) or {},
+    )
+
+    # Now toggle spatial OFF and apply — the regenerated conf is byte-identical.
+    monkeypatch.setattr(sp, "_load_spatial_audio",
+                        lambda ch="game": {"enabled": False, "immersion": 50, "distance": 50})
+    worker = sp._ApplyWorker("game", bands, 0.0, 0.0, 0.0)
+    results = []
+    worker.done.connect(lambda ok: results.append(ok))
+    worker.run()
+
+    assert results == [True]
+    assert restart_calls == [], "a Spatial Audio toggle must not restart filter-chain"
+    assert ("game",) in link_calls, "toggle must move the ASM-owned EQ→target link"

@@ -627,7 +627,15 @@ def ensure_filter_chain_healthy() -> bool:
 
 def apply_hrir_choice(hrir_id: str | None) -> None:
     """Copy the chosen HRIR WAV to ~/.local/share/pipewire/hrir_hesuvi/hrir.wav
-    and restart filter-chain so PipeWire picks up the new file."""
+    and restart filter-chain so PipeWire picks up the new file.
+
+    A restart is unavoidable here (Phase 4, issue #100/#88): the convolver
+    nodes only read the HRIR WAV once, at load time. Everything else in
+    Phase 3 exists specifically so this stays the ONLY remaining restart in
+    the Spatial Audio feature set. The restart recreates the game/media EQ
+    nodes with node.autoconnect=false and nothing linked into them yet, so
+    ensure_spatial_eq_links() re-establishes the EQ→target link once the
+    service is back up (idempotent, no-op if safe mode was entered instead)."""
     import shutil
     dest = Path.home() / ".local" / "share" / "pipewire" / "hrir_hesuvi" / "hrir.wav"
     if hrir_id:
@@ -641,6 +649,7 @@ def apply_hrir_choice(hrir_id: str | None) -> None:
         shutil.copy(src, dest)
         _log.info("HRIR changed → %s", src.name)
     _restart_filter_chain()
+    ensure_spatial_eq_links(("game", "media"))
 
 
 # ── Config generator — game / chat ────────────────────────────────────────────
@@ -664,21 +673,33 @@ def generate_sonar_eq_conf(
     Game channel: 8ch 7.1, single filter nodes (PipeWire auto-duplicates per channel),
     no explicit inputs/outputs, targets HeSuVi virtual surround.
     Chat channel: 2ch stereo, L/R filter pairs, explicit inputs/outputs, targets ALSA.
-    Media channel: 2ch stereo, same as chat, targets physical Arctis output.
+    Media channel: 8ch 7.1, same node shape as game, targets HeSuVi virtual surround.
     Output channel: 8ch 7.1, single filter nodes, targets external sink (HDMI, etc.).
+
+    Game/media channel count and static target no longer depend on
+    *spatial_audio*/*media_spatial_audio* (Phase 3, issue #100/#88): both
+    channels are now ALWAYS 8ch and their playback.props always carries the
+    HeSuVi node name as a frozen hint, with ``node.autoconnect=false`` so
+    WirePlumber never actually uses it to link. This keeps the generated conf
+    byte-identical across a Spatial Audio toggle — which is what lets
+    ``diff_filter_conf``/the "unchanged conf" guard in ``_ApplyWorker`` skip
+    the filter-chain restart entirely for that toggle. The *actual* routing
+    decision (HeSuVi vs. physical output) is made live by
+    :func:`ensure_spatial_eq_links`, which moves ASM's own
+    ``effect_output.sonar-<channel>-eq`` → {HeSuVi | physical} link — exactly
+    the same "ASM owns this link" pattern ``pw_utils.ensure_loopback_link``
+    already uses for the loopback→EQ links (issue #100). The two parameters
+    are kept (unused for game/media routing) purely for source compatibility
+    with existing call sites.
     """
     if channel not in ("game", "chat", "media", "output"):
         raise ValueError(f"channel must be 'game', 'chat', 'media' or 'output', got {channel!r}")
 
-    # Channels that depend on the physical Arctis output need a connected device.
-    # Instead of skipping generation entirely when the device is transiently absent
-    # (e.g. during the PipeWire restart that _ApplyWorker itself triggers), write
-    # the conf with an empty target — PipeWire will bind on device arrival.
-    needs_physical = (
-        channel == "chat"
-        or (channel == "game" and not spatial_audio)
-        or (channel == "media" and not media_spatial_audio)
-    )
+    # Only chat still targets the physical Arctis output directly from this
+    # conf and therefore needs a connected device to resolve a target. Game
+    # and media always target HeSuVi (frozen hint, see docstring) regardless
+    # of device-attach state — HeSuVi's OWN conf is what needs the device.
+    needs_physical = channel == "chat"
     if needs_physical and not _device_attached():
         _log.info(
             "%s EQ config: device not attached, writing with empty target — "
@@ -686,22 +707,16 @@ def generate_sonar_eq_conf(
             channel,
         )
 
-    if channel == "game" and not spatial_audio:
-        target = _get_physical_out_game() if _device_attached() else ""
-        channels = 2
-        position = "FL FR"
-    elif channel == "media" and not media_spatial_audio:
-        target = _get_physical_out_game() if _device_attached() else ""
-        channels = 2
-        position = "FL FR"
-    elif channel == "chat":
+    owns_link = channel in ("game", "media")
+
+    if channel == "chat":
         target = target_override or (_get_physical_out_chat() if _device_attached() else "")
         channels = _CHANNEL_CHANNELS[channel]
         position = _CHANNEL_POSITION[channel]
     elif channel == "output":
         target, channels, position = _resolve_external_output(target_override)
     else:
-        # game (spatial on), media (spatial on) → HeSuVi
+        # game / media: always 8ch, always (nominally) targets HeSuVi.
         target = target_override or _CHANNEL_TARGET.get(channel, "")
         channels = _CHANNEL_CHANNELS[channel]
         position = _CHANNEL_POSITION[channel]
@@ -745,14 +760,16 @@ def generate_sonar_eq_conf(
 
     # Passthrough / bypass if nothing to do
     if not all_filters:
-        text = _bypass_conf(sink_name, target, channels, position, channel=channel)
+        text = _bypass_conf(sink_name, target, channels, position, channel=channel,
+                             owns_link=owns_link)
         _write_conf(output_path, text)
         return text
 
     if channels != 2 or channel == "output":
         text = _active_conf_8ch(channel, sink_name, target, position,
                                 all_filters, active_bands, macro_bands,
-                                boost_db, smart_volume, channels=channels)
+                                boost_db, smart_volume, channels=channels,
+                                owns_link=owns_link)
     else:
         text = _active_conf_2ch(channel, sink_name, target, position,
                                 all_filters, active_bands, macro_bands,
@@ -770,6 +787,7 @@ def _active_conf_8ch(
     boost_db: float,
     smart_volume: dict | None = None,
     channels: int = 8,
+    owns_link: bool = False,
 ) -> str:
     """Multi-channel config: single filter nodes, PipeWire auto-duplicates per channel."""
     node_lines: list[str] = []
@@ -825,6 +843,16 @@ def _active_conf_8ch(
         f'        node.target         = "{target}"\n'
         f'        target.object       = "{target}"\n'
     ) if target else ''
+    # Phase 3 (issue #100/#88): game/media own their EQ→target link exactly
+    # like the loopbacks do (issue #100) — node.autoconnect=false so
+    # WirePlumber never links or moves it, and state.restore-target=false so
+    # a stale restored target can't fight ensure_spatial_eq_links(). The
+    # target line above is kept as a documentary/pre-link hint only (mirrors
+    # loopback_manager.py's own comment on the same pattern).
+    _autoconnect_line = (
+        '        node.autoconnect     = false\n'
+        '        state.restore-target = false\n'
+    ) if owns_link else ''
 
     return f"""\
 # Auto-generated by Arctis Sound Manager — DO NOT EDIT
@@ -849,7 +877,7 @@ context.modules = [
       }}
       playback.props = {{
         node.name           = "effect_output.sonar-{channel}-eq"
-{_target_line}        node.dont-fallback  = true
+{_target_line}{_autoconnect_line}        node.dont-fallback  = true
         node.linger         = true
         audio.channels      = {channels}
         audio.position      = [ {position} ]
@@ -1241,12 +1269,21 @@ context.modules = [
 
 # ── Bypass / passthrough ──────────────────────────────────────────────────────
 
-def _bypass_conf(sink_name: str, target: str, channels: int, position: str, channel: str = "") -> str:
+def _bypass_conf(
+    sink_name: str, target: str, channels: int, position: str, channel: str = "",
+    owns_link: bool = False,
+) -> str:
     """Generate a bypass config. Multi-channel uses auto-dup (no inputs/outputs), 2ch uses L/R."""
     _target_line = (
         f'        node.target         = "{target}"\n'
         f'        target.object       = "{target}"\n'
     ) if target else ''
+    # Phase 3 (issue #100/#88): same ASM-owned link pattern as _active_conf_8ch
+    # — see its comment for the rationale.
+    _autoconnect_line = (
+        '        node.autoconnect     = false\n'
+        '        state.restore-target = false\n'
+    ) if owns_link else ''
     media_class = "Audio/Sink" if channel == "output" else "Audio/Sink/Internal"
     priority = "1" if channel == "output" else "1000"
     if channels != 2:
@@ -1271,7 +1308,7 @@ context.modules = [
       }}
       playback.props = {{
         node.name           = "{sink_name.replace('effect_input.', 'effect_output.')}"
-{_target_line}        node.dont-fallback  = true
+{_target_line}{_autoconnect_line}        node.dont-fallback  = true
         node.linger         = true
         audio.channels      = {channels}
         audio.position      = [ {position} ]
@@ -1540,7 +1577,7 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
         fixed = True
         needs_pw_restart = True
 
-    for name in ("sonar-game-eq.conf", "sonar-chat-eq.conf"):
+    for name in ("sonar-game-eq.conf", "sonar-media-eq.conf", "sonar-chat-eq.conf"):
         # Remove stale copies from pipewire.conf.d (wrong location)
         bad_path = bad_dir / name
         if bad_path.exists():
@@ -1558,31 +1595,13 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
                 log.warning("Stale config (%s uses 'label = gain'), regenerating", name)
                 needs_regen = True
 
-            # Game EQ must be 8ch for HeSuVi virtual surround — but only if spatial audio is ON.
-            # When spatial audio is disabled, 2ch game EQ is intentional (routes to physical out).
-            if name == "sonar-game-eq.conf" and "audio.channels = 2" in content:
-                try:
-                    import json as _json
-                    _spatial_file = Path.home() / ".config" / "arctis_manager" / "sonar_spatial_audio.json"
-                    _spatial = _json.loads(_spatial_file.read_text()) if _spatial_file.exists() else {}
-                    _spatial_on = _spatial.get("enabled", True)
-                except Exception:
-                    _spatial_on = True
-                if _spatial_on:
-                    log.warning("Stale config (%s uses 2ch, should be 8ch), regenerating", name)
-                    needs_regen = True
-
-            if name == "sonar-media-eq.conf" and "audio.channels = 2" in content:
-                try:
-                    import json as _json
-                    _media_sp_file = Path.home() / ".config" / "arctis_manager" / "sonar_spatial_audio_media.json"
-                    _media_sp = _json.loads(_media_sp_file.read_text()) if _media_sp_file.exists() else {}
-                    _media_sp_on = _media_sp.get("enabled", True)
-                except Exception:
-                    _media_sp_on = True
-                if _media_sp_on:
-                    log.warning("Stale config (%s uses 2ch, should be 8ch), regenerating", name)
-                    needs_regen = True
+            # Phase 3 (issue #100/#88): game and media are now ALWAYS 8ch,
+            # independent of the Spatial Audio toggle (the live routing
+            # decision is made by ensure_spatial_eq_links(), not by channel
+            # count). A 2ch game/media conf is therefore always stale.
+            if name in ("sonar-game-eq.conf", "sonar-media-eq.conf") and "audio.channels = 2" in content:
+                log.warning("Stale config (%s uses 2ch, should be 8ch), regenerating", name)
+                needs_regen = True
 
             if needs_regen:
                 channel = name.replace("sonar-", "").replace("-eq.conf", "")
@@ -1595,7 +1614,8 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
                 }.get(channel, _get_physical_out_game())
                 channels = _CHANNEL_CHANNELS.get(channel, 2)
                 position = _CHANNEL_POSITION.get(channel, "FL FR")
-                _write_conf(path, _bypass_conf(sink_name, target, channels, position, channel=channel))
+                _write_conf(path, _bypass_conf(sink_name, target, channels, position, channel=channel,
+                                                owns_link=channel in ("game", "media")))
                 fixed = True
 
     # Micro EQ: remove stale copies from pipewire.conf.d
@@ -1650,28 +1670,44 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
         except OSError as exc:
             log.error("Failed to remove legacy static loopback config %s: %s", sinks_path, exc)
 
-    # Ensure HeSuVi config targets the current physical output (catches configs written
-    # with the old hardcoded _PHYSICAL_OUT constant before v1.0.23).
+    # Ensure HeSuVi is present and targets the current physical output (Phase 3,
+    # issue #100/#88: HeSuVi is now generated unconditionally, independent of
+    # the Spatial Audio toggle, so it is always ready for
+    # ensure_spatial_eq_links() to move the EQ→target link onto it live, with
+    # no filter-chain restart, the moment the user turns Spatial Audio back
+    # on. It stays idle — no incoming link, no CPU cost worth mentioning —
+    # whenever nothing feeds it. Also catches configs written with the old
+    # hardcoded _PHYSICAL_OUT constant before v1.0.23.
     if sonar:
         try:
             import json as _json
             _spatial_file = Path.home() / ".config" / "arctis_manager" / "sonar_spatial_audio.json"
             _spatial = _json.loads(_spatial_file.read_text()) if _spatial_file.exists() else {}
-            _spatial_on = _spatial.get("enabled", True)
         except Exception:
             _spatial = {}
-            _spatial_on = True
-        if _spatial_on:
-            hesuvi_path = _CONF_DIR / "sink-virtual-surround-7.1-hesuvi.conf"
-            if hesuvi_path.exists():
-                hesuvi_content = hesuvi_path.read_text()
-                if f'node.target        = "{_get_physical_out_game()}"' not in hesuvi_content:
-                    log.warning("HeSuVi config has stale node.target, regenerating")
-                    generate_hesuvi_conf(
-                        immersion_pct=_spatial.get("immersion", 50),
-                        distance_pct=_spatial.get("distance", 50),
-                    )
-                    fixed = True
+        hesuvi_path = _CONF_DIR / "sink-virtual-surround-7.1-hesuvi.conf"
+        if not hesuvi_path.exists():
+            if not _device_attached():
+                # generate_hesuvi_conf() itself would skip the write and
+                # return "" — checking here avoids repeatedly reporting
+                # "fixed" on every call while no device is attached.
+                log.debug("HeSuVi config missing but no device attached yet — skipping")
+            else:
+                log.warning("HeSuVi config missing — generating (Phase 3: always present)")
+                generate_hesuvi_conf(
+                    immersion_pct=_spatial.get("immersion", 50),
+                    distance_pct=_spatial.get("distance", 50),
+                )
+                fixed = True
+        else:
+            hesuvi_content = hesuvi_path.read_text()
+            if f'node.target        = "{_get_physical_out_game()}"' not in hesuvi_content:
+                log.warning("HeSuVi config has stale node.target, regenerating")
+                generate_hesuvi_conf(
+                    immersion_pct=_spatial.get("immersion", 50),
+                    distance_pct=_spatial.get("distance", 50),
+                )
+                fixed = True
 
     # Ensure sonar EQ nodes exist when in Sonar mode
     if sonar and ensure_sonar_eq_configs():
@@ -1706,34 +1742,20 @@ def ensure_sonar_eq_configs() -> bool:
 
     generated = False
 
-    # Determine if spatial audio is enabled — affects game channel count and target.
-    try:
-        import json as _json
-        _spatial_file = Path.home() / ".config" / "arctis_manager" / "sonar_spatial_audio.json"
-        _spatial = _json.loads(_spatial_file.read_text()) if _spatial_file.exists() else {}
-        spatial_on = _spatial.get("enabled", True)
-    except Exception:
-        spatial_on = True
-
-    # Read media spatial state
-    try:
-        import json as _json
-        _media_spatial_file = Path.home() / ".config" / "arctis_manager" / "sonar_spatial_audio_media.json"
-        _media_spatial = _json.loads(_media_spatial_file.read_text()) if _media_spatial_file.exists() else {}
-        media_spatial_on = _media_spatial.get("enabled", True)
-    except Exception:
-        media_spatial_on = True
-
+    # Phase 3 (issue #100/#88): game and media are always 8ch, always
+    # (nominally) targeting HeSuVi — independent of the Spatial Audio toggle.
+    # The live routing decision is made by ensure_spatial_eq_links(), not by
+    # this static conf (see generate_sonar_eq_conf's docstring).
     expected: dict[str, dict] = {
         "game": {
-            "channels": 8 if spatial_on else 2,
-            "position": _CHANNEL_POSITION["game"] if spatial_on else "FL FR",
-            "target":   _SURROUND if spatial_on else _get_physical_out_game(),
+            "channels": _CHANNEL_CHANNELS["game"],
+            "position": _CHANNEL_POSITION["game"],
+            "target":   _SURROUND,
         },
         "media": {
-            "channels": 8 if media_spatial_on else 2,
-            "position": _CHANNEL_POSITION["media"] if media_spatial_on else "FL FR",
-            "target":   _SURROUND if media_spatial_on else _get_physical_out_game(),
+            "channels": _CHANNEL_CHANNELS["media"],
+            "position": _CHANNEL_POSITION["media"],
+            "target":   _SURROUND,
         },
         "chat": {
             "channels": _CHANNEL_CHANNELS["chat"],
@@ -1784,11 +1806,111 @@ def ensure_sonar_eq_configs() -> bool:
         if needs_regen:
             _write_conf(
                 conf_path,
-                _bypass_conf(sink_name, exp["target"], exp["channels"], exp["position"]),
+                _bypass_conf(sink_name, exp["target"], exp["channels"], exp["position"],
+                             owns_link=channel in ("game", "media")),
             )
             generated = True
 
     return generated
+
+
+# ── Phase 3 — Spatial Audio toggle without a filter-chain restart (#100/#88) ──
+
+def _spatial_enabled(channel: str) -> bool:
+    """Read whether Spatial Audio is currently enabled for *channel*.
+
+    *channel* is ``"game"`` or ``"media"``, matching the two independent
+    Spatial Audio toggles in the GUI (``gui/sonar_page.py``'s
+    ``SpatialAudioWidget``). Mirrors that module's own file-naming convention
+    (``sonar_spatial_audio.json`` for game, ``sonar_spatial_audio_media.json``
+    for media) so both sides of the toggle read the exact same state.
+
+    Best-effort: any missing file or parse error is treated as enabled,
+    matching the on-by-default behaviour used throughout this module and in
+    ``gui/sonar_page.py``.
+    """
+    suffix = "" if channel == "game" else f"_{channel}"
+    path = Path.home() / ".config" / "arctis_manager" / f"sonar_spatial_audio{suffix}.json"
+    try:
+        import json as _json
+        data = _json.loads(path.read_text()) if path.exists() else {}
+        return data.get("enabled", True)
+    except Exception:
+        return True
+
+
+def ensure_spatial_eq_links(
+    channels: tuple[str, ...] = ("game", "media"),
+    data: list | None = None,
+) -> dict[str, bool]:
+    """Move each EQ's live output link to match its Spatial Audio toggle.
+
+    ``effect_output.sonar-<channel>-eq`` (game/media only) runs with
+    ``node.autoconnect=false`` — exactly the same "ASM owns this link"
+    pattern ``pw_utils.ensure_loopback_link`` already uses for the
+    loopback→EQ links (issue #100). WirePlumber therefore never links or
+    moves this node; toggling Spatial Audio is nothing more than moving that
+    one link between the HeSuVi virtual-surround sink (ON) and the physical
+    output (OFF) — a plain ``pw-link`` operation, with **no** filter-chain
+    restart. This is what sidesteps the SIGTERM-during-DSP race that SEGVs
+    filter-chain on PipeWire 1.6.7 (#100/#88): the service itself is never
+    touched by a Spatial Audio toggle once its EQ node is up.
+
+    The EQ node stays 8ch and its playback.props always carries the HeSuVi
+    node name as a static (but inert, since autoconnect is off) hint — see
+    :func:`generate_sonar_eq_conf`'s docstring — so calling this after any
+    conf regeneration, restart, or plain watchdog tick is always safe and
+    idempotent: it either confirms the existing link is already correct or
+    moves it, and never restarts anything itself.
+
+    Feasibility note (Phase 3 hardware validation, issue #100/#88): the OFF
+    path links an **8ch** EQ output to the **2ch** physical output. This is
+    done with ``ensure_loopback_link``, which creates explicit *channel-matched
+    pw-link* connections (FL→FL, FR→FR) — it does NOT route through an
+    adapter that channel-mixes 8→2. That distinction is what keeps OFF-mode
+    stereo bit-clean and avoids any regression versus the old 2ch-EQ OFF path:
+    PipeWire's 2→8 upmix (which fills the EQ's 8 channels from the 2ch
+    loopback) never alters the passthrough front channels — FL/FR always carry
+    the original L/R at unity — and any synthesised centre/surround content it
+    adds to FC/LFE/RL/RR/SL/SR is simply *dropped* here (those source channels
+    have no matching port on the 2ch target), rather than folded back in by a
+    downmix matrix. So the round-trip in OFF is loopback-2ch → EQ-FL/FR →
+    physical-FL/FR, i.e. clean stereo. (An adapter 8→2 downmix of the
+    psd-upmixed signal WOULD colour the sound — center/surround re-summed —
+    which is exactly why we link channel-matched, not through a downmixer.)
+
+    Parameters
+    ----------
+    channels:
+        Which EQ channels to (re)link. Only ``"game"``/``"media"`` are
+        meaningful — anything else is silently ignored.
+    data:
+        Optional pre-fetched ``pw-dump`` payload, so a caller that already
+        fetched one this tick (e.g. the daemon's loopback watchdog) does not
+        pay for a second ``pw-dump`` subprocess.
+
+    Returns
+    -------
+    dict[str, bool]
+        ``{channel: linked}``. ``False`` most commonly means the EQ node or
+        its target is not yet up (filter-chain starting/restarting, or no
+        device attached) — treat as "retry later", not an error.
+    """
+    from arctis_sound_manager.pw_utils import ensure_loopback_link
+
+    results: dict[str, bool] = {}
+    for channel in channels:
+        if channel not in ("game", "media"):
+            continue
+        enabled = _spatial_enabled(channel)
+        target = _SURROUND if enabled else _get_physical_out_game()
+        if not target:
+            # No device attached yet — nothing to link to.
+            results[channel] = False
+            continue
+        playback_name = f"effect_output.sonar-{channel}-eq"
+        results[channel] = ensure_loopback_link(playback_name, target, data=data)
+    return results
 
 
 # ── Config generator — HeSuVi 7.1 virtual surround ──────────────────────────
