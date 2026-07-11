@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.97] - 11 July 2026
+
+### Fixed
+
+- **The Sonar Micro EQ no longer steals your microphone.** Adjusting any Sonar Micro EQ setting used to detach the EQ from your headset mic and re-attach it to a different input device (a second microphone), forcing you to fix the routing by hand after every change. ASM now takes the mic capture out of WirePlumber's routing and owns and continuously re-asserts the headset-mic → Micro EQ link, so it can no longer be stolen — while leaving any other app that uses your mic untouched. (#127)
+
 ## [1.1.96] - 11 July 2026
 
 ### Internal
