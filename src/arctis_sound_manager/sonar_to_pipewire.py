@@ -1017,6 +1017,17 @@ def generate_sonar_micro_conf(
     Creates a virtual Audio/Source node backed by the physical mic input.
     Pattern: capture side is passive (faces hardware), playback side has
     media.class = Audio/Source (faces applications).
+
+    Issue #127: the capture side runs with ``node.autoconnect = false`` and
+    ``state.restore-target = false`` — the same "ASM owns this link" pattern
+    already applied to the loopback/EQ output links (issue #100), but on the
+    *input* side this time. Without it, every filter-chain restart triggered
+    by a micro EQ edit recreates ``effect_input.sonar-micro-eq`` and
+    WirePlumber does not reliably honor ``target.object``: it can link the
+    capture to whatever it considers the current default/restored source
+    (another connected mic) instead of the Arctis. ``target.object`` is kept
+    as a documentary hint only; :func:`ensure_micro_capture_link` is what
+    actually (re)establishes and enforces the link.
     """
     if not _device_attached():
         _log.info(
@@ -1244,6 +1255,8 @@ context.modules = [
       capture.props = {{
         node.name      = "effect_input.sonar-micro-eq"
         node.passive   = true
+        node.autoconnect     = false
+        state.restore-target = false
         target.object  = "{_get_physical_in()}"
         audio.rate     = 48000
         audio.channels = 1
@@ -1370,6 +1383,8 @@ context.modules = [
       capture.props = {{
         node.name      = "effect_input.sonar-micro-eq"
         node.passive   = true
+        node.autoconnect     = false
+        state.restore-target = false
         target.object  = "{_get_physical_in()}"
         audio.rate     = 48000
         audio.channels = 1
@@ -1911,6 +1926,52 @@ def ensure_spatial_eq_links(
         playback_name = f"effect_output.sonar-{channel}-eq"
         results[channel] = ensure_loopback_link(playback_name, target, data=data)
     return results
+
+
+_MICRO_CAPTURE_NAME = "effect_input.sonar-micro-eq"
+
+
+def ensure_micro_capture_link(data: list | None = None) -> bool:
+    """Ensure the Sonar Micro EQ's capture is fed by the Arctis microphone.
+
+    Issue #127: ``effect_input.sonar-micro-eq`` runs with
+    ``node.autoconnect = false`` / ``state.restore-target = false`` (see
+    :func:`generate_sonar_micro_conf`'s docstring), so WirePlumber never
+    links or moves it — ASM must own this link, exactly like
+    :func:`ensure_spatial_eq_links` already does for the EQ output side.
+    Every micro EQ apply (config regen + filter-chain restart) recreates the
+    capture node with nothing linked into it, and the watchdog calls this on
+    every tick so a link stolen by a competing mic between applies is caught
+    and repaired automatically.
+
+    Thin wrapper around :func:`~arctis_sound_manager.pw_utils.ensure_capture_link`
+    that resolves the current physical mic input; see that function's
+    docstring for why the stray-link teardown is scoped to the capture
+    node's input side rather than the mic's output side (the physical mic
+    may legitimately feed other consumers — a recorder, OBS, …).
+
+    Parameters
+    ----------
+    data:
+        Optional pre-fetched ``pw-dump`` payload, so a caller that already
+        fetched one this tick (e.g. the daemon's loopback watchdog) does not
+        pay for a second ``pw-dump`` subprocess.
+
+    Returns
+    -------
+    bool
+        True when linked. False when no device is attached yet (nothing to
+        link to — retry later) or the capture/source node is not yet in the
+        graph (filter-chain starting/restarting).
+    """
+    from arctis_sound_manager.pw_utils import ensure_capture_link
+
+    physical_in = _get_physical_in()
+    if not physical_in:
+        # No device attached — skip, the watchdog will retry on the next
+        # tick once a headset is connected.
+        return False
+    return ensure_capture_link(physical_in, _MICRO_CAPTURE_NAME, data=data)
 
 
 # ── Config generator — HeSuVi 7.1 virtual surround ──────────────────────────

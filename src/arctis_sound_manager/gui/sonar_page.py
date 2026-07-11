@@ -535,6 +535,14 @@ class _ApplyWorker(QThread):
                         if self._channel in ("game", "media"):
                             from arctis_sound_manager.sonar_to_pipewire import ensure_spatial_eq_links
                             ensure_spatial_eq_links((self._channel,))
+                        elif self._channel == "micro":
+                            # issue #127: live-apply does not restart the
+                            # filter-chain, so the capture node is not
+                            # recreated here — but re-asserting the link is
+                            # cheap and idempotent, and guards against a
+                            # competing mic having stolen it between applies.
+                            from arctis_sound_manager.sonar_to_pipewire import ensure_micro_capture_link
+                            ensure_micro_capture_link()
                         self.done.emit(True)
                         return
                     # A control could not be pushed — most likely the node is
@@ -551,6 +559,9 @@ class _ApplyWorker(QThread):
                     if self._channel in ("game", "media"):
                         from arctis_sound_manager.sonar_to_pipewire import ensure_spatial_eq_links
                         ensure_spatial_eq_links((self._channel,))
+                    elif self._channel == "micro":
+                        from arctis_sound_manager.sonar_to_pipewire import ensure_micro_capture_link
+                        ensure_micro_capture_link()
                     self.done.emit(True)
                     return
                 # else: a real structural change (band added/removed/retyped,
@@ -608,6 +619,16 @@ class _ApplyWorker(QThread):
                 log.warning("Sonar node %s did not appear within timeout", target_node)
                 self.done.emit(False)
                 return
+
+            if self._channel == "micro":
+                # The freshly-recreated capture node runs with
+                # node.autoconnect=false / state.restore-target=false (issue
+                # #127) — nothing links it automatically, so ASM must
+                # establish the Arctis mic → EQ capture link itself here,
+                # right after the restart, exactly like ensure_spatial_eq_links
+                # does for the EQ output side (issue #100).
+                from arctis_sound_manager.sonar_to_pipewire import ensure_micro_capture_link
+                ensure_micro_capture_link()
 
             # Recreate only the loopback for the edited channel.  Chat
             # (always 2ch) auto-reconnects to its EQ node without being
@@ -818,6 +839,12 @@ class _ApplyAllWorker(QThread):
             # their EQ→target link now that they are up.
             from arctis_sound_manager.sonar_to_pipewire import ensure_spatial_eq_links
             ensure_spatial_eq_links(("game", "media"))
+
+            # Same "ASM owns this link" pattern applied to the micro EQ
+            # capture side (issue #127): this restart also recreated
+            # effect_input.sonar-micro-eq with nothing linked into it.
+            from arctis_sound_manager.sonar_to_pipewire import ensure_micro_capture_link
+            ensure_micro_capture_link()
 
             self.done.emit(True)
         except Exception as exc:

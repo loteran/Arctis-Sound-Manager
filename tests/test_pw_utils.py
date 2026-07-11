@@ -354,6 +354,93 @@ class TestEnsureLoopbackLink:
         assert calls == []
 
 
+# ── ensure_capture_link (issue #127) ──────────────────────────────────────────
+#
+# Input-side counterpart of ensure_loopback_link: the Sonar Micro EQ capture
+# node is fed BY a shared physical device (the Arctis mic), which — unlike a
+# loopback's playback node — may also legitimately feed other consumers (a
+# recorder, OBS, …). The teardown scope is therefore inverted: only links
+# landing on the capture node's input are inspected/torn down; links leaving
+# the mic's output toward some other destination must never be touched.
+
+# Mono mic (node 300, out port MONO=301) → mono micro-EQ capture
+# (node 200, in port MONO=201).
+def _mono_capture_graph(extra=None):
+    data = [
+        _node(300, "alsa_input.usb-SteelSeries_Arctis-00.mono-fallback"),
+        _node(200, "effect_input.sonar-micro-eq"),
+        _port(301, 300, "out", "MONO"),
+        _port(201, 200, "in", "MONO"),
+    ]
+    data.extend(extra or [])
+    return data
+
+
+class TestEnsureCaptureLink:
+    _SOURCE = "alsa_input.usb-SteelSeries_Arctis-00.mono-fallback"
+    _CAPTURE = "effect_input.sonar-micro-eq"
+
+    def test_creates_missing_link(self, monkeypatch):
+        calls = _patch_pwlink(monkeypatch)
+        ok = pw_utils.ensure_capture_link(self._SOURCE, self._CAPTURE, data=_mono_capture_graph())
+        assert ok is True
+        created = {(c[1], c[2]) for c in calls if "-d" not in c}
+        assert created == {("301", "201")}
+
+    def test_idempotent_when_already_linked(self, monkeypatch):
+        calls = _patch_pwlink(monkeypatch)
+        links = [_link(5001, 300, 301, 200, 201)]
+        ok = pw_utils.ensure_capture_link(
+            self._SOURCE, self._CAPTURE, data=_mono_capture_graph(links),
+        )
+        assert ok is True
+        assert calls == []  # nothing to create, nothing stray to remove
+
+    def test_removes_misrouted_link_without_touching_other_mic_consumers(self, monkeypatch):
+        """A competing mic (Katana, node 500) got wired into the capture —
+        must be torn down and replaced with the Arctis link. Meanwhile the
+        Arctis mic also legitimately feeds a second consumer (OBS, node 400)
+        — that link must be left completely untouched."""
+        calls = _patch_pwlink(monkeypatch)
+        katana_node = _node(500, "alsa_input.usb-Katana_V2.mono-fallback")
+        katana_port = _port(501, 500, "out", "MONO")
+        stray_link = _link(5001, 500, 501, 200, 201)  # Katana -> micro-eq capture (mis-route)
+
+        obs_node = _node(400, "obs-mic-source")
+        obs_port = _port(401, 400, "in", "MONO")
+        legit_link = _link(5002, 300, 301, 400, 401)  # Arctis -> OBS (legitimate, unrelated)
+
+        data = _mono_capture_graph([
+            katana_node, katana_port, stray_link,
+            obs_node, obs_port, legit_link,
+        ])
+
+        ok = pw_utils.ensure_capture_link(self._SOURCE, self._CAPTURE, data=data)
+
+        assert ok is True
+        disconnects = [c for c in calls if "-d" in c]
+        # Only the Katana -> capture stray link is torn down.
+        assert disconnects == [[pw_utils._abs_exe("pw-link"), "-d", "501", "201"]]
+        # The Arctis -> OBS link (301 -> 401) must never be touched.
+        assert all(c[1:] != ["-d", "301", "401"] for c in calls)
+        created = {(c[1], c[2]) for c in calls if "-d" not in c}
+        assert created == {("301", "201")}
+
+    def test_returns_false_when_capture_absent(self, monkeypatch):
+        calls = _patch_pwlink(monkeypatch)
+        data = [_node(300, self._SOURCE), _port(301, 300, "out", "MONO")]
+        ok = pw_utils.ensure_capture_link(self._SOURCE, self._CAPTURE, data=data)
+        assert ok is False
+        assert calls == []
+
+    def test_returns_false_when_source_absent(self, monkeypatch):
+        calls = _patch_pwlink(monkeypatch)
+        data = [_node(200, self._CAPTURE), _port(201, 200, "in", "MONO")]
+        ok = pw_utils.ensure_capture_link(self._SOURCE, self._CAPTURE, data=data)
+        assert ok is False
+        assert calls == []
+
+
 # ── set_filter_gain (Phase 2, issue #100/#88) ─────────────────────────────────
 #
 # Live-apply a single filter-chain control value via pw-cli set-param instead

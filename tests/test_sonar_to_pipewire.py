@@ -253,6 +253,24 @@ def test_micro_source_pattern():
     assert "Audio/Sink" not in text
 
 
+def test_micro_capture_owns_its_link():
+    """Issue #127: the micro EQ capture must run with node.autoconnect=false
+    and state.restore-target=false, exactly like the loopback/EQ-output
+    links (issue #100), so WirePlumber never links or moves it and a
+    filter-chain restart cannot let it get stolen by a competing mic. Checked
+    on both the active (banded) and bypass paths."""
+    active = generate_sonar_micro_conf(
+        [EqBand(freq=1000, gain=3.0, q=0.7, type="peakingEQ", enabled=True)],
+        0.0, 0.0, 0.0, output_path=Path("/dev/null"),
+    )
+    bypass = generate_sonar_micro_conf([], 0.0, 0.0, 0.0, output_path=Path("/dev/null"))
+    for text in (active, bypass):
+        assert "node.autoconnect     = false" in text
+        assert "state.restore-target = false" in text
+        # target.object is retained as a documentary/pre-link hint only.
+        assert "target.object" in text
+
+
 def test_game_bypass_no_explicit_inputs_outputs():
     """Game bypass (8ch) relies on PipeWire auto-dup, no inputs/outputs arrays."""
     text = generate_sonar_eq_conf("game", [], 0.0, 0.0, 0.0,
@@ -1305,6 +1323,36 @@ def test_spatial_enabled_reads_disabled_state(monkeypatch, tmp_path):
     (cfg / "sonar_spatial_audio_media.json").write_text('{"enabled": true}')
     assert _s2p_p3._spatial_enabled("game") is False
     assert _s2p_p3._spatial_enabled("media") is True
+
+
+# ── ensure_micro_capture_link (issue #127) ────────────────────────────────────
+
+def test_ensure_micro_capture_link_links_arctis_to_capture(monkeypatch):
+    """When a device is attached, the capture link is established between the
+    physical Arctis mic and the micro-EQ capture node."""
+    monkeypatch.setattr(_s2p_p3, "_get_physical_in", lambda: "alsa_input.test-mic")
+    calls = []
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.ensure_capture_link",
+        lambda source, capture, data=None: calls.append((source, capture, data)) or True,
+    )
+    result = _s2p_p3.ensure_micro_capture_link(data=["sentinel"])
+    assert result is True
+    assert calls == [("alsa_input.test-mic", "effect_input.sonar-micro-eq", ["sentinel"])]
+
+
+def test_ensure_micro_capture_link_skips_when_no_device(monkeypatch):
+    """No device attached (empty physical_in) → skip entirely, never call
+    ensure_capture_link, retry on a later watchdog tick instead."""
+    monkeypatch.setattr(_s2p_p3, "_get_physical_in", lambda: "")
+    called = []
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.ensure_capture_link",
+        lambda *a, **kw: called.append(a) or True,
+    )
+    result = _s2p_p3.ensure_micro_capture_link()
+    assert result is False
+    assert called == []
 
 
 # ── HeSuVi always present (Phase 3) ──────────────────────────────────────────

@@ -647,6 +647,156 @@ def ensure_loopback_link(
         return False
 
 
+def ensure_capture_link(
+    source_name: str, capture_name: str, data: list | None = None,
+) -> bool:
+    """Ensure the ASM-owned capture side of a filter-chain is fed by *source_name*.
+
+    Input-side counterpart of :func:`ensure_loopback_link` (issue #127): the
+    Sonar Micro EQ's capture node (``effect_input.sonar-micro-eq``) runs with
+    ``node.autoconnect = false`` / ``state.restore-target = false`` (the same
+    issue #100 "ASM owns this link" pattern, applied to the input side), so
+    WirePlumber never links or moves it. Every filter-chain restart triggered
+    by a micro EQ edit recreates this node with nothing linked into it, and
+    without an explicit enforcement pass WirePlumber can (and does, per issue
+    #127) route it to whatever it considers the current default source — a
+    second microphone — instead of the Arctis. This function is what
+    (re)establishes and enforces the Arctis → micro-EQ link, channel-matched,
+    exactly like ``ensure_loopback_link`` does for playback.
+
+    Teardown scope is intentionally **inverted** compared to
+    ``ensure_loopback_link``: *source_name* here is a shared physical device
+    (the Arctis microphone) that may legitimately feed other consumers too
+    (a voice recorder, OBS, a second capture app, …) — tearing down "stray"
+    links found on the *source*'s output ports would silently sever those.
+    So only links landing on *capture_name*'s input ports are inspected: any
+    such link whose upstream is not *source_name* is a mis-route (e.g. a
+    competing mic WirePlumber wired in instead) and is torn down; every other
+    link leaving *source_name* toward a different destination is left
+    completely untouched.
+
+    Parameters
+    ----------
+    source_name:
+        ``node.name`` of the physical microphone source (e.g. the Arctis
+        ALSA capture PCM returned by ``sonar_to_pipewire._get_physical_in()``).
+    capture_name:
+        ``node.name`` of the ASM-owned filter-chain capture node
+        (``effect_input.sonar-micro-eq``).
+    data:
+        Optional pre-fetched ``pw-dump`` payload; a fresh dump is executed
+        when *None*. May be reused across a watchdog tick alongside
+        ``ensure_loopback_link``/``ensure_spatial_eq_links``.
+
+    Returns
+    -------
+    bool
+        True when every source channel that also exists on the capture node
+        is linked to it. False when either node is absent from the graph
+        (mic unplugged, filter-chain not up yet) or no channel could be
+        matched, so the caller can retry later.
+    """
+    try:
+        if data is None:
+            data = _pw_dump()
+
+        node_ids: dict[str, int] = {}
+        for obj in data:
+            if not obj.get("type", "").endswith("Node"):
+                continue
+            props = obj.get("info", {}).get("props", {})
+            name = props.get("node.name", "")
+            if name:
+                node_ids[name] = obj["id"]
+
+        source_id = node_ids.get(source_name)
+        capture_id = node_ids.get(capture_name)
+        if source_id is None:
+            logger.debug("ensure_capture_link: source '%s' not in graph", source_name)
+            return False
+        if capture_id is None:
+            logger.debug("ensure_capture_link: capture '%s' not in graph", capture_name)
+            return False
+
+        out_ports = _node_ports(data, source_id, "out")
+        in_ports = _node_ports(data, capture_id, "in")
+        if not out_ports or not in_ports:
+            logger.warning(
+                "ensure_capture_link: no matchable ports for '%s'->'%s' (out=%s in=%s)",
+                source_name, capture_name, list(out_ports), list(in_ports),
+            )
+            return False
+
+        # Index links whose INPUT node is the capture node (the ASM-owned
+        # side): keep the ones that already originate from source_id, and
+        # collect any stray link — one coming from some OTHER node, e.g. a
+        # competing mic WirePlumber mis-routed here — for removal. We never
+        # inspect, let alone tear down, links leaving source_id toward some
+        # other destination: the physical mic may legitimately feed other
+        # consumers and those must be left alone (see docstring).
+        existing: set[tuple[int, int]] = set()
+        stray: list[tuple[int, int]] = []
+        for obj in data:
+            if not obj.get("type", "").endswith("Link"):
+                continue
+            props = obj.get("info", {}).get("props", {})
+            if props.get("link.input.node") != capture_id:
+                continue
+            pair = (props.get("link.output.port"), props.get("link.input.port"))
+            if props.get("link.output.node") == source_id:
+                existing.add(pair)
+            else:
+                stray.append(pair)
+
+        # Tear down any link into the capture node that does not originate
+        # from the intended source — this is the mis-route issue #127
+        # reported (a competing mic stealing the micro EQ capture after a
+        # config regen / filter-chain restart).
+        for out_port, in_port in stray:
+            _pw_run(
+                ["pw-link", "-d", str(out_port), str(in_port)],
+                check=False, timeout=3, capture_output=True,
+            )
+
+        # Create the missing channel-matched links.
+        ok = True
+        linked_any = False
+        created = 0
+        for channel, out_port in out_ports.items():
+            in_port = in_ports.get(channel)
+            if in_port is None:
+                # The capture node does not expose this source channel (e.g.
+                # a stereo mic feeding a mono capture) — nothing to link.
+                continue
+            if (out_port, in_port) in existing:
+                linked_any = True
+                continue
+            r = _pw_run(
+                ["pw-link", str(out_port), str(in_port)],
+                check=False, timeout=3, capture_output=True,
+            )
+            if r.returncode == 0:
+                linked_any = True
+                created += 1
+            else:
+                ok = False
+                logger.warning(
+                    "ensure_capture_link: pw-link %s->%s (%s) failed: %s",
+                    out_port, in_port, channel,
+                    (r.stderr or b"").decode(errors="replace").strip(),
+                )
+
+        if created:
+            logger.info(
+                "ensure_capture_link: '%s' -> '%s' (%d/%d channels linked)",
+                source_name, capture_name, created, len(out_ports),
+            )
+        return linked_any and ok
+    except Exception as exc:
+        logger.warning("ensure_capture_link failed: %s", exc)
+        return False
+
+
 def _is_asm_sink(name: str) -> bool:
     """Return True if *name* (a PulseAudio sink name) belongs to ASM.
 

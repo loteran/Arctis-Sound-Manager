@@ -722,6 +722,25 @@ class CoreEngine:
                     self.logger.error(
                         "_loopback_watchdog: error enforcing spatial EQ links: %r", exc
                     )
+
+                # ── Micro EQ capture link-enforcement (issue #127) ────────────
+                # effect_input.sonar-micro-eq runs with node.autoconnect=false /
+                # state.restore-target=false — the same "ASM owns this link"
+                # fix as the loopback/EQ-output links above, applied to the
+                # input side: WirePlumber never links or moves it, so a link
+                # stolen by a competing microphone between two Sonar Micro EQ
+                # applies (or after any out-of-band filter-chain restart) is
+                # never repaired on its own. Reuses link_data from the pass
+                # above when available; best-effort otherwise.
+                try:
+                    from arctis_sound_manager.sonar_to_pipewire import ensure_micro_capture_link
+                    await asyncio.get_running_loop().run_in_executor(
+                        None, ensure_micro_capture_link, link_data,
+                    )
+                except Exception as exc:
+                    self.logger.error(
+                        "_loopback_watchdog: error enforcing micro capture link: %r", exc
+                    )
         except asyncio.CancelledError:
             raise
 
