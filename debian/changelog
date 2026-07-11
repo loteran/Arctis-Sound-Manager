@@ -1,3 +1,11 @@
+arctis-sound-manager (1.1.96-1) noble; urgency=medium
+
+  * The runtime dependency self-healing checker now knows about pw-loopback
+    (which implements the virtual Game/Chat/Media sinks), so a missing one
+    is detected and can be offered for install per distro. (#123)
+
+ -- loteran <axel.valadon@gmail.com>  Sat, 11 Jul 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.95-1) noble; urgency=medium
 
   * Changing the EQ or toggling Spatial Audio no longer restarts the audio
