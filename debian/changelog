@@ -1,3 +1,16 @@
+arctis-sound-manager (1.1.97-1) noble; urgency=medium
+
+  * The Sonar Micro EQ no longer steals your microphone. Adjusting any Sonar
+    Micro EQ setting used to detach the EQ from your headset mic and
+    re-attach it to a different input device (a second microphone), forcing
+    you to fix the routing by hand after every change. ASM now takes the mic
+    capture out of WirePlumber's routing and owns and continuously
+    re-asserts the headset-mic → Micro EQ link, so it can no longer be
+    stolen — while leaving any other app that uses your mic untouched.
+    (#127)
+
+ -- loteran <axel.valadon@gmail.com>  Sat, 11 Jul 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.96-1) noble; urgency=medium
 
   * The runtime dependency self-healing checker now knows about pw-loopback
