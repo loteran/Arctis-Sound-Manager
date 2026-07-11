@@ -1,3 +1,31 @@
+arctis-sound-manager (1.1.95-1) noble; urgency=medium
+
+  * Changing the EQ or toggling Spatial Audio no longer restarts the audio
+    engine. Adjusting EQ gains, the macro sliders or the boost — and
+    switching Spatial Audio on or off — is now applied live to the running
+    filter-chain instead of restarting it. On PipeWire 1.6.7 that restart
+    could crash the filter-chain and briefly cut Game/Media audio or leave
+    Spatial Audio silent; these changes now take effect instantly with no
+    dropout. Changes that genuinely alter the graph (adding/removing an EQ
+    band, switching preset, changing the HeSuVi immersion/distance) still
+    restart as before. (#100, #88)
+  * Fixed a rare daemon crash-loop that produced random SIGSEGVs. The daemon
+    spawned its helper processes (pw-dump, pw-loopback, pw-metadata,
+    systemctl…) with a fork() that, while the daemon was talking to the
+    headset over USB in another thread, could corrupt memory and crash it
+    with nonsensical errors (seen as a 10-crash restart loop). Every helper
+    spawn now uses a fork-free posix_spawn path. (#123)
+  * The tray battery percentage now disappears when the headset is powered
+    off. The wireless adapter keeps reporting a battery level even when the
+    headset is off, so the tray number used to stay on screen; it now hides
+    once the headset powers down. (#124)
+  * Added a Distrobox troubleshooting section to the README for silent
+    Spatial Audio / audio cut-outs inside containers (host-vs-container
+    PipeWire version skew, and the filter-chain 1.6.7 crash on restart).
+    (#100)
+
+ -- loteran <axel.valadon@gmail.com>  Sat, 11 Jul 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.94-1) noble; urgency=medium
 
   * "Bring audio to headset" button. One click moves any application that
