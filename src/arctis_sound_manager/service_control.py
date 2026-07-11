@@ -70,15 +70,32 @@ def manager_available() -> bool:
     return False
 
 
+# Absolute-path cache so subprocess can take the posix_spawn (vfork) path
+# instead of fork()+exec. The daemon (core.py) restarts the PipeWire stack
+# through this module while libusb device I/O runs in a sibling thread; a
+# fork() there replays libusb's pthread_atfork handlers and COW-copies the VM
+# mid-poll(), a heap-corruption vector (issue #123). posix_spawn needs an
+# absolute executable *and* close_fds=False, so we pin both. Safe: the spawned
+# tools are short-lived and the daemon's fds are O_CLOEXEC.
+_ABS_EXE_CACHE: dict[str, str] = {}
+
+
+def _abs_exe(name: str) -> str:
+    """Resolve a CLI tool to its absolute path (cached); bare name if absent."""
+    if name not in _ABS_EXE_CACHE:
+        _ABS_EXE_CACHE[name] = shutil.which(name) or name
+    return _ABS_EXE_CACHE[name]
+
+
 def _run(cmd: list[str], timeout: float | None, capture: bool) -> bool:
     try:
-        kwargs: dict = {}
+        kwargs: dict = {"close_fds": False}
         if capture:
             kwargs["capture_output"] = True
             kwargs["text"] = True
         if timeout is not None:
             kwargs["timeout"] = timeout
-        result = subprocess.run(cmd, check=False, **kwargs)
+        result = subprocess.run([_abs_exe(cmd[0]), *cmd[1:]], check=False, **kwargs)
         if result.returncode != 0:
             stderr = (getattr(result, "stderr", "") or "").strip()
             logger.warning("service_control: %s failed (rc=%s) %s",
@@ -182,11 +199,11 @@ def is_active(service: str) -> bool:
         return False
     try:
         if init == "systemd":
-            r = subprocess.run(["systemctl", "--user", "is-active", real],
-                               capture_output=True, text=True, timeout=5)
+            r = subprocess.run([_abs_exe("systemctl"), "--user", "is-active", real],
+                               capture_output=True, text=True, timeout=5, close_fds=False)
             return r.stdout.strip() == "active"
-        r = subprocess.run(["dinitctl", "status", real], capture_output=True, text=True,
-                           timeout=5)
+        r = subprocess.run([_abs_exe("dinitctl"), "status", real], capture_output=True, text=True,
+                           timeout=5, close_fds=False)
         # dinit status prints "State: STARTED" for a running service.
         return "STARTED" in r.stdout
     except subprocess.TimeoutExpired:
@@ -206,8 +223,8 @@ def is_enabled(service: str) -> bool:
         return False
     if init == "systemd":
         try:
-            r = subprocess.run(["systemctl", "--user", "is-enabled", real],
-                               capture_output=True, text=True, timeout=5)
+            r = subprocess.run([_abs_exe("systemctl"), "--user", "is-enabled", real],
+                               capture_output=True, text=True, timeout=5, close_fds=False)
             return r.stdout.strip() == "enabled"
         except subprocess.TimeoutExpired:
             logger.warning("service_control: is_enabled(%s) timed out", service)

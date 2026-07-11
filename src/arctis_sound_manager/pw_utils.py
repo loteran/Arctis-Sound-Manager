@@ -7,6 +7,7 @@ Used to detect and move apps like mpv/haruna that bypass PulseAudio.
 """
 import json
 import logging
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -14,6 +15,41 @@ from pathlib import Path
 logger = logging.getLogger("pw_utils")
 
 OVERRIDES_FILE = Path.home() / ".config" / "arctis_manager" / "routing_overrides.json"
+
+# --- Safe subprocess spawning (issue #123) --------------------------------
+# The daemon runs libusb device I/O and these PipeWire CLI spawns in the same
+# asyncio thread pool. CPython's subprocess only takes the posix_spawn (vfork)
+# path when the executable is an *absolute* path AND close_fds is False;
+# otherwise it falls back to fork()+exec. fork() replays libusb's
+# pthread_atfork handlers and COW-copies the whole address space while a
+# sibling thread is parked inside libusb poll() — a documented, nondeterministic
+# heap-corruption vector for multithreaded programs using libusb (random bogus
+# TypeErrors + SIGSEGV in PyObject_IsTrue). posix_spawn/vfork skips both, so we
+# pin every PipeWire spawn to it and the daemon never fork()s from its
+# libusb-active process.
+_ABS_EXE_CACHE: dict[str, str] = {}
+
+
+def _abs_exe(name: str) -> str:
+    """Resolve a CLI tool to its absolute path (cached), so subprocess can use
+    the posix_spawn path. Falls back to the bare name if not on PATH."""
+    if name not in _ABS_EXE_CACHE:
+        _ABS_EXE_CACHE[name] = shutil.which(name) or name
+    return _ABS_EXE_CACHE[name]
+
+
+def _pw_run(argv: list[str], **kwargs) -> subprocess.CompletedProcess:
+    """subprocess.run pinned to the posix_spawn path for PipeWire CLI tools.
+
+    Resolves argv[0] to an absolute path and forces close_fds=False so the
+    daemon never fork()s from its libusb-active process (issue #123).
+    close_fds=False is safe here: PipeWire CLI tools are short-lived and every
+    fd the daemon holds (libusb, D-Bus, sockets) is opened O_CLOEXEC, so nothing
+    leaks past exec.
+    """
+    resolved = [_abs_exe(argv[0]), *argv[1:]]
+    kwargs.setdefault("close_fds", False)
+    return subprocess.run(resolved, **kwargs)
 
 # effect_input sinks are internal filter-chain nodes — apps should never
 # target them directly. Remap to the corresponding Arctis virtual sink so a
@@ -172,7 +208,7 @@ def reapply_routing_overrides(timeout_s: float = 6.0) -> int:
 
 def _pw_dump() -> list:
     try:
-        r = subprocess.run(["pw-dump"], capture_output=True, text=True, timeout=3)
+        r = _pw_run(["pw-dump"], capture_output=True, text=True, timeout=3)
         return json.loads(r.stdout)
     except Exception as e:
         logger.warning("pw-dump failed: %s", e)
@@ -353,7 +389,7 @@ def relink_loopback_playback(playback_name: str, target_name: str, data: list | 
             logger.warning("relink_loopback_playback: target '%s' not found in pw-dump", target_name)
             return False
 
-        subprocess.run(
+        _pw_run(
             ["pw-metadata", str(playback_id), "target.node", str(target_id)],
             check=True, timeout=3, capture_output=True,
         )
@@ -364,7 +400,7 @@ def relink_loopback_playback(playback_name: str, target_name: str, data: list | 
         # We do not use object.serial here because it requires an extra pw-dump
         # lookup and would add complexity without meaningful benefit: node.name
         # is stable within a PipeWire session and is already used by loopback_manager.
-        subprocess.run(
+        _pw_run(
             ["pw-metadata", str(playback_id), "target.object", target_name],
             check=True, timeout=3, capture_output=True,
         )
@@ -486,7 +522,7 @@ def ensure_loopback_link(
         # autoconnect=false there should be none, but this keeps the graph clean
         # if a stray link was created before the flag took effect or by a user.
         for out_port, in_port in stray:
-            subprocess.run(
+            _pw_run(
                 ["pw-link", "-d", str(out_port), str(in_port)],
                 check=False, timeout=3, capture_output=True,
             )
@@ -505,7 +541,7 @@ def ensure_loopback_link(
             if (out_port, in_port) in existing:
                 linked_any = True
                 continue
-            r = subprocess.run(
+            r = _pw_run(
                 ["pw-link", str(out_port), str(in_port)],
                 check=False, timeout=3, capture_output=True,
             )
@@ -647,7 +683,7 @@ def move_native_stream(stream_node_id: int, target_sink_name: str, data: list | 
         return False
 
     try:
-        subprocess.run(
+        _pw_run(
             ["pw-metadata", str(stream_node_id), "target.node", str(target_id)],
             check=True, timeout=3, capture_output=True
         )

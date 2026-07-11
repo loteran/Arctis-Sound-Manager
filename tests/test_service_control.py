@@ -46,9 +46,12 @@ class RestartSystemd(unittest.TestCase):
              mock.patch.object(sc, "manager_available", return_value=True), \
              mock.patch("subprocess.run", return_value=_ok()) as run:
             self.assertTrue(sc.restart("pipewire", "filter-chain", "arctis-manager"))
+            # Absolute path + close_fds=False pin the posix_spawn (vfork) path so
+            # the daemon never fork()s from its libusb-active process (issue #123).
             run.assert_called_once_with(
-                ["systemctl", "--user", "restart", "pipewire", "filter-chain", "arctis-manager"],
+                [sc._abs_exe("systemctl"), "--user", "restart", "pipewire", "filter-chain", "arctis-manager"],
                 check=False,
+                close_fds=False,
             )
 
 
@@ -60,8 +63,8 @@ class RestartDinit(unittest.TestCase):
             self.assertTrue(sc.restart("filter-chain", "arctis-manager"))
         calls = [c.args[0] for c in run.call_args_list]
         self.assertEqual(calls, [
-            ["dinitctl", "restart", "pipewire-filter-chain"],
-            ["dinitctl", "restart", "arctis-manager"],
+            [sc._abs_exe("dinitctl"), "restart", "pipewire-filter-chain"],
+            [sc._abs_exe("dinitctl"), "restart", "arctis-manager"],
         ])
 
     def test_failure_propagates_as_false(self):
@@ -104,8 +107,8 @@ class EnableNow(unittest.TestCase):
             self.assertTrue(sc.enable("arctis-manager", now=True))
         calls = [c.args[0] for c in run.call_args_list]
         self.assertEqual(calls, [
-            ["dinitctl", "enable", "arctis-manager"],
-            ["dinitctl", "start", "arctis-manager"],
+            [sc._abs_exe("dinitctl"), "enable", "arctis-manager"],
+            [sc._abs_exe("dinitctl"), "start", "arctis-manager"],
         ])
 
 

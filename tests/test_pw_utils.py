@@ -328,7 +328,8 @@ class TestEnsureLoopbackLink:
         )
         assert ok is True
         disconnects = [c for c in calls if "-d" in c]
-        assert disconnects == [["pw-link", "-d", "101", "901"]]
+        # argv[0] is resolved to an absolute path to pin the posix_spawn path (#123).
+        assert disconnects == [[pw_utils._abs_exe("pw-link"), "-d", "101", "901"]]
         created = {(c[1], c[2]) for c in calls if "-d" not in c}
         assert created == {("101", "201"), ("102", "202")}
 
