@@ -271,6 +271,22 @@ rm -rf ~/.cache/fontconfig/*
 fc-cache -f -v
 ```
 Then restart ASM. *(Thanks to [H0DG3](https://github.com/H0DG3) for identifying this fix!)*
+
+**Troubleshooting — Spatial Audio is silent / audio cuts out inside the container**
+
+Inside a Distrobox, ASM's daemon is supposed to talk to your **host** PipeWire through the sockets the install script forwards (`pipewire-0` / `pipewire-0-manager`) — it must **not** run a second PipeWire daemon of its own. Two symptoms point at a broken container/host audio split:
+
+- **A second PipeWire is running in the container.** The container should only *connect* to the host graph, never start its own `pipewire.service`. Check both sides:
+  ```bash
+  # inside the ASM container
+  systemctl --user is-active pipewire filter-chain
+  pipewire --version
+  # on the host (a normal terminal, NOT `distrobox enter`)
+  pipewire --version
+  ```
+  If the container and host report **different PipeWire versions**, the container's `filter-chain` (which links to the host daemon across the forwarded socket) can be unstable — a client/server version skew. Align the container's `pipewire` package with the host's, or run ASM natively.
+
+- **`filter-chain` keeps crashing on PipeWire 1.6.7.** A shutdown race in filter-chain 1.6.7 can SIGSEGV when the service is restarted while audio is flowing (which ASM does on EQ/Spatial changes), killing the surround sink. If `coredumpctl list pipewire` shows repeated crashes tied to toggling Spatial Audio, this is the cause; a PipeWire update on the side that runs filter-chain resolves it.
 </details>
 
 <details>
