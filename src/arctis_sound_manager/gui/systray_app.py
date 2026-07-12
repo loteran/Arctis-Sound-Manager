@@ -531,7 +531,13 @@ class QSystrayApp(QBaseDesktopApp):
         self._main_app.main_window.activateWindow()
 
     def import_preset_url(self, url: str) -> None:
-        """Handle an arctis-asm:// deep link — open the import dialog pre-filled."""
+        """Handle an arctis-asm:// deep link — dispatch to the preset or theme import flow."""
+        from arctis_sound_manager.gui.theme_share import is_theme_link
+
+        if is_theme_link(url):
+            self._import_theme_url(url)
+            return
+
         self.open_main_window()
         from PySide6.QtCore import QTimer
 
@@ -544,6 +550,45 @@ class QSystrayApp(QBaseDesktopApp):
             dlg.exec()
 
         QTimer.singleShot(300, _open_dialog)
+
+    def _import_theme_url(self, url: str) -> None:
+        """Handle an arctis-asm://import-theme deep link: save + apply the theme."""
+        self.open_main_window()
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QMessageBox
+
+        def _do_import():
+            from arctis_sound_manager.gui.theme import save_user_theme
+            from arctis_sound_manager.gui.theme_share import ThemeImportError, decode_theme_link
+
+            parent = self._main_app.main_window if hasattr(self, '_main_app') else None
+            try:
+                parsed = decode_theme_link(url)
+                theme_id = save_user_theme(parsed["name"], parsed["colors"])
+                if hasattr(self, '_main_app'):
+                    if hasattr(self._main_app, '_device_page'):
+                        self._main_app._device_page.refresh_theme_combo(theme_id)
+                    self._main_app._apply_theme(theme_id)
+                QMessageBox.information(
+                    parent,
+                    I18n.translate("ui", "theme_import_success_title"),
+                    I18n.translate("ui", "theme_import_success_msg").format(name=parsed["name"]),
+                )
+            except ThemeImportError as e:
+                QMessageBox.critical(
+                    parent,
+                    I18n.translate("ui", "theme_import_error_title"),
+                    str(e),
+                )
+            except Exception as e:
+                self.logger.warning("Failed to import theme from URL: %s", e)
+                QMessageBox.critical(
+                    parent,
+                    I18n.translate("ui", "theme_import_error_title"),
+                    str(e),
+                )
+
+        QTimer.singleShot(300, _do_import)
 
     @Slot()
     def sig_stop(self):

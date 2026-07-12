@@ -239,6 +239,12 @@ class ThemeEditorPage(QWidget):
         self._cancel_btn.clicked.connect(self._on_cancel)
         btn_row.addWidget(self._cancel_btn)
 
+        self._export_btn = QPushButton(I18n.translate("ui", "theme_editor_export"))
+        self._export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._export_btn.setFixedHeight(40)
+        self._export_btn.clicked.connect(self._on_export)
+        btn_row.addWidget(self._export_btn)
+
         self._save_btn = QPushButton(I18n.translate("ui", "theme_save"))
         self._save_btn.setObjectName("accentBtn")
         self._save_btn.setFixedHeight(40)
@@ -405,3 +411,9 @@ class ThemeEditorPage(QWidget):
     def _on_cancel(self) -> None:
         set_preview_colors(None)
         self.sig_cancelled.emit()
+
+    def _on_export(self) -> None:
+        from arctis_sound_manager.gui.theme_export_dialog import ThemeExportDialog
+
+        name = self._name_edit.text().strip() or "My Theme"
+        ThemeExportDialog(name, self._current_colors(), self).exec()

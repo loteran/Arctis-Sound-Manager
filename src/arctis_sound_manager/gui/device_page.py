@@ -44,7 +44,7 @@ from arctis_sound_manager.gui.theme import (
     TEXT_SECONDARY,
     THEMES,
     all_theme_labels, get_theme, get_theme_label, is_builtin,
-    reload_user_themes, export_theme_to_file, import_theme_from_file,
+    reload_user_themes,
     delete_user_theme,
 )
 
@@ -543,38 +543,18 @@ class DevicePage(QWidget):
             self.sig_theme_changed.emit("steelseries")
 
     def _on_theme_export(self) -> None:
-        from PySide6.QtWidgets import QFileDialog
-        from pathlib import Path
+        from arctis_sound_manager.gui.theme_export_dialog import ThemeExportDialog
         tid = self._theme_combo.currentData()
         if not tid:
             return
-        default = str(Path.home() / f"{tid}.ini")
-        path, _ = QFileDialog.getSaveFileName(
-            self,
-            I18n.translate("ui", "theme_export_dialog"),
-            default,
-            I18n.translate("ui", "theme_ini_filter"),
-        )
-        if path:
-            export_theme_to_file(tid, Path(path))
+        ThemeExportDialog(get_theme_label(tid), dict(get_theme(tid)), self).exec()
 
     def _on_theme_import(self) -> None:
-        from PySide6.QtWidgets import QFileDialog, QMessageBox
-        from pathlib import Path
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            I18n.translate("ui", "theme_import_dialog"),
-            str(Path.home()),
-            I18n.translate("ui", "theme_ini_filter"),
-        )
-        if not path:
-            return
-        try:
-            new_id = import_theme_from_file(Path(path))
-            self.refresh_theme_combo(new_id)
-            self.sig_theme_changed.emit(new_id)
-        except ValueError:
-            QMessageBox.warning(self, "", I18n.translate("ui", "theme_import_failed"))
+        from arctis_sound_manager.gui.theme_import_dialog import ThemeImportDialog
+        dlg = ThemeImportDialog(self)
+        if dlg.exec() and dlg.imported_theme_id:
+            self.refresh_theme_combo(dlg.imported_theme_id)
+            self.sig_theme_changed.emit(dlg.imported_theme_id)
 
     # ── Signal forwarding ─────────────────────────────────────────────────────
 
