@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.99" date="2026-07-12">
+      <description>
+        <p>Share and import color themes, just like presets. Any theme you create in the theme editor can now be shared with other ASM users: copy a self-contained share link, save it to a file, or publish it to the community theme gallery. Themes can be imported from a shared link, a file, or by browsing the community — either from the theme editor or from the Import/Export buttons on the Settings page.</p>
+      </description>
+    </release>
     <release version="1.1.98" date="2026-07-12">
       <description>
         <p>Audio now stays on your speakers/TV after waking from sleep when the headset is off. With the headset powered off — so sound is meant to play through your TV or external speakers — resuming from sleep could bounce media apps (VLC, Spotify, browsers…) back onto the headset's Media output, and the only fix was to toggle the headset off and on. On resume ASM now re-asserts the correct routing based on whether the headset is actually powered on, so audio stays where it belongs. (#128)</p>
@@ -199,11 +204,6 @@
     <release version="1.1.69" date="2026-06-13">
       <description>
         <p>Game and Media channels silent on NixOS module installs — two root causes addressed:. HeSuVi surround graph crashes when plate_1423 (swh-plugins) is absent — on distros without swh-plugins installed, the Distance reverb LADSPA node was generated unconditionally, causing filter-chain to exit immediately. The Distance effect is now silently disabled when plate_1423.so is not found in the standard LADSPA directories, giving working surround without the reverb rather than a crash-loop. (#79).</p>
-      </description>
-    </release>
-    <release version="1.1.68" date="2026-06-12">
-      <description>
-        <p>asm-setup crashed on NixOS with FileNotFoundError: update-desktop-database — NixOS and other immutable distros don't ship this tool. The call already used check=False but subprocess.Popen raises FileNotFoundError before the return-code check when the binary is absent. The call is now wrapped in try/except FileNotFoundError and silently skipped. (#79). HRIR file from Nix store (3.6 KB stub) passed validation and was never replaced — the Nix store copy has a valid RIFF header in its first 4 bytes but is far too short to be a usable 7.1 impulse response, causing Game and Media channels to be silent. _hrir_valid() now requires the file to exceed 10 KB in addition to having a RIFF header. asm-setup also tries the bundled hrir_assets/ profiles first (no network required) before downloading from GitHub. (#79).</p>
       </description>
     </release>
   </releases>
