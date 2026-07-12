@@ -1385,7 +1385,30 @@ class CoreEngine:
 
         if is_steelseries_alsa or is_arctis_owned:
             self.pa_audio_manager.redirect_audio(redirect_device)
-    
+
+    def reconcile_audio_routing_for_power_state(self) -> None:
+        """Re-assert audio routing to match the headset's current power state.
+
+        On resume from sleep, PipeWire/WirePlumber re-links each stream to its
+        remembered ``target.node`` once the graph settles. Media apps whose last
+        target was ``Arctis_Media`` snap back onto it even while the headset is
+        powered off, so audio stops reaching the external speakers/TV until the
+        user toggles the headset (which fires ``redirect_audio_on_disconnect``).
+        This performs that same reconciliation programmatically (issue #128).
+
+        Both ``redirect_to_media_sink`` and ``redirect_audio_on_disconnect`` have
+        their own setting guards, so this is a no-op when the user disabled the
+        connect/disconnect redirection.
+        """
+        with self._device_lock:
+            have_device = self.usb_device is not None and self.device_config is not None
+        if not have_device:
+            return
+        if self.is_device_online():
+            self.redirect_to_media_sink()
+        else:
+            self.redirect_audio_on_disconnect()
+
     def _setting_default(self, name: str) -> int:
         """Profile-declared default for a setting, or 0 if none is an int.
 

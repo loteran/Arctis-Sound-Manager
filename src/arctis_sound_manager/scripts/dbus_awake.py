@@ -17,6 +17,12 @@ from arctis_sound_manager.core import CoreEngine
 class DbusAwake:
     _instance = None
 
+    # Delays (seconds) after resume before re-asserting audio routing. Two passes:
+    # the first once the PipeWire graph has settled, the second to catch a late
+    # WirePlumber re-link of stream targets on a slow resume (issue #128).
+    _WAKE_SETTLE_S = 3.0
+    _WAKE_RECHECK_S = 5.0
+
     @staticmethod
     def get_instance() -> 'DbusAwake':
         if DbusAwake._instance is None:
@@ -59,5 +65,32 @@ class DbusAwake:
             return
 
     def on_prepare_for_sleep(self, going_to_sleep: bool) -> None:
-        if not going_to_sleep:
-            self.core_engine.init_device()
+        if going_to_sleep:
+            return
+
+        # Re-run device init (USB commands + EQ) exactly as before.
+        self.core_engine.init_device()
+
+        # Then reconcile audio routing a moment later: on resume PipeWire/
+        # WirePlumber re-links streams to their remembered targets as the graph
+        # settles, pulling media apps back onto Arctis_Media even with the
+        # headset off (issue #128). init_device() alone never fixed this because
+        # the status is unchanged (offline -> offline), so no redirect fires.
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No running loop (should not happen inside the daemon) — best effort.
+            try:
+                self.core_engine.reconcile_audio_routing_for_power_state()
+            except Exception as e:
+                self.log.warning(f"Post-wake routing reconciliation failed: {e}")
+            return
+        loop.create_task(self._reconcile_routing_after_wake())
+
+    async def _reconcile_routing_after_wake(self) -> None:
+        for delay in (self._WAKE_SETTLE_S, self._WAKE_RECHECK_S):
+            await asyncio.sleep(delay)
+            try:
+                self.core_engine.reconcile_audio_routing_for_power_state()
+            except Exception as e:
+                self.log.warning(f"Post-wake routing reconciliation failed: {e}")
