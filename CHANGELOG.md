@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.99] - 12 July 2026
+
+### Added
+
+- **Share and import color themes, just like presets.** Any theme you create in the theme editor can now be shared with other ASM users: copy a self-contained share link, save it to a file, or publish it to the community theme gallery. Themes can be imported from a shared link, a file, or by browsing the community — either from the theme editor or from the Import/Export buttons on the Settings page.
+
 ## [1.1.98] - 12 July 2026
 
 ### Fixed
