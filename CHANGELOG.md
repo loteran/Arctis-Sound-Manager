@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.98] - 12 July 2026
+
+### Fixed
+
+- **Audio now stays on your speakers/TV after waking from sleep when the headset is off.** With the headset powered off — so sound is meant to play through your TV or external speakers — resuming from sleep could bounce media apps (VLC, Spotify, browsers…) back onto the headset's Media output, and the only fix was to toggle the headset off and on. On resume ASM now re-asserts the correct routing based on whether the headset is actually powered on, so audio stays where it belongs. (#128)
+
 ## [1.1.97] - 11 July 2026
 
 ### Fixed
