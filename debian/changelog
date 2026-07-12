@@ -1,3 +1,14 @@
+arctis-sound-manager (1.1.99-1) noble; urgency=medium
+
+  * Share and import color themes, just like presets. Any theme you create
+    in the theme editor can now be shared with other ASM users: copy a
+    self-contained share link, save it to a file, or publish it to the
+    community theme gallery. Themes can be imported from a shared link, a
+    file, or by browsing the community — either from the theme editor or
+    from the Import/Export buttons on the Settings page.
+
+ -- loteran <axel.valadon@gmail.com>  Sun, 12 Jul 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.98-1) noble; urgency=medium
 
   * Audio now stays on your speakers/TV after waking from sleep when the
