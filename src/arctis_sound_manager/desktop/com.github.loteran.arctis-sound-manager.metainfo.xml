@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.98" date="2026-07-12">
+      <description>
+        <p>Audio now stays on your speakers/TV after waking from sleep when the headset is off. With the headset powered off — so sound is meant to play through your TV or external speakers — resuming from sleep could bounce media apps (VLC, Spotify, browsers…) back onto the headset's Media output, and the only fix was to toggle the headset off and on. On resume ASM now re-asserts the correct routing based on whether the headset is actually powered on, so audio stays where it belongs. (#128)</p>
+      </description>
+    </release>
     <release version="1.1.97" date="2026-07-11">
       <description>
         <p>The Sonar Micro EQ no longer steals your microphone. Adjusting any Sonar Micro EQ setting used to detach the EQ from your headset mic and re-attach it to a different input device (a second microphone), forcing you to fix the routing by hand after every change. ASM now takes the mic capture out of WirePlumber's routing and owns and continuously re-asserts the headset-mic → Micro EQ link, so it can no longer be stolen — while leaving any other app that uses your mic untouched. (#127)</p>
@@ -199,11 +204,6 @@
     <release version="1.1.68" date="2026-06-12">
       <description>
         <p>asm-setup crashed on NixOS with FileNotFoundError: update-desktop-database — NixOS and other immutable distros don't ship this tool. The call already used check=False but subprocess.Popen raises FileNotFoundError before the return-code check when the binary is absent. The call is now wrapped in try/except FileNotFoundError and silently skipped. (#79). HRIR file from Nix store (3.6 KB stub) passed validation and was never replaced — the Nix store copy has a valid RIFF header in its first 4 bytes but is far too short to be a usable 7.1 impulse response, causing Game and Media channels to be silent. _hrir_valid() now requires the file to exceed 10 KB in addition to having a RIFF header. asm-setup also tries the bundled hrir_assets/ profiles first (no network required) before downloading from GitHub. (#79).</p>
-      </description>
-    </release>
-    <release version="1.1.67" date="2026-06-12">
-      <description>
-        <p>Microphone monitor source selected instead of real mic — on some setups PipeWire exposes a monitor source before the real capture source, causing ASM to route apps to the monitor loopback instead of the physical microphone. The physical-source lookup now filters out device.class = monitor entries. (#80). Mic audio bypassed Sonar EQ — applications could connect directly to the ALSA source and skip the sonar-micro-eq filter chain. ASM now sets priority.session = 1010 on the Sonar virtual source and explicitly sets it as the default PulseAudio source at startup, so apps land on the EQ pipeline by default. D-Bus status returned {} when device was connected but status bytes unresolved — if the device was ready but device_status was None, the GUI showed "No device detected" even though the headset was online. The D-Bus GetStatus method now synthesises an online sentinel from online_status.online_value in that case.</p>
       </description>
     </release>
   </releases>

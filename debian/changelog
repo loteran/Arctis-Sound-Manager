@@ -1,3 +1,15 @@
+arctis-sound-manager (1.1.98-1) noble; urgency=medium
+
+  * Audio now stays on your speakers/TV after waking from sleep when the
+    headset is off. With the headset powered off — so sound is meant to play
+    through your TV or external speakers — resuming from sleep could bounce
+    media apps (VLC, Spotify, browsers…) back onto the headset's Media
+    output, and the only fix was to toggle the headset off and on. On resume
+    ASM now re-asserts the correct routing based on whether the headset is
+    actually powered on, so audio stays where it belongs. (#128)
+
+ -- loteran <axel.valadon@gmail.com>  Sun, 12 Jul 2026 00:00:00 +0000
+
 arctis-sound-manager (1.1.97-1) noble; urgency=medium
 
   * The Sonar Micro EQ no longer steals your microphone. Adjusting any Sonar
