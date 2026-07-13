@@ -518,6 +518,63 @@ def _node_ports(data: list, node_id: int, direction: str) -> dict[str, int]:
     return ports
 
 
+# Canonical channel ordering used by the positional fallback below. Only the
+# relative order matters (not the exact set of names PipeWire may ever emit).
+_CANONICAL_CHANNEL_ORDER = ("FL", "FR", "FC", "LFE", "RL", "RR", "SL", "SR", "RC", "MONO")
+
+
+def _channel_sort_key(channel: str) -> tuple:
+    """Deterministic sort key for a PipeWire ``audio.channel`` name.
+
+    Ranking (lower sorts first):
+
+    0. Positioned channels from :data:`_CANONICAL_CHANNEL_ORDER`, in that
+       canonical order (FL, FR, FC, LFE, RL, RR, SL, SR, RC, MONO).
+    1. ``AUXn`` ports — the port names a PipeWire pro-audio profile exposes
+       for a headset's physical output/input (issue #129) — ordered
+       *numerically* by ``n`` (AUX0 < AUX1 < ... < AUX10), never
+       lexicographically (which would sort AUX10 before AUX2).
+    2. Anything else, ordered alphabetically as a last resort so the result
+       stays fully deterministic even for unrecognised channel names.
+    """
+    if channel in _CANONICAL_CHANNEL_ORDER:
+        return (0, _CANONICAL_CHANNEL_ORDER.index(channel), channel)
+    if channel.startswith("AUX") and channel[3:].isdigit():
+        return (1, int(channel[3:]), channel)
+    return (2, 0, channel)
+
+
+def _resolve_channel_pairs(
+    out_ports: dict[str, int], in_ports: dict[str, int],
+) -> list[tuple[int, int]]:
+    """Resolve which output port links to which input port.
+
+    Prefers channel-**name** matching (FL→FL, FR→FR, …) — this is what every
+    shipped loopback/EQ/HeSuVi node uses today and must keep working exactly
+    as before. Only when **no** channel name is shared between the two sides
+    (e.g. a positioned 8ch source, like the Sonar Media EQ output, feeding a
+    pro-audio headset sink whose ports are named ``AUX0``/``AUX1`` instead of
+    ``FL``/``FR`` — issue #129) does this fall back to **positional**
+    matching: source channels sorted into canonical order (FL, FR, FC, …)
+    zipped against target ports in their natural order (AUX0, AUX1, …),
+    paired up to the shorter side.
+
+    Returns a list of ``(out_port_id, in_port_id)`` pairs. Returns an empty
+    list if either side has no ports at all.
+    """
+    if not out_ports or not in_ports:
+        return []
+
+    common = [channel for channel in out_ports if channel in in_ports]
+    if common:
+        return [(out_ports[channel], in_ports[channel]) for channel in common]
+
+    # No shared channel name — positional fallback (issue #129).
+    src = [out_ports[channel] for channel in sorted(out_ports, key=_channel_sort_key)]
+    dst = [in_ports[channel] for channel in sorted(in_ports, key=_channel_sort_key)]
+    return list(zip(src, dst))
+
+
 def ensure_loopback_link(
     playback_name: str, target_name: str, data: list | None = None,
 ) -> bool:
@@ -607,17 +664,31 @@ def ensure_loopback_link(
                 check=False, timeout=3, capture_output=True,
             )
 
-        # Create the missing channel-matched links.
+        # Resolve which output port links to which input port: channel-NAME
+        # matching first (FL→FL, FR→FR, …); only if no name is shared between
+        # the two sides does this fall back to positional matching (e.g. an
+        # 8ch positioned source into an AUX0/AUX1-named pro-audio sink —
+        # issue #129).
+        pairs = _resolve_channel_pairs(out_ports, in_ports)
+        if not pairs:
+            # A source channel the target does not expose at all (e.g. a 2ch
+            # loopback into a hypothetical 8ch EQ would leave FC/LFE/… unfed).
+            # All shipped EQ nodes are stereo or match 1:1, so this is
+            # defensive only.
+            return False
+        if not any(channel in in_ports for channel in out_ports):
+            logger.info(
+                "ensure_loopback_link: positional fallback: '%s' → '%s' (no shared channel names; out=%s in=%s)",
+                playback_name, target_name, list(out_ports), list(in_ports),
+            )
+
+        out_port_to_channel = {port_id: channel for channel, port_id in out_ports.items()}
+
         ok = True
         linked_any = False
         created = 0
-        for channel, out_port in out_ports.items():
-            in_port = in_ports.get(channel)
-            if in_port is None:
-                # A source channel the target does not expose (e.g. a 2ch loopback
-                # into a hypothetical 8ch EQ would leave FC/LFE/… unfed). All
-                # shipped EQ nodes are stereo, so this branch is defensive only.
-                continue
+        for out_port, in_port in pairs:
+            channel = out_port_to_channel.get(out_port, "?")
             if (out_port, in_port) in existing:
                 linked_any = True
                 continue
@@ -639,7 +710,7 @@ def ensure_loopback_link(
         if created:
             logger.info(
                 "ensure_loopback_link: '%s' → '%s' (%d/%d channels linked)",
-                playback_name, target_name, created, len(out_ports),
+                playback_name, target_name, created, len(pairs),
             )
         return linked_any and ok
     except Exception as exc:
@@ -758,16 +829,30 @@ def ensure_capture_link(
                 check=False, timeout=3, capture_output=True,
             )
 
-        # Create the missing channel-matched links.
+        # Resolve which output port links to which input port: channel-NAME
+        # matching first; only if no name is shared between the two sides
+        # does this fall back to positional matching (issue #129 fallback,
+        # applied here for consistency with ensure_loopback_link even though
+        # a positioned mic feeding an AUX-named capture is not the reported
+        # scenario).
+        pairs = _resolve_channel_pairs(out_ports, in_ports)
+        if not pairs:
+            # The capture node does not expose any of the source channels at
+            # all (e.g. a stereo mic feeding a mono capture) — nothing to link.
+            return False
+        if not any(channel in in_ports for channel in out_ports):
+            logger.info(
+                "ensure_capture_link: positional fallback: '%s' -> '%s' (no shared channel names; out=%s in=%s)",
+                source_name, capture_name, list(out_ports), list(in_ports),
+            )
+
+        out_port_to_channel = {port_id: channel for channel, port_id in out_ports.items()}
+
         ok = True
         linked_any = False
         created = 0
-        for channel, out_port in out_ports.items():
-            in_port = in_ports.get(channel)
-            if in_port is None:
-                # The capture node does not expose this source channel (e.g.
-                # a stereo mic feeding a mono capture) — nothing to link.
-                continue
+        for out_port, in_port in pairs:
+            channel = out_port_to_channel.get(out_port, "?")
             if (out_port, in_port) in existing:
                 linked_any = True
                 continue
@@ -789,7 +874,7 @@ def ensure_capture_link(
         if created:
             logger.info(
                 "ensure_capture_link: '%s' -> '%s' (%d/%d channels linked)",
-                source_name, capture_name, created, len(out_ports),
+                source_name, capture_name, created, len(pairs),
             )
         return linked_any and ok
     except Exception as exc:
