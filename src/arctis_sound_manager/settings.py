@@ -145,6 +145,9 @@ class GeneralSettings(JsonSerializable):
     # Draw the headset battery percentage next to the system-tray icon (#119)
     systray_show_battery: bool = True
 
+    # Systray icon color: 0 = auto (follow desktop theme), 1 = white, 2 = black (#130)
+    systray_icon_color: int = 0
+
     # UI theme
     theme: str = "steelseries"
 
@@ -155,6 +158,7 @@ class GeneralSettings(JsonSerializable):
         ConfigSetting('external_output_device', SettingType.SELECT, None, options_source='external_audio_devices', options_mapping={ 'value': 'id', 'label': 'description' }),
         ConfigSetting('hrir_id', SettingType.SELECT, None, options_source='hrir_files', options_mapping={ 'value': 'id', 'label': 'name' }),
         ConfigSetting('systray_show_battery', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
+        ConfigSetting('systray_icon_color', SettingType.BUTTON_GROUP, 0, values_mapping={0: 'systray_icon_color_auto', 1: 'systray_icon_color_white', 2: 'systray_icon_color_black'}),
     ]
 
     dac_settings_config: list[ConfigSetting] = [

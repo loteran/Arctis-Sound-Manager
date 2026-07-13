@@ -36,7 +36,9 @@ from arctis_sound_manager.gui.tray_eq_presets import (
     list_custom_presets,
     list_sonar_channel_presets,
 )
-from arctis_sound_manager.gui.ui_utils import get_battery_number_pixmap, get_icon_pixmap
+from arctis_sound_manager.gui.ui_utils import (get_battery_number_pixmap,
+                                               get_icon_pixmap,
+                                               resolve_tray_icon_color)
 from arctis_sound_manager.i18n import I18n
 
 # Background tray-icon refresh cadence (seconds) when the menu is closed. The
@@ -62,6 +64,22 @@ def _show_battery_in_tray() -> bool:
     return True
 
 
+def _tray_icon_color() -> str:
+    """Resolve the tray icon color from the systray_icon_color setting
+    (default 0 = auto), read directly from the shared settings file — the
+    tray runs in a separate process from the daemon (#130)."""
+    try:
+        from arctis_sound_manager.constants import SETTINGS_FOLDER
+        from ruamel.yaml import YAML
+        f = SETTINGS_FOLDER / 'general_settings.yaml'
+        if f.is_file():
+            data = YAML(typ='safe').load(f.read_text(encoding='utf-8')) or {}
+            return resolve_tray_icon_color(int(data.get('systray_icon_color', 0)))
+    except Exception:
+        pass
+    return resolve_tray_icon_color(0)
+
+
 class QSystrayApp(QBaseDesktopApp):
     new_status = Signal(object)
 
@@ -82,7 +100,7 @@ class QSystrayApp(QBaseDesktopApp):
 
         self.app = app
 
-        pixmap = get_icon_pixmap()
+        pixmap = get_icon_pixmap(color=_tray_icon_color())
         self.tray_icon = QSystemTrayIcon(QIcon(pixmap), parent=self.app)
         self.tray_icon.setToolTip('Arctis Sound Manager')
 
@@ -204,8 +222,16 @@ class QSystrayApp(QBaseDesktopApp):
 
     def _update_tray_icon(self, status: dict) -> None:
         """Show/refresh the dedicated battery-% tray item next to the ASM icon
-        when enabled and a level is known (#119). The main icon stays the plain
-        ASM logo."""
+        when enabled and a level is known (#119), and re-color both tray items
+        from the systray_icon_color setting (#130) — this is called on every
+        settings-file change (_on_settings_file_changed), so a color change
+        takes effect live without restarting the tray."""
+        color = _tray_icon_color()
+        try:
+            self.tray_icon.setIcon(QIcon(get_icon_pixmap(color=color)))
+        except Exception as e:
+            self.logger.debug('Could not update tray icon color: %s', e)
+
         pct = None
         if _show_battery_in_tray():
             pct = self._extract_battery_percent(status)
@@ -213,7 +239,7 @@ class QSystrayApp(QBaseDesktopApp):
             if pct is None:
                 self.battery_icon.hide()
             else:
-                self.battery_icon.setIcon(QIcon(get_battery_number_pixmap(pct)))
+                self.battery_icon.setIcon(QIcon(get_battery_number_pixmap(pct, color=color)))
                 self.battery_icon.setToolTip(f'Arctis — {pct}%')
                 if not self.battery_icon.isVisible():
                     self.battery_icon.show()

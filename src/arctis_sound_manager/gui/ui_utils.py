@@ -8,9 +8,40 @@ from pathlib import Path
 from PySide6 import QtSvg
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPixmap
+from PySide6.QtWidgets import QApplication
 
 ICON_PATH = Path(__file__).parent / 'images' / 'steelseries_logo.svg'
 _LOGO_PATH = Path(__file__).parent / 'images' / 'asm_logo.png'
+
+
+def resolve_tray_icon_color(choice: int) -> str:
+    """Resolve the systray_icon_color setting (0=auto, 1=white, 2=black) to a
+    hex color usable by get_icon_pixmap/get_battery_number_pixmap (#130).
+
+    Auto (0) follows the desktop color scheme via QStyleHints, so the icon
+    stays legible against both light and dark panels/themes. Falls back to
+    white when there's no QApplication instance yet (e.g. very early startup)
+    or the PySide6 version predates the colorScheme() API (6.5+).
+    """
+    if choice == 1:
+        return '#ffffff'
+    if choice == 2:
+        return '#000000'
+
+    # choice == 0 (or any unknown value): auto-detect from the desktop theme.
+    try:
+        app = QApplication.instance()
+        if app is None:
+            return '#ffffff'
+        scheme = app.styleHints().colorScheme()
+        if scheme == Qt.ColorScheme.Dark:
+            return '#ffffff'
+        if scheme == Qt.ColorScheme.Light:
+            return '#000000'
+    except Exception:
+        pass
+
+    return '#ffffff'
 
 
 def get_logo_label(height: int = 40):
