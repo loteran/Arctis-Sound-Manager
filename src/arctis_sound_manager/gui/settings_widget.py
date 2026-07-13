@@ -21,7 +21,7 @@ from arctis_sound_manager.i18n import I18n
 # (dbus_service.get_list_options) recomputes these fresh on every call, so
 # re-requesting them each time the panel becomes visible is enough to pick
 # up devices attached after the initial load (#106).
-_REFRESHABLE_OPTION_SOURCES = frozenset({'external_audio_devices', 'pulse_audio_devices'})
+_REFRESHABLE_OPTION_SOURCES = frozenset({'external_audio_devices', 'pulse_audio_devices', 'pulse_audio_sources'})
 
 
 class QSettingsWidget(QWidget):

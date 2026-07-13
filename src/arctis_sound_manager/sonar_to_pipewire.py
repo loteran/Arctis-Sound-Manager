@@ -1931,8 +1931,21 @@ def ensure_spatial_eq_links(
 _MICRO_CAPTURE_NAME = "effect_input.sonar-micro-eq"
 
 
+def _get_micro_input_source_setting() -> str:
+    """Return the configured ``micro_input_source`` general setting.
+
+    Defaults to ``"__auto__"`` (issue #127 behaviour) when the settings file
+    doesn't have the key yet (older config, or a fresh install) or is empty.
+    Lazy-imported to avoid a settings.py <-> sonar_to_pipewire.py import cycle.
+    """
+    from arctis_sound_manager.settings import GeneralSettings
+
+    value = getattr(GeneralSettings.read_from_file(), 'micro_input_source', None)
+    return value or "__auto__"
+
+
 def ensure_micro_capture_link(data: list | None = None) -> bool:
-    """Ensure the Sonar Micro EQ's capture is fed by the Arctis microphone.
+    """Ensure the Sonar Micro EQ's capture is fed by the configured source.
 
     Issue #127: ``effect_input.sonar-micro-eq`` runs with
     ``node.autoconnect = false`` / ``state.restore-target = false`` (see
@@ -1944,11 +1957,23 @@ def ensure_micro_capture_link(data: list | None = None) -> bool:
     every tick so a link stolen by a competing mic between applies is caught
     and repaired automatically.
 
+    Issue #131: this used to unconditionally force the Arctis microphone,
+    which fought any manual qpwgraph routing to a different mic. The source
+    is now driven by the ``micro_input_source`` general setting:
+
+    - ``"__auto__"`` (default, or unset/empty) — Arctis microphone, exactly
+      the #127 behaviour, via :func:`_get_physical_in`.
+    - ``"__manual__"`` — enforcement is skipped entirely (no link created,
+      no stray link torn down), so a manual routing sticks.
+    - anything else — treated as the ``node.name`` of the source to pin the
+      capture to. If that source isn't in the graph yet, ``ensure_capture_link``
+      returns False and the watchdog retries on the next tick.
+
     Thin wrapper around :func:`~arctis_sound_manager.pw_utils.ensure_capture_link`
-    that resolves the current physical mic input; see that function's
-    docstring for why the stray-link teardown is scoped to the capture
-    node's input side rather than the mic's output side (the physical mic
-    may legitimately feed other consumers — a recorder, OBS, …).
+    that resolves the configured mic input; see that function's docstring for
+    why the stray-link teardown is scoped to the capture node's input side
+    rather than the source's output side (the physical mic may legitimately
+    feed other consumers — a recorder, OBS, …).
 
     Parameters
     ----------
@@ -1960,18 +1985,28 @@ def ensure_micro_capture_link(data: list | None = None) -> bool:
     Returns
     -------
     bool
-        True when linked. False when no device is attached yet (nothing to
-        link to — retry later) or the capture/source node is not yet in the
-        graph (filter-chain starting/restarting).
+        True when linked. False when in manual mode, no device is attached
+        yet (nothing to link to — retry later), or the capture/source node
+        is not yet in the graph (filter-chain starting/restarting).
     """
     from arctis_sound_manager.pw_utils import ensure_capture_link
 
-    physical_in = _get_physical_in()
-    if not physical_in:
+    setting = _get_micro_input_source_setting()
+
+    if setting == "__manual__":
+        # User has taken manual control (qpwgraph, …) — don't touch the link.
+        return False
+
+    if setting == "__auto__":
+        source = _get_physical_in()
+    else:
+        source = setting
+
+    if not source:
         # No device attached — skip, the watchdog will retry on the next
         # tick once a headset is connected.
         return False
-    return ensure_capture_link(physical_in, _MICRO_CAPTURE_NAME, data=data)
+    return ensure_capture_link(source, _MICRO_CAPTURE_NAME, data=data)
 
 
 # ── Config generator — HeSuVi 7.1 virtual surround ──────────────────────────

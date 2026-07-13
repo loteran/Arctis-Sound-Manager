@@ -97,6 +97,13 @@ class GeneralSettings(JsonSerializable):
     # HRIR profile for HeSuVi spatial audio
     hrir_id: str | None = None
 
+    # Which microphone source feeds the Sonar Micro EQ capture (issue #131).
+    # "__auto__" (default) = Arctis microphone, matches the issue #127
+    # enforcement behaviour. "__manual__" = the watchdog stops enforcing the
+    # link entirely, letting a manual qpwgraph routing stick. Any other value
+    # is treated as the node.name of the source to pin the capture to.
+    micro_input_source: str = "__auto__"
+
     # OLED display brightness (0–10)
     oled_brightness: int = 8
 
@@ -157,6 +164,7 @@ class GeneralSettings(JsonSerializable):
         ConfigSetting('redirect_audio_on_disconnect_device', SettingType.SELECT, None, options_source='pulse_audio_devices', options_mapping={ 'value': 'id', 'label': 'description' }),
         ConfigSetting('external_output_device', SettingType.SELECT, None, options_source='external_audio_devices', options_mapping={ 'value': 'id', 'label': 'description' }),
         ConfigSetting('hrir_id', SettingType.SELECT, None, options_source='hrir_files', options_mapping={ 'value': 'id', 'label': 'name' }),
+        ConfigSetting('micro_input_source', SettingType.SELECT, "__auto__", options_source='pulse_audio_sources', options_mapping={ 'value': 'id', 'label': 'name' }),
         ConfigSetting('systray_show_battery', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('systray_icon_color', SettingType.BUTTON_GROUP, 0, values_mapping={0: 'systray_icon_color_auto', 1: 'systray_icon_color_white', 2: 'systray_icon_color_black'}),
     ]

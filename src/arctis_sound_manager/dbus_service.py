@@ -420,8 +420,61 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
         elif list_name == 'hrir_files':
             from arctis_sound_manager.hrir_catalog import list_hrir_options
             result = list_hrir_options()
+        elif list_name == 'pulse_audio_sources':
+            result = self._get_pulse_audio_sources_options()
 
         return json.dumps(result)
+
+    def _get_pulse_audio_sources_options(self) -> list[dict[str, str]]:
+        """Options for the Sonar Micro EQ input source setting (issue #131).
+
+        Two synthetic entries come first — "auto" (Arctis mic, matches the
+        issue #127 enforcement) and "manual" (stop enforcing, let qpwgraph
+        routing stick) — followed by every real, non-monitor, non-ASM input
+        source. The id is always the source's ``node.name`` (not its nick):
+        that's what :func:`pw_utils.ensure_capture_link` matches against.
+        """
+        try:
+            from arctis_sound_manager.i18n import I18n
+            auto_label = I18n.translate('settings_values', 'micro_source_auto')
+            manual_label = I18n.translate('settings_values', 'micro_source_manual')
+        except Exception:
+            auto_label = 'Arctis microphone (default)'
+            manual_label = "Manual routing (don't force)"
+
+        result: list[dict[str, str]] = [
+            {'id': '__auto__', 'name': auto_label},
+            {'id': '__manual__', 'name': manual_label},
+        ]
+
+        try:
+            sources = self.core_engine.pa_audio_manager.pulse.source_list()
+        except Exception:
+            sources = []
+
+        for s in sources:
+            node_name = s.proplist.get('node.name', '')
+            if not node_name:
+                continue
+            # Skip monitors (loopback/recording taps of a sink, not a real
+            # input device) and ASM's own effect nodes (the Micro EQ capture
+            # itself, or any other Sonar filter-chain node) — none of these
+            # make sense as a "feed the Micro EQ from this" choice.
+            if node_name.endswith('.monitor'):
+                continue
+            if s.proplist.get('media.class', '') == 'Audio/Source/Virtual':
+                continue
+            if s.proplist.get('device.class', '') == 'monitor':
+                continue
+            if node_name.startswith('effect_') or 'sonar-' in node_name:
+                continue
+
+            name = s.proplist.get('node.description', node_name)
+
+            if not any(r['id'] == node_name for r in result):
+                result.append({'id': node_name, 'name': name})
+
+        return result
 
 class DbusManager:
     _instance: 'DbusManager|None' = None
