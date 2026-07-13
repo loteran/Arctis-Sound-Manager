@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.100] - 13 July 2026
+
+### Added
+
+- **Choose which microphone feeds the Sonar Micro EQ.** A new "Sonar Micro EQ input" setting lets you keep the default (your Arctis microphone), pick a specific input device, or select "Manual" so ASM stops enforcing the mic routing and leaves whatever you wired up in a patchbay like qpwgraph in place. (#131)
+- **Tray icon color setting.** The system-tray icon can now follow your system's light/dark theme automatically, or be forced to white or black, for better contrast on panels where it was hard to see. (#130)
+
+### Fixed
+
+- **Spatial Audio OFF is no longer silent on some headsets.** On outputs whose ports are exposed without channel names (the Nova Pro Wireless pro-audio output uses `AUX0`/`AUX1` instead of `FL`/`FR`), turning Spatial Audio off left the channel with no audio because ASM matched ports by name and found none. It now falls back to positional matching (front-left → first port, front-right → second), so sound keeps flowing with Spatial Audio off. (#129)
+
 ## [1.1.99] - 12 July 2026
 
 ### Added
