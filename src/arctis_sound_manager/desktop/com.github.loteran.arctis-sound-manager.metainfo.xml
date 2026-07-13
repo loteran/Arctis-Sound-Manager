@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.100" date="2026-07-13">
+      <description>
+        <p>Choose which microphone feeds the Sonar Micro EQ. A new "Sonar Micro EQ input" setting lets you keep the default (your Arctis microphone), pick a specific input device, or select "Manual" so ASM stops enforcing the mic routing and leaves whatever you wired up in a patchbay like qpwgraph in place. (#131). Tray icon color setting. The system-tray icon can now follow your system's light/dark theme automatically, or be forced to white or black, for better contrast on panels where it was hard to see. (#130). Spatial Audio OFF is no longer silent on some headsets. On outputs whose ports are exposed without channel names (the Nova Pro Wireless pro-audio output uses AUX0/AUX1 instead of FL/FR), turning Spatial Audio off left the channel with no audio because ASM matched ports by name and found none. It now falls back to positional matching (front-left → first port, front-right → second), so sound keeps flowing with Spatial Audio off. (#129).</p>
+      </description>
+    </release>
     <release version="1.1.99" date="2026-07-12">
       <description>
         <p>Share and import color themes, just like presets. Any theme you create in the theme editor can now be shared with other ASM users: copy a self-contained share link, save it to a file, or publish it to the community theme gallery. Themes can be imported from a shared link, a file, or by browsing the community — either from the theme editor or from the Import/Export buttons on the Settings page.</p>
@@ -199,11 +204,6 @@
     <release version="1.1.70" date="2026-06-13">
       <description>
         <p>Device shown as "No device detected" in GUI for always-connected headsets — devices without an online_status block (e.g. Arctis Nova 3 family) produced an empty D-Bus status dict even after the daemon had successfully initialised them, causing the GUI to display "No device detected" indefinitely. A sentinel headset_power_status: online is now injected when _device_ready is True and no status representation is defined. (#80). "Failed to find sink Arctis_Game" error at startup — redirect_audio was called immediately after spawning the pw-loopback processes, before PipeWire had registered the virtual sink. The method now retries up to 5 times (× 0.4 s) before giving up, eliminating the race condition on normal hardware. The final failure is now logged as WARNING instead of ERROR since the sink may legitimately be absent if loopback creation failed upstream. (#80).</p>
-      </description>
-    </release>
-    <release version="1.1.69" date="2026-06-13">
-      <description>
-        <p>Game and Media channels silent on NixOS module installs — two root causes addressed:. HeSuVi surround graph crashes when plate_1423 (swh-plugins) is absent — on distros without swh-plugins installed, the Distance reverb LADSPA node was generated unconditionally, causing filter-chain to exit immediately. The Distance effect is now silently disabled when plate_1423.so is not found in the standard LADSPA directories, giving working surround without the reverb rather than a crash-loop. (#79).</p>
       </description>
     </release>
   </releases>
