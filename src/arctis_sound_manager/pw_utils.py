@@ -215,6 +215,53 @@ def _pw_dump() -> list:
         return []
 
 
+def quiesce_filter_chain() -> int:
+    """Unlink ASM's filter-chain nodes so the graph stops processing audio.
+
+    Call this right before stopping/restarting the filter-chain service. PipeWire
+    1.6.7 segfaults when the filter-chain process is terminated *while it is
+    processing a cycle* (issue #100): the crash is in the audio thread, not in the
+    config. Dropping the links first parks the nodes, so the SIGTERM lands on an
+    idle process.
+
+    The restart tears these links down anyway — doing it ourselves, a moment
+    earlier, only removes the race. ASM's loopback watchdog (ensure_loopback_link)
+    rebuilds them once the new nodes appear.
+
+    Returns the number of links destroyed.
+    """
+    data = _pw_dump()
+    if not data:
+        return 0
+
+    fc_nodes = {
+        o["id"]
+        for o in data
+        if o.get("type") == "PipeWire:Interface:Node"
+        and str(
+            (o.get("info", {}).get("props") or {}).get("node.name", "")
+        ).startswith(("effect_input.", "effect_output."))
+    }
+    if not fc_nodes:
+        return 0
+
+    destroyed = 0
+    for o in data:
+        if o.get("type") != "PipeWire:Interface:Link":
+            continue
+        info = o.get("info", {}) or {}
+        if info.get("output-node-id") in fc_nodes or info.get("input-node-id") in fc_nodes:
+            try:
+                _pw_run(["pw-cli", "destroy", str(o["id"])], capture_output=True, timeout=2)
+                destroyed += 1
+            except Exception as exc:  # link may already be gone — harmless
+                logger.debug("quiesce_filter_chain: destroy %s failed: %s", o["id"], exc)
+
+    if destroyed:
+        logger.info("quiesce_filter_chain: unlinked %d link(s) before restart", destroyed)
+    return destroyed
+
+
 def set_filter_gain(node_name: str, control: str, value: float) -> bool:
     """Live-apply a single filter-chain control value, no restart required.
 
