@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 14 July 2026
+
+### Fixed
+
+- **No sound at all after the headset was switched off and back on.** Powering the headset off destroys its physical PipeWire sink; powering it back on recreates it as a new node. ASM's filter-chain nodes run with `node.autoconnect = false` — by design, WirePlumber never links them, ASM owns those links — but nothing was watching the *last* hop, from the EQ/surround chain to the physical output. So that link was never restored, the headset sink stayed suspended, and audio was gone until both `filter-chain` and `arctis-manager` were restarted by hand. The loopback watchdog now enforces the final links (Chat EQ and HeSuVi surround → physical output) on every tick, so sound comes back on its own when the headset returns.
+- **Installing from the AUR failed with `bsdtar: Failed to set default locale` and a `ModuleNotFoundError` on `asm-setup`.** Two independent packaging bugs. The HRIR asset files for the Spatial Sound Card "Shanghai" presets carried a non-ASCII character in their filename, which bsdtar silently skips when the build environment has no UTF-8 locale; they are now named in plain ASCII (`ssc_hu`), and a settings migration keeps working for anyone who had selected one. Separately, the PKGBUILD installed `dbus-next` and `pulsectl` from PyPI during `package()` — into a `site-packages` whose Python version depended on whichever interpreter uv happened to pick — and used `uv run` to execute build scripts, which could create a venv on a different Python than the system one. Both are gone: those two libraries are now declared as proper package dependencies, and the build scripts run on the system Python. (#132, reported by @eapzzz)
+- **Streams were shuffled between headset channels when the headset was off.** Follow-up to the routing change in 1.2.0: when the headset powers off, streams parked on its virtual sinks are moved to the default output — but if the default output *is* one of the headset's own channels, there is nowhere useful to go, and moving them just undid the user's own channel assignments. ASM now leaves them alone in that case.
+
 ## [1.2.0] - 14 July 2026
 
 ### Fixed

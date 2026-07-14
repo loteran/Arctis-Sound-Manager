@@ -68,3 +68,24 @@ def test_general_settings_ignores_unknown_keys():
     gs = GeneralSettings(redirect_audio_on_connect=True, unknown_key="ignored")
     assert gs.redirect_audio_on_connect is True
     assert not hasattr(gs, "unknown_key")
+
+
+def test_general_settings_migrates_non_ascii_hrir_id(tmp_path):
+    # issue #132: ssc_hù / ssc_hù+ were renamed to ssc_hu / ssc_hu+ (non-ASCII
+    # filenames broke bsdtar extraction under some locales). A settings file
+    # written before the rename must still resolve to the new id on load.
+    with patch("arctis_sound_manager.settings.SETTINGS_FOLDER", tmp_path):
+        gs = GeneralSettings(hrir_id="ssc_hù+")
+        gs.write_to_file()
+
+        gs2 = GeneralSettings.read_from_file()
+        assert gs2.hrir_id == "ssc_hu+"
+
+
+def test_general_settings_hrir_id_migration_is_noop_for_current_ids(tmp_path):
+    with patch("arctis_sound_manager.settings.SETTINGS_FOLDER", tmp_path):
+        gs = GeneralSettings(hrir_id="ssc_hu")
+        gs.write_to_file()
+
+        gs2 = GeneralSettings.read_from_file()
+        assert gs2.hrir_id == "ssc_hu"

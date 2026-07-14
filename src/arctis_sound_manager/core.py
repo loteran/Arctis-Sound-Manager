@@ -723,6 +723,31 @@ class CoreEngine:
                         "_loopback_watchdog: error enforcing spatial EQ links: %r", exc
                     )
 
+                # ── Physical output link-enforcement (headset power-cycle) ───
+                # effect_output.sonar-chat-eq and effect_output.virtual-
+                # surround-7.1-hesuvi both carry a node.target hint at the
+                # physical Arctis output, but that hint is only honoured by
+                # WirePlumber once, at node-creation time. When the headset
+                # powers off and back on the physical output node is
+                # destroyed and recreated under a new id, and neither of
+                # these "last hop" links was being watched by anything —
+                # not the loopback pass above (loopback→EQ only) nor
+                # ensure_spatial_eq_links (EQ→{HeSuVi,physical} only) — so
+                # sound never came back on its own. Reuses link_data from
+                # the pass above when available; best-effort otherwise.
+                # No-ops silently when the physical output is absent
+                # (headset off) — it self-heals on the tick after the
+                # headset reappears.
+                try:
+                    from arctis_sound_manager.sonar_to_pipewire import ensure_physical_output_links
+                    await asyncio.get_running_loop().run_in_executor(
+                        None, ensure_physical_output_links, link_data,
+                    )
+                except Exception as exc:
+                    self.logger.error(
+                        "_loopback_watchdog: error enforcing physical output links: %r", exc
+                    )
+
                 # ── Micro EQ capture link-enforcement (issue #127) ────────────
                 # effect_input.sonar-micro-eq runs with node.autoconnect=false /
                 # state.restore-target=false — the same "ASM owns this link"

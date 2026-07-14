@@ -353,7 +353,19 @@ def _process_tick(pulse: pulsectl.Pulse) -> None:
         # persisted as an override (R5). When the headset comes back online
         # the normal enforcement pass below reapplies the saved override and
         # brings the app back.
-        if default_sink:
+        #
+        # Skip entirely when the default sink is ITSELF an Arctis sink — a
+        # virtual channel (ARCTIS_VIRTUAL_SINKS) or the physical SteelSeries
+        # output. Every Arctis channel is equally silent while the headset
+        # is off, so "repatriating" to another Arctis channel goes nowhere
+        # useful and only undoes the user's channel placement (regression:
+        # a stream parked on Arctis_Media got bounced to Arctis_Game just
+        # because that happened to be the system default).
+        default_is_arctis = (
+            any(k in default_sink_name for k in ARCTIS_VIRTUAL_SINKS)
+            or _is_physical_arctis(default_sink_name)
+        )
+        if default_sink and not default_is_arctis:
             idx_to_name = {s.index: s.name for s in sinks}
             for si in pulse.sink_input_list():
                 app = si.proplist.get("application.name", "")

@@ -81,6 +81,16 @@ class DeviceSettings(JsonSerializable):
         return self.__dict__
 
 
+# Transparent migration for HRIR ids renamed away from non-ASCII characters
+# (issue #132: non-ASCII filenames in the release tarball broke `bsdtar`
+# extraction on some locales). Old ids persisted in a user's
+# general_settings.yaml before the rename must still resolve.
+_HRIR_ID_MIGRATIONS = {
+    'ssc_hù': 'ssc_hu',
+    'ssc_hù+': 'ssc_hu+',
+}
+
+
 class GeneralSettings(JsonSerializable):
     _js_exclude_fields = ['settings_config', 'dac_settings_config']
 
@@ -229,6 +239,9 @@ class GeneralSettings(JsonSerializable):
                 f"general_settings.yaml has unexpected shape ({type(data).__name__}); using defaults."
             )
             return GeneralSettings()
+
+        if data.get('hrir_id') in _HRIR_ID_MIGRATIONS:
+            data['hrir_id'] = _HRIR_ID_MIGRATIONS[data['hrir_id']]
 
         return GeneralSettings(**data)
 

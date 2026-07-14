@@ -1324,6 +1324,209 @@ def test_ensure_spatial_eq_links_ignores_non_toggle_channels(monkeypatch):
     assert result == {}
 
 
+# ── ensure_physical_output_links (headset power-cycle final-hop fix) ─────────
+#
+# effect_output.sonar-chat-eq and effect_output.virtual-surround-7.1-hesuvi
+# both carry a node.target hint at the physical Arctis output, but that hint
+# is only honoured by WirePlumber once, at node-creation time. When the
+# headset powers off and back on, the physical output node is destroyed and
+# recreated under a new id and neither link comes back on its own — nothing
+# else in the watchdog was watching this last hop (ensure_loopback_link only
+# covers loopback→EQ, ensure_spatial_eq_links only covers the EQ→{HeSuVi,
+# physical} hop for game/media). ensure_physical_output_links() closes that
+# gap by composing with ensure_loopback_link, exactly like the other two.
+
+def test_ensure_physical_output_links_links_both_channels(monkeypatch):
+    """Device attached: both the chat EQ output and the HeSuVi output are
+    linked to their respective physical targets."""
+    monkeypatch.setattr(_s2p_p3, "_get_physical_out_chat", lambda: "alsa_output.test-chat")
+    monkeypatch.setattr(_s2p_p3, "_get_physical_out_game", lambda: "alsa_output.test-game")
+    calls = []
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.ensure_loopback_link",
+        lambda playback, target, data=None: calls.append((playback, target)) or True,
+    )
+    result = _s2p_p3.ensure_physical_output_links()
+    assert result == {"chat": True, "hesuvi": True}
+    assert calls == [
+        ("effect_output.sonar-chat-eq", "alsa_output.test-chat"),
+        ("effect_output.virtual-surround-7.1-hesuvi", "alsa_output.test-game"),
+    ]
+
+
+def test_ensure_physical_output_links_no_device_touches_nothing(monkeypatch):
+    """Headset off (device_state empty) → both physical targets are empty →
+    neither channel is attempted and ensure_loopback_link is never called
+    (so nothing is logged in a loop while the headset stays off)."""
+    monkeypatch.setattr(_s2p_p3, "_get_physical_out_chat", lambda: "")
+    monkeypatch.setattr(_s2p_p3, "_get_physical_out_game", lambda: "")
+    called = []
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.ensure_loopback_link",
+        lambda *a, **kw: called.append(a) or True,
+    )
+    result = _s2p_p3.ensure_physical_output_links()
+    assert result == {}
+    assert called == []
+
+
+def test_ensure_physical_output_links_chat_only(monkeypatch):
+    """Only the chat physical target has resolved this tick → hesuvi is
+    skipped entirely, chat is still enforced."""
+    monkeypatch.setattr(_s2p_p3, "_get_physical_out_chat", lambda: "alsa_output.test-chat")
+    monkeypatch.setattr(_s2p_p3, "_get_physical_out_game", lambda: "")
+    calls = []
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.ensure_loopback_link",
+        lambda playback, target, data=None: calls.append((playback, target)) or True,
+    )
+    result = _s2p_p3.ensure_physical_output_links()
+    assert result == {"chat": True}
+    assert calls == [("effect_output.sonar-chat-eq", "alsa_output.test-chat")]
+
+
+def test_ensure_physical_output_links_reuses_shared_pw_dump(monkeypatch):
+    """The optional `data` payload (the watchdog's already-fetched pw-dump)
+    is forwarded to both ensure_loopback_link calls unchanged — this
+    function must never spawn its own extra pw-dump subprocess."""
+    monkeypatch.setattr(_s2p_p3, "_get_physical_out_chat", lambda: "alsa_output.test-chat")
+    monkeypatch.setattr(_s2p_p3, "_get_physical_out_game", lambda: "alsa_output.test-game")
+    seen_data = []
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.ensure_loopback_link",
+        lambda playback, target, data=None: seen_data.append(data) or True,
+    )
+    sentinel = ["sentinel-pw-dump"]
+    _s2p_p3.ensure_physical_output_links(data=sentinel)
+    assert seen_data == [sentinel, sentinel]
+
+
+# ── ensure_physical_output_links — real (un-mocked) pw-link machinery ───────
+#
+# The tests above verify the composition (which channel maps to which
+# ensure_loopback_link call). These exercise the real, un-mocked
+# ensure_loopback_link/pw-link machinery end-to-end — the same helper
+# pattern as TestEnsureLoopbackLink in tests/test_pw_utils.py — to prove the
+# exact failure mode from the bug report: the physical output node is
+# destroyed and recreated (new PipeWire id) on a headset power-cycle, and
+# both effect_output nodes (re)link to it on the next watchdog tick.
+
+import types as _po_types  # noqa: E402
+
+
+def _po_node(node_id: int, name: str) -> dict:
+    return {"id": node_id, "type": "PipeWire:Interface:Node",
+            "info": {"props": {"node.name": name}}}
+
+
+def _po_port(port_id: int, node_id: int, direction: str, channel: str) -> dict:
+    return {"id": port_id, "type": "PipeWire:Interface:Port",
+            "info": {"props": {"node.id": node_id, "port.direction": direction,
+                               "audio.channel": channel}}}
+
+
+def _po_link(link_id: int, out_node: int, out_port: int, in_node: int, in_port: int) -> dict:
+    return {"id": link_id, "type": "PipeWire:Interface:Link",
+            "info": {"props": {"link.output.node": out_node, "link.output.port": out_port,
+                               "link.input.node": in_node, "link.input.port": in_port}}}
+
+
+def _patch_po_pwlink(monkeypatch):
+    """Record every pw-link invocation against the real pw_utils machinery;
+    make them all succeed."""
+    from arctis_sound_manager import pw_utils as _pwu
+    calls: list[list[str]] = []
+
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        return _po_types.SimpleNamespace(returncode=0, stderr=b"")
+
+    monkeypatch.setattr(_pwu.subprocess, "run", fake_run)
+    return calls
+
+
+_PO_CHAT_TARGET = "alsa_output.usb-SteelSeries_Arctis-00.chat"
+_PO_GAME_TARGET = "alsa_output.usb-SteelSeries_Arctis-00.game"
+
+
+def _po_graph(extra=None):
+    data = [
+        _po_node(10, "effect_output.sonar-chat-eq"),
+        _po_node(20, _PO_CHAT_TARGET),
+        _po_port(11, 10, "out", "FL"), _po_port(12, 10, "out", "FR"),
+        _po_port(21, 20, "in", "FL"), _po_port(22, 20, "in", "FR"),
+        _po_node(30, "effect_output.virtual-surround-7.1-hesuvi"),
+        _po_node(40, _PO_GAME_TARGET),
+        _po_port(31, 30, "out", "FL"), _po_port(32, 30, "out", "FR"),
+        _po_port(41, 40, "in", "FL"), _po_port(42, 40, "in", "FR"),
+    ]
+    data.extend(extra or [])
+    return data
+
+
+class TestEnsurePhysicalOutputLinksRealGraph:
+    def test_creates_missing_links_when_physical_node_reappears(self, monkeypatch):
+        """Simulates the headset coming back online: the physical node is
+        present in the graph with nothing linked to it yet — both hops must
+        be created."""
+        monkeypatch.setattr(_s2p_p3, "_get_physical_out_chat", lambda: _PO_CHAT_TARGET)
+        monkeypatch.setattr(_s2p_p3, "_get_physical_out_game", lambda: _PO_GAME_TARGET)
+        calls = _patch_po_pwlink(monkeypatch)
+
+        result = _s2p_p3.ensure_physical_output_links(data=_po_graph())
+
+        assert result == {"chat": True, "hesuvi": True}
+        created = {(c[1], c[2]) for c in calls if "-d" not in c}
+        assert created == {("11", "21"), ("12", "22"), ("31", "41"), ("32", "42")}
+
+    def test_noop_when_already_linked(self, monkeypatch):
+        """Both hops already correctly linked → no pw-link calls at all."""
+        monkeypatch.setattr(_s2p_p3, "_get_physical_out_chat", lambda: _PO_CHAT_TARGET)
+        monkeypatch.setattr(_s2p_p3, "_get_physical_out_game", lambda: _PO_GAME_TARGET)
+        calls = _patch_po_pwlink(monkeypatch)
+        existing = [
+            _po_link(5001, 10, 11, 20, 21), _po_link(5002, 10, 12, 20, 22),
+            _po_link(5003, 30, 31, 40, 41), _po_link(5004, 30, 32, 40, 42),
+        ]
+
+        result = _s2p_p3.ensure_physical_output_links(data=_po_graph(existing))
+
+        assert result == {"chat": True, "hesuvi": True}
+        assert calls == []
+
+    def test_physical_output_absent_does_nothing(self, monkeypatch):
+        """Headset off: device_state is empty, both physical target names
+        resolve to "" → no graph lookup, no pw-link call at all."""
+        monkeypatch.setattr(_s2p_p3, "_get_physical_out_chat", lambda: "")
+        monkeypatch.setattr(_s2p_p3, "_get_physical_out_game", lambda: "")
+        calls = _patch_po_pwlink(monkeypatch)
+
+        result = _s2p_p3.ensure_physical_output_links(data=_po_graph())
+
+        assert result == {}
+        assert calls == []
+
+    def test_target_node_missing_from_graph_returns_false_without_crashing(self, monkeypatch):
+        """Physical target name is known (device_state populated) but the
+        physical node hasn't reappeared in the PipeWire graph yet — one tick
+        into a power-cycle — reported as not-linked (retried next tick), no
+        pw-link call attempted."""
+        monkeypatch.setattr(_s2p_p3, "_get_physical_out_chat", lambda: _PO_CHAT_TARGET)
+        monkeypatch.setattr(_s2p_p3, "_get_physical_out_game", lambda: _PO_GAME_TARGET)
+        calls = _patch_po_pwlink(monkeypatch)
+        data = [
+            _po_node(10, "effect_output.sonar-chat-eq"),
+            _po_port(11, 10, "out", "FL"), _po_port(12, 10, "out", "FR"),
+            _po_node(30, "effect_output.virtual-surround-7.1-hesuvi"),
+            _po_port(31, 30, "out", "FL"), _po_port(32, 30, "out", "FR"),
+        ]
+
+        result = _s2p_p3.ensure_physical_output_links(data=data)
+
+        assert result == {"chat": False, "hesuvi": False}
+        assert calls == []
+
+
 def test_spatial_enabled_defaults_to_true(monkeypatch, tmp_path):
     """Missing spatial-state file → treated as enabled (on-by-default)."""
     monkeypatch.setattr(Path, "home", lambda: tmp_path)

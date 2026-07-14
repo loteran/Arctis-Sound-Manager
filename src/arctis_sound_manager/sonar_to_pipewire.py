@@ -1938,6 +1938,77 @@ def ensure_spatial_eq_links(
     return results
 
 
+_HESUVI_OUTPUT_NAME = "effect_output.virtual-surround-7.1-hesuvi"
+_CHAT_OUTPUT_NAME = "effect_output.sonar-chat-eq"
+
+
+def ensure_physical_output_links(data: list | None = None) -> dict[str, bool]:
+    """Ensure the LAST hop into the physical Arctis output(s) is linked.
+
+    Issue observed twice on hardware: the headset powers off and back on, the
+    kernel/ALSA/PipeWire destroy and recreate the physical output node under a
+    NEW node id, and the two nodes that carry sound the rest of the way to the
+    speakers — :data:`_CHAT_OUTPUT_NAME` and :data:`_HESUVI_OUTPUT_NAME` —
+    stay linked to nothing. Both nodes hard-code a ``node.target``/
+    ``target.object`` hint at the physical output when their filter-chain
+    config is written (see :func:`generate_sonar_eq_conf`'s chat path and
+    :func:`generate_hesuvi_conf`), but that hint is only ever acted on by
+    WirePlumber once, at node-creation time — it does not get re-applied when
+    the *destination* node is later destroyed and recreated with a new id.
+    Nothing else in the watchdog was watching this last hop:
+    :func:`ensure_loopback_link` (via the loopback watchdog pass) only covers
+    loopback→EQ, and :func:`ensure_spatial_eq_links` only covers game/media
+    EQ→{HeSuVi,physical}. This closes that gap, exactly the same "ASM owns
+    this link" pattern (issue #100) applied to the final hop:
+
+    - ``effect_output.sonar-chat-eq`` → the physical CHAT output (mono PCM
+      on dual-PCM devices, :func:`_get_physical_out_chat`).
+    - ``effect_output.virtual-surround-7.1-hesuvi`` → the physical GAME
+      output (stereo PCM, :func:`_get_physical_out_game`). This is the
+      unconditional HeSuVi→physical hop; it does NOT touch the game/media
+      EQ→{HeSuVi,physical} link that :func:`ensure_spatial_eq_links` already
+      owns, so the two compose without either duplicating the other's work.
+
+    Thin wrapper around :func:`~arctis_sound_manager.pw_utils.ensure_loopback_link`
+    — same idempotent semantics (no-op when already correct, stray links torn
+    down, channel-name matching with the AUX0/AUX1 positional fallback for
+    pro-audio devices from issue #129) applied to this last hop instead of the
+    loopback→EQ or EQ→HeSuVi hops it already covers.
+
+    When a physical target is unknown (headset off — ``device_state`` empty)
+    the corresponding channel is skipped entirely: not attempted, not logged.
+    It self-heals on the tick after the headset reappears, once
+    ``device_state`` is populated again and the physical node re-enters the
+    graph.
+
+    Parameters
+    ----------
+    data:
+        Optional pre-fetched ``pw-dump`` payload, so a caller that already
+        fetched one this tick (the daemon's loopback watchdog) does not pay
+        for a second ``pw-dump`` subprocess.
+
+    Returns
+    -------
+    dict[str, bool]
+        ``{"chat": bool, "hesuvi": bool}`` — only channels whose physical
+        target is currently known (device attached) are included at all.
+    """
+    from arctis_sound_manager.pw_utils import ensure_loopback_link
+
+    results: dict[str, bool] = {}
+
+    chat_target = _get_physical_out_chat()
+    if chat_target:
+        results["chat"] = ensure_loopback_link(_CHAT_OUTPUT_NAME, chat_target, data=data)
+
+    game_target = _get_physical_out_game()
+    if game_target:
+        results["hesuvi"] = ensure_loopback_link(_HESUVI_OUTPUT_NAME, game_target, data=data)
+
+    return results
+
+
 _MICRO_CAPTURE_NAME = "effect_input.sonar-micro-eq"
 
 

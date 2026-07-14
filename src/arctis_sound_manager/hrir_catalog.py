@@ -22,7 +22,7 @@ _GROUPS: list[tuple[str, list[str]]] = [
     ("Flux HEar", ["hear"]),
     ("OpenAL / DirectSound3D", ["oal_dflt", "oal_cia0", "oal_cia1", "oal+", "oal++", "oal+++", "ds3d", "ds3d+", "ds3d++", "ds3d+++"]),
     ("Nahimic", ["nahimic", "nahimic-"]),
-    ("Spatial Sound Card", ["ssc_dub", "ssc_hù", "ssc_hù+", "ssc_ny", "ssc_ny+", "ssc_syd", "ssc_syd+"]),
+    ("Spatial Sound Card", ["ssc_dub", "ssc_hu", "ssc_hu+", "ssc_ny", "ssc_ny+", "ssc_syd", "ssc_syd+"]),
     ("None", ["none"]),
 ]
 

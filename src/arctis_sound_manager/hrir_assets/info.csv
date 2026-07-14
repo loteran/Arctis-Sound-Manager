@@ -47,8 +47,8 @@ sonic;Windows Sonic 7.1 virtual surround sound for headphones (from Creators and
 sonic-;Windows Sonic 7.1 virtual surround sound for headphones without reverb
 sonic+;Windows Sonic 7.1 virtual surround sound for headphones (from Fall Creators Update, more reverb)
 ssc_dub;Spatial Sound Card with Dubai location and short room envelope/n/nCAUTION: Do not use any upmix!
-ssc_hù;Spatial Sound Card with Shanghai location and short room envelope/n/nCAUTION: Do not use any upmix!
-ssc_hù+;Spatial Sound Card with Shanghai location and medium room envelope/n/nCAUTION: Do not use any upmix!
+ssc_hu;Spatial Sound Card with Shanghai location and short room envelope/n/nCAUTION: Do not use any upmix!
+ssc_hu+;Spatial Sound Card with Shanghai location and medium room envelope/n/nCAUTION: Do not use any upmix!
 ssc_ny;Spatial Sound Card with New York location and short room envelope/n/nCAUTION: Do not use any upmix!
 ssc_ny+;Spatial Sound Card with New York location and medium room envelope/n/nCAUTION: Do not use any upmix!
 ssc_syd;Spatial Sound Card with Sydney location and short room envelope/n/nCAUTION: Do not use any upmix!

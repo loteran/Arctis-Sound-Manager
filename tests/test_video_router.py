@@ -425,6 +425,66 @@ def test_tick_offline_repatriates_media_channel_too():
     assert pulse.moves == [(si.index, hdmi.index)]
 
 
+def test_tick_offline_default_is_arctis_sink_moves_nothing():
+    """Regression: when the headset is off AND the system default sink is
+    ITSELF an Arctis virtual sink (e.g. the user's default is Arctis_Game),
+    there is nowhere useful to repatriate to — every Arctis channel is
+    equally silent. The router must leave the stream exactly where the user
+    placed it (Arctis_Media) instead of bouncing it to the default channel
+    (Arctis_Game)."""
+    game = _FakeSink(0, "Arctis_Game")
+    media = _FakeSink(1, "Arctis_Media")
+    si = _FakeSinkInput(10, sink=media.index, proplist={"application.name": "Firefox"})
+    pulse = _FakePulse([game, media], [si], default_sink_name=game.name)
+
+    with patch("arctis_sound_manager.scripts.video_router.get_headset_power",
+               return_value=HeadsetPower.OFF), \
+         patch("arctis_sound_manager.scripts.video_router.load_overrides") as mock_load, \
+         patch("arctis_sound_manager.scripts.video_router.save_overrides") as mock_save:
+        _process_tick(pulse)
+
+    assert pulse.moves == []
+    assert si.sink == media.index
+    mock_load.assert_not_called()
+    mock_save.assert_not_called()
+
+
+def test_tick_offline_default_is_physical_arctis_moves_nothing():
+    """Same regression guard, but for the physical SteelSeries output as
+    default sink (not just a virtual Arctis_* channel)."""
+    physical = _FakeSink(0, "alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.analog-stereo")
+    chat = _FakeSink(1, "Arctis_Chat")
+    si = _FakeSinkInput(10, sink=chat.index, proplist={"application.name": "Discord"})
+    pulse = _FakePulse([physical, chat], [si], default_sink_name=physical.name)
+
+    with patch("arctis_sound_manager.scripts.video_router.get_headset_power",
+               return_value=HeadsetPower.OFF), \
+         patch("arctis_sound_manager.scripts.video_router.load_overrides"), \
+         patch("arctis_sound_manager.scripts.video_router.save_overrides"):
+        _process_tick(pulse)
+
+    assert pulse.moves == []
+    assert si.sink == chat.index
+
+
+def test_tick_offline_default_hdmi_still_repatriates():
+    """The existing repatriation behaviour must be unaffected when the
+    default sink is a real non-Arctis output (HDMI) — this is the normal
+    case the fix must not regress."""
+    hdmi = _FakeSink(0, "alsa_output.hdmi-stereo")
+    game = _FakeSink(1, "Arctis_Game")
+    si = _FakeSinkInput(10, sink=game.index, proplist={"application.name": "Steam"})
+    pulse = _FakePulse([hdmi, game], [si], default_sink_name=hdmi.name)
+
+    with patch("arctis_sound_manager.scripts.video_router.get_headset_power",
+               return_value=HeadsetPower.OFF), \
+         patch("arctis_sound_manager.scripts.video_router.load_overrides"), \
+         patch("arctis_sound_manager.scripts.video_router.save_overrides"):
+        _process_tick(pulse)
+
+    assert pulse.moves == [(si.index, hdmi.index)]
+
+
 def test_tick_unknown_power_status_moves_nothing():
     """R3 fail-safe: when the headset's power state can't be determined
     (daemon down / D-Bus unreachable), the router must not move anything."""
