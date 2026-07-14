@@ -12,16 +12,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Up to 1.2.0 the Arch package shipped its own copies of `dbus-next` and `pulsectl` inside
 `site-packages`. They are now proper dependencies (`python-dbus-next`, `python-pulsectl`), so pacman
 refuses to install those packages over the files the old version still owns, and the upgrade fails
-with `la validation de la transaction a échoué (conflit de fichiers)`. Allow the handover once:
+with `failed to commit transaction (conflicting files)`.
+
+Remove the old package first — it takes its bundled copies with it — then install:
 
 ```bash
-paru -S arctis-sound-manager \
-  --overwrite '*/site-packages/dbus_next*' \
-  --overwrite '*/site-packages/pulsectl*'
+paru -R arctis-sound-manager
+paru -S arctis-sound-manager
 ```
 
-After that the two libraries belong to their own packages and later upgrades work normally. Fresh
-installs are unaffected.
+Audio profiles in `~/.config/arctis_manager/profiles/` are preserved and `asm-setup` runs again on
+install. Fresh installs are unaffected, and later upgrades work normally.
+
+Do **not** use `pacman --overwrite` for this: it leaves the files owned by both packages, and the ASM
+upgrade then deletes them as it drops them from its file list — gutting `python-dbus-next` and
+`python-pulsectl`, which leaves ASM unable to start (`module 'pulsectl' has no attribute
+'PulseSinkInfo'`). If you already hit that, repair with `sudo pacman -S python-dbus-next
+python-pulsectl`.
 
 ### Fixed
 

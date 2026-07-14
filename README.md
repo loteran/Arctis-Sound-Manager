@@ -455,27 +455,32 @@ asm-cli desktop write   # writes ~/.config/autostart/arctis-sound-manager.deskto
 
 ## Upgrading
 
-> ⚠️ **Upgrading to 1.2.1 on Arch — one-time file conflict**
+> ⚠️ **Upgrading to 1.2.1 on Arch — remove, then reinstall**
 >
 > Up to 1.2.0, the Arch package shipped its own copies of `dbus-next` and `pulsectl` inside
-> `site-packages`. From 1.2.1 they are proper dependencies (`python-dbus-next`, `python-pulsectl`),
-> so pacman refuses to install them over the files the old package still owns:
+> `site-packages`. From 1.2.1 they are proper dependencies (`python-dbus-next`,
+> `python-pulsectl`), so pacman refuses to install those packages over the files the old version
+> still owns, and the upgrade aborts:
 >
 > ```
-> erreur : la validation de la transaction a échoué (conflit de fichiers)
-> python-dbus-next : /usr/lib/python3.14/site-packages/dbus_next/... est déjà présent
+> error: failed to commit transaction (conflicting files)
+> python-dbus-next: /usr/lib/python3.14/site-packages/dbus_next/... exists in filesystem
 > ```
 >
-> Allow the handover **once**:
+> Remove the old package first — it takes its bundled copies with it — then install:
 >
 > ```bash
-> paru -S arctis-sound-manager \
->   --overwrite '*/site-packages/dbus_next*' \
->   --overwrite '*/site-packages/pulsectl*'
+> paru -R arctis-sound-manager
+> paru -S arctis-sound-manager
 > ```
 >
-> The two libraries then belong to their own packages, ASM no longer ships them, and later
-> upgrades work normally. Fresh installs are unaffected.
+> Your audio profiles in `~/.config/arctis_manager/profiles/` are preserved, and `asm-setup` runs
+> again on install. Fresh installs are unaffected, and later upgrades work normally.
+>
+> **Do not** reach for `pacman --overwrite` here: it leaves the files owned by *both* packages, and
+> the ASM upgrade then deletes them on its way out — gutting `python-dbus-next` and
+> `python-pulsectl`. If you already did, repair them with
+> `sudo pacman -S python-dbus-next python-pulsectl`.
 
 <details>
 <summary><strong>Arch / CachyOS / Manjaro</strong></summary>
