@@ -455,6 +455,28 @@ asm-cli desktop write   # writes ~/.config/autostart/arctis-sound-manager.deskto
 
 ## Upgrading
 
+> ⚠️ **Upgrading to 1.2.1 on Arch — one-time file conflict**
+>
+> Up to 1.2.0, the Arch package shipped its own copies of `dbus-next` and `pulsectl` inside
+> `site-packages`. From 1.2.1 they are proper dependencies (`python-dbus-next`, `python-pulsectl`),
+> so pacman refuses to install them over the files the old package still owns:
+>
+> ```
+> erreur : la validation de la transaction a échoué (conflit de fichiers)
+> python-dbus-next : /usr/lib/python3.14/site-packages/dbus_next/... est déjà présent
+> ```
+>
+> Allow the handover **once**:
+>
+> ```bash
+> paru -S arctis-sound-manager \
+>   --overwrite '*/site-packages/dbus_next*' \
+>   --overwrite '*/site-packages/pulsectl*'
+> ```
+>
+> The two libraries then belong to their own packages, ASM no longer ships them, and later
+> upgrades work normally. Fresh installs are unaffected.
+
 <details>
 <summary><strong>Arch / CachyOS / Manjaro</strong></summary>
 

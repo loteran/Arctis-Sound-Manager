@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.1] - 14 July 2026
 
+### Upgrade note (Arch / CachyOS / Manjaro)
+
+Up to 1.2.0 the Arch package shipped its own copies of `dbus-next` and `pulsectl` inside
+`site-packages`. They are now proper dependencies (`python-dbus-next`, `python-pulsectl`), so pacman
+refuses to install those packages over the files the old version still owns, and the upgrade fails
+with `la validation de la transaction a échoué (conflit de fichiers)`. Allow the handover once:
+
+```bash
+paru -S arctis-sound-manager \
+  --overwrite '*/site-packages/dbus_next*' \
+  --overwrite '*/site-packages/pulsectl*'
+```
+
+After that the two libraries belong to their own packages and later upgrades work normally. Fresh
+installs are unaffected.
+
 ### Fixed
 
 - **No sound at all after the headset was switched off and back on.** Powering the headset off destroys its physical PipeWire sink; powering it back on recreates it as a new node. ASM's filter-chain nodes run with `node.autoconnect = false` — by design, WirePlumber never links them, ASM owns those links — but nothing was watching the *last* hop, from the EQ/surround chain to the physical output. So that link was never restored, the headset sink stayed suspended, and audio was gone until both `filter-chain` and `arctis-manager` were restarted by hand. The loopback watchdog now enforces the final links (Chat EQ and HeSuVi surround → physical output) on every tick, so sound comes back on its own when the headset returns.
