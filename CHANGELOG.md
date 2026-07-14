@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 14 July 2026
+
+### Fixed
+
+- **Headset reported as offline while it was powered on.** ASM detached the kernel driver (usbhid) from the DAC's HID interface but never claimed the interface. An unclaimed interface stays free, so the kernel was liable to rebind usbhid behind our back, after which every USB transfer failed with EIO (errno 5) — the daemon then looped on `USB error: [Errno 5]` forever with no recovery, leaving the device status frozen on its initial values (headset shown as offline with 0% battery, even though audio kept working). ASM now claims each interface after detaching it, and recovers from EIO by re-acquiring the interface, falling back to a full device reset if that fails.
+- **Battery icon stayed visible on a powered-off headset (Nova Pro Wireless, Nova Elite, Nova Pro Omni, Arctis Pro Wireless).** The power-off detection added in 1.1.95 only matched the `off` power status used by the Nova 7/9/1/5 families, while these devices report `offline`. Power status handling is now centralised in a shared helper that understands both vocabularies. (follow-up to #124)
+- **Apps could not be pinned to the Chat or Game channel when the default sink was not the Arctis.** The router force-moved any stream sitting on an Arctis virtual sink back to the default sink, and did so before loading the saved routing overrides — so an explicit user choice (e.g. Discord pinned to Chat while the TV is the default output) was silently ignored and undone every couple of seconds. `Arctis_Media` was missing from that list, which is why only the Media channel appeared to work. Saved overrides are now always honoured, whatever the default sink; streams are only pulled back to the default sink when the headset is actually powered off, and such a move is transient — it never overwrites the user's choice, so the app returns to its channel when the headset comes back.
+
 ## [1.1.100] - 13 July 2026
 
 ### Added

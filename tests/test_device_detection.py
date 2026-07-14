@@ -61,6 +61,11 @@ def _make_mock_usb_device(vendor_id: int, product_id: int) -> MagicMock:
     dev.is_kernel_driver_active = MagicMock(return_value=True)
     dev.detach_kernel_driver    = MagicMock()
     dev.attach_kernel_driver    = MagicMock()
+    # usb.util.claim_interface()/release_interface() reach through to
+    # device._ctx.managed_{claim,release}_interface() — not part of the
+    # pyusb Device spec (it's an instance attribute), so it must be
+    # pre-populated or the spec'd mock raises AttributeError on access.
+    dev._ctx = MagicMock()
     return dev
 
 

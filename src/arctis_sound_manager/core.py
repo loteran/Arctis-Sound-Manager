@@ -808,6 +808,7 @@ class CoreEngine:
 
         try:
             read_input: list[int] = list(await asyncio.to_thread(usb_device.read, endpoint, max_packet_size, 200))
+            self._eio_count = 0  # transfer succeeded, clear any EIO recovery state
             with self._device_lock:
                 if self.device_config is None:
                     return
@@ -852,6 +853,25 @@ class CoreEngine:
                 if self._enodev_count >= 10:
                     self.logger.info('Device unreachable for >10 s, releasing handle to allow RF re-association')
                     self._enodev_count = 0
+                    self.on_device_disconnected(0, 0)
+            elif e.errno == 5:  # EIO — interface got rebound by the kernel driver (usbhid)
+                self._eio_count = getattr(self, '_eio_count', 0) + 1
+                if self._eio_count == 1 or self._eio_count % 20 == 0:
+                    self.logger.warning('USB I/O error (errno 5 ×%d), interface may have been '
+                                        're-claimed by the kernel driver: %s', self._eio_count, e)
+                await asyncio.sleep(0.5)
+                if self._eio_count == 10:
+                    # ~5 s of consecutive EIO: try to reclaim the interface(s)
+                    # from the kernel before giving up on this connection.
+                    with self._device_lock:
+                        usb_device, device_config = self.usb_device, self.device_config
+                    if usb_device is not None and device_config is not None:
+                        self.logger.info('Re-acquiring USB interfaces after repeated EIO errors')
+                        self.kernel_detach(usb_device, device_config)
+                elif self._eio_count >= 20:
+                    # Re-acquisition did not help: force a full reset.
+                    self.logger.warning('EIO persists after re-acquisition attempt, forcing device reset')
+                    self._eio_count = 0
                     self.on_device_disconnected(0, 0)
             else:
                 self._enodev_count = 0
@@ -1618,7 +1638,14 @@ class CoreEngine:
         ]))
 
     def kernel_detach(self, usb_device: TypedDevice, config: DeviceConfiguration) -> bool:
-        """Detach the kernel driver from every interface ASM uses.
+        """Detach the kernel driver from every interface ASM uses, then claim it.
+
+        Detaching without claiming leaves the interface free: the kernel is
+        liable to rebind usbhid to it behind our back, at which point every
+        transfer ASM issues fails with EIO (errno 5). Claiming is idempotent
+        (pyusb/libusb no-ops a claim on an interface this process already
+        holds), so calling this repeatedly — e.g. from the EIO recovery path
+        below — is safe.
 
         Returns True on success, False on USB permission/access errors so the
         caller can bail out cleanly instead of letting the daemon crash.
@@ -1649,11 +1676,23 @@ class CoreEngine:
                         "if it's open. The daemon will keep running.",
                         config.name, usb_device.idVendor, usb_device.idProduct, interface,
                     )
+                    continue
                 else:
                     self.logger.warning(
                         f"Could not detach kernel driver on interface {interface}: {e!r}. "
                         "Continuing with remaining interfaces."
                     )
+
+            # Claim the interface for this process regardless of whether the
+            # kernel driver was active: without this, nothing actually owns
+            # the interface and the kernel is free to rebind usbhid to it.
+            try:
+                usb.util.claim_interface(usb_device, interface)
+            except usb.core.USBError as e:
+                self.logger.warning(
+                    f"Could not claim interface {interface}: {e!r}. "
+                    "Continuing with remaining interfaces."
+                )
         # Surface the EACCES state to the GUI; clear it once a clean pass happens.
         self.permission_error = had_eacces
         return not had_eacces

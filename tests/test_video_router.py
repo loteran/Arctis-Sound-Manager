@@ -6,9 +6,13 @@
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+import pytest
+
+from arctis_sound_manager.power_status import HeadsetPower
 from arctis_sound_manager.pw_utils import app_override_key
+from arctis_sound_manager.scripts import video_router
 from arctis_sound_manager.scripts.video_router import (
     load_overrides,
     save_overrides,
@@ -18,6 +22,9 @@ from arctis_sound_manager.scripts.video_router import (
     _confirm_manual_move,
     _lookup_override,
     _pending_moves,
+    _pa_placed,
+    _native_placed,
+    _process_tick,
 )
 
 
@@ -268,3 +275,199 @@ def test_confirm_manual_move_composite_key_independent_pending():
     assert pear_key in _pending_moves
     assert _pending_moves[vesktop_key][0] == "Arctis_Chat"
     assert _pending_moves[pear_key][0] == "Arctis_Media"
+
+
+# ── _process_tick: override sovereignty + online/offline repatriation ────────
+#
+# Fixes a bug where the router forcibly repatriated every stream off the
+# Arctis virtual sinks whenever the default sink wasn't Arctis, ignoring
+# saved overrides entirely (routing_overrides.json was never even loaded on
+# that path). Repatriation must instead be keyed on the headset's actual
+# power state (R2), a saved override must always be enforced (R1), and an
+# unreachable/unknown power state must never trigger a move (R3 fail-safe).
+
+class _FakeSink:
+    def __init__(self, index: int, name: str):
+        self.index = index
+        self.name = name
+
+
+class _FakeSinkInput:
+    def __init__(self, index: int, sink: int, proplist: dict):
+        self.index = index
+        self.sink = sink
+        self.proplist = proplist
+
+
+class _FakeServerInfo:
+    def __init__(self, default_sink_name: str):
+        self.default_sink_name = default_sink_name
+
+
+class _FakePulse:
+    """Minimal stand-in for pulsectl.Pulse covering what _process_tick uses."""
+
+    def __init__(self, sinks: list, sink_inputs: list, default_sink_name: str):
+        self._sinks = sinks
+        self._sink_inputs = sink_inputs
+        self._default_sink_name = default_sink_name
+        self.moves: list[tuple[int, int]] = []
+
+    def sink_list(self):
+        return self._sinks
+
+    def sink_input_list(self):
+        return self._sink_inputs
+
+    def server_info(self):
+        return _FakeServerInfo(self._default_sink_name)
+
+    def sink_input_move(self, si_index: int, target_index: int):
+        self.moves.append((si_index, target_index))
+        for si in self._sink_inputs:
+            if si.index == si_index:
+                si.sink = target_index
+
+
+@pytest.fixture(autouse=True)
+def _reset_router_globals():
+    """Isolate module-level tracking state across tests in this file."""
+    _pa_placed.clear()
+    _native_placed.clear()
+    _move_times.clear()
+    _pending_moves.clear()
+    video_router._power_cache = (0.0, HeadsetPower.UNKNOWN)
+    with patch.object(video_router, "_last_native_check", 0.0), \
+         patch("arctis_sound_manager.scripts.video_router.get_native_streams", return_value=[]), \
+         patch("arctis_sound_manager.scripts.video_router._load_channel_outputs", return_value={}):
+        yield
+    _pa_placed.clear()
+    _native_placed.clear()
+    _move_times.clear()
+    _pending_moves.clear()
+
+
+def test_tick_online_default_hdmi_override_enforced_not_repatriated():
+    """R1: a saved override to Arctis_Chat is enforced even though HDMI is
+    the default sink and the headset is online — the app must end up on
+    Arctis_Chat, never on the default sink."""
+    hdmi = _FakeSink(0, "alsa_output.hdmi-stereo")
+    chat = _FakeSink(1, "Arctis_Chat")
+    si = _FakeSinkInput(10, sink=hdmi.index, proplist={"application.name": "Discord"})
+    pulse = _FakePulse([hdmi, chat], [si], default_sink_name=hdmi.name)
+
+    with patch("arctis_sound_manager.scripts.video_router.get_headset_power",
+               return_value=HeadsetPower.ON), \
+         patch("arctis_sound_manager.scripts.video_router.load_overrides",
+               return_value={"Discord": "Arctis_Chat"}), \
+         patch("arctis_sound_manager.scripts.video_router.save_overrides"):
+        _process_tick(pulse)
+
+    assert pulse.moves == [(si.index, chat.index)]
+    assert si.sink == chat.index
+
+
+def test_tick_online_default_hdmi_no_override_not_moved():
+    """No override, Arctis not default, headset online: the router must
+    neither auto-route nor force-move the app anywhere."""
+    hdmi = _FakeSink(0, "alsa_output.hdmi-stereo")
+    chat = _FakeSink(1, "Arctis_Chat")
+    si = _FakeSinkInput(10, sink=hdmi.index, proplist={"application.name": "SomeRandomApp"})
+    pulse = _FakePulse([hdmi, chat], [si], default_sink_name=hdmi.name)
+
+    with patch("arctis_sound_manager.scripts.video_router.get_headset_power",
+               return_value=HeadsetPower.ON), \
+         patch("arctis_sound_manager.scripts.video_router.load_overrides", return_value={}), \
+         patch("arctis_sound_manager.scripts.video_router.save_overrides") as mock_save:
+        _process_tick(pulse)
+
+    assert pulse.moves == []
+    assert si.sink == hdmi.index
+    mock_save.assert_not_called()
+
+
+def test_tick_offline_repatriates_without_writing_override():
+    """R2/R5: headset off — an app parked on an Arctis virtual sink is
+    pulled onto the default sink, but this is transient: no override is
+    written for it."""
+    hdmi = _FakeSink(0, "alsa_output.hdmi-stereo")
+    chat = _FakeSink(1, "Arctis_Chat")
+    si = _FakeSinkInput(10, sink=chat.index, proplist={"application.name": "Discord"})
+    pulse = _FakePulse([hdmi, chat], [si], default_sink_name=hdmi.name)
+
+    with patch("arctis_sound_manager.scripts.video_router.get_headset_power",
+               return_value=HeadsetPower.OFF), \
+         patch("arctis_sound_manager.scripts.video_router.load_overrides") as mock_load, \
+         patch("arctis_sound_manager.scripts.video_router.save_overrides") as mock_save:
+        _process_tick(pulse)
+
+    assert pulse.moves == [(si.index, hdmi.index)]
+    assert si.sink == hdmi.index
+    # The OFF path returns before ever touching routing_overrides.json.
+    mock_load.assert_not_called()
+    mock_save.assert_not_called()
+
+
+def test_tick_offline_repatriates_media_channel_too():
+    """R4: Arctis_Media must be repatriated exactly like Game/Chat — it used
+    to be missing from the virtual-sink set, making repatriation asymmetric."""
+    hdmi = _FakeSink(0, "alsa_output.hdmi-stereo")
+    media = _FakeSink(1, "Arctis_Media")
+    si = _FakeSinkInput(10, sink=media.index, proplist={"application.name": "Firefox"})
+    pulse = _FakePulse([hdmi, media], [si], default_sink_name=hdmi.name)
+
+    with patch("arctis_sound_manager.scripts.video_router.get_headset_power",
+               return_value=HeadsetPower.OFF), \
+         patch("arctis_sound_manager.scripts.video_router.load_overrides"), \
+         patch("arctis_sound_manager.scripts.video_router.save_overrides"):
+        _process_tick(pulse)
+
+    assert pulse.moves == [(si.index, hdmi.index)]
+
+
+def test_tick_unknown_power_status_moves_nothing():
+    """R3 fail-safe: when the headset's power state can't be determined
+    (daemon down / D-Bus unreachable), the router must not move anything."""
+    hdmi = _FakeSink(0, "alsa_output.hdmi-stereo")
+    chat = _FakeSink(1, "Arctis_Chat")
+    si = _FakeSinkInput(10, sink=chat.index, proplist={"application.name": "Discord"})
+    pulse = _FakePulse([hdmi, chat], [si], default_sink_name=hdmi.name)
+
+    with patch("arctis_sound_manager.scripts.video_router.get_headset_power",
+               return_value=HeadsetPower.UNKNOWN), \
+         patch("arctis_sound_manager.scripts.video_router.load_overrides", return_value={}), \
+         patch("arctis_sound_manager.scripts.video_router.save_overrides") as mock_save:
+        _process_tick(pulse)
+
+    assert pulse.moves == []
+    assert si.sink == chat.index
+    mock_save.assert_not_called()
+
+
+def test_get_headset_power_caches_within_ttl():
+    """get_headset_power() must not re-query D-Bus on every call within the
+    cache TTL, so the router doesn't hammer the daemon every tick."""
+    from unittest.mock import AsyncMock
+
+    video_router._power_cache = (0.0, HeadsetPower.UNKNOWN)
+    with patch("arctis_sound_manager.scripts.video_router._fetch_headset_power_async",
+               new_callable=AsyncMock, return_value=HeadsetPower.ON) as mock_fetch:
+        first = video_router.get_headset_power()
+        second = video_router.get_headset_power()
+
+    assert first == HeadsetPower.ON
+    assert second == HeadsetPower.ON
+    mock_fetch.assert_called_once()
+
+
+def test_get_headset_power_unreachable_daemon_is_unknown():
+    """Any failure querying D-Bus (timeout, daemon down, malformed reply)
+    resolves to UNKNOWN, never to a guessed ON/OFF."""
+    from unittest.mock import AsyncMock
+
+    video_router._power_cache = (0.0, HeadsetPower.UNKNOWN)
+    with patch("arctis_sound_manager.scripts.video_router._fetch_headset_power_async",
+               new_callable=AsyncMock, side_effect=TimeoutError("no reply")):
+        result = video_router.get_headset_power(force=True)
+
+    assert result == HeadsetPower.UNKNOWN

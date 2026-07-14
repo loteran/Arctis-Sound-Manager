@@ -40,6 +40,7 @@ from arctis_sound_manager.gui.ui_utils import (get_battery_number_pixmap,
                                                get_icon_pixmap,
                                                resolve_tray_icon_color)
 from arctis_sound_manager.i18n import I18n
+from arctis_sound_manager.power_status import HeadsetPower, normalize_power_value
 
 # Background tray-icon refresh cadence (seconds) when the menu is closed. The
 # poll only reads the daemon's cached device status over D-Bus — it never wakes
@@ -250,12 +251,15 @@ class QSystrayApp(QBaseDesktopApp):
     def _extract_battery_percent(status: dict) -> int | None:
         """Pull the headset battery percentage out of a GetStatus payload.
 
-        Returns None when the headset is explicitly powered off: the wireless
-        adapter keeps reporting a battery percentage even after the headset is
+        Returns None when the headset is powered off: the wireless adapter
+        keeps reporting a battery percentage even after the headset is
         switched off, so the percentage alone is not a reliable "present"
         signal. We therefore consult headset_power_status in the same status
-        category and treat the level as unknown when it says 'off' (#124).
-        Original diagnosis and fix by @isaki (PR #125).
+        category via the shared power_status helper, which normalizes both
+        the 'off' and 'offline' vocabularies used across device YAMLs (#124
+        only handled 'off', missing Nova Pro Wireless/Elite/Omni and Arctis
+        Pro Wireless, which report 'offline'). Original diagnosis and fix by
+        @isaki (PR #125).
         """
         if not isinstance(status, dict):
             return None
@@ -265,7 +269,7 @@ class QSystrayApp(QBaseDesktopApp):
             bat = category.get('headset_battery_charge')
             if isinstance(bat, dict) and bat.get('type') == 'percentage':
                 power = category.get('headset_power_status')
-                if isinstance(power, dict) and power.get('value') == 'off':
+                if isinstance(power, dict) and normalize_power_value(power.get('value')) == HeadsetPower.OFF:
                     return None
                 try:
                     return int(bat['value'])

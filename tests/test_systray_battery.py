@@ -40,6 +40,21 @@ def test_returns_none_when_powered_off():
     assert _extract(_status("off", 73)) is None
 
 
+def test_returns_none_when_powered_offline():
+    # 'offline' is the vocabulary used by Nova Pro Wireless/Elite/Omni and
+    # Arctis Pro Wireless — the original #124 fix only handled 'off'.
+    assert _extract(_status("offline", 73)) is None
+
+
+def test_returns_percent_when_power_status_online():
+    assert _extract(_status("online", 60)) == 60
+
+
+def test_returns_percent_when_cable_charging():
+    # On the charging stand, the Nova Pro Wireless is not "off".
+    assert _extract(_status("cable_charging", 100)) == 100
+
+
 def test_returns_percent_when_power_status_absent():
     # No headset_power_status key: keep the pre-#124 behaviour (show battery).
     assert _extract(_status(None, 42)) == 42
