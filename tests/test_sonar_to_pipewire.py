@@ -374,6 +374,16 @@ def test_check_and_fix_stale_configs_noop_when_clean(tmp_path, monkeypatch):
     (tmp_path / "sonar-game-eq.conf").write_text(game_clean)
     (tmp_path / "sonar-media-eq.conf").write_text(media_clean)
     (tmp_path / "sonar-chat-eq.conf").write_text(chat_clean)
+    # The Output channel is checked too, and its expected shape comes from
+    # _resolve_external_output() — which asks PipeWire what is actually plugged
+    # in, so the answer differs from one machine to the next. Pin it to the
+    # documented "no external sink" fallback and provide the matching conf,
+    # otherwise the config is seen as missing/stale and `fixed` comes back True.
+    monkeypatch.setattr(
+        "arctis_sound_manager.sonar_to_pipewire._resolve_external_output",
+        lambda *a, **kw: ("", 2, "FL FR"),
+    )
+    (tmp_path / "sonar-output-eq.conf").write_text(chat_clean)
 
     with patch("arctis_sound_manager.sonar_to_pipewire._CONF_DIR", tmp_path):
         fixed, _needs_pw_restart = check_and_fix_stale_configs()
@@ -504,6 +514,14 @@ def test_check_and_fix_noop_when_no_static_sinks_file(tmp_path, monkeypatch):
     (tmp_path / "sonar-game-eq.conf").write_text(eq_8ch)
     (tmp_path / "sonar-media-eq.conf").write_text(eq_8ch)
     (tmp_path / "sonar-chat-eq.conf").write_text(eq_chat)
+    # Same as above: the Output channel's expected shape is probed from the live
+    # PipeWire graph, so pin it to the "no external sink" fallback and ship the
+    # matching conf, or this test depends on the machine it runs on.
+    monkeypatch.setattr(
+        "arctis_sound_manager.sonar_to_pipewire._resolve_external_output",
+        lambda *a, **kw: ("", 2, "FL FR"),
+    )
+    (tmp_path / "sonar-output-eq.conf").write_text(eq_chat)
 
     with (
         patch("arctis_sound_manager.sonar_to_pipewire._CONF_DIR", tmp_path),
