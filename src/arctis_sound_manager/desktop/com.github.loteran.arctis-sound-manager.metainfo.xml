@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.2.0" date="2026-07-14">
+      <description>
+        <p>Headset reported as offline while it was powered on. ASM detached the kernel driver (usbhid) from the DAC's HID interface but never claimed the interface. An unclaimed interface stays free, so the kernel was liable to rebind usbhid behind our back, after which every USB transfer failed with EIO (errno 5) — the daemon then looped on USB error: [Errno 5] forever with no recovery, leaving the device status frozen on its initial values (headset shown as offline with 0% battery, even though audio kept working). ASM now claims each interface after detaching it, and recovers from EIO by re-acquiring the interface, falling back to a full device reset if that fails. Battery icon stayed visible on a powered-off headset (Nova Pro Wireless, Nova Elite, Nova Pro Omni, Arctis Pro Wireless). The power-off detection added in 1.1.95 only matched the off power status used by the Nova 7/9/1/5 families, while these devices report offline. Power status handling is now centralised in a shared helper that understands both vocabularies. (follow-up to #124). Apps could not be pinned to the Chat or Game channel when the default sink was not the Arctis. The router force-moved any stream sitting on an Arctis virtual sink back to the default sink, and did so before loading the saved routing overrides — so an explicit user choice (e.g. Discord pinned to Chat while the TV is the default output) was silently ignored and undone every couple of seconds. Arctis_Media was missing from that list, which is why only the Media channel appeared to work. Saved overrides are now always honoured, whatever the default sink; streams are only pulled back to the default sink when the headset is actually powered off, and such a move is transient — it never overwrites the user's choice, so the app returns to its channel when the headset comes back.</p>
+      </description>
+    </release>
     <release version="1.1.100" date="2026-07-13">
       <description>
         <p>Choose which microphone feeds the Sonar Micro EQ. A new "Sonar Micro EQ input" setting lets you keep the default (your Arctis microphone), pick a specific input device, or select "Manual" so ASM stops enforcing the mic routing and leaves whatever you wired up in a patchbay like qpwgraph in place. (#131). Tray icon color setting. The system-tray icon can now follow your system's light/dark theme automatically, or be forced to white or black, for better contrast on panels where it was hard to see. (#130). Spatial Audio OFF is no longer silent on some headsets. On outputs whose ports are exposed without channel names (the Nova Pro Wireless pro-audio output uses AUX0/AUX1 instead of FL/FR), turning Spatial Audio off left the channel with no audio because ASM matched ports by name and found none. It now falls back to positional matching (front-left → first port, front-right → second), so sound keeps flowing with Spatial Audio off. (#129).</p>
@@ -199,11 +204,6 @@
     <release version="1.1.71" date="2026-06-13">
       <description>
         <p>Arctis Nova Pro Wireless X (PID 0x225d) — third hardware variant of the Nova Pro Wireless X, identified in the upstream elegos/Linux-Arctis-Manager project. Uses the same protocol as the existing 0x12e0/0x12e5 variants; all features (EQ, ANC, mic, surround) work identically.</p>
-      </description>
-    </release>
-    <release version="1.1.70" date="2026-06-13">
-      <description>
-        <p>Device shown as "No device detected" in GUI for always-connected headsets — devices without an online_status block (e.g. Arctis Nova 3 family) produced an empty D-Bus status dict even after the daemon had successfully initialised them, causing the GUI to display "No device detected" indefinitely. A sentinel headset_power_status: online is now injected when _device_ready is True and no status representation is defined. (#80). "Failed to find sink Arctis_Game" error at startup — redirect_audio was called immediately after spawning the pw-loopback processes, before PipeWire had registered the virtual sink. The method now retries up to 5 times (× 0.4 s) before giving up, eliminating the race condition on normal hardware. The final failure is now logged as WARNING instead of ERROR since the sink may legitimately be absent if loopback creation failed upstream. (#80).</p>
       </description>
     </release>
   </releases>
