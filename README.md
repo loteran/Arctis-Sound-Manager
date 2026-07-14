@@ -13,12 +13,14 @@
 [![Crowdin](https://badges.crowdin.net/arctis-sound-manager/localized.svg)](https://crowdin.com/project/arctis-sound-manager)
 [![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/NtpAPkfnX)
 [![ASM Presets](https://img.shields.io/badge/EQ%20Presets-Community%20site-FB4A00)](https://loteran.github.io/asm-presets/)
+[![ASM Themes](https://img.shields.io/badge/Themes-Community%20site-8B5CF6)](https://loteran.github.io/asm-presets/#themes)
 
 A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio mixer (Game / Chat / Media / Output), automatic media routing, and a full **Sonar EQ** system powered by PipeWire filter-chain.
 
 **Supported Arctis headsets on Linux:** Arctis Nova Pro Wireless, Arctis Nova Pro Wired, Arctis Nova Pro Omni, Arctis Nova Elite, Arctis Nova 7 (Gen 1 & Gen 2), Arctis Nova 7P, Arctis Nova 5 / 5X, Arctis Nova 3 / 3P / 3X, Arctis 7, Arctis 7+, Arctis 9 Wireless, Arctis Pro Wireless, Arctis 1 / 7X / 7P Wireless, and Arctis GameBuds / GameBuds X — full list with Product IDs in [Supported devices](#supported-devices).
 
 > 🎚️ **[ASM Presets](https://loteran.github.io/asm-presets/)** — browse and share community EQ presets!
+> 🎨 **[ASM Themes](https://loteran.github.io/asm-presets/)** — browse and share color themes, previewed on a miniature of the app!
 > 💬 **[Join the Discord](https://discord.gg/f7CcrFHFA)** — chat, share presets and get help from the community!
 > 📝 **[Share your experience in Discussions](https://github.com/loteran/Arctis-Sound-Manager/discussions)** — feedback helps improve compatibility for everyone!
 
@@ -48,6 +50,9 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
     - [Community site — ASM Presets](#community-site--asm-presets)
   - [Virtual surround 7.1](#virtual-surround-71)
   - [Themes](#themes)
+    - [Custom themes](#custom-themes)
+    - [Sharing and downloading themes](#sharing-and-downloading-themes)
+    - [Community site — ASM Themes](#community-site--asm-themes)
   - [Translations](#translations)
   - [Community stats](#community-stats)
   - [Uninstall](#uninstall)
@@ -106,7 +111,7 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
 - **Check for updates** — in-app button forces an immediate GitHub check; installs via terminal (pacman / dnf / apt) or in-app wheel (pipx)
 - **One-click bug reports** — auto-uploads a full diagnostic as a GitHub gist and opens a pre-filled issue
 - **Built-in diagnostics** — `asm-daemon --verify-setup` and `asm-cli diagnose -o file.txt`
-- **Themes** — 5 built-in color themes plus a custom theme editor with live preview and `.ini` import/export ([details](#themes))
+- **Themes** — 5 built-in color themes plus a custom theme editor with live preview; share your own on the [community site](https://loteran.github.io/asm-presets/) or import one in a click ([details](#themes))
 - **Community translations** — new languages from [Crowdin](https://crowdin.com/project/arctis-sound-manager) download automatically on startup, no release needed
 - **Help page** — built-in manual in English, French and Spanish
 - **`ARCTIS_LOG_LEVEL` env var** — `debug` / `info` / `warning`, honored by daemon, GUI and router
@@ -588,10 +593,29 @@ Click **Create theme** in Settings to open the theme editor:
 
 User themes are saved as `.ini` files in `~/.config/arctis-sound-manager/themes/`.
 
-### Import / Export
+### Sharing and downloading themes
 
-- **Export theme** — saves any theme as an `.ini` file you can share
-- **Import theme** — loads a shared `.ini` file and adds it to your theme list
+Themes are shared exactly like EQ presets, from **Settings → Export theme** (or the **Share** button in the theme editor):
+
+- **Copy link** — copies an `arctis-asm://import-theme?data=…` deep link to your clipboard.
+- **Save as file** — saves an `.ini` file you can send directly.
+- **Publish to community** — opens a browser form pre-filled with your theme; sign in with GitHub and submit.
+
+**Import theme** accepts either form: paste a deep link, load an `.ini` file, or browse the community site.
+
+### Community site — ASM Themes
+
+**[loteran.github.io/asm-presets](https://loteran.github.io/asm-presets/)** — the same site as the EQ presets, under the **Themes** tab: browse, vote for, and import themes shared by the community.
+
+Every theme is shown as a **miniature of ASM's home page** painted in its colors — the sidebar, the four channel cards and their volume sliders — so you can see how a theme actually looks before importing it, not just its palette.
+
+| Action | How |
+|---|---|
+| Browse themes | Open the site, **Themes** tab — no login required |
+| Import a theme into ASM | Click **Import in ASM** on any card |
+| Vote for a theme | Click the ♡ button (requires GitHub login) |
+| Publish a theme | Use **Publish to community** from ASM, or **Share a Theme** on the site |
+| Delete your theme | Click 🗑 on your own theme card (only visible when logged in) |
 
 > Built-in themes cannot be edited or deleted — duplicate one into a custom theme instead.
 
