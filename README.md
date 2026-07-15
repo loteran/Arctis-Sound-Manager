@@ -212,7 +212,15 @@ If the device controls respond, it works. If the daemon log shows `Failed to fin
 
 ## Installation
 
-All native packages (AUR / COPR / PPA) pull in every dependency automatically. After installing, run `asm-setup` once — it configures udev rules, systemd services, PipeWire and downloads the HRIR file.
+**Quick install — any distribution, one command:**
+
+```bash
+curl -fsSL https://loteran.github.io/Arctis-Sound-Manager/install.sh | bash
+```
+
+It detects your distribution, installs the matching native package (AUR / COPR / PPA — or a Distrobox container on Bazzite / Silverblue / SteamOS), and runs `asm-setup` for you. Prefer to read it first? `curl … -o asm-install.sh`, inspect it, then `bash asm-install.sh`.
+
+Or install manually for your distribution below. All native packages (AUR / COPR / PPA) pull in every dependency automatically. After installing, run `asm-setup` once — it configures udev rules, systemd services, PipeWire and downloads the HRIR file.
 
 <details>
 <summary><strong>Arch Linux / CachyOS / Manjaro (AUR)</strong></summary>
