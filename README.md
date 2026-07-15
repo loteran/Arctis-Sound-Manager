@@ -140,18 +140,18 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
 | Device | Working | Users | Product ID(s) |
 |---|---|---|---|
 | Arctis 1 / 7X / 7P Wireless | ✅ | 5 | $\color{royalblue}{\textbf{12b3}}$, 12b6, 12d5, $\color{royalblue}{\textbf{12d7}}$ |
-| Arctis 7 / 7 2019 / Pro 2019 / Pro GameDAC | ✅ | 10 | $\color{royalblue}{\textbf{1260}}$, $\color{royalblue}{\textbf{12ad}}$, 1252, 1280 |
-| Arctis 7+ / PS5 / Xbox / Destiny | ✅ | 11 | $\color{royalblue}{\textbf{220e}}$, $\color{royalblue}{\textbf{2212}}$, 2216, 2236 |
+| Arctis 7 / 7 2019 / Pro 2019 / Pro GameDAC | ✅ | 12 | $\color{royalblue}{\textbf{1260}}$, $\color{royalblue}{\textbf{12ad}}$, 1252, 1280 |
+| Arctis 7+ / PS5 / Xbox / Destiny | ✅ | 12 | $\color{royalblue}{\textbf{220e}}$, $\color{royalblue}{\textbf{2212}}$, 2216, 2236 |
 | Arctis 9 Wireless | ✅ | 8 | $\color{royalblue}{\textbf{12c2}}$ |
 | Arctis Pro Wireless | ✅ | 21 | $\color{royalblue}{\textbf{1290}}$, $\color{royalblue}{\textbf{1294}}$ |
-| Arctis Nova Pro Wireless / X | ✅ | 126 | $\color{royalblue}{\textbf{12e0}}$, $\color{royalblue}{\textbf{12e5}}$, $\color{royalblue}{\textbf{225d}}$ |
+| Arctis Nova Pro Wireless / X | ✅ | 127 | $\color{royalblue}{\textbf{12e0}}$, $\color{royalblue}{\textbf{12e5}}$, $\color{royalblue}{\textbf{225d}}$ |
 | Arctis Nova Pro Wired / Xbox Wired | ✅ | 11 | $\color{royalblue}{\textbf{12cb}}$, $\color{royalblue}{\textbf{12cd}}$ |
 | Arctis Nova Pro Omni | ✅ | 5 | $\color{royalblue}{\textbf{2290}}$ |
-| Arctis Nova 3 | ✅ | 4 | $\color{royalblue}{\textbf{12ec}}$ |
+| Arctis Nova 3 | ✅ | 5 | $\color{royalblue}{\textbf{12ec}}$ |
 | Arctis Nova 3P / 3X Wireless | ✅ | 12 | $\color{royalblue}{\textbf{2269}}$, $\color{royalblue}{\textbf{226d}}$ |
-| Arctis Nova 5 / 5X | ✅ | 28 | $\color{royalblue}{\textbf{2232}}$, $\color{royalblue}{\textbf{2253}}$, $\color{royalblue}{\textbf{2255}}$, $\color{royalblue}{\textbf{2264}}$ |
+| Arctis Nova 5 / 5X | ✅ | 29 | $\color{royalblue}{\textbf{2232}}$, $\color{royalblue}{\textbf{2253}}$, $\color{royalblue}{\textbf{2255}}$, $\color{royalblue}{\textbf{2264}}$ |
 | Arctis Nova 7 Gen 1 | ✅ | 22 | $\color{royalblue}{\textbf{2202}}$, $\color{royalblue}{\textbf{2206}}$, 223a, 227a, 22ab, $\color{royalblue}{\textbf{22a4}}$ |
-| Arctis Nova 7 Gen 2 | ✅ | 56 | $\color{royalblue}{\textbf{22a1}}$, $\color{royalblue}{\textbf{227e}}$, 2258, $\color{royalblue}{\textbf{229e}}$, 22a9, $\color{royalblue}{\textbf{22a5}}$ |
+| Arctis Nova 7 Gen 2 | ✅ | 58 | $\color{royalblue}{\textbf{22a1}}$, $\color{royalblue}{\textbf{227e}}$, 2258, $\color{royalblue}{\textbf{229e}}$, 22a9, $\color{royalblue}{\textbf{22a5}}$ |
 | Arctis Nova 7P | ✅ | 14 | $\color{royalblue}{\textbf{220a}}$, $\color{royalblue}{\textbf{22a7}}$ |
 | Arctis Nova Elite | ✅ | 8 | $\color{royalblue}{\textbf{2244}}$, 2249, $\color{royalblue}{\textbf{2270}}$ |
 | Arctis GameBuds / GameBuds X | ✅ | 8 | $\color{royalblue}{\textbf{230a}}$, $\color{royalblue}{\textbf{2317}}$ |
@@ -674,7 +674,7 @@ To request a new language, open a [GitHub issue](https://github.com/loteran/Arct
 ## Community stats
 
 <!-- STATS:META:START -->
-_Based on **354** unique users (**58847** anonymous data points) — last updated 2026-07-14_
+_Based on **362** unique users (**58939** anonymous data points) — last updated 2026-07-15_
 <!-- STATS:META:END -->
 
 > Anonymous usage data shared voluntarily by opted-in users.
@@ -688,21 +688,21 @@ _Based on **354** unique users (**58847** anonymous data points) — last update
 |---|---|---|
 | CachyOS | 🎯 AUR | 👥 158 |
 | Arch Linux | 🎯 AUR | 👥 62 |
+| Linux Mint 22.3 | 🎯 PPA | 👥 19 |
+| Fedora Linux 44 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 19 |
 | Nobara Linux 43 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 18 |
-| Linux Mint 22.3 | 🎯 PPA | 👥 18 |
-| Fedora Linux 44 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 18 |
-| Ubuntu 26.04 LTS | 🎯 PPA | 👥 11 |
+| Ubuntu 26.04 LTS | 🎯 PPA | 👥 12 |
+| Nobara Linux 44 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 9 |
 | Pop!_OS 24.04 LTS | 🎯 PPA | 👥 8 |
 | Fedora Linux 44 (Workstation Edition) | 🎯 COPR | 👥 8 |
 | Ubuntu 24.04.4 LTS | 🎯 PPA | 👥 6 |
 | Garuda Linux | 🎯 AUR | 👥 6 |
-| Nobara Linux 44 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 5 |
 | Manjaro Linux | 🎯 AUR | 👥 5 |
+| EndeavourOS | 🎯 AUR | 👥 4 |
 | Bazzite | 📦 Source | 👥 4 |
 | SteamOS | 📦 Source | 👥 3 |
 | NixOS 26.11 (Zokor) | 📦 Source | 👥 3 |
 | NixOS 26.05 (Yarara) | 📦 Source | 👥 3 |
-| EndeavourOS | 🎯 AUR | 👥 3 |
 | Artix Linux | 🎯 AUR | 👥 3 |
 | Fedora Linux 43 (Workstation Edition) | 🎯 COPR | 👥 2 |
 | Debian GNU/Linux 13 (trixie) | 🎯 PPA | 👥 2 |
@@ -723,15 +723,15 @@ _Based on **354** unique users (**58847** anonymous data points) — last update
 <!-- STATS:HEADSETS:START -->
 | Headset | Installs |
 |---|---|
-| Arctis Nova Pro Wireless | 126 |
-| Arctis Nova 7 (Gen 2) | 56 |
-| Arctis Nova 5 Wireless | 28 |
+| Arctis Nova Pro Wireless | 127 |
+| Arctis Nova 7 (Gen 2) | 58 |
+| Arctis Nova 5 Wireless | 29 |
 | Arctis Nova 7 (Gen 1) | 22 |
 | Arctis Pro Wireless | 21 |
-| Arctis Nova 3 | 16 |
-| Arctis 7+ | 11 |
+| Arctis Nova 3 | 17 |
+| Arctis 7/Pro Gaming | 12 |
+| Arctis 7+ | 12 |
 | Arctis Nova Pro Wired | 11 |
-| Arctis 7/Pro Gaming | 10 |
 | Arctis Nova 7P (Gen 2) | 10 |
 | Arctis 9 Wireless | 8 |
 | Arctis GameBuds | 8 |
@@ -746,19 +746,19 @@ _Based on **354** unique users (**58847** anonymous data points) — last update
 |---|---|
 | CachyOS | 158 |
 | Arch Linux | 62 |
+| Linux Mint 22.3 | 19 |
+| Fedora Linux 44 (KDE Plasma Desktop Edition) | 19 |
 | Nobara Linux 43 (KDE Plasma Desktop Edition) | 18 |
-| Linux Mint 22.3 | 18 |
-| Fedora Linux 44 (KDE Plasma Desktop Edition) | 18 |
-| Ubuntu 26.04 LTS | 11 |
+| Ubuntu 26.04 LTS | 12 |
+| Nobara Linux 44 (KDE Plasma Desktop Edition) | 9 |
 | Pop!_OS 24.04 LTS | 8 |
 | Fedora Linux 44 (Workstation Edition) | 8 |
 | Ubuntu 24.04.4 LTS | 6 |
 | Garuda Linux | 6 |
-| Nobara Linux 44 (KDE Plasma Desktop Edition) | 5 |
 | Manjaro Linux | 5 |
+| EndeavourOS | 4 |
 | Bazzite | 4 |
 | SteamOS | 3 |
-| NixOS 26.11 (Zokor) | 3 |
 <!-- STATS:DISTROS:END -->
 </details>
 
