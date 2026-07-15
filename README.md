@@ -17,6 +17,14 @@
 
 A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio mixer (Game / Chat / Media / Output), automatic media routing, and a full **Sonar EQ** system powered by PipeWire filter-chain.
 
+<p align="center">
+  <a href="https://github.com/loteran/Arctis-Sound-Manager/blob/main/docs/images/asm-demo.mp4">
+    <img src="https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/docs/images/asm-demo-preview.gif" alt="Arctis Sound Manager demo — mixer, Sonar EQ, spatial audio" width="800">
+  </a>
+  <br>
+  <em>▶ Click to watch the full demo</em>
+</p>
+
 **Supported Arctis headsets on Linux:** Arctis Nova Pro Wireless, Arctis Nova Pro Wired, Arctis Nova Pro Omni, Arctis Nova Elite, Arctis Nova 7 (Gen 1 & Gen 2), Arctis Nova 7P, Arctis Nova 5 / 5X, Arctis Nova 3 / 3P / 3X, Arctis 7, Arctis 7+, Arctis 9 Wireless, Arctis Pro Wireless, Arctis 1 / 7X / 7P Wireless, and Arctis GameBuds / GameBuds X — full list with Product IDs in [Supported devices](#supported-devices).
 
 > 🎚️ **[ASM Presets](https://loteran.github.io/asm-presets/)** — browse and share community EQ presets!
