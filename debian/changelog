@@ -1,3 +1,25 @@
+arctis-sound-manager (1.2.2-1) noble; urgency=medium
+
+  * Bluetooth speakers and headphones can now be selected as an output
+    device. The output pickers — per-channel routing on the home page, the
+    tray "Output routing" menu, the Sonar output override, and the
+    external-output setting — only listed ALSA sinks, so Bluetooth devices
+    (bluez_output.*) never appeared. They are now listed everywhere and
+    identified by their stable node name, so they stay selectable even on
+    setups where the device exposes no node.nick. (#134, requested by
+    @akio4800)
+  * Game / Chat / Media volume jumped back to 100% on its own. The virtual
+    channel sinks are pw-loopback processes; every time ASM recreated one —
+    after a PipeWire socket change, an EQ-mode switch, a config
+    regeneration, or the watchdog reviving a crashed process — the fresh
+    sink came up at the PipeWire default of 100%, silently discarding the
+    level you had set. Channel volumes are now persisted and re-asserted by
+    the daemon after each recreation (retried until the sink reappears), so
+    a level you set stays put instead of drifting back to full. (#134,
+    reported by @akio4800)
+
+ -- loteran <axel.valadon@gmail.com>  Fri, 17 Jul 2026 00:00:00 +0000
+
 arctis-sound-manager (1.2.1-1) noble; urgency=medium
 
   * No sound at all after the headset was switched off and back on. Powering
