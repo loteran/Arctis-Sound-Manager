@@ -405,15 +405,26 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
             sinks: list[TypedPulseSinkInfo] = self.core_engine.pa_audio_manager.sink_list_wrapper()
             for sink in sinks:
                 node_name = sink.proplist.get('node.name', '')
-                # For external_audio_devices, only show physical non-SteelSeries sinks
+                # For external_audio_devices, only show physical non-SteelSeries
+                # sinks — ALSA and Bluetooth (bluez_output.*, issue #134).
                 if list_name == 'external_audio_devices':
-                    if not node_name.startswith('alsa_output'):
+                    if not (node_name.startswith('alsa_output')
+                            or node_name.startswith('bluez_output')):
                         continue
                     if sink.proplist.get('device.vendor.id', '') == '0x1038':
                         continue
 
                 id = sink.proplist.get('node.nick', '')
                 name = sink.proplist.get('node.description', sink.proplist.get('node.nick', ''))
+
+                if list_name == 'external_audio_devices':
+                    # Bluetooth sinks don't reliably expose node.nick; fall back
+                    # to the always-present node.name so they are still listed and
+                    # get a stable id (issue #134). The resolvers in home_page /
+                    # sonar_page / pactl / systray all match node.nick OR
+                    # node.name, so an id stored as a node.name round-trips.
+                    id = id or node_name
+                    name = name or node_name
 
                 if id and name and not any(r['id'] == id for r in result):
                     result.append({ 'id': id, 'name': name })

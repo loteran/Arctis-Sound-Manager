@@ -80,8 +80,13 @@ from arctis_sound_manager.gui.theme import (
     TEXT_SECONDARY,
 )
 
+from arctis_sound_manager.channel_volumes import save_channel_volume
 from arctis_sound_manager.i18n import I18n
-from arctis_sound_manager.pw_utils import app_override_key, get_native_streams
+from arctis_sound_manager.pw_utils import (
+    app_override_key,
+    get_native_streams,
+    is_external_output_sink,
+)
 
 logger = logging.getLogger("HomePage")
 
@@ -1297,18 +1302,20 @@ class HomePage(QWidget):
 
             # External output sink (non-Arctis physical sink)
             if self._ext_device_nick:
-                # User chose a specific device in settings
+                # User chose a specific device in settings. Match node.nick OR
+                # node.name: a Bluetooth device saved by its node.name (no
+                # node.nick) must still resolve here (issue #134).
                 sink_ext = next(
                     (s for s in sinks
-                     if s.proplist.get("node.nick", "") == self._ext_device_nick),
+                     if self._ext_device_nick in (
+                         s.proplist.get("node.nick", ""), s.name)),
                     None,
                 )
             else:
-                # Auto-detect: first physical non-SteelSeries sink
+                # Auto-detect: first physical non-SteelSeries sink (ALSA or
+                # Bluetooth — issue #134)
                 sink_ext = next(
-                    (s for s in sinks
-                     if s.name.startswith("alsa_output")
-                     and s.proplist.get("device.vendor.id", "") != STEELSERIES_VENDOR_ID),
+                    (s for s in sinks if is_external_output_sink(s)),
                     None,
                 )
             if sink_ext is not None:
@@ -1431,11 +1438,7 @@ class HomePage(QWidget):
             self._media_card.set_connected()
 
     def _refresh_device_combos(self, sinks) -> None:
-        physical = [
-            s for s in sinks
-            if s.name.startswith("alsa_output")
-            and "SteelSeries" not in s.name
-        ]
+        physical = [s for s in sinks if is_external_output_sink(s)]
         default_label = I18n.translate("ui", "headset_output")
         options = [("", default_label)] + [
             (s.name, s.proplist.get("node.description") or s.proplist.get("node.nick") or s.name)
@@ -1562,5 +1565,17 @@ class HomePage(QWidget):
             fresh_sink = next((s for s in sinks if s.name == sink.name), None)
             if fresh_sink is not None:
                 pulse.volume_set_all_chans(fresh_sink, value / 100.0)
+                # Persist the level keyed by the sink's stable node.name so the
+                # daemon can re-assert it after any loopback recreation, instead
+                # of the sink silently reverting to 100% (issue #134). Only the
+                # three virtual sinks are remembered; the external device sink is
+                # system-owned and left to WirePlumber's own restore.
+                node = next(
+                    (frag for frag in (SINK_GAME, SINK_CHAT, SINK_MEDIA)
+                     if frag in fresh_sink.name),
+                    None,
+                )
+                if node is not None:
+                    save_channel_volume(node, value)
         except Exception as exc:
             logger.warning("Error setting volume: %s", exc)

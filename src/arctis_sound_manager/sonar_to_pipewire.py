@@ -184,7 +184,7 @@ def _resolve_external_output(target_override: str | None = None) -> tuple[str, i
             else:
                 candidates = [
                     s for s in sinks
-                    if s.name.startswith("alsa_output")
+                    if (s.name.startswith("alsa_output") or s.name.startswith("bluez_output"))
                     and s.proplist.get("device.vendor.id", "") != "0x1038"
                 ]
                 # Prefer HDMI/DisplayPort sinks over other outputs (S/PDIF, etc.)

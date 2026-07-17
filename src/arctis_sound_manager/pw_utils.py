@@ -90,6 +90,34 @@ def app_override_key(name: str, binary: str) -> str:
     return name
 
 
+STEELSERIES_VENDOR_ID = "0x1038"
+
+
+def is_external_output_sink(sink) -> bool:
+    """Return True if *sink* is a hardware output the user can route a channel to.
+
+    A selectable external output is a real playback device that is neither the
+    SteelSeries headset (which owns its own routing) nor one of ASM's own
+    virtual/EQ nodes. Previously only ``alsa_output.*`` sinks qualified, which
+    silently hid every Bluetooth speaker/headphone — those appear as
+    ``bluez_output.*`` (issue #134). Both node-name families are accepted here so
+    the whole app (home page combos, tray routing menu, Sonar output override)
+    lists Bluetooth devices consistently.
+
+    Accepts any object exposing ``.name`` and a ``.proplist`` mapping, so it
+    works with ``pulsectl`` sink objects directly.
+    """
+    name = getattr(sink, "name", "") or ""
+    if not (name.startswith("alsa_output") or name.startswith("bluez_output")):
+        return False
+    if "SteelSeries" in name:
+        return False
+    proplist = getattr(sink, "proplist", None) or {}
+    if proplist.get("device.vendor.id", "") == STEELSERIES_VENDOR_ID:
+        return False
+    return True
+
+
 def _load_overrides() -> dict:
     if OVERRIDES_FILE.exists():
         try:

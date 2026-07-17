@@ -319,6 +319,37 @@ class PulseAudioManager:
         except Exception as e:
             self.logger.warning("Failed to set default source to %s: %r", name, e)
 
+    def set_sink_volume_by_node(self, node_name: str, pct: int) -> bool:
+        """Set the volume of the sink whose ``node.name`` is *node_name*.
+
+        Used by the daemon to re-assert a user-saved virtual-sink level after a
+        loopback is (re)created (issue #134). Unlike :meth:`set_mix`, this looks
+        the sink up by node name across the full sink list — the Media sink
+        (``Arctis_Media``) is not part of ``ONLY_VIRTUAL`` — so it can restore
+        any of the three virtual sinks.
+
+        Returns ``True`` if the sink was found and the volume applied, ``False``
+        if the sink is not present yet (so the caller can retry on a later tick).
+        """
+        pct = max(0, min(100, int(pct)))
+        try:
+            sink = next(
+                (s for s in self.sink_list_wrapper()
+                 if s.proplist.get('node.name', '') == node_name),
+                None,
+            )
+        except Exception as exc:
+            self.logger.warning("set_sink_volume_by_node(%s): list failed: %r", node_name, exc)
+            return False
+        if sink is None:
+            return False
+        try:
+            self.pulse.volume_set_all_chans(sink, pct / 100)
+        except Exception as exc:
+            self.logger.warning("set_sink_volume_by_node(%s): set failed: %r", node_name, exc)
+            return False
+        return True
+
     def set_mix(self, media_mix: int, chat_mix: int):
         if media_mix > 100:
             media_mix = 100

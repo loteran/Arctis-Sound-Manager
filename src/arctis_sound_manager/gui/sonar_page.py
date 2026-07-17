@@ -3117,17 +3117,20 @@ class SonarPage(QWidget):
             except Exception:
                 pass
 
+        from arctis_sound_manager.pw_utils import is_external_output_sink
         try:
             with pulsectl.Pulse("asm-output-lookup") as p:
                 for s in p.sink_list():
                     if nick:
-                        if s.proplist.get("node.nick", "") == nick:
+                        # Match node.nick OR node.name so a Bluetooth device
+                        # saved by its node.name still resolves (issue #134).
+                        if nick in (s.proplist.get("node.nick", ""), s.name):
                             self._output_widget._target_override = s.name
                             return
                     else:
-                        # Auto-detect: first alsa_output not from SteelSeries
-                        if s.name.startswith("alsa_output") \
-                                and s.proplist.get("device.vendor.id", "") != "0x1038":
+                        # Auto-detect: first external output (ALSA or Bluetooth)
+                        # that is not the SteelSeries headset (issue #134)
+                        if is_external_output_sink(s):
                             self._output_widget._target_override = s.name
                             return
         except Exception:

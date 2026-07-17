@@ -23,6 +23,7 @@ from arctis_sound_manager.constants import (PULSE_CHAT_NODE_NAME,
                                             STEELSERIES_VENDOR_ID)
 from arctis_sound_manager.loopback_manager import (LoopbackManager, make_specs,
                                                    current_pipewire_socket_signature)
+from arctis_sound_manager.channel_volumes import load_channel_volumes
 from arctis_sound_manager.pactl import ONLY_PHYSICAL, PulseAudioManager
 from arctis_sound_manager.settings import DeviceSettings, GeneralSettings
 from arctis_sound_manager.usb_devices_monitor import USBDevicesMonitor
@@ -96,6 +97,12 @@ class CoreEngine:
         self._warned_no_out_endpoint: bool = False  # log once per device attach
         self._last_recreate_loopbacks: float = 0.0  # debounce rapid D-Bus calls
 
+        # Channels whose persisted virtual-sink volume still needs to be
+        # re-asserted after a (re)creation, mapped to remaining retry ticks
+        # (issue #134). Populated by setup_loopbacks and the watchdog's
+        # dead-process pass; drained by the watchdog once each sink appears.
+        self._volume_restore_pending: dict[str, int] = {}
+
         self.reload_device_configurations()
         self.usb_devices_monitor.register_on_connect(self.on_device_connected)
         self.usb_devices_monitor.register_on_disconnect(self.on_device_disconnected)
@@ -154,8 +161,77 @@ class CoreEngine:
                 sonar, physical_game, physical_chat,
             )
             self._link_loopbacks(specs)
+            # The fresh pw-loopback sinks come up at 100%; queue a restore of
+            # each channel's persisted level so the watchdog re-asserts it once
+            # the sink appears (issue #134).
+            self._queue_volume_restore(spec.channel for spec in specs)
         except Exception as exc:
             self.logger.error("setup_loopbacks: failed to recreate loopbacks: %r", exc)
+
+    # Ticks the watchdog keeps retrying a channel's volume restore before giving
+    # up. At the 5 s watchdog cadence this is a ~30 s window, comfortably longer
+    # than the moment a pw-loopback sink takes to appear after being spawned.
+    _VOLUME_RESTORE_TICKS: int = 6
+
+    def _queue_volume_restore(self, channels) -> None:
+        """Mark *channels* as needing their persisted volume re-asserted.
+
+        The pw-loopback sink for a freshly (re)created channel is not in the
+        graph immediately, so we cannot set its volume here; instead we record
+        it and let the watchdog apply the saved level once the sink appears
+        (issue #134). Channels with no saved volume are still queued — the
+        restore pass simply no-ops them, which is cheaper than filtering here.
+        """
+        for channel in channels:
+            self._volume_restore_pending[channel] = self._VOLUME_RESTORE_TICKS
+
+    def _restore_channel_volumes(self, channels) -> set[str]:
+        """Re-apply persisted virtual-sink volumes for *channels*.
+
+        Returns the subset of *channels* whose sink was not present yet (so the
+        caller can retry on a later tick). A channel with no saved volume, or
+        no known loopback spec, is treated as done (not returned) — there is
+        nothing to restore and nothing to wait for.
+
+        Only fires on discrete (re)creation events, never continuously, so it
+        re-asserts the user's level after ASM churns the sink without fighting a
+        deliberate change the user makes from the system mixer afterwards.
+        """
+        saved = load_channel_volumes()
+        specs = self.loopback_manager.specs()
+        still_pending: set[str] = set()
+        for channel in channels:
+            spec = specs.get(channel)
+            if spec is None:
+                continue
+            pct = saved.get(spec.capture_name)
+            if pct is None:
+                continue
+            if not self.pa_audio_manager.set_sink_volume_by_node(spec.capture_name, pct):
+                still_pending.add(channel)
+            else:
+                self.logger.info(
+                    "restored volume %d%% on %s (issue #134)", pct, spec.capture_name,
+                )
+        return still_pending
+
+    def _process_volume_restore(self) -> None:
+        """Drain :attr:`_volume_restore_pending` — one watchdog tick's worth.
+
+        Applies each queued channel's saved volume; keeps the ones whose sink is
+        still absent (decrementing their retry budget) and drops the rest.
+        """
+        if not self._volume_restore_pending:
+            return
+        pending = list(self._volume_restore_pending)
+        still = self._restore_channel_volumes(pending)
+        for channel in pending:
+            if channel in still:
+                self._volume_restore_pending[channel] -= 1
+                if self._volume_restore_pending[channel] <= 0:
+                    del self._volume_restore_pending[channel]
+            else:
+                del self._volume_restore_pending[channel]
 
     def _link_loopbacks(self, specs, attempts: int = 6, delay: float = 0.2) -> None:
         """Establish the ASM-owned playback→EQ links for *specs* (issue #100).
@@ -511,9 +587,11 @@ class CoreEngine:
                             "to new socket",
                             _old_sig, _new_sig,
                         )
-                        self.loopback_manager.recreate_all(
-                            list(self.loopback_manager.specs().values())
-                        )
+                        _specs = list(self.loopback_manager.specs().values())
+                        self.loopback_manager.recreate_all(_specs)
+                        # Recreated sinks come up at 100%; queue their saved
+                        # levels for the next tick (issue #134).
+                        self._queue_volume_restore(s.channel for s in _specs)
                         # Skip dead/mislink passes this tick: give the new
                         # loopbacks one watchdog cycle to bind before we inspect
                         # them (avoids immediate false-positive orphan/mislink).
@@ -536,6 +614,9 @@ class CoreEngine:
                         for ch in restarted:
                             _none_ticks.pop(ch, None)
                             _record_intervention(ch)
+                            # A revived loopback comes back at 100%; re-assert the
+                            # user's saved level once its sink reappears (#134).
+                            self._volume_restore_pending[ch] = self._VOLUME_RESTORE_TICKS
                     # Log once per cooldown period for any channel we are skipping.
                     for ch in cooled_channels:
                         if not _cooldown_logged.get(ch, False):
@@ -551,6 +632,16 @@ class CoreEngine:
                         "_loopback_watchdog: unexpected error in restart_dead: %r", exc
                     )
                     continue
+
+                # Volume-restore pass: re-assert saved virtual-sink levels for any
+                # channel that was just (re)created, once its sink is back in the
+                # graph (issue #134). Best-effort — never break the watchdog.
+                try:
+                    self._process_volume_restore()
+                except Exception as exc:
+                    self.logger.error(
+                        "_loopback_watchdog: error restoring channel volumes: %r", exc
+                    )
 
                 # Link-enforcement pass: make sure every running loopback's
                 # playback node is linked to its EQ target. Because the loopbacks

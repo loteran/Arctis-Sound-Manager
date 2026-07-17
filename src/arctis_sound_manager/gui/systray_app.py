@@ -407,12 +407,11 @@ class QSystrayApp(QBaseDesktopApp):
                 except Exception:
                     pass
 
+            from arctis_sound_manager.pw_utils import is_external_output_sink
             with pulsectl.Pulse("asm-tray-routing") as _pulse:
                 _sinks = _pulse.sink_list()
-            _physical_sinks = [
-                s for s in _sinks
-                if s.name.startswith("alsa_output") and "SteelSeries" not in s.name
-            ]
+            # ALSA and Bluetooth outputs, minus the SteelSeries headset (#134)
+            _physical_sinks = [s for s in _sinks if is_external_output_sink(s)]
 
             _routing_menu = QMenu(I18n.translate('ui', 'output_routing'))
             self._menu_action_refs.append(_routing_menu)

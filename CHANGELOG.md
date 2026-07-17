@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 17 July 2026
+
+### Added
+
+- **Bluetooth speakers and headphones can now be selected as an output device.** The output pickers — per-channel routing on the home page, the tray "Output routing" menu, the Sonar output override, and the external-output setting — only listed ALSA sinks, so Bluetooth devices (`bluez_output.*`) never appeared. They are now listed everywhere and identified by their stable node name, so they stay selectable even on setups where the device exposes no `node.nick`. (#134, requested by @akio4800)
+
+### Fixed
+
+- **Game / Chat / Media volume jumped back to 100% on its own.** The virtual channel sinks are `pw-loopback` processes; every time ASM recreated one — after a PipeWire socket change, an EQ-mode switch, a config regeneration, or the watchdog reviving a crashed process — the fresh sink came up at the PipeWire default of 100%, silently discarding the level you had set. Channel volumes are now persisted and re-asserted by the daemon after each recreation (retried until the sink reappears), so a level you set stays put instead of drifting back to full. (#134, reported by @akio4800)
+
 ## [1.2.1] - 14 July 2026
 
 ### Upgrade note (Arch / CachyOS / Manjaro)

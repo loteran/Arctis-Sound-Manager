@@ -200,7 +200,7 @@ def _snapshot_volumes() -> dict[str, int]:
                     result["chat"] = round(sink.volume.value_flat * 100)
                 elif "Arctis_Media" in n:
                     result["media"] = round(sink.volume.value_flat * 100)
-                elif (n.startswith("alsa_output")
+                elif ((n.startswith("alsa_output") or n.startswith("bluez_output"))
                       and sink.proplist.get("device.vendor.id", "") != _STEELSERIES_VENDOR_ID
                       and "output" not in result):
                     result["output"] = round(sink.volume.value_flat * 100)
@@ -342,7 +342,7 @@ def _apply_volumes(volumes: dict[str, int]) -> None:
             if "output" in volumes:
                 val = max(0, min(100, volumes["output"])) / 100.0
                 for sink in sinks:
-                    if (sink.name.startswith("alsa_output")
+                    if ((sink.name.startswith("alsa_output") or sink.name.startswith("bluez_output"))
                             and sink.proplist.get("device.vendor.id", "") != _STEELSERIES_VENDOR_ID):
                         pulse.volume_set_all_chans(sink, val)
                         break
