@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.3] - 18 July 2026
+
+### Fixed
+
+- **Audio no longer defaults to the headset when it comes online.** Older versions forced the Arctis Game channel as the default output on startup; that behaviour later moved into the daemon but ended up gated behind a "Redirect audio on connect" option that defaulted to off, so on a fresh setup nothing claimed the default sink and audio stayed on the TV/HDMI. In a Steam Game Mode session this meant every app had to be moved onto the Game channel by hand. The headset is now selected as the default output automatically as soon as it is powered on — and only while it is on, so it never routes you to a dead sink. Turn "Redirect audio on connect" off if you prefer a non-headset default; that choice now sticks. (#135, reported by @zany130)
+- **Spatial Audio no longer goes silent when no HRIR profile was chosen.** The HeSuVi surround filter reads its impulse response from a WAV that was only written once you explicitly picked an HRIR profile. With none chosen the file was missing, the surround node failed to load, and enabling Spatial Audio routed Game/Media at a node that did not exist — dead silence until the app was closed. A sensible HRIR profile now ships as the default and is put in place automatically, so Spatial Audio works out of the box; you can still switch to any other profile live. As a safety net, if the surround node ever cannot load, Game/Media fall back to the headset's normal output instead of going silent. (#100, reported by @ninjapinja2)
+
 ## [1.2.2] - 17 July 2026
 
 ### Added
