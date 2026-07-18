@@ -44,7 +44,9 @@ def test_device_settings_read_nonexistent(tmp_path):
 
 def test_general_settings_defaults():
     gs = GeneralSettings()
-    assert gs.redirect_audio_on_connect is False
+    # Defaults on so the headset becomes the default output when it comes
+    # online (issue #135); disconnect redirection stays opt-in.
+    assert gs.redirect_audio_on_connect is True
     assert gs.redirect_audio_on_disconnect is False
     assert gs.redirect_audio_on_disconnect_device is None
 
@@ -58,10 +60,21 @@ def test_general_settings_write_read(tmp_path):
         assert gs2.redirect_audio_on_connect is True
 
 
+def test_general_settings_opt_out_persists(tmp_path):
+    # A user who turns the redirect off must keep it off across restarts,
+    # even though the class default is now True (issue #135 sovereignty).
+    with patch("arctis_sound_manager.settings.SETTINGS_FOLDER", tmp_path):
+        gs = GeneralSettings(redirect_audio_on_connect=False)
+        gs.write_to_file()
+
+        gs2 = GeneralSettings.read_from_file()
+        assert gs2.redirect_audio_on_connect is False
+
+
 def test_general_settings_read_nonexistent(tmp_path):
     with patch("arctis_sound_manager.settings.SETTINGS_FOLDER", tmp_path / "nope"):
         gs = GeneralSettings.read_from_file()
-        assert gs.redirect_audio_on_connect is False
+        assert gs.redirect_audio_on_connect is True
 
 
 def test_general_settings_ignores_unknown_keys():

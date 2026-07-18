@@ -94,8 +94,14 @@ _HRIR_ID_MIGRATIONS = {
 class GeneralSettings(JsonSerializable):
     _js_exclude_fields = ['settings_config', 'dac_settings_config']
 
-    # Automatically redirect on Media channel
-    redirect_audio_on_connect: bool = False
+    # Make the headset the default output as soon as it comes online, so apps
+    # (including everything launched in Steam Game Mode) route to the Game
+    # channel instead of staying on the TV/HDMI. Guarded by is_device_online()
+    # in redirect_to_media_sink(), so it never targets a dead sink when the
+    # headset is off. Defaults on to restore the pre-1.1.81 behaviour that
+    # unconditionally forced Arctis_Game as default; opt out via the toggle
+    # (issue #135).
+    redirect_audio_on_connect: bool = True
 
     # When disconnecting, redirect to this device
     redirect_audio_on_disconnect: bool = False
@@ -169,7 +175,7 @@ class GeneralSettings(JsonSerializable):
     theme: str = "steelseries"
 
     settings_config: list[ConfigSetting] = [
-        ConfigSetting('redirect_audio_on_connect', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
+        ConfigSetting('redirect_audio_on_connect', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('redirect_audio_on_disconnect', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('redirect_audio_on_disconnect_device', SettingType.SELECT, None, options_source='pulse_audio_devices', options_mapping={ 'value': 'id', 'label': 'description' }),
         ConfigSetting('external_output_device', SettingType.SELECT, None, options_source='external_audio_devices', options_mapping={ 'value': 'id', 'label': 'description' }),
