@@ -1613,18 +1613,94 @@ def test_check_and_fix_generates_hesuvi_even_when_spatial_disabled(tmp_path, mon
     assert generated.get("called"), "HeSuVi must be generated even when spatial is disabled"
 
 
-def test_apply_hrir_choice_triggers_single_restart(monkeypatch):
+def test_apply_hrir_choice_triggers_single_restart(monkeypatch, tmp_path):
     """Phase 4: an HRIR change is the ONE remaining case that legitimately
     restarts filter-chain (the convolver only reads the WAV at load). It must
     restart exactly once and then re-establish the ASM-owned EQ→target links."""
     import arctis_sound_manager.sonar_to_pipewire as stp
+    import arctis_sound_manager.hrir_catalog as cat
+    # Redirect the WAV destination away from the real home; a falsy hrir_id now
+    # materialises the bundled default rather than skipping (issue #100).
+    dest = tmp_path / "hrir.wav"
+    monkeypatch.setattr(stp, "_HRIR_DEST", dest)
+    src = tmp_path / "atmos.wav"
+    src.write_bytes(b"RIFFWAVE-stub")
+    monkeypatch.setattr(cat, "package_hrir_path", lambda _id: src)
     restart_calls = []
     monkeypatch.setattr(stp, "_restart_filter_chain",
                         lambda: restart_calls.append(1))
     link_calls = []
     monkeypatch.setattr(stp, "ensure_spatial_eq_links",
                         lambda *a, **kw: link_calls.append(a) or {})
-    # hrir_id=None → skip the WAV copy, go straight to restart.
+    # hrir_id=None → materialise the default WAV, then restart.
     stp.apply_hrir_choice(None)
+    assert dest.exists(), "falsy hrir_id must fall back to the bundled default WAV"
     assert restart_calls == [1], "HRIR change must restart filter-chain exactly once"
     assert link_calls, "HRIR change must re-establish the EQ→target links after restart"
+
+
+def test_ensure_hrir_materialized_copies_when_missing(monkeypatch, tmp_path):
+    """issue #100: with no HRIR on disk the HeSuVi convolver can't load, so the
+    surround node never appears and Spatial Audio is silent. Materialisation
+    must copy a bundled WAV into place when the destination is absent."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    import arctis_sound_manager.hrir_catalog as cat
+    dest = tmp_path / "hrir.wav"
+    src = tmp_path / "atmos.wav"
+    src.write_bytes(b"RIFFWAVE-stub")
+    monkeypatch.setattr(stp, "_HRIR_DEST", dest)
+    monkeypatch.setattr(cat, "package_hrir_path",
+                        lambda _id: src if _id == "atmos" else None)
+    assert stp.ensure_hrir_materialized(None) is True
+    assert dest.read_bytes() == b"RIFFWAVE-stub"
+
+
+def test_ensure_hrir_materialized_noop_when_present(monkeypatch, tmp_path):
+    """Idempotent: an existing non-empty WAV is never overwritten, so a user's
+    explicit HRIR choice is left intact."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    import arctis_sound_manager.hrir_catalog as cat
+    dest = tmp_path / "hrir.wav"
+    dest.write_bytes(b"user-picked")
+    monkeypatch.setattr(stp, "_HRIR_DEST", dest)
+    called = {"copied": False}
+    monkeypatch.setattr(cat, "package_hrir_path",
+                        lambda _id: (_ for _ in ()).throw(AssertionError("must not copy")))
+    assert stp.ensure_hrir_materialized("cmss_game") is False
+    assert dest.read_bytes() == b"user-picked"
+
+
+def test_spatial_links_fall_back_to_physical_when_hesuvi_absent(monkeypatch, tmp_path):
+    """issue #100: Spatial ON while the HeSuVi node is missing AND no HRIR WAV
+    exists (so it can never load) must route to the physical output instead of
+    the dead surround node — otherwise game/media are silent."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    import arctis_sound_manager.pw_utils as pw
+    monkeypatch.setattr(stp, "_HRIR_DEST", tmp_path / "missing.wav")  # absent
+    monkeypatch.setattr(stp, "_spatial_enabled", lambda ch: True)
+    monkeypatch.setattr(stp, "_get_physical_out_game", lambda: "alsa_output.phys")
+    monkeypatch.setattr(pw, "pw_node_exists", lambda name, data=None: False)
+    targets = {}
+    monkeypatch.setattr(pw, "ensure_loopback_link",
+                        lambda pb, tgt, data=None: targets.__setitem__(pb, tgt) or True)
+    stp.ensure_spatial_eq_links(("game",))
+    assert targets["effect_output.sonar-game-eq"] == "alsa_output.phys"
+
+
+def test_spatial_links_keep_hesuvi_when_wav_present(monkeypatch, tmp_path):
+    """The fallback must NOT flap onto physical during a transient (HeSuVi node
+    briefly absent while filter-chain restarts) when the HRIR WAV is present —
+    HeSuVi will come back, so keep targeting it and retry."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    import arctis_sound_manager.pw_utils as pw
+    wav = tmp_path / "hrir.wav"
+    wav.write_bytes(b"present")
+    monkeypatch.setattr(stp, "_HRIR_DEST", wav)
+    monkeypatch.setattr(stp, "_spatial_enabled", lambda ch: True)
+    monkeypatch.setattr(stp, "_get_physical_out_game", lambda: "alsa_output.phys")
+    monkeypatch.setattr(pw, "pw_node_exists", lambda name, data=None: False)
+    targets = {}
+    monkeypatch.setattr(pw, "ensure_loopback_link",
+                        lambda pb, tgt, data=None: targets.__setitem__(pb, tgt) or False)
+    stp.ensure_spatial_eq_links(("game",))
+    assert targets["effect_output.sonar-game-eq"] == stp._SURROUND

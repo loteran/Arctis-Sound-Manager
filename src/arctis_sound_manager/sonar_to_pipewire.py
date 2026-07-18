@@ -96,6 +96,14 @@ def _ladspa_plugin_available(name_pattern: str) -> bool:
 
 _SURROUND = "effect_input.virtual-surround-7.1-hesuvi"
 
+# Bundled HRIR profile used when the user has not picked one, so the HeSuVi
+# convolver always has a WAV to load and Spatial Audio is never silent (#100).
+_DEFAULT_HRIR_ID = "atmos"
+
+# Where the HeSuVi convolver reads its impulse response from. generate_hesuvi_conf
+# writes this exact path into every convolver node.
+_HRIR_DEST = Path.home() / ".local" / "share" / "pipewire" / "hrir_hesuvi" / "hrir.wav"
+
 
 def _get_physical_out() -> str:
     """Return the ALSA output node name for the currently connected device, or ''.
@@ -635,6 +643,57 @@ def ensure_filter_chain_healthy() -> bool:
     return True
 
 
+def ensure_hrir_materialized(hrir_id: str | None = None) -> bool:
+    """Guarantee the HeSuVi HRIR WAV exists on disk so the convolver can load.
+
+    generate_hesuvi_conf() always points every convolver node at
+    :data:`_HRIR_DEST`. If that file is missing the convolver fails to load,
+    the ``effect_input.virtual-surround-7.1-hesuvi`` node never appears in the
+    graph, and enabling Spatial Audio routes game/media at a dead target =
+    dead silence (issue #100). This copies the configured HRIR — or the
+    bundled :data:`_DEFAULT_HRIR_ID` fallback — into place when it is absent.
+
+    Idempotent: a no-op when a non-empty WAV already exists (so it is cheap to
+    call on every device init / watchdog pass). Returns True if it wrote the
+    file. Unlike :func:`apply_hrir_choice` it never overwrites an existing
+    WAV, so it does not fight a user's explicit profile choice.
+    """
+    try:
+        if _HRIR_DEST.exists() and _HRIR_DEST.stat().st_size > 0:
+            return False
+    except OSError:
+        pass
+
+    from arctis_sound_manager.hrir_catalog import package_hrir_path
+    if hrir_id is None:
+        try:
+            from arctis_sound_manager.settings import GeneralSettings
+            hrir_id = GeneralSettings.read_from_file().hrir_id
+        except Exception:
+            hrir_id = None
+
+    src = package_hrir_path(hrir_id) if hrir_id else None
+    if src is None:
+        src = package_hrir_path(_DEFAULT_HRIR_ID)
+    if src is None:
+        _log.warning(
+            "No bundled HRIR WAV available to materialise (wanted %s)",
+            hrir_id or _DEFAULT_HRIR_ID,
+        )
+        return False
+
+    import shutil
+    try:
+        _HRIR_DEST.parent.mkdir(parents=True, exist_ok=True)
+        _HRIR_DEST.unlink(missing_ok=True)
+        shutil.copy(src, _HRIR_DEST)
+        _log.info("Materialised HRIR %s → %s", src.stem, _HRIR_DEST)
+        return True
+    except OSError as exc:
+        _log.warning("Failed to materialise HRIR WAV: %s", exc)
+        return False
+
+
 def apply_hrir_choice(hrir_id: str | None) -> None:
     """Copy the chosen HRIR WAV to ~/.local/share/pipewire/hrir_hesuvi/hrir.wav
     and restart filter-chain so PipeWire picks up the new file.
@@ -645,18 +704,19 @@ def apply_hrir_choice(hrir_id: str | None) -> None:
     the Spatial Audio feature set. The restart recreates the game/media EQ
     nodes with node.autoconnect=false and nothing linked into them yet, so
     ensure_spatial_eq_links() re-establishes the EQ→target link once the
-    service is back up (idempotent, no-op if safe mode was entered instead)."""
+    service is back up (idempotent, no-op if safe mode was entered instead).
+
+    A falsy *hrir_id* falls back to the bundled default rather than leaving
+    the WAV absent (which would silence Spatial Audio, issue #100)."""
     import shutil
-    dest = Path.home() / ".local" / "share" / "pipewire" / "hrir_hesuvi" / "hrir.wav"
-    if hrir_id:
-        from arctis_sound_manager.hrir_catalog import package_hrir_path
-        src = package_hrir_path(hrir_id)
-        if src is None:
-            _log.warning("HRIR WAV not found for id: %s", hrir_id)
-            return
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.unlink(missing_ok=True)  # remove read-only copies (e.g. from Nix store)
-        shutil.copy(src, dest)
+    from arctis_sound_manager.hrir_catalog import package_hrir_path
+    src = package_hrir_path(hrir_id) if hrir_id else package_hrir_path(_DEFAULT_HRIR_ID)
+    if src is None:
+        _log.warning("HRIR WAV not found for id: %s", hrir_id or _DEFAULT_HRIR_ID)
+    else:
+        _HRIR_DEST.parent.mkdir(parents=True, exist_ok=True)
+        _HRIR_DEST.unlink(missing_ok=True)  # remove read-only copies (e.g. from Nix store)
+        shutil.copy(src, _HRIR_DEST)
         _log.info("HRIR changed → %s", src.name)
     _restart_filter_chain()
     ensure_spatial_eq_links(("game", "media"))
@@ -1704,6 +1764,12 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
     # whenever nothing feeds it. Also catches configs written with the old
     # hardcoded _PHYSICAL_OUT constant before v1.0.23.
     if sonar:
+        # Guarantee the HRIR WAV exists before (re)generating the HeSuVi conf,
+        # otherwise the convolver references a missing file and the surround
+        # node never loads = silent Spatial Audio (issue #100). Idempotent, so
+        # existing users who already have the conf but never picked an HRIR
+        # get the WAV materialised here too.
+        ensure_hrir_materialized()
         try:
             import json as _json
             _spatial_file = Path.home() / ".config" / "arctis_manager" / "sonar_spatial_audio.json"
@@ -1921,7 +1987,7 @@ def ensure_spatial_eq_links(
         its target is not yet up (filter-chain starting/restarting, or no
         device attached) — treat as "retry later", not an error.
     """
-    from arctis_sound_manager.pw_utils import ensure_loopback_link
+    from arctis_sound_manager.pw_utils import ensure_loopback_link, pw_node_exists
 
     results: dict[str, bool] = {}
     for channel in channels:
@@ -1929,6 +1995,24 @@ def ensure_spatial_eq_links(
             continue
         enabled = _spatial_enabled(channel)
         target = _SURROUND if enabled else _get_physical_out_game()
+        if enabled and not pw_node_exists(_SURROUND, data):
+            # HeSuVi is not in the graph. If its HRIR WAV is missing the
+            # convolver can never load and the node will never appear —
+            # targeting it here would be permanent silence, so fall back to
+            # the physical output so the user still hears their game/media
+            # (issue #100). If the WAV *is* present this is only a transient
+            # (filter-chain restarting): keep targeting HeSuVi and let the
+            # next watchdog tick relink, rather than flap onto physical.
+            if not _HRIR_DEST.exists():
+                phys = _get_physical_out_game()
+                if phys:
+                    _log.warning(
+                        "Spatial ON but HeSuVi is not loaded and no HRIR is present; "
+                        "routing %s to the physical output (pick an HRIR profile to "
+                        "enable surround) — issue #100",
+                        channel,
+                    )
+                    target = phys
         if not target:
             # No device attached yet — nothing to link to.
             results[channel] = False
@@ -2201,7 +2285,7 @@ def generate_hesuvi_conf(
         )
 
     # 3. Convolver nodes
-    hrir_path = Path.home() / ".local" / "share" / "pipewire" / "hrir_hesuvi" / "hrir.wav"
+    hrir_path = _HRIR_DEST  # ensure_hrir_materialized() guarantees this exists
     node_lines.append(f"{I}# apply hrir — HeSuVi 14-channel WAV")
     for conv_name, ch_idx in _HESUVI_CONVOLVERS:
         node_lines.append(

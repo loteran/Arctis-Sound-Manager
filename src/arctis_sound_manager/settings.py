@@ -110,8 +110,12 @@ class GeneralSettings(JsonSerializable):
     # External output device (HDMI, sound card, etc.) shown on home page
     external_output_device: str|None = None
 
-    # HRIR profile for HeSuVi spatial audio
-    hrir_id: str | None = None
+    # HRIR profile for HeSuVi spatial audio. Defaults to a bundled profile
+    # (not None) so Spatial Audio works out of the box: the HeSuVi convolver
+    # references ~/.local/share/pipewire/hrir_hesuvi/hrir.wav, and if no HRIR
+    # was ever materialised that file is missing, the surround node never
+    # loads, and enabling Spatial silences game/media (issue #100).
+    hrir_id: str | None = "atmos"
 
     # Which microphone source feeds the Sonar Micro EQ capture (issue #131).
     # "__auto__" (default) = Arctis microphone, matches the issue #127
