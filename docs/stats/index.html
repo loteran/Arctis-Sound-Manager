@@ -185,6 +185,15 @@
     return result.sort((a, b) => b.nb - a.nb);
   }
 
+  function cleanDistroLabel(label) {
+    // One telemetry entry carries a joke PRETTY_NAME with the real distro name
+    // in parentheses ("Russian Nuclear Submarine … (OpenBMC Project Reference
+    // Distro) 2.8.2-34"). Show only the meaningful "(OpenBMC …" part so it does
+    // not blow out the horizontal bar chart.
+    const i = label.indexOf("(OpenBMC");
+    return i > 0 ? label.slice(i) : label;
+  }
+
   function wrapLabel(label, maxLen = 12) {
     if (label.length <= maxLen || !label.includes(" ")) return label;
     const mid = Math.floor(label.length / 2);
@@ -268,7 +277,7 @@
 
       // Charts
       mkChart("chart-distros",
-        data.distros.map(r => r.label), data.distros.map(r => r.nb),
+        data.distros.map(r => cleanDistroLabel(r.label)), data.distros.map(r => r.nb),
         "bar", { indexAxis: 'y' });
       mkChart("chart-headsets",
         headsets.map(r => r.product_id === "Unknown" ? r.label : r.label + " (0x" + r.product_id.slice(-4) + ")"),
