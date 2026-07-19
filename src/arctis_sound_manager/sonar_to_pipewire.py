@@ -51,9 +51,14 @@ def _ladspa_plugin_ref(name_pattern: str) -> str | None:
       container, so the host sees the same file at the same path — absolute
       path stays safe.
     - container + system-wide path (e.g. /usr/lib64/ladspa/…) → the host may
-      not have that path at all. Fall back to the bare plugin name so the
-      HOST's own filter-chain process resolves it via its own LADSPA_PATH /
-      system dirs, exactly as before this function existed.
+      not have that plugin at all (Bazzite/Fedora Atomic ships no swh-plugins,
+      so plate_1423/sc4m/gate fail to dlopen on the HOST and take the whole
+      filter-chain module — HeSuVi included — down with them, issue #100).
+      A bare plugin name only worked when the host happened to have the plugin;
+      it silently killed Spatial Audio when it didn't. Instead we STAGE the
+      plugin into ``~/.ladspa`` (bind-mounted, same x86_64/glibc ABI) and hand
+      the host an absolute path it can always load. Falls back to the bare name
+      only if the copy fails, so we are never worse than before.
     """
     from arctis_sound_manager.system_deps_checker import _find_ladspa_plugin
     resolved = _find_ladspa_plugin(name_pattern)
@@ -69,20 +74,35 @@ def _ladspa_plugin_ref(name_pattern: str) -> str | None:
     if _container == 'native':
         return resolved
 
-    _log.warning(
-        "LADSPA scan for '%s' runs inside a container (%s); a plugin found "
-        "here may be missing on the host, which can crash filter-chain. "
-        "Install the LADSPA plugins on the host if filter-chain fails to start.",
-        name_pattern, _container,
-    )
-
     resolved_path = Path(resolved)
     try:
         resolved_path.relative_to(Path.home())
         return resolved  # under ~/.ladspa (or elsewhere in HOME) — shared with the host
     except ValueError:
-        # System-wide container path: not guaranteed to exist on the host —
-        # fall back to the bare plugin name (basename without extension).
+        pass
+
+    # System-wide container path: not guaranteed to exist on the host. Stage a
+    # copy into ~/.ladspa (shared with the host) and return that absolute path
+    # so the host's filter-chain loads it directly instead of searching its own
+    # dirs and failing (issue #100).
+    import shutil
+    try:
+        dest_dir = Path.home() / ".ladspa"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / resolved_path.name
+        if not dest.exists() or dest.stat().st_size != resolved_path.stat().st_size:
+            shutil.copy(resolved_path, dest)
+        _log.info(
+            "Staged container LADSPA plugin %s into %s so the host filter-chain "
+            "can load it (issue #100)", resolved_path.name, dest,
+        )
+        return str(dest)
+    except OSError as exc:
+        _log.warning(
+            "Could not stage LADSPA plugin %s into ~/.ladspa (%s); falling back "
+            "to the bare name — the host must provide the plugin itself.",
+            resolved_path.name, exc,
+        )
         return resolved_path.stem
 
 
@@ -90,6 +110,24 @@ def _ladspa_plugin_available(name_pattern: str) -> bool:
     """Return True if a LADSPA .so matching name_pattern is found in standard
     dirs. Back-compat boolean wrapper around :func:`_ladspa_plugin_ref`."""
     return _ladspa_plugin_ref(name_pattern) is not None
+
+
+def _conf_has_bare_ladspa(content: str) -> bool:
+    """True if a generated filter-chain config references a LADSPA plugin by
+    bare name (no path separator) rather than an absolute path.
+
+    A bare name (e.g. ``plugin = plate_1423``) is what the pre-#100 container
+    fallback wrote; it fails to dlopen on a host that lacks the plugin and takes
+    the whole module — HeSuVi — down. Detecting it lets the config repair pass
+    regenerate the conf so it picks up the staged ~/.ladspa absolute path.
+    """
+    for line in content.splitlines():
+        if "type = ladspa" in line and "plugin =" in line:
+            after = line.split("plugin =", 1)[1].strip()
+            token = after.split()[0] if after else ""
+            if token and not token.startswith("/"):
+                return True
+    return False
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -1768,8 +1806,11 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
         # otherwise the convolver references a missing file and the surround
         # node never loads = silent Spatial Audio (issue #100). Idempotent, so
         # existing users who already have the conf but never picked an HRIR
-        # get the WAV materialised here too.
-        ensure_hrir_materialized()
+        # get the WAV materialised here too. When it actually writes the WAV the
+        # convolver needs a filter-chain restart to pick it up (it only reads
+        # the file at load), so flag `fixed` to trigger one.
+        if ensure_hrir_materialized():
+            fixed = True
         try:
             import json as _json
             _spatial_file = Path.home() / ".config" / "arctis_manager" / "sonar_spatial_audio.json"
@@ -1794,6 +1835,19 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
             hesuvi_content = hesuvi_path.read_text()
             if f'node.target        = "{_get_physical_out_game()}"' not in hesuvi_content:
                 log.warning("HeSuVi config has stale node.target, regenerating")
+                generate_hesuvi_conf(
+                    immersion_pct=_spatial.get("immersion", 50),
+                    distance_pct=_spatial.get("distance", 50),
+                )
+                fixed = True
+            elif _conf_has_bare_ladspa(hesuvi_content):
+                # A plate plugin written by bare name (pre-#100 container
+                # fallback) fails to load on a distrobox host without
+                # swh-plugins, so the whole HeSuVi module — and its surround
+                # node — never comes up. Regenerate so it picks up the staged
+                # ~/.ladspa absolute path (or drops the plate if unavailable).
+                log.warning("HeSuVi config references a bare-name LADSPA plugin "
+                            "(fails on a host without the plugin), regenerating (issue #100)")
                 generate_hesuvi_conf(
                     immersion_pct=_spatial.get("immersion", 50),
                     distance_pct=_spatial.get("distance", 50),

@@ -1004,21 +1004,65 @@ def test_ladspa_ref_native_keeps_absolute_path():
     assert ref == "/usr/lib64/ladspa/sc4m_1916.so"
 
 
-def test_ladspa_ref_container_system_path_falls_back_to_bare_name():
+def test_ladspa_ref_container_system_path_stages_into_home_ladspa(tmp_path):
     """Distrobox/Flatpak + a system-wide plugin path (e.g. /usr/lib64/ladspa/)
-    is NOT guaranteed to exist on the HOST, where filter-chain actually runs
-    — _ladspa_plugin_ref() must fall back to the bare plugin name so the
-    host's own filter-chain resolves it via its own search path (issue #88
-    distrobox risk identified in PR #104 review)."""
+    is NOT guaranteed to exist on the HOST, where filter-chain actually runs.
+    A bare name silently killed HeSuVi on hosts without the plugin (issue #100),
+    so _ladspa_plugin_ref() now STAGES the plugin into ~/.ladspa (shared with
+    the host) and returns that absolute path the host can always load."""
     from arctis_sound_manager.sonar_to_pipewire import _ladspa_plugin_ref
 
+    home = tmp_path / "home"
+    home.mkdir()
+    src = tmp_path / "sys" / "ladspa" / "plate_1423.so"
+    src.parent.mkdir(parents=True)
+    src.write_bytes(b"\x7fELF-fake-plugin")
+
     with patch("arctis_sound_manager.system_deps_checker._find_ladspa_plugin",
-               return_value="/usr/lib64/ladspa/sc4m_1916.so"), \
+               return_value=str(src)), \
          patch("arctis_sound_manager.bug_reporter._detect_container_env",
-               return_value="distrobox (container=distrobox, CONTAINER_ID=?)"):
+               return_value="distrobox (container=podman, CONTAINER_ID=asm)"), \
+         patch("arctis_sound_manager.sonar_to_pipewire.Path.home",
+               return_value=home):
+        ref = _ladspa_plugin_ref("plate_1423.so")
+
+    staged = home / ".ladspa" / "plate_1423.so"
+    assert ref == str(staged)
+    assert staged.read_bytes() == b"\x7fELF-fake-plugin"
+
+
+def test_ladspa_ref_container_bare_name_fallback_on_copy_failure(tmp_path):
+    """If staging into ~/.ladspa fails (e.g. the source is unreadable), fall
+    back to the bare plugin name so behaviour is never worse than before the
+    #100 staging change."""
+    from arctis_sound_manager.sonar_to_pipewire import _ladspa_plugin_ref
+
+    home = tmp_path / "home"
+    home.mkdir()
+    with patch("arctis_sound_manager.system_deps_checker._find_ladspa_plugin",
+               return_value="/nonexistent/ladspa/sc4m_1916.so"), \
+         patch("arctis_sound_manager.bug_reporter._detect_container_env",
+               return_value="distrobox (container=podman, CONTAINER_ID=asm)"), \
+         patch("arctis_sound_manager.sonar_to_pipewire.Path.home",
+               return_value=home):
         ref = _ladspa_plugin_ref("sc4m_1916.so")
 
     assert ref == "sc4m_1916"
+
+
+def test_conf_has_bare_ladspa_detects_bare_plugin():
+    """The config-repair pass must recognise a HeSuVi conf that still carries a
+    bare-name LADSPA plugin (pre-#100 container fallback) so it regenerates it
+    into the staged absolute-path form."""
+    from arctis_sound_manager.sonar_to_pipewire import _conf_has_bare_ladspa
+
+    bare = "{ type = ladspa  name = plate_L  plugin = plate_1423  label = plate }"
+    absolute = "{ type = ladspa  name = plate_L  plugin = /home/u/.ladspa/plate_1423.so  label = plate }"
+    builtin_only = "{ type = builtin  name = bq0  label = bq_peaking }"
+
+    assert _conf_has_bare_ladspa(bare) is True
+    assert _conf_has_bare_ladspa(absolute) is False
+    assert _conf_has_bare_ladspa(builtin_only) is False
 
 
 def test_ladspa_ref_container_home_path_keeps_absolute():
