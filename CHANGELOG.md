@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.4] - 19 July 2026
+
+### Fixed
+
+- **Spatial Audio stayed silent inside Distrobox even after the 1.2.3 fix.** On atomic hosts (Bazzite, etc.) where ASM runs in a container, the HeSuVi surround filter includes a LADSPA reverb plugin (`plate_1423`, from swh-plugins, powering the Distance effect). ASM's daemon scans the container — which has the plugin — but the PipeWire filter-chain that loads the config runs on the *host*, which does not, so the plugin was written by bare name and failed to load there. Because a single failing node takes the whole filter-chain module down, the surround node never appeared and Game/Media were routed at a sink that did not exist — silent. ASM now stages the plugin into `~/.ladspa` (shared between container and host) and references it by absolute path so the host can always load it; existing configs are regenerated to pick this up. The same fix covers the Smart Volume and noise-gate plugins, which hit the identical container/host split. (#100, reported by @ninjapinja2)
+
 ## [1.2.3] - 18 July 2026
 
 ### Fixed
