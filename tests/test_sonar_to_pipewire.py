@@ -153,6 +153,55 @@ def test_game_8ch_channels():
     assert "FL FR FC LFE RL RR SL SR" in text
 
 
+def _gen_hesuvi(monkeypatch, *, limiter_available, distance_pct):
+    """Generate a HeSuVi conf with the environment stubbed out.
+
+    ``_write_conf`` is neutered so the test never touches the filesystem (and
+    avoids the non-ASCII arrows in the conf tripping a cp1252 locale on Windows
+    dev boxes); the returned text is what matters.
+    """
+    monkeypatch.setattr(_s2p, "_device_attached", lambda: True)
+    monkeypatch.setattr(_s2p, "_get_physical_out_game", lambda: "alsa_output.test-game")
+    monkeypatch.setattr(_s2p, "_write_conf", lambda path, text: None)
+    monkeypatch.setattr(
+        _s2p, "_ladspa_plugin_ref",
+        (lambda name: "/usr/lib/ladspa/" + name) if limiter_available else (lambda name: None),
+    )
+    return _s2p.generate_hesuvi_conf(
+        immersion_pct=80, distance_pct=distance_pct, output_path=Path("/dev/null"),
+    )
+
+
+def test_hesuvi_limiter_on_output_when_available(monkeypatch):
+    """A fast-lookahead limiter is inserted on the surround output when
+    swh-plugins is present, so hot HRIRs cannot clip on loud passages."""
+    text = _gen_hesuvi(monkeypatch, limiter_available=True, distance_pct=0)
+    assert "label = fastLookaheadLimiter" in text
+    # Mixers feed the limiter, and the sink is driven by the limiter outputs.
+    assert '{ output = "mixL:Out"  input = "limiter:Input 1" }' in text
+    assert '{ output = "mixR:Out"  input = "limiter:Input 2" }' in text
+    assert 'outputs = [ "limiter:Output 1" "limiter:Output 2" ]' in text
+
+
+def test_hesuvi_limiter_after_reverb(monkeypatch):
+    """With Distance reverb active, the limiter sits after the plate reverb
+    (plate -> limiter -> sink)."""
+    text = _gen_hesuvi(monkeypatch, limiter_available=True, distance_pct=40)
+    assert "label = fastLookaheadLimiter" in text
+    assert '{ output = "plate_L:Left output"  input = "limiter:Input 1" }' in text
+    assert '{ output = "plate_R:Right output"  input = "limiter:Input 2" }' in text
+    assert 'outputs = [ "limiter:Output 1" "limiter:Output 2" ]' in text
+
+
+def test_hesuvi_limiter_graceful_fallback_when_absent(monkeypatch):
+    """Without swh-plugins the chain is emitted with no limiter and the mixers
+    drive the sink directly — no breakage."""
+    text = _gen_hesuvi(monkeypatch, limiter_available=False, distance_pct=0)
+    assert "fastLookaheadLimiter" not in text
+    assert "limiter:" not in text
+    assert 'outputs = [ "mixL:Out" "mixR:Out" ]' in text
+
+
 def test_chat_targets_physical_output():
     """Chat EQ targets ALSA physical output directly (2ch stereo)."""
     from arctis_sound_manager import device_state

@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.5] - 20 July 2026
+
+### Fixed
+
+- **Virtual surround could clip ("oversaturate") on loud passages with hot HRIRs (e.g. Nahimic 3).** The Immersion slider applies a broadband boost (up to +12 dB, +6 dB at the default 50%) to all eight channels *before* the HRTF convolution, and each stereo output is the sum of four convolved channels — with no headroom stage, loud content pushed peaks past 0 dBFS and clipped. A fast-lookahead limiter (LADSPA `fast_lookahead_limiter_1913`, from swh-plugins — the same package already used for the Distance reverb) is now inserted on the surround output; it tames only the peaks that would clip and leaves quieter content untouched, so hot profiles stop oversaturating regardless of the Immersion setting. The plugin is staged into `~/.ladspa` like the reverb so it also loads on the host under Distrobox, and if swh-plugins is unavailable the chain falls back to the previous behaviour with no limiter. (reported on Discord by @craciu25_YT)
+
 ## [1.2.4] - 19 July 2026
 
 ### Fixed
