@@ -2201,6 +2201,23 @@ _OUTPUT_EQ_OUTPUT_NAME = "effect_output.sonar-output-eq"
 _CONF_TARGET_RE = re.compile(r'node\.target\s*=\s*"([^"]*)"')
 
 
+def _node_in_graph(data: list | None, node_name: str) -> bool:
+    """True if *node_name* is present in a ``pw-dump`` payload.
+
+    Returns True when *data* is ``None`` (no snapshot to check against): the
+    caller then falls back to attempting the link, which is the behaviour that
+    predates this check.
+    """
+    if data is None:
+        return True
+    for obj in data:
+        if not obj.get("type", "").endswith("Node"):
+            continue
+        if obj.get("info", {}).get("props", {}).get("node.name") == node_name:
+            return True
+    return False
+
+
 def _get_configured_external_output() -> str:
     """Return the external sink the Output channel's conf currently targets.
 
@@ -2299,7 +2316,12 @@ def ensure_physical_output_links(data: list | None = None) -> dict[str, bool]:
     # routed to the Output channel then played into a dead end: no sound, no
     # error. Same idempotent treatment as the two hops above.
     output_target = _get_configured_external_output()
-    if output_target:
+    if output_target and _node_in_graph(data, output_target):
+        # Only counted as a hop at all when the external sink is actually in
+        # the graph. A configured-but-absent target is the normal state of a
+        # TV or monitor that is switched off: reporting it as a failure would
+        # have the watchdog retry with a fresh pw-dump every tick and escalate
+        # on a situation that is not a fault at all.
         results["output"] = ensure_loopback_link(
             _OUTPUT_EQ_OUTPUT_NAME, output_target, data=data
         )

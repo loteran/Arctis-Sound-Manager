@@ -103,6 +103,14 @@ class CoreEngine:
         # dead-process pass; drained by the watchdog once each sink appears.
         self._volume_restore_pending: dict[str, int] = {}
 
+        # Incremented every time the loopback set is torn down and rebuilt for
+        # a device (attach, reconnect, teardown). The watchdog's per-channel
+        # anti-flap state is keyed by channel *name*, which outlives the
+        # processes it describes; comparing this counter lets it tell "the same
+        # troubled channel" from "a brand new process that happens to have the
+        # same name" and reset accordingly.
+        self._device_session_id: int = 0
+
         self.reload_device_configurations()
         self.usb_devices_monitor.register_on_connect(self.on_device_connected)
         self.usb_devices_monitor.register_on_disconnect(self.on_device_disconnected)
@@ -154,6 +162,14 @@ class CoreEngine:
             physical_chat=physical_chat,
             device_name=dev_name,
         )
+        # Every loopback process is about to be replaced: this is a new device
+        # session. Bumping the counter tells the watchdog to drop the anti-flap
+        # bookkeeping it accumulated for the *previous* session's processes —
+        # see _loopback_watchdog. Without it, a channel that flapped shortly
+        # before the headset was switched off stays in cooldown for up to five
+        # minutes after it comes back, silently skipped even though its process
+        # is brand new.
+        self._device_session_id += 1
         try:
             self.loopback_manager.recreate_all(specs)
             self.logger.info(
@@ -165,6 +181,19 @@ class CoreEngine:
             # each channel's persisted level so the watchdog re-asserts it once
             # the sink appears (issue #134).
             self._queue_volume_restore(spec.channel for spec in specs)
+            # This is the headset attach/reconnect path: all three sinks were
+            # just destroyed and recreated with new indices, so every app the
+            # user had pinned to them (routing_overrides.json) has fallen back
+            # to the system default. Nothing replayed those pins here — only a
+            # Chat recreate in the watchdog did — so after a replug, Firefox,
+            # games and video players silently stopped following the headset.
+            try:
+                from arctis_sound_manager.pw_utils import reapply_routing_overrides
+                reapply_routing_overrides()
+            except Exception as exc:
+                self.logger.warning(
+                    "setup_loopbacks: could not reapply routing overrides: %r", exc
+                )
         except Exception as exc:
             self.logger.error("setup_loopbacks: failed to recreate loopbacks: %r", exc)
 
@@ -508,6 +537,29 @@ class CoreEngine:
         # reconnect to the new socket rather than hanging on the stale one.
         _pw_socket_sig: str | None = None
 
+        # ── Device-session tracking ──────────────────────────────────────────
+        # All the anti-flap bookkeeping above is keyed by channel *name*, but a
+        # channel name outlives the process it describes: teardown/attach
+        # replaces every pw-loopback while "game"/"chat"/"media" stay the same
+        # strings. A channel that flapped just before the headset was switched
+        # off would therefore stay in cooldown after it came back — skipped by
+        # both restart_dead() and the link pass for up to _COOLDOWN_MAX, with
+        # nothing in the logs to suggest the device underneath had changed.
+        # CoreEngine bumps _device_session_id whenever it rebuilds the loopback
+        # set; a change here means the previous session's history describes
+        # processes that no longer exist.
+        _session_seen: int | None = None
+
+        # ── Last-hop enforcement failures ────────────────────────────────────
+        # The loopback→EQ pass has a grace period and escalates to
+        # recreate()/ensure_filter_chain_healthy(). The three "last hop" passes
+        # (spatial EQ, physical output, micro capture) had nothing: they logged
+        # and retried forever, with no counter and no ceiling, so sustained
+        # trouble had no fallback at all. Count consecutive failures per hop and
+        # escalate once, then reset so escalation cannot loop.
+        _hop_fail_ticks: dict[str, int] = {}
+        _HOP_FAIL_TICKS: int = 6  # ~30 s at the 5 s watchdog cadence
+
         try:
             while not self._stopping:
                 await asyncio.sleep(_WATCHDOG_INTERVAL)
@@ -519,11 +571,42 @@ class CoreEngine:
 
                 now = time.monotonic()
 
+                # New device session → the anti-flap history describes processes
+                # that no longer exist. Drop it, so a channel that was cooling
+                # down before the headset went away starts clean now that it has
+                # been rebuilt. This only fires on an actual rebuild of the
+                # loopback set, never per tick, so flapping *within* a session
+                # still backs off exactly as before (issue #90).
+                _session_now = self._device_session_id
+                if _session_seen is None:
+                    _session_seen = _session_now
+                elif _session_now != _session_seen:
+                    _session_seen = _session_now
+                    if _cooldown_until or _flap_history or _none_ticks:
+                        self.logger.info(
+                            "_loopback_watchdog: new device session (#%d) — clearing "
+                            "anti-flap state from the previous one (was cooling: %s)",
+                            _session_now, sorted(_cooldown_until) or "none",
+                        )
+                    _none_ticks.clear()
+                    _flap_history.clear()
+                    _cooldown_until.clear()
+                    _cooldown_dur.clear()
+                    _cooldown_logged.clear()
+                    _target_absent_ticks.clear()
+
                 # Channels currently in cooldown — passed to restart_dead so that
                 # a dead process in cooldown is NOT revived this tick.
                 cooled_channels: set[str] = {
                     ch for ch, until in _cooldown_until.items() if now < until
                 }
+
+                # Set by any pass that rebuilds a loopback sink this tick.
+                # Rebuilding one destroys the sink the user's apps were pinned
+                # to, so their routing overrides must be replayed; a single pass
+                # restores every pin, hence one flag drained once per tick
+                # rather than a call per channel.
+                _overrides_needed = False
 
                 def _record_intervention(channel: str) -> None:
                     """Record one intervention, purge stale history, trigger cooldown if flapping."""
@@ -617,6 +700,10 @@ class CoreEngine:
                             # A revived loopback comes back at 100%; re-assert the
                             # user's saved level once its sink reappears (#134).
                             self._volume_restore_pending[ch] = self._VOLUME_RESTORE_TICKS
+                        # A revived loopback also comes back with a *new* sink,
+                        # so the user's app→sink pins were dropped with the old
+                        # one. This path never restored them.
+                        _overrides_needed = True
                     # Log once per cooldown period for any channel we are skipping.
                     for ch in cooled_channels:
                         if not _cooldown_logged.get(ch, False):
@@ -778,16 +865,14 @@ class CoreEngine:
 
                         self.loopback_manager.recreate(spec)
                         _record_intervention(channel)
-                        if channel == "chat":
-                            # After recreating Chat, move PA streams that
-                            # had routing overrides back to Arctis_Chat so
-                            # Discord audio resumes without a manual restart.
-                            from arctis_sound_manager.pw_utils import (
-                                reapply_routing_overrides,
-                            )
-                            await asyncio.get_running_loop().run_in_executor(
-                                None, reapply_routing_overrides
-                            )
+                        # Recreating a loopback destroys and rebuilds its sink,
+                        # so every stream the user had pinned to it falls back
+                        # to the system default. This used to run for "chat"
+                        # only — Discord being the reported case — leaving pins
+                        # on Game and Media silently dropped. Any channel needs
+                        # it, and one pass restores them all, so it is done once
+                        # per tick no matter how many channels were rebuilt.
+                        _overrides_needed = True
                 except Exception as exc:
                     self.logger.error(
                         "_loopback_watchdog: unexpected error in mislink check: %r", exc
@@ -804,15 +889,14 @@ class CoreEngine:
                 # nothing linked into it yet. Reuses link_data from the pass
                 # above when available; best-effort otherwise (a fresh
                 # pw-dump is cheap and this call never restarts anything).
-                try:
-                    from arctis_sound_manager.sonar_to_pipewire import ensure_spatial_eq_links
-                    await asyncio.get_running_loop().run_in_executor(
-                        None, ensure_spatial_eq_links, ("game", "media"), link_data,
+                async def _enforce_hop(hop: str, fn, *lead_args) -> None:
+                    await self._enforce_link_hop(
+                        hop, fn, lead_args, link_data,
+                        _hop_fail_ticks, _HOP_FAIL_TICKS,
                     )
-                except Exception as exc:
-                    self.logger.error(
-                        "_loopback_watchdog: error enforcing spatial EQ links: %r", exc
-                    )
+
+                from arctis_sound_manager.sonar_to_pipewire import ensure_spatial_eq_links
+                await _enforce_hop("spatial EQ", ensure_spatial_eq_links, ("game", "media"))
 
                 # ── Physical output link-enforcement (headset power-cycle) ───
                 # effect_output.sonar-chat-eq and effect_output.virtual-
@@ -829,15 +913,8 @@ class CoreEngine:
                 # No-ops silently when the physical output is absent
                 # (headset off) — it self-heals on the tick after the
                 # headset reappears.
-                try:
-                    from arctis_sound_manager.sonar_to_pipewire import ensure_physical_output_links
-                    await asyncio.get_running_loop().run_in_executor(
-                        None, ensure_physical_output_links, link_data,
-                    )
-                except Exception as exc:
-                    self.logger.error(
-                        "_loopback_watchdog: error enforcing physical output links: %r", exc
-                    )
+                from arctis_sound_manager.sonar_to_pipewire import ensure_physical_output_links
+                await _enforce_hop("physical output", ensure_physical_output_links)
 
                 # ── Micro EQ capture link-enforcement (issue #127) ────────────
                 # effect_input.sonar-micro-eq runs with node.autoconnect=false /
@@ -848,17 +925,95 @@ class CoreEngine:
                 # applies (or after any out-of-band filter-chain restart) is
                 # never repaired on its own. Reuses link_data from the pass
                 # above when available; best-effort otherwise.
-                try:
-                    from arctis_sound_manager.sonar_to_pipewire import ensure_micro_capture_link
-                    await asyncio.get_running_loop().run_in_executor(
-                        None, ensure_micro_capture_link, link_data,
-                    )
-                except Exception as exc:
-                    self.logger.error(
-                        "_loopback_watchdog: error enforcing micro capture link: %r", exc
-                    )
+                from arctis_sound_manager.sonar_to_pipewire import ensure_micro_capture_link
+                await _enforce_hop("micro capture", ensure_micro_capture_link)
+
+                # ── Routing-override replay ──────────────────────────────────
+                # Any loopback rebuilt above came back as a *new* sink, so every
+                # stream the user had pinned to it (routing_overrides.json) fell
+                # back to the system default. Replayed once here, after the link
+                # passes, so the sinks are linked before streams are moved onto
+                # them. Runs for every channel — it used to fire for "chat" only,
+                # which silently dropped pins on Game and Media.
+                if _overrides_needed:
+                    try:
+                        from arctis_sound_manager.pw_utils import reapply_routing_overrides
+                        await asyncio.get_running_loop().run_in_executor(
+                            None, reapply_routing_overrides,
+                        )
+                    except Exception as exc:
+                        self.logger.error(
+                            "_loopback_watchdog: error reapplying routing overrides: %r", exc
+                        )
         except asyncio.CancelledError:
             raise
+
+    @staticmethod
+    def _hop_result_ok(result) -> bool:
+        """Did a link-enforcement pass succeed?
+
+        Passes report either a bool or a dict of per-hop bools. An **empty**
+        dict means "nothing to enforce" — headset off, no external sink
+        configured — and counts as success: treating it as a failure would have
+        a powered-off headset escalate forever.
+        """
+        if isinstance(result, dict):
+            return all(result.values())
+        return bool(result)
+
+    async def _enforce_link_hop(
+        self, hop: str, fn, lead_args: tuple, data,
+        fail_ticks: dict[str, int], max_fail_ticks: int,
+    ) -> None:
+        """Run a last-hop link-enforcement pass, retrying once on a fresh snapshot.
+
+        All the link passes in a watchdog tick share the single ``pw-dump``
+        taken at the top of it. Ports move underneath that snapshot —
+        WirePlumber churn, an ALSA reconfiguration — and ids resolved from it
+        then point at nothing, which is what produces the observed
+        ``pw-link … failed``, ``(4/8 channels linked)`` and
+        ``no matchable ports … in=[]`` bursts. Rather than write off the whole
+        tick and wait five seconds, re-dump **once** and retry; the extra
+        subprocess is only ever paid when something actually failed.
+
+        Unlike the loopback→EQ pass, these hops had no escalation whatsoever:
+        they logged and retried forever. After *max_fail_ticks* consecutive
+        failed ticks this calls ``ensure_filter_chain_healthy()`` once, then
+        clears the counter so escalation cannot loop.
+        """
+        loop = asyncio.get_running_loop()
+        try:
+            result = await loop.run_in_executor(None, fn, *lead_args, data)
+            if self._hop_result_ok(result):
+                fail_ticks.pop(hop, None)
+                return
+
+            from arctis_sound_manager.pw_utils import _pw_dump
+            fresh = await loop.run_in_executor(None, _pw_dump)
+            result = await loop.run_in_executor(None, fn, *lead_args, fresh)
+            if self._hop_result_ok(result):
+                self.logger.info(
+                    "_loopback_watchdog: %s hop recovered on a fresh pw-dump "
+                    "(the shared snapshot was stale)", hop,
+                )
+                fail_ticks.pop(hop, None)
+                return
+
+            count = fail_ticks.get(hop, 0) + 1
+            fail_ticks[hop] = count
+            if count < max_fail_ticks:
+                return
+            fail_ticks.pop(hop, None)
+            self.logger.warning(
+                "_loopback_watchdog: %s hop still unlinked after %d consecutive "
+                "ticks — calling ensure_filter_chain_healthy()", hop, count,
+            )
+            from arctis_sound_manager.sonar_to_pipewire import ensure_filter_chain_healthy
+            await loop.run_in_executor(None, ensure_filter_chain_healthy)
+        except Exception as exc:
+            self.logger.error(
+                "_loopback_watchdog: error enforcing %s hop: %r", hop, exc
+            )
 
     def start(self) -> Coroutine:
         self._stopping = False
