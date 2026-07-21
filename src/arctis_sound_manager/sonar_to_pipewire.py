@@ -2196,6 +2196,31 @@ def ensure_spatial_eq_links(
 
 _HESUVI_OUTPUT_NAME = "effect_output.virtual-surround-7.1-hesuvi"
 _CHAT_OUTPUT_NAME = "effect_output.sonar-chat-eq"
+_OUTPUT_EQ_OUTPUT_NAME = "effect_output.sonar-output-eq"
+
+_CONF_TARGET_RE = re.compile(r'node\.target\s*=\s*"([^"]*)"')
+
+
+def _get_configured_external_output() -> str:
+    """Return the external sink the Output channel's conf currently targets.
+
+    The Output channel (HDMI / TV / speakers) resolves its target through
+    :func:`_resolve_external_output`, which opens a pulsectl connection. That
+    is fine when writing the conf, but this value is needed on every watchdog
+    tick, so it is read back from the generated conf instead — the conf is
+    rewritten whenever the user changes the external output, so it stays the
+    single source of truth without paying for a PulseAudio round-trip a few
+    times a minute.
+
+    Returns an empty string when the conf is missing or carries no target
+    (no external sink configured), which callers treat as "skip this hop".
+    """
+    try:
+        content = (_CONF_DIR / "sonar-output-eq.conf").read_text()
+    except OSError:
+        return ""
+    match = _CONF_TARGET_RE.search(content)
+    return match.group(1) if match else ""
 
 
 def ensure_physical_output_links(data: list | None = None) -> dict[str, bool]:
@@ -2224,6 +2249,9 @@ def ensure_physical_output_links(data: list | None = None) -> dict[str, bool]:
       unconditional HeSuVi→physical hop; it does NOT touch the game/media
       EQ→{HeSuVi,physical} link that :func:`ensure_spatial_eq_links` already
       owns, so the two compose without either duplicating the other's work.
+    - ``effect_output.sonar-output-eq`` → the configured EXTERNAL sink
+      (HDMI/TV/speakers, :func:`_get_configured_external_output`). This hop
+      had no owner whatsoever until it was added here.
 
     Thin wrapper around :func:`~arctis_sound_manager.pw_utils.ensure_loopback_link`
     — same idempotent semantics (no-op when already correct, stray links torn
@@ -2247,8 +2275,9 @@ def ensure_physical_output_links(data: list | None = None) -> dict[str, bool]:
     Returns
     -------
     dict[str, bool]
-        ``{"chat": bool, "hesuvi": bool}`` — only channels whose physical
-        target is currently known (device attached) are included at all.
+        ``{"chat": bool, "hesuvi": bool, "output": bool}`` — only hops whose
+        target is currently known (device attached / external sink
+        configured) are included at all.
     """
     from arctis_sound_manager.pw_utils import ensure_loopback_link
 
@@ -2261,6 +2290,19 @@ def ensure_physical_output_links(data: list | None = None) -> dict[str, bool]:
     game_target = _get_physical_out_game()
     if game_target:
         results["hesuvi"] = ensure_loopback_link(_HESUVI_OUTPUT_NAME, game_target, data=data)
+
+    # The Output channel's last hop (EQ → external sink: HDMI, TV, speakers)
+    # was owned by nobody at all. Unlike chat/game/media it is not covered by
+    # ensure_spatial_eq_links either, so once quiesce_filter_chain() tore its
+    # link down on a filter-chain restart — or the external sink was destroyed
+    # and recreated by a display hotplug — nothing ever put it back. Any app
+    # routed to the Output channel then played into a dead end: no sound, no
+    # error. Same idempotent treatment as the two hops above.
+    output_target = _get_configured_external_output()
+    if output_target:
+        results["output"] = ensure_loopback_link(
+            _OUTPUT_EQ_OUTPUT_NAME, output_target, data=data
+        )
 
     return results
 
