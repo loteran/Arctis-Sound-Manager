@@ -983,6 +983,46 @@ def test_ladspa_sc4m_absent_skips_smart_volume_2ch():
     assert ":Output\"" not in text
 
 
+def test_2ch_output_channel_sink_is_visible_to_applications():
+    """The Output channel's sink must be a plain Audio/Sink.
+
+    It is the one channel users route applications *to* from a mixer, so it has
+    to appear in output pickers. _active_conf_8ch and _bypass_conf already did
+    this; the 2ch generator hardcoded Audio/Sink/Internal, so a stereo Output
+    channel with an active EQ disappeared from every picker and a saved routing
+    pin to it could no longer be reapplied.
+    """
+    from arctis_sound_manager.eq_types import EqBand
+    from arctis_sound_manager.sonar_to_pipewire import _active_conf_2ch
+
+    bands = [("bq0", EqBand(freq=1000, gain=3.0, q=0.7, type="peakingEQ", enabled=True))]
+
+    text = _active_conf_2ch(
+        "output", "effect_input.sonar-output-eq", "alsa_output.hdmi",
+        "FL FR", bands, [], [], 0.0,
+    )
+
+    assert "media.class       = Audio/Sink\n" in text
+    assert "Audio/Sink/Internal" not in text
+
+
+def test_2ch_chat_channel_sink_stays_internal():
+    """Every other 2ch channel is fed by ASM's own loopbacks and must stay
+    Internal — making Chat visible would put a second, confusing Arctis entry
+    in every application's output picker."""
+    from arctis_sound_manager.eq_types import EqBand
+    from arctis_sound_manager.sonar_to_pipewire import _active_conf_2ch
+
+    bands = [("bq0", EqBand(freq=1000, gain=3.0, q=0.7, type="peakingEQ", enabled=True))]
+
+    text = _active_conf_2ch(
+        "chat", "effect_input.sonar-chat-eq", "alsa_output.test",
+        "FL FR", bands, [], [], 0.0,
+    )
+
+    assert "media.class       = Audio/Sink/Internal" in text
+
+
 def test_ladspa_gate_absent_skips_noise_gate():
     """When gate_1410.so is missing, noise gate node is omitted from micro config."""
     from arctis_sound_manager.sonar_to_pipewire import generate_sonar_micro_conf
