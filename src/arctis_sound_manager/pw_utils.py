@@ -93,16 +93,28 @@ def app_override_key(name: str, binary: str) -> str:
 STEELSERIES_VENDOR_ID = "0x1038"
 
 
-def is_external_output_sink(sink) -> bool:
+def is_external_output_sink(sink, allow_headset: bool = False) -> bool:
     """Return True if *sink* is a hardware output the user can route a channel to.
 
-    A selectable external output is a real playback device that is neither the
-    SteelSeries headset (which owns its own routing) nor one of ASM's own
-    virtual/EQ nodes. Previously only ``alsa_output.*`` sinks qualified, which
-    silently hid every Bluetooth speaker/headphone — those appear as
-    ``bluez_output.*`` (issue #134). Both node-name families are accepted here so
-    the whole app (home page combos, tray routing menu, Sonar output override)
-    lists Bluetooth devices consistently.
+    A selectable external output is a real playback device that is not one of
+    ASM's own virtual/EQ nodes. Previously only ``alsa_output.*`` sinks
+    qualified, which silently hid every Bluetooth speaker/headphone — those
+    appear as ``bluez_output.*`` (issue #134). Both node-name families are
+    accepted here so the whole app (home page combos, tray routing menu, Sonar
+    output override) lists Bluetooth devices consistently.
+
+    *allow_headset* separates the two questions this predicate used to conflate:
+
+    * **What may ASM pick on its own?** The headset must stay excluded. It is
+      already the destination of the Game/Chat/Media chains, so auto-selecting
+      it as the "external" output would silently duplicate a route the user
+      never asked for. This is the default, hence ``allow_headset=False``.
+    * **What may the user pick deliberately?** The headset belongs in the list.
+      Routing the Output channel to it is a legitimate, requested setup: it
+      gives a second path to the headset with its own (typically flat) EQ and
+      no spatial processing — useful for video editing or music production
+      without swapping EQ profiles (issue #139). The user's routing choice is
+      sovereign; only the automatic default stays conservative.
 
     Accepts any object exposing ``.name`` and a ``.proplist`` mapping, so it
     works with ``pulsectl`` sink objects directly.
@@ -110,6 +122,8 @@ def is_external_output_sink(sink) -> bool:
     name = getattr(sink, "name", "") or ""
     if not (name.startswith("alsa_output") or name.startswith("bluez_output")):
         return False
+    if allow_headset:
+        return True
     if "SteelSeries" in name:
         return False
     proplist = getattr(sink, "proplist", None) or {}

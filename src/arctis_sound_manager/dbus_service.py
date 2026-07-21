@@ -7,6 +7,7 @@ import itertools
 import json
 import logging
 from pathlib import Path
+from types import SimpleNamespace
 
 from dbus_next.aio.message_bus import MessageBus
 from dbus_next.constants import RequestNameReply
@@ -405,13 +406,22 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
             sinks: list[TypedPulseSinkInfo] = self.core_engine.pa_audio_manager.sink_list_wrapper()
             for sink in sinks:
                 node_name = sink.proplist.get('node.name', '')
-                # For external_audio_devices, only show physical non-SteelSeries
-                # sinks — ALSA and Bluetooth (bluez_output.*, issue #134).
+                # For external_audio_devices, only show physical sinks — ALSA and
+                # Bluetooth (bluez_output.*, issue #134). The headset itself is
+                # listed too: pointing the Output channel at it is a deliberate,
+                # supported setup that gives a second path to the headset with a
+                # flat EQ and no spatial processing (issue #139). ASM still never
+                # auto-selects it — that stays gated by
+                # pw_utils.is_external_output_sink()'s default.
                 if list_name == 'external_audio_devices':
-                    if not (node_name.startswith('alsa_output')
-                            or node_name.startswith('bluez_output')):
-                        continue
-                    if sink.proplist.get('device.vendor.id', '') == '0x1038':
+                    from arctis_sound_manager.pw_utils import is_external_output_sink
+                    # Match on node.name (the PipeWire name this list has always
+                    # keyed on) rather than sink.name, via a tiny view over the
+                    # same shape the predicate expects.
+                    if not is_external_output_sink(
+                        SimpleNamespace(name=node_name, proplist=sink.proplist),
+                        allow_headset=True,
+                    ):
                         continue
 
                 id = sink.proplist.get('node.nick', '')

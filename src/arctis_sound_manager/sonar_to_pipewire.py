@@ -275,6 +275,21 @@ _EXT_OUTPUT_POSITIONS: dict[int, str] = {
 }
 
 
+def _read_external_output_setting() -> str:
+    """Return the user's saved ``external_output_device`` (node.nick or name).
+
+    Empty string when unset or unreadable, which means "auto-detect".
+    """
+    path = Path.home() / ".config" / "arctis_manager" / "settings" / "general_settings.yaml"
+    try:
+        from ruamel.yaml import YAML
+        raw = YAML(typ="safe").load(path) or {}
+    except Exception:
+        return ""
+    value = raw.get("external_output_device")
+    return value if isinstance(value, str) else ""
+
+
 def _resolve_external_output(target_override: str | None = None) -> tuple[str, int, str]:
     """Detect the external output sink (HDMI / DisplayPort / aux) at runtime.
 
@@ -284,14 +299,28 @@ def _resolve_external_output(target_override: str | None = None) -> tuple[str, i
 
     Returns (sink_name, channels, position_str).
     Falls back to ("", 2, "FL FR") when no suitable sink is found.
+
+    With no *target_override*, the user's saved ``external_output_device``
+    setting is consulted before falling back to auto-detection. Without that
+    step the GUI and the daemon disagreed: the GUI passes the user's choice as
+    an override, but ``ensure_sonar_eq_configs()`` calls this with none, so it
+    would auto-detect a *different* sink, see a mismatch against the conf on
+    disk and regenerate it — silently reverting the user's pick on every
+    startup and every repair pass. It also made the headset unselectable in
+    practice (issue #139), since auto-detection deliberately skips it.
     """
+    if not target_override:
+        target_override = _read_external_output_setting()
     try:
         import pulsectl
         with pulsectl.Pulse("asm-ext-output") as p:
             sinks = p.sink_list()
             if target_override:
                 for s in sinks:
-                    if s.name == target_override:
+                    # Match node.name OR node.nick: the setting stores a nick
+                    # (that is the id the D-Bus options list hands out), while
+                    # callers that already resolved a sink pass a node.name.
+                    if target_override in (s.name, s.proplist.get("node.nick", "")):
                         ch = s.channel_count
                         pos = _EXT_OUTPUT_POSITIONS.get(ch, "FL FR")
                         return s.name, ch, pos

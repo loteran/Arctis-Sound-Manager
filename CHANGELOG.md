@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **The headset can now be selected as the Output channel's device.** It was deliberately hidden from the external-output list, on the assumption that it already had its own routing. That prevented a legitimate setup: sending the Output channel to the headset gives you a second path to it with its own equaliser — typically flat — and no spatial processing, which is what you want for video editing or music production without swapping EQ profiles every time. The headset now appears in the list alongside your other outputs; ASM still never picks it automatically, so nothing changes unless you choose it. (#139, requested by @Malev0)
+
+### Fixed
+
+- **Your chosen external output could be silently reverted.** The app applied your selection, but the background service resolved that setting on its own and could land on a different device — then rewrite the configuration to match, undoing your choice on every startup and every repair. Both now read the same saved setting.
+
 ## [1.2.7] - 21 July 2026
 
 ### Fixed
