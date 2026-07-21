@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Virtual surround could still oversaturate after upgrading to 1.2.5.** That release added a fast-lookahead limiter to the HeSuVi chain to fix clipping on hot HRIRs, but the fix only applied to *newly generated* configs — anyone who already had a `sink-virtual-surround-7.1-hesuvi.conf` from an earlier version kept their old, limiter-less config forever, since none of the daemon's staleness checks recognised it as out of date. Generated filter-chain configs now carry a version marker, and the daemon regenerates the surround config whenever its marker is missing or behind the current version — so an update that changes what that config contains actually reaches existing installs, starting with this limiter. Your Immersion and Distance settings are preserved across the repair, and your equaliser configs are left untouched. (reported on Discord by @craciu25_YT)
+
 ## [1.2.5] - 20 July 2026
 
 ### Fixed
