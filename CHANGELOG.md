@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Arctis_Game / Arctis_Chat / Arctis_Media could appear duplicated in the mixer, with one copy stuck silent, after a daemon crash or a forceful `systemctl restart`.** Each virtual channel is a `pw-loopback` process kept alive across brief hiccups with `node.linger=true`; when the daemon itself died without going through a clean shutdown, those processes survived it as orphans the next daemon instance had no record of, so it started three brand new ones with the exact same names right alongside the old ones — PipeWire accepts the duplicates without complaint. The daemon now sweeps for and terminates any leftover loopback claiming a channel's name before starting its own, so a restart always comes back to a clean set of three, however the previous instance went down.
+
 ## [1.2.6] - 21 July 2026
 
 ### Added

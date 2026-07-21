@@ -1,0 +1,38 @@
+# Copyright (C) 2026 loteran
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+"""Suite-wide test safety nets."""
+
+from pathlib import Path
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _isolated_proc_root_suitewide(tmp_path_factory, monkeypatch):
+    """Keep the orphan-loopback sweep away from the real ``/proc``, everywhere.
+
+    ``LoopbackManager.start()`` sweeps ``/proc`` for orphaned ``pw-loopback``
+    survivors and SIGTERMs any process whose capture-side ``node.name``
+    matches the channel it is about to launch. This suite runs on developer
+    machines that have a *live* ASM daemon with real ``Arctis_Game`` /
+    ``Arctis_Chat`` / ``Arctis_Media`` loopbacks: a test that reaches the
+    sweep against the real ``/proc`` would kill the developer's own audio
+    routing mid-run.
+
+    ``tests/test_loopback_manager.py`` has its own module-level fixture for
+    this, but the danger is not confined to that file — any future test that
+    ends up calling ``start()`` inherits it. Pinning ``_PROC_ROOT`` to an
+    empty directory for the whole suite makes the safe behaviour the default
+    rather than something each new test file has to remember.
+
+    Tests that exercise the sweep itself override ``_PROC_ROOT`` locally,
+    which still works: this fixture only sets the baseline.
+    """
+    try:
+        from arctis_sound_manager import loopback_manager
+    except Exception:  # pragma: no cover - module import is not this fixture's job
+        return
+    empty = tmp_path_factory.mktemp("empty_proc")
+    monkeypatch.setattr(loopback_manager, "_PROC_ROOT", str(empty), raising=False)
+    yield Path(empty)
