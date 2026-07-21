@@ -15,7 +15,7 @@ from time import monotonic, sleep
 from dbus_next.aio.message_bus import MessageBus
 from dbus_next.constants import MessageType
 from dbus_next.message import Message
-from PySide6.QtCore import QFileSystemWatcher, Signal, Slot
+from PySide6.QtCore import QFileSystemWatcher, QThread, Signal, Slot
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
@@ -81,6 +81,42 @@ def _tray_icon_color() -> str:
     return resolve_tray_icon_color(0)
 
 
+class _ServiceActionWorker(QThread):
+    """Run a blocking service_control call off the Qt UI thread.
+
+    A ``filter-chain``/``arctis-manager`` restart can take a few seconds; the
+    tray's context menu lives on the Qt event loop, so calling
+    ``service_control.restart()`` straight from a QAction's ``triggered``
+    slot would freeze the whole menu for that long. Mirrors the pattern
+    already used for the safe-mode reset worker in gui/sonar_page.py
+    (``_SafeModeResetWorker``). Unlike ``service_control.restart_detached()``
+    (fire-and-forget, used when the caller process is about to exit), this
+    stays synchronous underneath so the caller gets an accurate success/
+    failure result to report back to the user — the tray process itself
+    isn't going away, so there's no need to detach.
+
+    The i18n keys for the outcome notification travel *through the signal*
+    rather than through a closure captured at call time: the receiving slot
+    must be a bound method of a UI-thread QObject (see
+    ``_run_maintenance_action``), so it cannot close over per-call state.
+    """
+    # ok, done_key, failed_key
+    done = Signal(bool, str, str)
+
+    def __init__(self, func, done_key: str, failed_key: str, parent=None):
+        super().__init__(parent)
+        self._func = func
+        self._done_key = done_key
+        self._failed_key = failed_key
+
+    def run(self) -> None:
+        try:
+            ok = bool(self._func())
+        except Exception:
+            ok = False
+        self.done.emit(ok, self._done_key, self._failed_key)
+
+
 class QSystrayApp(QBaseDesktopApp):
     new_status = Signal(object)
 
@@ -130,6 +166,10 @@ class QSystrayApp(QBaseDesktopApp):
 
         self._sonar_applier = SonarPresetApplier(self)
         self._sonar_applier.done.connect(self._on_sonar_preset_applied)
+
+        # Keep references to in-flight maintenance workers (service restarts)
+        # so PySide6 doesn't GC a running QThread out from under itself.
+        self._maintenance_workers: list = []
 
         self.menu = QMenu()
         # Connect signals once on the persistent menu object
@@ -449,6 +489,39 @@ class QSystrayApp(QBaseDesktopApp):
         except Exception as _e:
             self.logger.debug('Output routing section failed: %s', _e)
 
+        # Maintenance (restart the audio engine / ASM daemon without a
+        # terminal — there is no systemctl/dinitctl service name a user can
+        # discover on their own, and some fixes (regenerated PipeWire configs)
+        # only take effect after a filter-chain restart).
+        try:
+            _maint_menu = QMenu(I18n.translate('ui', 'maintenance_menu'))
+            self._menu_action_refs.append(_maint_menu)
+
+            _a_engine = _maint_menu.addAction(I18n.translate('ui', 'restart_audio_engine'))
+            self._menu_action_refs.append(_a_engine)
+            _a_engine.triggered.connect(self._on_restart_audio_engine)
+
+            _a_asm = _maint_menu.addAction(I18n.translate('ui', 'restart_asm'))
+            self._menu_action_refs.append(_a_asm)
+            _a_asm.triggered.connect(self._on_restart_asm)
+
+            _a_regen = _maint_menu.addAction(I18n.translate('ui', 'regenerate_audio_configs'))
+            self._menu_action_refs.append(_a_regen)
+            _a_regen.triggered.connect(self._on_regenerate_audio_configs)
+
+            if not sc.manager_available():
+                # No systemctl/dinitctl at all — grey the entries out instead of
+                # letting them fail silently when clicked.
+                _unavailable_tip = I18n.translate('ui', 'service_manager_unavailable')
+                for _a in (_a_engine, _a_asm, _a_regen):
+                    _a.setEnabled(False)
+                    _a.setToolTip(_unavailable_tip)
+
+            _sep()
+            self.menu.addMenu(_maint_menu)
+        except Exception as e:
+            self.logger.error('Maintenance section failed: %s', e, exc_info=True)
+
         # Headset status (power only)
         for _, status_obj in self.last_device_status.items():
             if not status_obj:
@@ -501,6 +574,126 @@ class QSystrayApp(QBaseDesktopApp):
             )
         except Exception as e:
             self.logger.error('_on_reclaim_audio failed: %s', e, exc_info=True)
+
+    def _run_maintenance_action(self, func, progress_key: str, done_key: str, failed_key: str) -> None:
+        """Run *func* (a zero-arg callable returning bool) in the background
+        and report the outcome via tray notifications — success and failure
+        both surfaced, never a silent no-op. *func* must go through
+        service_control exclusively (never call systemctl/dinitctl/pipewire
+        directly) so it works identically on systemd and dinit.
+
+        The ``manager_available()`` check here is defense-in-depth: menu_setup()
+        already disables the triggering QAction when no service manager is
+        present, but the menu is only rebuilt when it opens, so re-check here
+        too rather than relying solely on that stale-by-construction state.
+        """
+        title = "Arctis Sound Manager"
+        if not sc.manager_available():
+            self.tray_icon.showMessage(
+                title, I18n.translate('ui', 'service_manager_unavailable'),
+                QSystemTrayIcon.MessageIcon.Warning, 5000,
+            )
+            return
+
+        self.tray_icon.showMessage(
+            title, I18n.translate('ui', progress_key),
+            QSystemTrayIcon.MessageIcon.Information, 3000,
+        )
+
+        # `done` MUST be connected to a bound method of self (a QObject living
+        # in the UI thread) so Qt resolves the AutoConnection to a
+        # QueuedConnection and runs the slot on the UI thread. Connecting a
+        # local function instead gives a context-less functor, which Qt treats
+        # as a DirectConnection — the slot would then run in the worker thread
+        # and call tray_icon.showMessage() off the UI thread (issue #126
+        # territory). Hence the outcome keys ride on the signal rather than
+        # being captured in a closure.
+        worker = _ServiceActionWorker(func, done_key, failed_key)
+        self._maintenance_workers.append(worker)
+        worker.done.connect(self._on_maintenance_done)
+        # Drop our reference only once run() has actually returned: `done` is
+        # emitted from inside run(), so releasing it there could destroy a
+        # still-running QThread ("Destroyed while thread is still running").
+        # Same split as _SafeModeResetWorker in gui/sonar_page.py.
+        worker.finished.connect(self._on_maintenance_worker_finished)
+        worker.start()
+
+    @Slot(bool, str, str)
+    def _on_maintenance_done(self, ok: bool, done_key: str, failed_key: str) -> None:
+        """Report a maintenance action's outcome — runs on the UI thread."""
+        key = done_key if ok else failed_key
+        icon = (QSystemTrayIcon.MessageIcon.Information if ok
+                else QSystemTrayIcon.MessageIcon.Warning)
+        self.tray_icon.showMessage(
+            "Arctis Sound Manager", I18n.translate('ui', key), icon, 4000,
+        )
+
+    @Slot()
+    def _on_maintenance_worker_finished(self) -> None:
+        """Release finished workers (UI thread, after their run() returned).
+
+        Sweeps by ``isFinished()`` rather than identifying the emitter through
+        ``sender()``: sender() is only meaningful inside a genuine Qt signal
+        emission, and a maintenance action is a rare, user-triggered event, so
+        there is at most a handful of workers to scan.
+        """
+        still_running = []
+        for worker in self._maintenance_workers:
+            if worker.isFinished():
+                worker.deleteLater()
+            else:
+                still_running.append(worker)
+        self._maintenance_workers = still_running
+
+    def _on_restart_audio_engine(self) -> None:
+        # The common case: apply a regenerated filter-chain config without
+        # touching the daemon or pipewire itself.
+        self._run_maintenance_action(
+            lambda: sc.restart("filter-chain", timeout=20),
+            'restart_audio_engine_progress', 'restart_audio_engine_done', 'restart_audio_engine_failed',
+        )
+
+    def _on_restart_asm(self) -> None:
+        def _do() -> bool:
+            services = ["arctis-manager", "filter-chain"]
+            # Only include arctis-video-router if it was actually running —
+            # restarting (and thereby starting) a service the user never
+            # enabled would be a surprise side effect.
+            if sc.is_active("arctis-video-router"):
+                services.append("arctis-video-router")
+            return sc.restart(*services, timeout=20)
+
+        self._run_maintenance_action(
+            _do, 'restart_asm_progress', 'restart_asm_done', 'restart_asm_failed',
+        )
+
+    def _on_regenerate_audio_configs(self) -> None:
+        def _do() -> bool:
+            # check_and_fix_stale_configs() is the same repair routine the
+            # daemon runs at startup and the GUI runs when the Sonar page
+            # opens: it regenerates any Sonar EQ / HeSuVi filter-chain config
+            # that is missing or stale (including calling
+            # ensure_sonar_eq_configs() internally when in Sonar EQ mode).
+            # We restart filter-chain unconditionally afterwards regardless
+            # of whether anything was actually detected as stale, since the
+            # user explicitly asked for "regenerate configs" — a restart is
+            # the whole point of the button.
+            #
+            # If needs_pw_restart comes back True (a rare legacy-install
+            # migration that removes a duplicate static HeSuVi node), we
+            # deliberately do NOT restart pipewire itself here: that remains
+            # reserved for the normal GUI/daemon startup path, since
+            # restarting pipewire tears down every audio client system-wide —
+            # far more disruptive than what this button promises.
+            from arctis_sound_manager.sonar_to_pipewire import \
+                check_and_fix_stale_configs
+            check_and_fix_stale_configs()
+            return sc.restart("filter-chain", timeout=20)
+
+        self._run_maintenance_action(
+            _do, 'regenerate_audio_configs_progress', 'regenerate_audio_configs_done',
+            'regenerate_audio_configs_failed',
+        )
 
     def _on_tray_channel_output(self, channel: str, sink_name: str) -> None:
         try:

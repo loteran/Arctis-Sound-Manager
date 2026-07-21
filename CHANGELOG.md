@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **New tray "Maintenance" submenu to restart the audio engine or ASM daemon without a terminal.** There was previously no discoverable way to recover from a stuck filter-chain or a config that only takes effect after a restart — the daemon isn't a systemd/dinit unit a user would know to look for ("how do I restart the asm daemon? there's no systemctl service", asked on Discord). The tray now offers "Restart audio engine" (filter-chain only — the common case for applying a regenerated config), "Restart ASM" (the daemon and filter-chain, plus the video router if it was running), and "Regenerate audio configs" (force-repairs stale Sonar/HeSuVi filter-chain configs, then restarts filter-chain). All three go exclusively through the existing service_control abstraction (so they work identically on systemd and dinit), run off the UI thread so the tray never freezes, never touch pipewire itself, and report success or failure via a tray notification. The submenu greys out with an explanation if no service manager (systemctl/dinitctl) is present.
+
 ## [1.2.5] - 20 July 2026
 
 ### Fixed
