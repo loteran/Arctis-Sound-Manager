@@ -36,3 +36,27 @@ def _isolated_proc_root_suitewide(tmp_path_factory, monkeypatch):
     empty = tmp_path_factory.mktemp("empty_proc")
     monkeypatch.setattr(loopback_manager, "_PROC_ROOT", str(empty), raising=False)
     yield Path(empty)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_conf_dir_suitewide(tmp_path_factory, monkeypatch):
+    """Keep the suite away from the developer's real filter-chain configs.
+
+    ``sonar_to_pipewire._CONF_DIR`` points at
+    ``~/.config/pipewire/filter-chain.conf.d`` — the *live* audio configuration
+    of whoever runs the suite. Any test reaching a code path that reads it
+    silently inherits that machine's state (which made four
+    ``ensure_physical_output_links`` tests fail the moment it learned to read
+    the Output channel's configured target), and any path that *writes* it
+    would rewrite a developer's working audio setup mid-run.
+
+    Tests that need a config directory monkeypatch ``_CONF_DIR`` themselves;
+    this only moves the default away from the real one.
+    """
+    try:
+        from arctis_sound_manager import sonar_to_pipewire
+    except Exception:  # pragma: no cover - module import is not this fixture's job
+        return
+    empty = tmp_path_factory.mktemp("empty_conf_d")
+    monkeypatch.setattr(sonar_to_pipewire, "_CONF_DIR", Path(empty), raising=False)
+    yield Path(empty)

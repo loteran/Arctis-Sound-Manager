@@ -128,6 +128,43 @@ def test_release_usb_handle_releases_all_interfaces():
     assert set(released) == {0, 1, 2, 3}
 
 
+def test_teardown_releases_every_claimed_interface():
+    """teardown() must release the same interface set kernel_detach claimed.
+
+    kernel_detach claims *all* of _all_used_interfaces (command, listeners,
+    dial candidates) — claiming is what stops the kernel rebinding usbhid and
+    turning every transfer into EIO. teardown() used to release only the
+    command interface, then asked kernel_attach to hand every interface back
+    to the kernel while this process still held the rest.
+    """
+    dc = _make_device_config()
+    dc.command_interface_index = [0, 0]
+    dc.listen_interface_indexes = [1, 2]
+    dc.dial_interface_index = 3
+    dc.dial_interface_candidates = [4]
+
+    engine = _make_engine_with_stale_handle(dc)
+    engine.loopback_manager = MagicMock()
+    engine.redirect_audio_on_disconnect = MagicMock()
+    engine.kernel_attach = MagicMock(return_value=True)
+    engine._device_ready = True
+    engine._warned_no_out_endpoint = False
+    engine.device_status = None
+    engine._active_extra_dial_interfaces = []
+
+    released = []
+
+    with patch('usb.util.release_interface', side_effect=lambda dev, i: released.append(i)), \
+         patch('usb.util.dispose_resources'), \
+         patch('usb.core.find', return_value=None), \
+         patch('arctis_sound_manager.core.device_state'):
+        engine.teardown()
+
+    assert set(released) == {0, 1, 2, 3, 4}, (
+        "teardown must release every interface kernel_detach claimed, not just the command one"
+    )
+
+
 def test_release_usb_handle_dispose_called_even_if_release_raises():
     """dispose_resources must run even if release_interface raises USBError."""
     import usb.core
