@@ -1813,6 +1813,30 @@ class CoreEngine:
         self.permission_error = had_eacces
         return not had_eacces
 
+    def release_all_interfaces(self, usb_device: TypedDevice, config: DeviceConfiguration) -> None:
+        """Release every interface :meth:`kernel_detach` claimed.
+
+        The claim/release pair must cover the same set. ``kernel_detach``
+        claims *all* of :meth:`_all_used_interfaces` — command, status
+        listeners and every dial candidate — because detaching without
+        claiming lets the kernel rebind usbhid behind our back and every
+        transfer then fails with EIO (see that method's docstring). Releasing
+        only the command interface therefore leaves the rest claimed, and
+        :meth:`kernel_attach` is asked to hand interfaces back to the kernel
+        while this process still holds them.
+
+        Best effort by design: an interface that was never successfully
+        claimed raises, and that is not an error worth propagating on a
+        teardown path — the goal is to give back whatever we hold before the
+        kernel driver is re-attached.
+        """
+        for interface in self._all_used_interfaces(config):
+            try:
+                usb.util.release_interface(usb_device, interface)
+            except (usb.core.USBError, ValueError, OSError) as e:
+                # Not claimed, already gone, or device unplugged mid-teardown.
+                self.logger.debug("Interface %s not released: %s", interface, e)
+
     def kernel_attach(self, usb_device: TypedDevice, config: DeviceConfiguration) -> bool:
         """Re-attach the kernel driver. Returns False on USB error (best effort)."""
         self.logger.info(f"Re-attaching kernel driver for device: {usb_device.idProduct:04x}:{usb_device.idVendor:04x} ({config.name})")
@@ -1931,11 +1955,7 @@ class CoreEngine:
             self.oled_manager = None
 
         if self.device_config is not None:
-            for interface in self._all_used_interfaces(self.device_config):
-                try:
-                    usb.util.release_interface(self.usb_device, interface)
-                except usb.core.USBError:
-                    pass  # interface may already be released or device gone
+            self.release_all_interfaces(self.usb_device, self.device_config)
 
             # Return the kernel driver so the OS does not see a dangling claim.
             try:
@@ -1956,7 +1976,11 @@ class CoreEngine:
         if self.usb_device:
             try:
                 if self.device_config is not None:
-                    usb.util.release_interface(self.usb_device, self._get_command_interface(self.device_config))
+                    # Release every interface kernel_detach claimed, not just
+                    # the command one: kernel_attach below hands them all back
+                    # to the kernel, and it cannot succeed on an interface this
+                    # process is still holding.
+                    self.release_all_interfaces(self.usb_device, self.device_config)
                 if self.device_config and usb.core.find(idVendor=self.device_config.vendor_id):
                     self.kernel_attach(self.usb_device, self.device_config)
             except usb.core.USBError as e:
