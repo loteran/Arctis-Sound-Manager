@@ -8,11 +8,15 @@ All subprocess.Popen calls are mocked; no real PipeWire process is started.
 """
 from __future__ import annotations
 
+import os
+import signal
 import subprocess
+from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from arctis_sound_manager import loopback_manager as loopback_manager_module
 from arctis_sound_manager.loopback_manager import (
     LoopbackManager,
     LoopbackSpec,
@@ -22,6 +26,26 @@ from arctis_sound_manager.loopback_manager import (
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
+@pytest.fixture(autouse=True)
+def _isolated_proc_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Prevent every test in this module from touching the real ``/proc``.
+
+    ``LoopbackManager.start()`` (and the revival path in ``restart_dead()``)
+    now sweeps ``/proc`` for orphaned pw-loopback survivors before spawning
+    a new process — see ``TestOrphanReaping`` below. Without this fixture,
+    every test that calls ``start()`` would scan whatever machine actually
+    runs the suite; on a dev box that happens to have a real ASM daemon
+    running, that could find and SIGTERM production Arctis_Game/Chat/Media
+    loopback processes. Point ``_PROC_ROOT`` at an empty directory by
+    default; ``TestOrphanReaping`` overrides it per-test to exercise the
+    sweep itself.
+    """
+    root = tmp_path / "proc"
+    root.mkdir()
+    monkeypatch.setattr(loopback_manager_module, "_PROC_ROOT", str(root))
+    return root
+
 
 @pytest.fixture
 def media_spec() -> LoopbackSpec:
@@ -60,6 +84,18 @@ def chat_spec() -> LoopbackSpec:
 @pytest.fixture
 def all_sonar_specs(game_spec, chat_spec, media_spec) -> list[LoopbackSpec]:
     return [game_spec, chat_spec, media_spec]
+
+
+def _write_fake_proc(root: Path, pid: int, argv: list[str]) -> None:
+    """Create a fake ``/proc/<pid>/cmdline`` entry with the given argv.
+
+    Mirrors the real procfs format: argv elements joined by NUL bytes, with
+    a trailing NUL after the last element.
+    """
+    pid_dir = root / str(pid)
+    pid_dir.mkdir()
+    data = b"\x00".join(arg.encode() for arg in argv) + b"\x00"
+    (pid_dir / "cmdline").write_bytes(data)
 
 
 def _mock_proc(returncode: int | None = None) -> MagicMock:
@@ -772,3 +808,251 @@ class TestRestartDeadSkipChannels:
         assert restarted == []
         # Popen called 3 times for initial start, 0 times for restart.
         assert mock_popen.call_count == 3
+
+
+# ── Orphan pw-loopback reaping ─────────────────────────────────────────────────
+
+
+class TestOrphanReaping:
+    """Tests for the /proc sweep that kills orphaned pw-loopback survivors of
+    a previous, uncleanly-terminated ASM daemon instance.
+
+    The ``_isolated_proc_root`` autouse fixture already points ``_PROC_ROOT``
+    at an empty tmp_path directory for every test in this module; these
+    tests populate that same directory (or point elsewhere) to exercise the
+    sweep itself.
+    """
+
+    @staticmethod
+    def _kill_dies_immediately(pid: int, sig: int) -> None:
+        """os.kill side_effect: SIGTERM "succeeds", then the liveness check
+        (signal 0) reports the process already gone — no SIGKILL, no sleep."""
+        if sig == 0:
+            raise ProcessLookupError
+        return None
+
+    def test_orphan_with_matching_capture_name_is_killed(
+        self, game_spec: LoopbackSpec, _isolated_proc_root: Path
+    ) -> None:
+        """A survivor pw-loopback process whose --capture-props carries the
+        exact node.name of the channel being started must be SIGTERM'd."""
+        orphan_pid = 40001
+        _write_fake_proc(_isolated_proc_root, orphan_pid, [
+            "/usr/bin/pw-loopback",
+            "--capture-props=node.name=Arctis_Game "
+            'node.description="Game" media.class=Audio/Sink '
+            "audio.channels=2 audio.position=[FL FR]",
+            "--playback-props=node.name=Arctis_Game_sink_out node.linger=true",
+        ])
+
+        with patch("os.kill", side_effect=self._kill_dies_immediately) as mock_kill, \
+                patch("subprocess.Popen", return_value=_mock_proc()):
+            mgr = LoopbackManager()
+            mgr.start(game_spec)
+
+        mock_kill.assert_any_call(orphan_pid, signal.SIGTERM)
+
+    def test_sigkill_is_not_sent_to_a_recycled_pid(
+        self, game_spec: LoopbackSpec, _isolated_proc_root: Path
+    ) -> None:
+        """A pid that stops being our orphan mid-wait must not get SIGKILL.
+
+        ``os.kill(pid, 0)`` only proves *some* process holds the pid. If the
+        orphan exits on SIGTERM and the kernel recycles its pid within the
+        two-second grace period, escalating blindly would SIGKILL whatever
+        innocent process inherited it. The cmdline is therefore re-read before
+        escalating; here it comes back as an unrelated process.
+        """
+        orphan_pid = 40010
+        _write_fake_proc(_isolated_proc_root, orphan_pid, [
+            "/usr/bin/pw-loopback",
+            "--capture-props=node.name=Arctis_Game media.class=Audio/Sink",
+        ])
+
+        def _kill_never_dies(pid: int, sig: int) -> None:
+            # On SIGTERM the orphan dies and the kernel immediately hands its
+            # pid to an unrelated process: the /proc entry stays readable but
+            # now describes something else. Signal 0 keeps reporting the pid
+            # as alive, because it is — just not as our orphan.
+            if sig == signal.SIGTERM:
+                (_isolated_proc_root / str(orphan_pid) / "cmdline").write_bytes(
+                    b"/usr/bin/some-unrelated-program\x00--doing-its-own-thing\x00"
+                )
+            return None
+
+        def _fake_monotonic(values=iter([0.0, 0.0, 99.0, 99.0])):
+            try:
+                return next(values)
+            except StopIteration:
+                return 99.0
+
+        with patch("os.kill", side_effect=_kill_never_dies) as mock_kill, \
+                patch("time.monotonic", side_effect=_fake_monotonic), \
+                patch("time.sleep"), \
+                patch("subprocess.Popen", return_value=_mock_proc()):
+            mgr = LoopbackManager()
+            mgr.start(game_spec)
+
+        signals_sent = {(c.args[0], c.args[1]) for c in mock_kill.call_args_list}
+        # Guards against a vacuous pass: the orphan must genuinely have been
+        # found and signalled, otherwise "no SIGKILL" proves nothing.
+        assert (orphan_pid, signal.SIGTERM) in signals_sent
+        assert (orphan_pid, signal.SIGKILL) not in signals_sent, (
+            "SIGKILL must never be escalated to a pid that is no longer the orphan"
+        )
+
+    def test_ds5_haptics_loopback_targeting_arctis_game_is_not_killed(
+        self, game_spec: LoopbackSpec, _isolated_proc_root: Path
+    ) -> None:
+        """Regression test (the critical case): a DualSense haptics loopback
+        that *targets* Arctis_Game (``target.object=Arctis_Game``) is not an
+        ASM process and must never be killed. Its own node.name is
+        ``ds5_haptics_capture_game`` — only that field identifies ownership,
+        never target.object, which a naive substring match would confuse."""
+        ds5_pid = 40002
+        _write_fake_proc(_isolated_proc_root, ds5_pid, [
+            "/usr/bin/pw-loopback",
+            "-c", "2",
+            "--capture-props=node.name=ds5_haptics_capture_game "
+            "media.class=Stream/Input/Audio stream.capture.sink=true "
+            "target.object=Arctis_Game",
+            "--playback=ds5_dongle_sink",
+        ])
+
+        with patch("os.kill") as mock_kill, \
+                patch("subprocess.Popen", return_value=_mock_proc()):
+            mgr = LoopbackManager()
+            mgr.start(game_spec)
+
+        killed_pids = {c.args[0] for c in mock_kill.call_args_list}
+        assert ds5_pid not in killed_pids
+
+    def test_sink_out_suffix_is_not_confused_with_capture_name(
+        self, game_spec: LoopbackSpec, _isolated_proc_root: Path
+    ) -> None:
+        """node.name=Arctis_Game_sink_out must not match a sweep for
+        node.name=Arctis_Game — matching is on the exact, space-delimited
+        value, not a startswith/substring test."""
+        other_pid = 40003
+        _write_fake_proc(_isolated_proc_root, other_pid, [
+            "/usr/bin/pw-loopback",
+            "--capture-props=node.name=Arctis_Game_sink_out media.class=Audio/Sink",
+            "--playback-props=node.name=whatever",
+        ])
+
+        with patch("os.kill") as mock_kill, \
+                patch("subprocess.Popen", return_value=_mock_proc()):
+            mgr = LoopbackManager()
+            mgr.start(game_spec)
+
+        killed_pids = {c.args[0] for c in mock_kill.call_args_list}
+        assert other_pid not in killed_pids
+
+    def test_pid_in_handles_is_never_killed(
+        self,
+        game_spec: LoopbackSpec,
+        chat_spec: LoopbackSpec,
+        _isolated_proc_root: Path,
+    ) -> None:
+        """A PID this manager already owns (tracked in self._handles for a
+        different, still-running channel) must never be treated as an
+        orphan, even if a /proc entry with that exact PID happens to carry
+        the capture name being (re)started."""
+        owned_pid = 40004
+        # A /proc entry for the *owned* pid that would otherwise look like
+        # an orphan for the "game" channel about to be started.
+        _write_fake_proc(_isolated_proc_root, owned_pid, [
+            "/usr/bin/pw-loopback",
+            "--capture-props=node.name=Arctis_Game media.class=Audio/Sink",
+            "--playback-props=node.name=Arctis_Game_sink_out",
+        ])
+
+        chat_proc = _mock_proc()
+        chat_proc.pid = owned_pid
+
+        with patch("os.kill") as mock_kill, \
+                patch("subprocess.Popen", side_effect=[chat_proc, _mock_proc()]):
+            mgr = LoopbackManager()
+            mgr.start(chat_spec)   # registers owned_pid under "chat"
+            mgr.start(game_spec)   # must NOT kill owned_pid despite the match
+
+        killed_pids = {c.args[0] for c in mock_kill.call_args_list}
+        assert owned_pid not in killed_pids
+
+    def test_current_process_pid_is_never_killed(
+        self, game_spec: LoopbackSpec, _isolated_proc_root: Path
+    ) -> None:
+        """The daemon's own PID must never be treated as an orphan, even if
+        (implausibly) a /proc entry for it looked like a match."""
+        _write_fake_proc(_isolated_proc_root, os.getpid(), [
+            "/usr/bin/pw-loopback",
+            "--capture-props=node.name=Arctis_Game media.class=Audio/Sink",
+            "--playback-props=node.name=Arctis_Game_sink_out",
+        ])
+
+        with patch("os.kill") as mock_kill, \
+                patch("subprocess.Popen", return_value=_mock_proc()):
+            mgr = LoopbackManager()
+            mgr.start(game_spec)
+
+        mock_kill.assert_not_called()
+
+    def test_process_vanishing_mid_scan_does_not_break_start(
+        self, game_spec: LoopbackSpec, _isolated_proc_root: Path
+    ) -> None:
+        """A /proc/<pid> entry that disappears between listdir() and reading
+        cmdline (the process exited mid-scan) must be skipped silently, and
+        start() must still launch the real loopback."""
+        vanished_pid = 40005
+        # Directory exists (so it's listed) but no cmdline file inside it —
+        # simulates the process having fully exited by read time.
+        (_isolated_proc_root / str(vanished_pid)).mkdir()
+
+        with patch("os.kill") as mock_kill, \
+                patch("subprocess.Popen", return_value=_mock_proc()) as mock_popen:
+            mgr = LoopbackManager()
+            mgr.start(game_spec)
+
+        mock_kill.assert_not_called()
+        mock_popen.assert_called_once()
+        assert mgr.is_running("game")
+
+    def test_unreadable_proc_root_does_not_block_start(
+        self, game_spec: LoopbackSpec, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """If /proc can't even be listed, the sweep must fail closed (no
+        orphans found) rather than prevent the real loopback from launching."""
+        missing_root = tmp_path / "does-not-exist"
+        monkeypatch.setattr(loopback_manager_module, "_PROC_ROOT", str(missing_root))
+
+        with patch("subprocess.Popen", return_value=_mock_proc()) as mock_popen:
+            mgr = LoopbackManager()
+            mgr.start(game_spec)
+
+        mock_popen.assert_called_once()
+        assert mgr.is_running("game")
+
+    def test_restart_dead_also_reaps_orphans(
+        self, media_spec: LoopbackSpec, _isolated_proc_root: Path
+    ) -> None:
+        """restart_dead() spawns its revival process independently of
+        start() (it can't call start() while holding the manager lock), so
+        the same sweep must run there too."""
+        orphan_pid = 40006
+        _write_fake_proc(_isolated_proc_root, orphan_pid, [
+            "/usr/bin/pw-loopback",
+            "--capture-props=node.name=Arctis_Media media.class=Audio/Sink",
+            "--playback-props=node.name=Arctis_Media_sink_out",
+        ])
+
+        dead_proc = _mock_proc(returncode=1)
+        new_proc = _mock_proc()
+        new_proc.pid = 77778
+
+        with patch("os.kill", side_effect=self._kill_dies_immediately) as mock_kill, \
+                patch("subprocess.Popen", side_effect=[dead_proc, new_proc]):
+            mgr = LoopbackManager()
+            mgr.start(media_spec)
+            mgr.restart_dead()
+
+        mock_kill.assert_any_call(orphan_pid, signal.SIGTERM)

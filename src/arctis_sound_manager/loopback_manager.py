@@ -28,8 +28,10 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import signal
 import subprocess
 import threading
+import time
 from dataclasses import dataclass
 
 _log = logging.getLogger(__name__)
@@ -300,6 +302,204 @@ def _build_pw_loopback_argv(spec: LoopbackSpec) -> list[str]:
     ]
 
 
+# ── Orphan loopback reaping ───────────────────────────────────────────────────
+#
+# pw-loopback is started with node.linger=true (see _build_pw_loopback_argv)
+# so that its PipeWire node survives brief hiccups. That flag has a side
+# effect: the *process* also survives its parent. If the ASM daemon dies
+# without going through LoopbackManager.stop_all() — crash, `systemctl
+# restart`, kill -9 — its pw-loopback children are simply orphaned (reparented
+# by the kernel), not terminated. The next daemon starts with an empty
+# LoopbackManager._handles and has no way to know they exist, so it launches
+# three brand new pw-loopback processes with the exact same node.name as the
+# survivors. PipeWire happily accepts the duplicates, and the user ends up
+# with Arctis_Game/Chat/Media doubled in their mixer — half of them dead ends
+# that audio can silently vanish into.
+#
+# The fix is a sweep, run right before every launch, that finds and kills any
+# pw-loopback process already claiming the node.name we are about to (re)use.
+
+# Root of the process filesystem. Resolved lazily (read at call time, not at
+# import time) inside _find_orphan_pw_loopback_pids() so tests can point it
+# at a fake tree via monkeypatch without threading a parameter through every
+# call site.
+_PROC_ROOT = "/proc"
+
+
+def _read_proc_cmdline(proc_root: str, pid: int) -> list[str] | None:
+    """Read and split ``/proc/<pid>/cmdline`` into its argv list.
+
+    ``/proc`` entries can vanish between listing and reading (the process
+    exits) or be unreadable (permissions) — both are ordinary races, not
+    errors, so this returns ``None`` instead of raising.
+
+    Returns
+    -------
+    list[str] | None
+        The process's argv, or ``None`` if it could not be read or was
+        empty (e.g. a zombie, whose cmdline file reads as empty).
+    """
+    path = os.path.join(proc_root, str(pid), "cmdline")
+    try:
+        with open(path, "rb") as fh:
+            raw = fh.read()
+    except (FileNotFoundError, ProcessLookupError, PermissionError, OSError):
+        return None
+    if not raw:
+        return None
+    parts = raw.split(b"\x00")
+    if parts and parts[-1] == b"":
+        parts = parts[:-1]
+    if not parts:
+        return None
+    return [part.decode("utf-8", errors="replace") for part in parts]
+
+
+def _capture_node_name(argv: list[str]) -> str | None:
+    """Extract the capture-side ``node.name`` from a pw-loopback argv.
+
+    ``--capture-props`` is a *single* argv element containing multiple
+    space-separated ``key=value`` pairs (see :func:`_build_pw_loopback_argv`,
+    e.g. ``--capture-props=node.name=Arctis_Game media.class=Audio/Sink ...``).
+    Matching is done on the exact ``node.name=<value>`` token — never a bare
+    substring search — because both of the following must be told apart:
+
+    * ``target.object=Arctis_Game`` (what a DualSense haptics loopback that
+      *targets* the Arctis Game sink looks like) must never be confused with
+      ``node.name=Arctis_Game`` (the ASM process that *owns* that sink) — we
+      only ever look for the ``node.name=`` key, never ``target.object``.
+    * ``node.name=Arctis_Game_sink_out`` must not match a search for
+      ``node.name=Arctis_Game`` — splitting the props string on whitespace
+      delimits each token's value at the next space (or end of string), so
+      the extracted value is compared for exact equality, not prefix.
+
+    Returns
+    -------
+    str | None
+        The capture node.name, or ``None`` if this argv has no
+        ``--capture-props`` element, or that element carries no
+        ``node.name`` token.
+    """
+    prefix = "--capture-props="
+    for arg in argv:
+        if not arg.startswith(prefix):
+            continue
+        props = arg[len(prefix):]
+        for token in props.split(" "):
+            if token.startswith("node.name="):
+                return token[len("node.name="):]
+    return None
+
+
+def _find_orphan_pw_loopback_pids(
+    capture_name: str, exclude_pids: "set[int]"
+) -> list[tuple[int, str]]:
+    """Scan ``/proc`` for pw-loopback processes capturing as *capture_name*.
+
+    Finds survivors of a previous, uncleanly-terminated ASM daemon instance
+    (see the module-level comment above for why they exist). Never raises:
+    every per-process read is best-effort, and a scan-wide failure (e.g.
+    ``/proc`` unreadable) yields an empty list rather than propagating — a
+    failed sweep must never block launching the real loopback.
+
+    Parameters
+    ----------
+    capture_name:
+        The exact ``node.name`` of the channel about to be (re)started
+        (``spec.capture_name``, e.g. ``"Arctis_Game"``).
+    exclude_pids:
+        PIDs that must never be reported even if they match — this
+        manager's own live children and the current process.
+
+    Returns
+    -------
+    list[tuple[int, str]]
+        ``(pid, node_name)`` pairs for every matching orphan found.
+    """
+    try:
+        entries = os.listdir(_PROC_ROOT)
+    except (FileNotFoundError, PermissionError, OSError) as exc:
+        _log.warning("Could not list %s to scan for orphan loopbacks: %s", _PROC_ROOT, exc)
+        return []
+
+    found: list[tuple[int, str]] = []
+    for entry in entries:
+        if not entry.isdigit():
+            continue
+        pid = int(entry)
+        if pid in exclude_pids:
+            continue
+        argv = _read_proc_cmdline(_PROC_ROOT, pid)
+        if not argv:
+            continue
+        exe = argv[0]
+        if not (exe == "pw-loopback" or exe.endswith("/pw-loopback")):
+            continue
+        name = _capture_node_name(argv)
+        if name == capture_name:
+            found.append((pid, name))
+    return found
+
+
+def _terminate_orphan_pid(pid: int, node_name: str) -> None:
+    """Terminate a single orphan pw-loopback process.
+
+    Same SIGTERM-then-SIGKILL discipline as
+    :meth:`LoopbackManager._stop_unlocked`, adapted for a PID we hold no
+    :class:`subprocess.Popen` handle for — it is not our child (orphans are
+    reparented away from the daemon that originally spawned them), so
+    ``proc.wait()`` is not available; liveness is instead polled via
+    ``os.kill(pid, 0)``.
+
+    Every failure mode here (process already gone, no permission, signal
+    delivery error) is logged and swallowed — this must never raise, since
+    it runs on the way to launching the real loopback.
+    """
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return  # already gone — a race between the scan and the kill
+    except (PermissionError, OSError) as exc:
+        _log.warning(
+            "Could not signal orphan loopback pid=%d (node.name=%s): %s",
+            pid, node_name, exc,
+        )
+        return
+
+    deadline = time.monotonic() + _TERMINATE_TIMEOUT
+    while True:
+        try:
+            os.kill(pid, 0)
+        except (ProcessLookupError, PermissionError):
+            return  # exited, or we can no longer check — stop trying either way
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(0.05)
+
+    # Re-identify before escalating. os.kill(pid, 0) only proves *a* process
+    # holds this pid, not that it is still the one we signalled: if the orphan
+    # died on SIGTERM and the kernel handed its pid to something else within
+    # the timeout, SIGKILL would land on an innocent bystander. Re-reading the
+    # cmdline closes that window — the scan's own kill path has no equivalent
+    # exposure because it signals immediately after reading.
+    argv = _read_proc_cmdline(_PROC_ROOT, pid)
+    if not argv or _capture_node_name(argv) != node_name:
+        _log.debug(
+            "Orphan loopback pid=%d is no longer node.name=%s — not escalating to SIGKILL",
+            pid, node_name,
+        )
+        return
+
+    _log.warning(
+        "Orphan loopback pid=%d (node.name=%s) did not exit after SIGTERM — sending SIGKILL",
+        pid, node_name,
+    )
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
+
+
 # ── Manager ──────────────────────────────────────────────────────────────────
 
 _TERMINATE_TIMEOUT: float = 2.0   # seconds to wait after SIGTERM before SIGKILL
@@ -348,6 +548,7 @@ class LoopbackManager:
         """
         with self._lock:
             self._stop_unlocked(spec.channel)
+            self._reap_orphan_loopbacks_unlocked(spec)
             argv = _build_pw_loopback_argv(spec)
             _log.info("Starting loopback %r: %s", spec.channel, " ".join(argv))
             # Pin the active PipeWire socket via env so pw-loopback always
@@ -503,6 +704,12 @@ class LoopbackManager:
                     proc.returncode if proc is not None else "N/A",
                 )
                 try:
+                    # Same orphan sweep as start() — restart_dead() spawns its
+                    # own replacement process rather than calling start()
+                    # (which would deadlock: self._lock is non-reentrant and
+                    # is already held here), so the reap has to be repeated at
+                    # this second spawn site to close the same window.
+                    self._reap_orphan_loopbacks_unlocked(spec)
                     argv = _build_pw_loopback_argv(spec)
                     # Same socket-pinning as in start() — ensures the revived
                     # process connects to the correct PipeWire socket (issue #90).
@@ -520,6 +727,37 @@ class LoopbackManager:
         return restarted
 
     # ── Internal helpers ──────────────────────────────────────────────────
+
+    def _reap_orphan_loopbacks_unlocked(self, spec: LoopbackSpec) -> None:
+        """Kill any untracked pw-loopback process already using spec.capture_name.
+
+        Recovers from a daemon that died without calling :meth:`stop_all`
+        (crash, ``systemctl restart``, kill -9): its ``pw-loopback`` children
+        (started with ``node.linger=true``) outlive it as orphans this
+        instance's :attr:`_handles` never learned about, and would otherwise
+        end up duplicated when this instance launches its own loopback for
+        the same channel — see the module-level comment above
+        :func:`_find_orphan_pw_loopback_pids`.
+
+        Must only be called from within a ``with self._lock`` block, right
+        before spawning a new process for *spec*. Never raises — a failed
+        sweep must not prevent the real loopback from launching.
+        """
+        try:
+            exclude_pids = {os.getpid()}
+            exclude_pids.update(proc.pid for proc in self._handles.values())
+            orphans = _find_orphan_pw_loopback_pids(spec.capture_name, exclude_pids)
+        except Exception as exc:  # defensive: the scan already swallows its own errors
+            _log.warning("Orphan loopback scan failed for channel %r: %s", spec.channel, exc)
+            return
+        for pid, node_name in orphans:
+            _log.warning(
+                "Killing orphan pw-loopback pid=%d node.name=%s (channel %r) — "
+                "survivor of a previous ASM daemon instance that did not shut "
+                "down cleanly",
+                pid, node_name, spec.channel,
+            )
+            _terminate_orphan_pid(pid, node_name)
 
     def _stop_unlocked(self, channel: str) -> None:
         """Stop the process for *channel* without acquiring the lock.
