@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.2.6" date="2026-07-21">
+      <description>
+        <p>New tray "Maintenance" submenu to restart the audio engine or ASM daemon without a terminal. There was previously no discoverable way to recover from a stuck filter-chain or a config that only takes effect after a restart — the daemon isn't a systemd/dinit unit a user would know to look for ("how do I restart the asm daemon? there's no systemctl service", asked on Discord). The tray now offers "Restart audio engine" (filter-chain only — the common case for applying a regenerated config), "Restart ASM" (the daemon and filter-chain, plus the video router if it was running), and "Regenerate audio configs" (force-repairs stale Sonar/HeSuVi filter-chain configs, then restarts filter-chain). All three go exclusively through the existing service_control abstraction (so they work identically on systemd and dinit), run off the UI thread so the tray never freezes, never touch pipewire itself, and report success or failure via a tray notification. The submenu greys out with an explanation if no service manager (systemctl/dinitctl) is present. Virtual surround could still oversaturate after upgrading to 1.2.5. That release added a fast-lookahead limiter to the HeSuVi chain to fix clipping on hot HRIRs, but the fix only applied to *newly generated* configs — anyone who already had a sink-virtual-surround-7.1-hesuvi.conf from an earlier version kept their old, limiter-less config forever, since none of the daemon's staleness checks recognised it as out of date. Generated filter-chain configs now carry a version marker, and the daemon regenerates the surround config whenever its marker is missing or behind the current version — so an update that changes what that config contains actually reaches existing installs, starting with this limiter. Your Immersion and Distance settings are preserved across the repair, and your equaliser configs are left untouched. (reported on Discord by @craciu25_YT).</p>
+      </description>
+    </release>
     <release version="1.2.5" date="2026-07-20">
       <description>
         <p>Virtual surround could clip ("oversaturate") on loud passages with hot HRIRs (e.g. Nahimic 3). The Immersion slider applies a broadband boost (up to +12 dB, +6 dB at the default 50%) to all eight channels *before* the HRTF convolution, and each stereo output is the sum of four convolved channels — with no headroom stage, loud content pushed peaks past 0 dBFS and clipped. A fast-lookahead limiter (LADSPA fast_lookahead_limiter_1913, from swh-plugins — the same package already used for the Distance reverb) is now inserted on the surround output; it tames only the peaks that would clip and leaves quieter content untouched, so hot profiles stop oversaturating regardless of the Immersion setting. The plugin is staged into ~/.ladspa like the reverb so it also loads on the host under Distrobox, and if swh-plugins is unavailable the chain falls back to the previous behaviour with no limiter. (reported on Discord by @craciu25_YT)</p>
@@ -199,11 +204,6 @@
     <release version="1.1.77" date="2026-06-18">
       <description>
         <p>Loopback watchdog recreated loopbacks every 5 s, breaking Discord routing — _loopback_watchdog treated a None link target (loopback not yet wired by WirePlumber) as a mislink and immediately recreated the loopback. This caused Discord's audio streams to lose their target sink every 5–10 seconds and repeatedly fall back to the system default, ignoring any routing_overrides entries. A grace period of 3 consecutive ticks (15 s) is now applied before acting on a None link: transient PipeWire graph states are ignored, while genuinely orphaned loopbacks (stuck unlinked for &gt; 15 s) are still recovered. (#84)</p>
-      </description>
-    </release>
-    <release version="1.1.76" date="2026-06-17">
-      <description>
-        <p>Update banner persisted after upgrading via package manager — the "update available" banner on the Home page was never hidden when a re-check found no newer version: on_update_available returned early on an empty result without calling _update_banner.hide(). The banner would therefore remain visible for the rest of the session even after the user updated externally (apt/pacman/dnf). Now the banner is explicitly hidden when the check confirms the installed version is current. Additionally, the manual "Check for updates" button in the Settings page now also drives the Home page banner (via DevicePage.sig_update_result), so clicking "Check for updates" after an external upgrade instantly clears the stale notification without requiring a restart.</p>
       </description>
     </release>
   </releases>
