@@ -98,6 +98,42 @@ def verify_setup() -> int:
     return 0 if issues == 0 else 1
 
 
+def _ensure_media_router_running(logger) -> None:
+    """Start the media router if it is enabled but not running.
+
+    Quitting ASM from the tray stops arctis-manager, arctis-video-router and
+    filter-chain together, on purpose — the system is meant to behave as if ASM
+    were not installed. Relaunching the app brought back the daemon and the
+    filter-chain, but nothing brought back the router: it stayed dead for the
+    rest of the session while ASM looked perfectly healthy. What silently
+    stopped working is the part that watches for manual stream moves and
+    remembers them as per-app routing overrides, so users saw their apps drift
+    back to the default channel with no explanation.
+
+    Only started when the unit is *enabled*: a user who deliberately disabled
+    the router must not have it resurrected on every daemon start. Failures are
+    logged and swallowed — the daemon's own job comes first.
+    """
+    from arctis_sound_manager import service_control as sc
+
+    try:
+        if not sc.manager_available():
+            return
+        if sc.is_active('arctis-video-router'):
+            return
+        if not sc.is_enabled('arctis-video-router'):
+            logger.debug('media router is disabled — leaving it stopped')
+            return
+        logger.warning(
+            'media router is enabled but not running (stopped with a previous '
+            'ASM session?) — starting it so manual routing choices are '
+            'remembered again'
+        )
+        sc.start('arctis-video-router', timeout=10)
+    except Exception as exc:
+        logger.warning('could not check/start the media router: %r', exc)
+
+
 async def main_async():
     from arctis_sound_manager.log_setup import configure_logging
     configure_logging(default=logging.INFO,
@@ -112,6 +148,8 @@ async def main_async():
     from arctis_sound_manager.udev_checker import is_udev_rules_valid
     if not is_udev_rules_valid():
         logger.warning('udev rules are missing or invalid — USB access may fail (errno 13). Run: sudo asm-cli udev write-rules --force --reload')
+
+    _ensure_media_router_running(logger)
 
     dbus_manager = DbusManager.getInstance()
     core_engine = CoreEngine()
