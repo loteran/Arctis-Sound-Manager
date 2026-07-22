@@ -5,14 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.8] - 22 July 2026
 
 ### Added
 
+- **The Output channel now has a device selector in the Channels tab**, like Game, Chat and Media. Its destination could previously only be changed from the Settings page. Both places stay in sync, and your headset appears in the list. (#139)
 - **The headset can now be selected as the Output channel's device.** It was deliberately hidden from the external-output list, on the assumption that it already had its own routing. That prevented a legitimate setup: sending the Output channel to the headset gives you a second path to it with its own equaliser — typically flat — and no spatial processing, which is what you want for video editing or music production without swapping EQ profiles every time. The headset now appears in the list alongside your other outputs; ASM still never picks it automatically, so nothing changes unless you choose it. (#139, requested by @Malev0)
 
 ### Fixed
 
+- **ASM could vanish from the app launcher after an update.** Its launcher entry is installed by the package, and setup skipped writing its own copy whenever that one was present — so when a package update left the system file missing, nothing restored it and the app disappeared from the menu even though it still ran fine. ASM now always writes its own entry, which takes precedence over the packaged one without duplicating it, and removes it again when you uninstall. (reported on Discord by @林莫英, Fedora/COPR)
+- **An app you moved to another channel no longer drifts back.** When the headset came online, ASM moved every stream sitting on one of its channels onto the default one — a safeguard for apps left stranded on a channel that no longer exists. It also moved apps you had deliberately placed elsewhere, and the media router, whose job is to notice your manual moves, recorded that as your choice: your pick was overwritten on every restart. Apps you placed yourself are now left where you put them.
+- **The media router no longer stays dead after you quit and reopen ASM.** Quitting from the tray stops every ASM service, as intended; reopening brought back everything except the router, so ASM looked healthy while the part that remembers where you move your apps was silently missing. It is restarted automatically — unless you disabled it yourself.
+- **Changing the Output device from the Settings page is now reflected in the Channels tab** (and vice versa), instead of showing a stale selection until a device was plugged or unplugged.
 - **Your chosen external output could be silently reverted.** The app applied your selection, but the background service resolved that setting on its own and could land on a different device — then rewrite the configuration to match, undoing your choice on every startup and every repair. Both now read the same saved setting.
 
 ## [1.2.7] - 21 July 2026
