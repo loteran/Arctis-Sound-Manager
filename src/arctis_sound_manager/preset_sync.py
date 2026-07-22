@@ -28,13 +28,30 @@ _PRESETS_DIR = _CFG / "sonar_presets"
 _CACHE_FILE  = _CFG / ".preset_sync_cache"
 _BUNDLED_DIR = Path(__file__).parent / "gui" / "presets"
 _CACHE_TTL_H = 24
+# Anti-burst floor for forced checks (5 minutes): a real relaunch always
+# checks, a crash loop or three launches in a row does not re-fetch each time.
+_FORCE_MIN_INTERVAL_H = 5 / 60
 _TIMEOUT     = 10
 
 
 class PresetSyncWorker(QThread):
-    """Fetch manifest, download missing presets, emit count of new ones."""
+    """Fetch manifest, download missing presets, emit count of new ones.
+
+    *force* checks regardless of the 24 h cache, with only a short anti-burst
+    guard kept. The app start-up path uses it: presets are published whenever
+    SteelSeries ships a new pack, so with the daily cache alone a check that
+    happened to run shortly *before* a batch landed left the user without it
+    for a full day, with no way to ask for one — closing and reopening ASM
+    changed nothing, since the cache decides, not the launch. Checking on every
+    start matches what people expect from reopening an app, and costs one small
+    JSON request.
+    """
 
     new_presets_added = Signal(int)
+
+    def __init__(self, force: bool = False, parent=None) -> None:
+        super().__init__(parent)
+        self._force = force
 
     def run(self) -> None:
         try:
@@ -74,9 +91,13 @@ class PresetSyncWorker(QThread):
             data = json.loads(_CACHE_FILE.read_text())
             last = datetime.fromisoformat(data["last_check"])
             age_h = (datetime.now(timezone.utc) - last).total_seconds() / 3600
-            return age_h >= _CACHE_TTL_H
         except Exception:
             return True
+        if self._force:
+            # Anti-burst only: relaunching the app a few times in a row (or a
+            # crash loop) must not hammer GitHub, but any real relaunch checks.
+            return age_h >= _FORCE_MIN_INTERVAL_H
+        return age_h >= _CACHE_TTL_H
 
     def _fetch_manifest(self) -> dict | None:
         try:

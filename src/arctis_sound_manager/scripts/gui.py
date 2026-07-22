@@ -232,7 +232,11 @@ def main():
     # -- Preset sync (new Sonar presets added since install) ------------------
     def _sync_presets():
         from arctis_sound_manager.preset_sync import PresetSyncWorker
-        w = PresetSyncWorker()
+        # force=True: check on every launch, not once a day. New Sonar preset
+        # packs land at unpredictable times, and with the daily cache alone a
+        # check that ran shortly before a batch was published left the user
+        # without it until the next day, with no way to ask for one.
+        w = PresetSyncWorker(force=True)
         w.new_presets_added.connect(
             lambda n: log.info("Preset sync: %d new preset(s) available.", n)
         )
