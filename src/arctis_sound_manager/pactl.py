@@ -196,6 +196,39 @@ class PulseAudioManager:
     _REDIRECT_MAX_ATTEMPTS = 5
     _REDIRECT_RETRY_DELAY_S = 0.4
 
+    @staticmethod
+    def _routing_overrides() -> dict:
+        """The user's saved app→sink pins; empty dict if unreadable."""
+        try:
+            from arctis_sound_manager.pw_utils import _load_overrides
+            return _load_overrides() or {}
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _stream_is_where_the_user_put_it(si, current_name: str, overrides: dict) -> bool:
+        """True if *si* sits on the sink its app is pinned to.
+
+        Keys are matched exactly as the GUI and the media router write them —
+        through ``app_override_key`` (application.name + binary, issue #108) —
+        with a fallback to the bare application.name for pins saved before that
+        composite key existed.
+        """
+        if not overrides:
+            return False
+        try:
+            from arctis_sound_manager.pw_utils import app_override_key
+            app = si.proplist.get('application.name', '') or ''
+            binary = si.proplist.get('application.process.binary', '') or ''
+            pinned = overrides.get(app_override_key(app, binary)) or overrides.get(app)
+        except Exception:
+            return False
+        if not pinned:
+            return False
+        # Pins are stored as a sink *name fragment* (e.g. "Arctis_Media"), which
+        # is how every other consumer of this file matches them.
+        return pinned in current_name
+
     def redirect_audio(self, output_sink_node_name: str) -> None:
         self.logger.info(f'Redirecting audio to {output_sink_node_name}...')
 
@@ -253,12 +286,22 @@ class PulseAudioManager:
         # new target. Without this, apps that opened a stream while the headset
         # was alive stay glued to a dead loopback (issue #50).
         try:
+            overrides = self._routing_overrides()
             sink_by_index = {s.index: s for s in sinks}
             for si in self.pulse.sink_input_list():
                 current = sink_by_index.get(si.sink)
                 if current is None or current.index == sink.index:
                     continue
                 current_name = current.proplist.get('node.name', '') or current.name or ''
+                if self._stream_is_where_the_user_put_it(si, current_name, overrides):
+                    # The user pinned this app to the sink it is already on, and
+                    # that sink is alive (it is in the enumeration above). Moving
+                    # it would undo an explicit choice — and the media router
+                    # would then read our own move as a manual one and persist
+                    # the wrong sink as the app's override. The migration below
+                    # exists to rescue streams stuck on a *dead* loopback
+                    # (issue #50), which is not this case.
+                    continue
                 if any(frag in current_name for frag in self._ASM_SINK_FRAGMENTS):
                     try:
                         self.pulse.sink_input_move(si.index, sink.index)

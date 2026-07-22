@@ -60,3 +60,29 @@ def _isolated_conf_dir_suitewide(tmp_path_factory, monkeypatch):
     empty = tmp_path_factory.mktemp("empty_conf_d")
     monkeypatch.setattr(sonar_to_pipewire, "_CONF_DIR", Path(empty), raising=False)
     yield Path(empty)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_routing_overrides_suitewide(tmp_path_factory, monkeypatch):
+    """Keep the suite away from the developer's real routing overrides.
+
+    ``pw_utils.OVERRIDES_FILE`` points at
+    ``~/.config/arctis_manager/routing_overrides.json`` — the app→sink pins of
+    whoever runs the suite. Any code path that consults them silently inherits
+    that machine's state: a redirect_audio test broke on a dev box purely
+    because the real file happened to pin Discord to the Chat channel, so the
+    stream the test expected to be migrated was (correctly) left alone.
+
+    Tests that need pins monkeypatch the path themselves; this only moves the
+    default away from the real one.
+    """
+    try:
+        from arctis_sound_manager import pw_utils
+    except Exception:  # pragma: no cover - module import is not this fixture's job
+        return
+    empty = tmp_path_factory.mktemp("empty_overrides")
+    monkeypatch.setattr(
+        pw_utils, "OVERRIDES_FILE", Path(empty) / "routing_overrides.json",
+        raising=False,
+    )
+    yield
