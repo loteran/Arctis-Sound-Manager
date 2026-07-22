@@ -881,7 +881,10 @@ class HomePage(QWidget):
         self._timer.start()
 
         self._channel_outputs: dict = _load_channel_outputs()
-        self._available_sinks: list = []
+        # (channel options, Output-card options) — the Output card has its own
+        # list: the headset is offered there and the "headset by default" entry
+        # is not (see _refresh_device_combos).
+        self._available_sinks: tuple = ()
         self._combo_tick = 0
 
         # Wire device change callbacks
@@ -894,6 +897,7 @@ class HomePage(QWidget):
         self._media_card.set_on_device_change(
             lambda s: self._on_channel_output_changed("media", s)
         )
+        self._ext_card.set_on_device_change(self._on_external_output_changed)
 
         # Apply the currently active theme so the initial render is correct
         # even if a non-default theme was saved in settings.
@@ -1438,18 +1442,59 @@ class HomePage(QWidget):
             self._media_card.set_connected()
 
     def _refresh_device_combos(self, sinks) -> None:
+        def _label(sink) -> str:
+            return (sink.proplist.get("node.description")
+                    or sink.proplist.get("node.nick")
+                    or sink.name)
+
         physical = [s for s in sinks if is_external_output_sink(s)]
         default_label = I18n.translate("ui", "headset_output")
-        options = [("", default_label)] + [
-            (s.name, s.proplist.get("node.description") or s.proplist.get("node.nick") or s.name)
-            for s in physical
+        options = [("", default_label)] + [(s.name, _label(s)) for s in physical]
+
+        # The Output card gets its own list: it is not "send this channel
+        # somewhere else" like the three above, it *is* the channel's
+        # destination, so there is no "headset by default" entry — and the
+        # headset itself belongs in the list, since routing Output at it is a
+        # supported setup (a second path with a flat EQ, no spatial — #139).
+        ext_options = [
+            (s.proplist.get("node.nick") or s.name, _label(s))
+            for s in sinks if is_external_output_sink(s, allow_headset=True)
         ]
-        if options == self._available_sinks:
-            return
-        self._available_sinks = options
+
+        # The cache key carries the current *selections*, not just the available
+        # devices: changing the Output device from the Settings page (or a
+        # channel override from anywhere else) leaves the device list identical,
+        # so comparing lists alone would skip the refresh and leave the combos
+        # showing a stale selection until a device was plugged or unplugged.
         ch_outputs = _load_channel_outputs()
+        selections = (
+            tuple(ch_outputs.get(k, "") for k in ("game", "chat", "media")),
+            self._ext_device_nick or "",
+        )
+        if (options, ext_options, selections) == self._available_sinks:
+            return
+        self._available_sinks = (options, ext_options, selections)
         for key, card in (("game", self._game_card), ("chat", self._chat_card), ("media", self._media_card)):
             card.set_device_options(options, ch_outputs.get(key, ""))
+        self._ext_card.set_device_options(ext_options, self._ext_device_nick or "")
+
+    def _on_external_output_changed(self, device_id: str) -> None:
+        """The Output card's device changed — persist it as the channel's target.
+
+        Unlike the other three cards, this does not move streams: the Output
+        channel *is* an EQ chain pointed at an external device, so its selector
+        sets that destination. It writes the same ``external_output_device``
+        setting the Settings page uses — one source of truth, which the daemon
+        also reads when it regenerates the Output conf — and goes through the
+        daemon's SetSetting handler rather than touching the YAML directly, so
+        there is no parallel write path.
+        """
+        self._ext_device_nick = device_id or None
+        try:
+            from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
+            DbusWrapper.change_setting("external_output_device", device_id)
+        except Exception as exc:
+            logger.warning("Could not save external output device: %r", exc)
 
     def _on_channel_output_changed(self, channel: str, sink_name: str) -> None:
         ch_outputs = _load_channel_outputs()
