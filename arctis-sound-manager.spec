@@ -229,6 +229,9 @@ if [ "$1" = "0" ]; then
                 rm -f \"\$HOME/.config/systemd/user/arctis-manager.service\"
                 rm -f \"\$HOME/.config/systemd/user/arctis-video-router.service\"
                 rm -f \"\$HOME/.config/systemd/user/arctis-gui.service\"
+                rm -f \"\$HOME/.local/share/applications/ArctisManager.desktop\"
+                rm -f \"\$HOME/.local/share/applications/ArctisManagerSystray.desktop\"
+                update-desktop-database \"\$HOME/.local/share/applications\" >/dev/null 2>&1 || true
                 if [ -S \"\$DBUS_SOCKET\" ]; then
                     systemctl --user daemon-reload >/dev/null 2>&1 || true
                     systemctl --user restart pipewire pipewire-pulse >/dev/null 2>&1 || true

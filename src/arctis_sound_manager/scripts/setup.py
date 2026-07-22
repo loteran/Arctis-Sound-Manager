@@ -464,17 +464,26 @@ def main() -> None:
     asm_cli_cmd = _cli_invocation()
 
     # ── Desktop entry + systemd service file ──
-    # Skip if a system-level desktop entry already exists (AUR/COPR/DEB packages install one)
-    system_desktop = Path("/usr/share/applications/ArctisManager.desktop")
-    if system_desktop.exists():
-        print("\n==> System desktop entry found — skipping asm-cli desktop write")
+    # Always written, even when the AUR/COPR/DEB package ships a system-level
+    # entry. This used to be skipped in that case, on the assumption that a
+    # second entry would show up twice in the launcher — it does not: the user
+    # entry has the same file name as the system one
+    # (~/.local/share/applications/ArctisManager.desktop vs
+    # /usr/share/applications/ArctisManager.desktop), and the XDG spec resolves
+    # entries by ID, so the user one simply *shadows* the system one.
+    #
+    # Skipping meant ASM had no entry of its own to fall back on, and a package
+    # transaction that leaves the system file missing took the app out of the
+    # launcher with nothing to restore it (reported on Discord after upgrading
+    # to 1.2.7 on Fedora/COPR: "ASM disappeared from my app launcher", fixed by
+    # running asm-cli desktop write by hand). The package owns the system file;
+    # ASM can only guarantee the user one, so it now always writes it.
+    print("\n==> Writing desktop entry and service file...")
+    result = subprocess.run(asm_cli_cmd + ["desktop", "write"], text=True)
+    if result.returncode == 0:
+        print("  [ok] desktop entry and service file written")
     else:
-        print("\n==> Writing desktop entry and service file...")
-        result = subprocess.run(asm_cli_cmd + ["desktop", "write"], text=True)
-        if result.returncode == 0:
-            print("  [ok] desktop entry and service file written")
-        else:
-            print("  [!] desktop write failed — run manually: asm-cli desktop write")
+        print("  [!] desktop write failed — run manually: asm-cli desktop write")
 
     # ── Udev rules ──
     print("\n==> Installing udev rules...")
