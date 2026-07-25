@@ -1,137 +1,138 @@
 # ── Arctis Nova Pro Omni (0x2290) ─────────────────────────────────────────────
 #
-# Copy of nova_pro_wireless.yaml, adjusted for the Omni's USB layout (confirmed
-# from a user's `asm-cli tools arctis-devices` + `lsusb -v` capture, issue #70).
+# FULLY VALIDATED 2026-07-25 against:
+#   • SteelSeries GG's own device spec (decrypted .edevice lisp, see
+#     nova-audio/edevice-decrypted/arctis_nova_pro_omni_tx.lsp +
+#     base_arctis_nova_elite_tx.lsp)
+#   • A live Windows USBPcap capture of GG driving this exact DAC
+#     (nova-audio/captures/capture2.pcapng)
+#   • Direct Linux pyusb tests against the DAC
 #
-# The Omni's HID interfaces differ from the Nova Pro Wireless:
-#   • Nova Pro Wireless — interface 4: EP 0x84 IN (64B) + EP 0x04 OUT (64B).
-#   • Nova Pro Omni     — interface 3: EP 0x83 IN (64B), and NO Interrupt OUT.
-#                         interface 4 only carries a 2-byte IN (consumer keys).
+# ── IMPORTANT: the Omni DAC has a physical USB-1 / USB-2 / XBOX mode switch ──
+#   • USB-1 → enumerates as 1038:2290 — THIS config (full SteelSeries protocol)
+#   • USB-2 → enumerates as 1038:2292 — UAC audio + HID, but the SteelSeries
+#             control protocol is silent there (not supported by this yaml)
+#   • XBOX  → enumerates as 1038:2293 — Xbox GIP protocol, NOT SteelSeries
+#             (do not add 0x2293 here; ASM cannot speak GIP)
 #
-# So the control/data interface is 3 (not 4), and since there is no Interrupt
-# OUT endpoint, commands go via HID SET_REPORT over the control endpoint
-# (command_transport: ctrl_output), the same mechanism as the Nova Pro Wired.
-#
-# HID report id: confirmed by a real Windows USBPcap capture of SteelSeries GG
-# driving the Omni (firmware 1.32.0, see scripts/reverse-engineering/, issue #70).
-# Commands are HID SET_REPORT control transfers (bRequest 0x09, wValue 0x0201,
-# wIndex 3) leading with **report id 0x01** — NOT 0x06 (Nova Pro Wireless) and
-# NOT 0x07 (the value earlier sources suggested). The opcodes after the report id
-# are byte-for-byte identical to the Nova Pro Wireless DAC protocol (verified in
-# the capture: 0x27=gain (values 0x00 low / 0x01 high — shifted vs Wireless),
-# 0x37=mic vol, 0x18=sidetone (NOT 0x39 — the Omni ignores 0x39), 0xbf=mic LED, 0xbd=ANC,
-# 0xb9=transparency, 0xc1=auto-off, 0xc3=wireless mode, 0xb2/0xb3=Bluetooth …).
-# The status poll is request 0x01b0 with the main reply prefixed 0x01b0; the
-# push-notification frames keep the 0x07 prefix (0x0725/0x0731/0x0745/0x07bd/0x07b9).
-#
-# STILL TO VALIDATE on hardware: the byte positions inside the 0x01b0 status
-# reply (battery offset looked shifted vs the Wireless mapping).
+# ── Transport (verified byte-for-byte against GG) ──
+# Commands: HID SET_REPORT control transfers (bmRequestType 0x21, bRequest 0x09,
+#   wValue 0x0201 = Output report + report id 1, wIndex 3), 64-byte reports,
+#   byte 0 = report id 0x01, byte 1 = opcode, zero-padded.
+# Feature writes (parametric/mic/BT EQ, OLED bitmap): same but wValue 0x0301
+#   (Feature report), wLength 1036.
+# Query replies + async push events: Interrupt IN on EP 0x83 (interface 3).
+#   Query replies are prefixed 0x01 <opcode>; async events are prefixed 0x07
+#   <opcode> (e.g. 0x07b7 battery, 0x07bb mic mute, 0x07b5 radio/BT link).
 # ──────────────────────────────────────────────────────────────────────────────
 device:
   name: SteelSeries Arctis Nova Pro Omni
   vendor_id: 0x1038
   product_ids:
-    - 0x2290 # SteelSeries Arctis Nova Pro Omni
+    - 0x2290 # SteelSeries Arctis Nova Pro Omni (DAC switch in USB-1 position)
   command_padding:
     length: 64
     position: end
     filler: 0x00
 
-  # Control/data interface = 3 (64-byte Interrupt IN on EP 0x83); interface 4 is
-  # the 2-byte consumer-control endpoint. Confirmed via asm-cli tools arctis-devices.
+  # Control/data interface = 3 (Interrupt IN on EP 0x83); interface 4 is the
+  # 2-byte consumer-control endpoint (volume knob / buttons).
   command_interface_index: [3, 0] # bInterfaceNumber, bAlternateSetting
   listen_interface_indexes: [3]   # bInterfaceNumber (status read on EP 0x83)
 
-  # No Interrupt OUT endpoint on the HID interfaces → commands via HID SET_REPORT
-  # (control transfer to interface 3), like the Nova Pro Wired.
+  # No Interrupt OUT endpoint → commands via HID SET_REPORT control transfers
+  # (wValue 0x0201 with command_report_id 1), exactly like GG does on Windows.
   command_transport: ctrl_output
+  command_report_id: 0x01
 
+  # Init sequence modelled on the GG session chronology (capture2.pcapng):
+  # sonar present + software chatmix handshake, state queries, then the user's
+  # stored settings. GG ends each deploy with 0x09 save_to_flash — deliberately
+  # omitted here to avoid unnecessary flash wear on every ASM start.
   device_init:
-    - [0x01, 0x20]
-    - [0x01, 0x20]
-    - [0x01, 0x10]
-    - [0x01, 0x10]
-    - [0x01, 0x10]
-    - [0x01, 0x3b] # Correction?
+    - [0x01, 0x8d, 0x01]                        # set_sonar_present ON
     - [0x01, 0x8d, 0x01]
-    - [0x01, 0x20]
-    - [0x01, 0x20]
-    - [0x01, 0x20]
-    - [0x01, 0x80]
-    - [0x01, 0x3b] # Correction?
-    # Burst of commands (device init?)
-    - [0x01, 0x8d, 0x01]
-    - [0x01, 0x33, 0x14, 0x14, 0x14]              # Equalizer with 3 bands
-    - [0x01, 0xc3, 'settings.wireless_mode']      # 2.4G mode (0x00: speed, 0x01: range)
-    - [0x01, 0x2e, 0x00]                          # Set equalizer preset (0)
-    - [0x01, 0xc1, 'settings.pm_shutdown']        # Set inactive time (to 30 minutes, see INACTIVE_TIME_MINUTES)
-    - [0x01, 0xb9, 'settings.transparent_level']
-    - [0x01, 0x37, 'settings.mic_volume']         # Mic volume 100% (01 (mute) - a0 (100%))
-    - [0x01, 0xb2]
-    - [0x01, 0x47, 0x64, 0x00, 0x64]
-    - [0x01, 0x83, 0x01]
-    - [0x01, 0xbd, 'settings.noise_cancelling']
-    - [0x01, 0x27, 'settings.gain']               # Audio Gain (0x01: low, 0x02: high)
-    - [0x01, 0xb3, 0x00]
-    - [0x01, 0x18, 'settings.mic_side_tone']      # Omni sidetone opcode is 0x18 (NOT 0x39); values 0 (off) 1 (low) 2 (medium) 3 (high)
-    - [0x01, 0xbf, 'settings.mic_led_brightness'] # Mute mic led brightness (out of 10)
-    - [0x01, 0x43, 0x01]
-    - [0x01, 0x69, 0x00]
-    - [0x01, 0x3b, 0x00]
-    - [0x01, 0x8d, 0x01]
-    - [0x01, 0x49, 0x01]
-    - [0x01, 0xb7, 0x00]
+    - [0x01, 0x49, 0x01]                        # software chatmix ON
+    - [0x01, 0x20]                              # audio_settings query
+    - [0x01, 0x10]                              # fw_versions query
+    - [0x01, 0x80]                              # ux_settings query
+    - ['status.request']                        # wireless_settings (0x01b0)
+    - [0x01, 0xc1, 'settings.pm_shutdown']      # inactivity timer
+    - [0x01, 0xbd, 'settings.noise_cancelling'] # transparent/ANC mode
+    - [0x01, 0xb8, 'settings.anc_level']        # ANC level 1-3
+    - [0x01, 0xb9, 'settings.transparent_level']# transparency level 1-10
+    - [0x01, 0x37, 'settings.mic_volume']       # mic volume 1-10
+    - [0x01, 0x38, 0x01, 'settings.mic_side_tone'] # boom sidetone on, level
+    - [0x01, 0xbf, 'settings.mic_led_brightness'] # muted-mic LED brightness
+    - [0x01, 0x47, 0x64, 0x64, 0x64, 0x64]      # stream mix main/aux/mic = 100
+    - [0x01, 0x27, 'settings.volume_limiter']   # volume limiter
+    - [0x01, 0x43, 0x01]                        # line out mode 1
+    - [0x01, 0xb2, 0x00]                        # BT power default: off
+    - [0x01, 0xb3, 0x00]                        # BT call: do nothing
 
-    # Another series of queries (perhaps for confirmation?)
-    - [0x01, 0xb7, 0x00]
-    - [0x01, 0xb7, 0x00]
-    - ['status.request']  # Get device status
-    - [0x01, 0x20, 0x00]
-    - [0x01, 0xb7, 0x00]
   status:
     request: 0x01b0
     response_mapping:
+      # ── Async push events (0x07 prefix) — from omni translate_sync_data ──
+      - starts_with: 0x0745
+        media_mix: 0x02        # chatmix game level
+        chat_mix: 0x03         # chatmix chat level
+      - starts_with: 0x0747
+        stream_main: 0x02
+        stream_aux: 0x04
+        stream_mic: 0x05
+      - starts_with: 0x07b7    # battery event
+        headset_battery_charge: 0x02
+        charge_slot_battery_charge: 0x03
+        charging_status: 0x04
+      - starts_with: 0x07bb    # mic mute event
+        mic_status: 0x02
+      - starts_with: 0x07b5    # radio + BT connection event
+        bluetooth_power_status: 0x02
+        bluetooth_connection: 0x03
+        wireless_pairing: 0x04
+      - starts_with: 0x07bd
+        noise_cancelling: 0x02
+      - starts_with: 0x07b8
+        anc_level: 0x02
+      - starts_with: 0x07b9
+        transparent_noise_cancelling_level: 0x02
+      - starts_with: 0x0737
+        mic_volume: 0x02
       - starts_with: 0x0725
         station_volume: 0x02
-
       - starts_with: 0x0731
         eq_band_index: 0x02
         eq_band_value: 0x03
 
-      - starts_with: 0x0745
-        media_mix: 0x02
-        chat_mix: 0x03
-
-      - starts_with: 0x07bd
-        noise_cancelling: 0x02
-
-      - starts_with: 0x07b9
-        transparent_noise_cancelling_level: 0x02
-
+      # ── Main 0x01b0 wireless_settings reply — byte layout per GG spec ──
       - starts_with: 0x01b0
-        bluetooth_powerup_state: 0x02
-        bluetooth_auto_mute: 0x03
-        bluetooth_power_status: 0x04
-        bluetooth_connection: 0x05
-        headset_battery_charge: 0x06
+        bluetooth_powerup_state: 0x02   # bt_power_default (0/1)
+        bluetooth_auto_mute: 0x03       # bt_call_default (0=nothing 1=-12dB 2=mute)
+        bluetooth_power_status: 0x04    # bt_connection_mode (1=off 2=pairing 4=link)
+        bluetooth_connection: 0x05      # bt_connection_status (1=ready 2=lost 4=busy 8=error)
+        headset_battery_charge: 0x06    # 0-100
         charge_slot_battery_charge: 0x07
-        transparent_noise_cancelling_level: 0x08
-        mic_status: 0x09
-        noise_cancelling: 0x0a
-        mic_led_brightness: 0x0b
-        auto_off_time_minutes: 0x0c
-        wireless_mode: 0x0d
-        wireless_pairing: 0x0e
-        headset_power_status: 0x0f
+        transparent_noise_cancelling_level: 0x08 # 1-10
+        mic_status: 0x09                # 0=unmuted 1=muted
+        noise_cancelling: 0x0a          # transparent_anc_mode (0=off 1=transparent 2=ANC)
+        mic_led_brightness: 0x0b        # 1-10
+        auto_off_time_minutes: 0x0c     # 0-6 (mapped)
+        wireless_mode: 0x0d             # 0=speed 1=range
+        wireless_pairing: 0x0e          # 1=unpaired 2=searching 4=paired-offline 8=connected
+        charging_status: 0x0f           # 1=unknown 2=charging 4=plugged-not-charging 8=discharging
+        anc_level: 0x10                 # 1-3
     representation:
       headset:
-        - headset_power_status
+        - charging_status
         - headset_battery_charge
         - noise_cancelling
+        - anc_level
         - transparent_noise_cancelling_level
         - auto_off_time_minutes
       mic:
         - mic_status
+        - mic_volume
         - mic_led_brightness
       gamedac:
         - station_volume
@@ -146,33 +147,32 @@ device:
         - wireless_pairing
 
   online_status:
-    status_variable: headset_power_status
-    online_value: online
+    status_variable: wireless_pairing
+    online_value: connected
 
   audio:
     spatial_engine: hesuvi
 
-  # OLED screen transport parameters confirmed from a real Windows USBPcap
-  # capture of SteelSeries GG driving the Omni (issue #70).
-  # The Omni uses HID interface 3 (no Interrupt OUT), report id 0x01, and
-  # SET_REPORT with wValue 0x0200 (Output report, not Feature).
+  # OLED: 128x64 panel on the DAC. draw_bitmap (opcode 0x93) goes over
+  # SET_REPORT Feature reports (wValue 0x0301), report id 0x01, interface 3,
+  # column-packed 1bpp, split into <=512-byte sub-payloads.
   oled:
-    interface: 3       # HID interface carrying the OLED control endpoint
-    report_id: 0x01    # First byte of every HID report sent to the OLED
-    wvalue: 0x0200     # SET_REPORT wValue: 0x0200 = HID Output report
-    width: 128         # Panel width in pixels (assumed identical to Wireless)
-    height: 64         # Panel height in pixels (assumed identical to Wireless)
+    interface: 3
+    report_id: 0x01
+    wvalue: 0x0301     # SET_REPORT wValue: 0x0301 = HID Feature report, id 1
+    width: 128
+    height: 64
 
   settings:
     headset:
-      gain:
+      volume_limiter:
         type: toggle
         values:
           off: 0x00
           on: 0x01
-          off_label: low
-          on_label: high
-        default: 0x01 # high
+          off_label: unlimited
+          on_label: limited
+        default: 0x00 # unlimited (GG deploys 0x27 00)
         update_sequence: [0x01, 0x27, 'value']
     microphone:
       mic_volume:
@@ -185,14 +185,16 @@ device:
         default: 0x0a # 100%
         update_sequence: [0x01, 0x37, 'value']
       mic_side_tone:
-        type: button_group
-        values_mapping:
-          0x00: 'off'
-          0x01: low
-          0x02: medium
-          0x03: high
-        default: 0x00 # off
-        update_sequence: [0x01, 0x18, 'value']
+        # boom_mic_sidetone: byte2 = state (0/1), byte3 = level 1-10.
+        # ASM slider controls the level; state is written as ON for any level.
+        type: slider
+        min: 0x01
+        max: 0x0a
+        step: 1
+        min_label: perc_10
+        max_label: perc_100
+        default: 0x05
+        update_sequence: [0x01, 0x38, 0x01, 'value']
       mic_led_brightness:
         type: slider
         min: 0x01
@@ -220,16 +222,6 @@ device:
           0x06: 60_minutes
         default: 0x05 # 30 minutes
         update_sequence: [0x01, 0xc1, 'value']
-    wireless:
-      wireless_mode:
-        type: toggle
-        values:
-          off: 0x00
-          on: 0x01
-          off_label: speed
-          on_label: range
-        default: 0x00 # speed
-        update_sequence: [0x01, 0xc3, 'value']
     audio:
       noise_cancelling:
         type: slider
@@ -239,6 +231,14 @@ device:
         step: 1
         default: 0x00 # off
         update_sequence: [0x01, 0xbd, 'value']
+      anc_level:
+        type: slider
+        hidden: true
+        min: 0x01
+        max: 0x03
+        step: 1
+        default: 0x03
+        update_sequence: [0x01, 0xb8, 'value']
       transparent_level:
         type: slider
         hidden: true
@@ -261,6 +261,22 @@ device:
       type: percentage
       perc_min: 0
       perc_max: 100
+    stream_main:
+      type: percentage
+      perc_min: 0
+      perc_max: 100
+    stream_aux:
+      type: percentage
+      perc_min: 0
+      perc_max: 100
+    stream_mic:
+      type: percentage
+      perc_min: 0
+      perc_max: 100
+    mic_volume:
+      type: percentage
+      perc_min: 1
+      perc_max: 10
     bluetooth_powerup_state:
       type: on_off
       off: 0x00
@@ -272,15 +288,18 @@ device:
         0x01: -12db
         0x02: on
     bluetooth_power_status:
-      type: on_off
-      off: 0x01
-      on: 0x00
+      type: int_str_mapping
+      values:
+        0x01: off
+        0x02: pairing
+        0x04: on
     bluetooth_connection:
       type: int_str_mapping
       values:
-        0x00: off
         0x01: connected
         0x02: disconnected
+        0x04: busy
+        0x08: error
     headset_battery_charge:
       type: percentage
       perc_min: 0
@@ -304,6 +323,12 @@ device:
         0x00: off
         0x01: transparent
         0x02: on
+    anc_level:
+      type: int_str_mapping
+      values:
+        0x01: low
+        0x02: medium
+        0x03: high
     mic_led_brightness:
       type: percentage
       perc_min: 0
@@ -327,11 +352,13 @@ device:
       type: int_str_mapping
       values:
         0x01: not_paired
+        0x02: searching
         0x04: paired_offline
         0x08: connected
-    headset_power_status:
+    charging_status:
       type: int_str_mapping
       values:
         0x01: offline
-        0x02: cable_charging
-        0x08: online
+        0x02: charging
+        0x04: plugged_not_charging
+        0x08: discharging
