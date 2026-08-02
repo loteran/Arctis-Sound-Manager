@@ -67,6 +67,25 @@ Requires:       curl
 # initial install, so existing users would otherwise stay broken until
 # they ran `dnf reinstall arctis-sound-manager` manually.
 Requires:       ladspa-swh-plugins
+# ── Clips ────────────────────────────────────────────────────────────────
+# The clip feature captures the screen through the portal with GStreamer and
+# writes one audio track per Sonar channel. Hard requirements, like the LADSPA
+# packs above: without them the Clips page is present and does nothing.
+#   python3-gobject      — the Gst/Gio bindings the capture is written against
+#   pipewire-gstreamer   — pipewiresrc, the portal's screen stream
+#   gstreamer1-plugins-base — appsrc, audioconvert/audioresample, opusenc
+#   gstreamer1-plugins-good — pulsesrc (channel audio), matroskamux (the .mkv)
+#   gstreamer1-plugins-ugly-free — x264enc, the software encoder fallback
+#   ffmpeg-free          — poster frames for the library grid
+Requires:       python3-gobject
+Requires:       pipewire-gstreamer
+Requires:       gstreamer1-plugins-base
+Requires:       gstreamer1-plugins-good
+Requires:       gstreamer1-plugins-ugly-free
+Requires:       ffmpeg-free
+# Hardware H.264 encoders are a performance choice only — the capture probes
+# for them and falls back to x264enc, so these stay soft.
+Recommends:     gstreamer1-plugins-bad-free
 %if ! %{bundle_dbus_next}
 Requires:       python3-dbus-next
 %endif
@@ -273,6 +292,7 @@ fi
 %{_bindir}/asm-gui
 %{_bindir}/asm-cli
 %{_bindir}/asm-router
+%{_bindir}/asm-clipd
 %{_bindir}/asm-setup
 %{_udevrulesdir}/91-steelseries-arctis.rules
 %{_userunitdir}/arctis-manager.service

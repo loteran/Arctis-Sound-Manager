@@ -48,6 +48,7 @@ override_dh_auto_install:
 	printf '#!/usr/bin/python3\nimport sys\nfrom arctis_sound_manager.scripts.cli import main\nsys.exit(main())\n'            > $(DEST)/usr/bin/asm-cli
 	printf '#!/usr/bin/python3\nimport sys\nfrom arctis_sound_manager.scripts.gui import main\nsys.exit(main())\n'            > $(DEST)/usr/bin/asm-gui
 	printf '#!/usr/bin/python3\nimport sys\nfrom arctis_sound_manager.scripts.video_router import main\nsys.exit(main())\n'   > $(DEST)/usr/bin/asm-router
+	printf '#!/usr/bin/python3\nimport sys\nfrom arctis_sound_manager.scripts.clipd import main\nsys.exit(main())\n'          > $(DEST)/usr/bin/asm-clipd
 	printf '#!/usr/bin/python3\nimport sys\nfrom arctis_sound_manager.scripts.setup import main\nsys.exit(main())\n'          > $(DEST)/usr/bin/asm-setup
 	chmod 755 $(DEST)/usr/bin/asm-*
 

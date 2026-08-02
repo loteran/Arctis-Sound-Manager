@@ -42,6 +42,32 @@ depends=(
     # the same transaction. This is intentional — the alternative
     # (optdepends) means the toggle silently does nothing.
     'noise-suppression-for-voice'
+    # ── Clips ────────────────────────────────────────────────────────────
+    # The clip feature captures the screen through the portal with GStreamer
+    # and writes one audio track per Sonar channel. Hard dependencies for the
+    # same reason as swh-plugins above: without them the Clips page is present
+    # and does nothing, which is worse than not shipping it.
+    #   python-gobject     — the Gst/Gio bindings the capture is written against
+    #   gst-plugin-pipewire— pipewiresrc, the portal's screen stream
+    #   gst-plugins-base   — appsrc, audioconvert/audioresample, opusenc
+    #   gst-plugins-good   — pulsesrc (channel audio), matroskamux (the .mkv)
+    #   gst-plugins-ugly   — x264enc, the software encoder every machine falls
+    #                        back to when no hardware encoder is present
+    #   ffmpeg             — poster frames for the library grid (ffmpeg/ffprobe)
+    'python-gobject'
+    'gstreamer'
+    'gst-plugin-pipewire'
+    'gst-plugins-base'
+    'gst-plugins-good'
+    'gst-plugins-ugly'
+    'ffmpeg'
+)
+optdepends=(
+    # Hardware H.264 encoders. Purely a performance choice: the capture probes
+    # for these and falls back to x264enc, so their absence costs CPU, not the
+    # feature.
+    'gst-plugin-va: hardware H.264 encoding on Intel/AMD GPUs'
+    'gst-plugins-bad: hardware H.264 encoding on NVIDIA GPUs (nvcodec)'
 )
 makedepends=('python-installer' 'uv')
 install=arctis-sound-manager.install

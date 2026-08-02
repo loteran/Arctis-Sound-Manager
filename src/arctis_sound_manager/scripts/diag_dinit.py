@@ -364,7 +364,8 @@ def check_asm() -> dict:
     section("D. ASM install state")
     result: dict = {}
 
-    for binary in ("asm-daemon", "asm-gui", "asm-router", "asm-cli", "asm-diag-dinit"):
+    for binary in ("asm-daemon", "asm-gui", "asm-router", "asm-clipd",
+                   "asm-cli", "asm-diag-dinit"):
         path = shutil.which(binary)
         result[binary] = path
         (ok if path else miss)(binary, path or "not in PATH")

@@ -348,6 +348,36 @@ class DbusWrapper(QObject):
                 dbus_bus.disconnect()
 
     @staticmethod
+    async def _apply_channel_outputs_async() -> None:
+        dbus_bus = None
+        try:
+            dbus_bus = await MessageBus().connect()
+            await dbus_bus.call(Message(
+                destination=DBUS_BUS_NAME,
+                path=DBUS_CONFIG_OBJECT_PATH,
+                interface=DBUS_CONFIG_INTERFACE_NAME,
+                member='ApplyChannelOutputs',
+                message_type=MessageType.METHOD_CALL,
+            ))
+        except Exception as e:
+            DbusWrapper.logger.error('Error in apply_channel_outputs: %s', e)
+        finally:
+            if dbus_bus is not None:
+                dbus_bus.disconnect()
+
+    @staticmethod
+    def apply_channel_outputs() -> None:
+        """Ask the daemon to re-link the channels to their saved devices.
+
+        The daemon owns routing: only it has the device_state the enforcement
+        passes resolve the headset through, so calling them in this process
+        would link nothing at all.
+        """
+        DbusWrapper._executor.submit(
+            lambda: asyncio.run(DbusWrapper._apply_channel_outputs_async())
+        )
+
+    @staticmethod
     async def _recreate_loopbacks_async() -> None:
         dbus_bus = None
         try:

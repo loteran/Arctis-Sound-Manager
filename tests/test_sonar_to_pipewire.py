@@ -816,8 +816,11 @@ def test_ensure_filter_chain_healthy_returns_true_when_healthy(tmp_path, monkeyp
     (tmp_path / "sonar-game-eq.conf").write_text("# dummy ASM conf")
 
     with patch("arctis_sound_manager.service_control.is_active", return_value=True), \
-         patch("arctis_sound_manager.init_system.detect_init", return_value="unknown"):
+         patch("arctis_sound_manager.service_control.detect_init",
+               return_value="unknown"):
         # detect_init returning "unknown" skips NRestarts check
+        # (service_control binds detect_init at import, so it must be patched
+        # there — patching init_system leaves the real systemctl call in place)
         result = stp.ensure_filter_chain_healthy()
 
     assert result is True
@@ -839,7 +842,8 @@ def test_ensure_filter_chain_healthy_enters_safe_mode_on_high_nrestarts(tmp_path
     with patch("arctis_sound_manager.service_control.is_active", return_value=True), \
          patch("arctis_sound_manager.service_control.restart", return_value=True), \
          patch("subprocess.run", return_value=mock_result), \
-         patch("arctis_sound_manager.init_system.detect_init", return_value="systemd"):
+         patch("arctis_sound_manager.service_control.detect_init",
+               return_value="systemd"):
         result = stp.ensure_filter_chain_healthy()
 
     assert result is False
@@ -1385,6 +1389,13 @@ def test_spatial_toggle_produces_identical_conf():
 def test_ensure_spatial_eq_links_targets_hesuvi_when_enabled(monkeypatch):
     """Spatial ON → EQ output is linked to the HeSuVi virtual-surround sink."""
     monkeypatch.setattr(_s2p_p3, "_spatial_enabled", lambda ch: True)
+    # HeSuVi present in the graph. Stubbed, or pw_node_exists() answers from a
+    # live pw-dump and the assertion below turns into a reading of whichever
+    # machine ran the suite.
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.pw_node_exists",
+        lambda name, data=None: True,
+    )
     calls = []
     monkeypatch.setattr(
         "arctis_sound_manager.pw_utils.ensure_loopback_link",
@@ -1418,6 +1429,12 @@ def test_ensure_spatial_eq_links_moves_link_on_toggle(monkeypatch):
     state = {"game": True}
     monkeypatch.setattr(_s2p_p3, "_spatial_enabled", lambda ch: state[ch])
     monkeypatch.setattr(_s2p_p3, "_get_physical_out_game", lambda: "alsa_output.test-headset")
+    # HeSuVi is loaded — otherwise the issue #100 fallback sends the ON legs to
+    # the physical output too, and the toggle it is testing stops being visible.
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.pw_node_exists",
+        lambda name, data=None: True,
+    )
     targets = []
     monkeypatch.setattr(
         "arctis_sound_manager.pw_utils.ensure_loopback_link",
@@ -1474,8 +1491,12 @@ def test_ensure_spatial_eq_links_ignores_non_toggle_channels(monkeypatch):
 # gap by composing with ensure_loopback_link, exactly like the other two.
 
 def test_ensure_physical_output_links_links_both_channels(monkeypatch):
-    """Device attached: both the chat EQ output and the HeSuVi output are
-    linked to their respective physical targets."""
+    """Device attached: the chat EQ output and each channel's HeSuVi output
+    are linked to their respective targets.
+
+    Game and Media have separate HeSuVi stages so their device menus are
+    independent — one shared stage had a single output, which made Media's
+    choice inert and dragged it along whenever Game's changed."""
     monkeypatch.setattr(_s2p_p3, "_get_physical_out_chat", lambda: "alsa_output.test-chat")
     monkeypatch.setattr(_s2p_p3, "_get_physical_out_game", lambda: "alsa_output.test-game")
     calls = []
@@ -1484,10 +1505,11 @@ def test_ensure_physical_output_links_links_both_channels(monkeypatch):
         lambda playback, target, data=None: calls.append((playback, target)) or True,
     )
     result = _s2p_p3.ensure_physical_output_links()
-    assert result == {"chat": True, "hesuvi": True}
+    assert result == {"chat": True, "hesuvi": True, "hesuvi_media": True}
     assert calls == [
         ("effect_output.sonar-chat-eq", "alsa_output.test-chat"),
         ("effect_output.virtual-surround-7.1-hesuvi", "alsa_output.test-game"),
+        ("effect_output.virtual-surround-7.1-hesuvi-media", "alsa_output.test-game"),
     ]
 
 
@@ -1535,7 +1557,7 @@ def test_ensure_physical_output_links_reuses_shared_pw_dump(monkeypatch):
     )
     sentinel = ["sentinel-pw-dump"]
     _s2p_p3.ensure_physical_output_links(data=sentinel)
-    assert seen_data == [sentinel, sentinel]
+    assert seen_data == [sentinel, sentinel, sentinel]
 
 
 # ── ensure_physical_output_links — the Output channel's last hop ────────────
@@ -1674,6 +1696,9 @@ def _po_graph(extra=None):
         _po_node(40, _PO_GAME_TARGET),
         _po_port(31, 30, "out", "FL"), _po_port(32, 30, "out", "FR"),
         _po_port(41, 40, "in", "FL"), _po_port(42, 40, "in", "FR"),
+        # Media runs its own HeSuVi stage so its device is independent of Game's.
+        _po_node(50, "effect_output.virtual-surround-7.1-hesuvi-media"),
+        _po_port(51, 50, "out", "FL"), _po_port(52, 50, "out", "FR"),
     ]
     data.extend(extra or [])
     return data
@@ -1690,9 +1715,10 @@ class TestEnsurePhysicalOutputLinksRealGraph:
 
         result = _s2p_p3.ensure_physical_output_links(data=_po_graph())
 
-        assert result == {"chat": True, "hesuvi": True}
+        assert result == {"chat": True, "hesuvi": True, "hesuvi_media": True}
         created = {(c[1], c[2]) for c in calls if "-d" not in c}
-        assert created == {("11", "21"), ("12", "22"), ("31", "41"), ("32", "42")}
+        assert created == {("11", "21"), ("12", "22"), ("31", "41"), ("32", "42"),
+                           ("51", "41"), ("52", "42")}
 
     def test_noop_when_already_linked(self, monkeypatch):
         """Both hops already correctly linked → no pw-link calls at all."""
@@ -1702,11 +1728,12 @@ class TestEnsurePhysicalOutputLinksRealGraph:
         existing = [
             _po_link(5001, 10, 11, 20, 21), _po_link(5002, 10, 12, 20, 22),
             _po_link(5003, 30, 31, 40, 41), _po_link(5004, 30, 32, 40, 42),
+            _po_link(5005, 50, 51, 40, 41), _po_link(5006, 50, 52, 40, 42),
         ]
 
         result = _s2p_p3.ensure_physical_output_links(data=_po_graph(existing))
 
-        assert result == {"chat": True, "hesuvi": True}
+        assert result == {"chat": True, "hesuvi": True, "hesuvi_media": True}
         assert calls == []
 
     def test_physical_output_absent_does_nothing(self, monkeypatch):
@@ -1738,7 +1765,7 @@ class TestEnsurePhysicalOutputLinksRealGraph:
 
         result = _s2p_p3.ensure_physical_output_links(data=data)
 
-        assert result == {"chat": False, "hesuvi": False}
+        assert result == {"chat": False, "hesuvi": False, "hesuvi_media": False}
         assert calls == []
 
 

@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Clips: save the last thirty seconds, with each Sonar channel on its own audio track.** A rolling capture runs in the background; the Clips page — or `asm-clipd` bound to a key — writes the preceding seconds to `~/Videos/ASM Clips` as an `.mkv` carrying Game, Chat and Mic as separate tracks, so what you keep can still be remixed afterwards. The library is a grid of poster frames rather than a list of timestamps that differ only by the second they were taken; the frame is lifted from five seconds before the end, inside the span the editor opens with, because the middle of a clip is usually the part where nothing has happened yet. The editor trims, remembers the span per clip, and exports to a separate `Shared/` folder so an export never comes back as another card in the library. Exporting ends in a share step with the poster frame as a drag-out card — drag it straight into Discord. Select, rename and delete in bulk; deletion goes through the system trash, because a mis-click on a grid of near-identical cards should be recoverable.
+
 ## [1.2.19] - 30 July 2026
 
 ### Fixed

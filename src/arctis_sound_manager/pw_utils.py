@@ -664,6 +664,32 @@ def _resolve_channel_pairs(
     return list(zip(src, dst))
 
 
+SONAR_OUTPUT_NODE = "effect_output.sonar-output-eq"
+
+
+def retarget_output(target_name: str, data: list | None = None) -> bool:
+    """Point the Sonar Output chain at *target_name* without restarting anything.
+
+    Switching the Output channel's device used to go through a full
+    filter-chain/loopback recreate, which kills the ``pw-loopback`` process —
+    and that process *is* the virtual sink. Destroying it orphans every stream
+    playing to it: PipeWire scatters them onto whatever sink it can find, a new
+    sink appears with a new id, and ASM then has to chase the streams back. The
+    audible result is exactly what switching between a Bluetooth headset and
+    the Arctis produces — sound that does not come back, and channels that end
+    up on the wrong device.
+
+    Re-linking avoids all of it. The virtual sink never leaves the graph, so no
+    stream is ever orphaned; only the link downstream of the equaliser moves.
+    :func:`ensure_loopback_link` already tears down links to any node other
+    than the requested target, so this is a complete switch rather than an
+    additional destination.
+    """
+    if not target_name:
+        return False
+    return ensure_loopback_link(SONAR_OUTPUT_NODE, target_name, data=data)
+
+
 def ensure_loopback_link(
     playback_name: str, target_name: str, data: list | None = None,
 ) -> bool:

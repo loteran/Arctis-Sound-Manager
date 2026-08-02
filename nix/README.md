@@ -145,7 +145,7 @@ nix build "git+file:///opt/projects/Arctis-Sound-Manager?dir=nix#default"
 
 What the module configures:
 
-- `environment.systemPackages` → `asm-gui`, `asm-daemon`, `asm-cli`, `asm-router`, `asm-setup`, `asm-diag-dinit`.
+- `environment.systemPackages` → `asm-gui`, `asm-daemon`, `asm-cli`, `asm-router`, `asm-clipd`, `asm-setup`, `asm-diag-dinit`.
 - `services.udev.packages` → `91-steelseries-arctis.rules`.
 - `systemd.user.services.{arctis-manager,arctis-video-router,filter-chain,arctis-gui}`.
 - `systemd.tmpfiles` symlink `/usr/lib/ladspa` → the Sonar LADSPA plugins

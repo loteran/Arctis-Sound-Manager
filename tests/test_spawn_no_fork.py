@@ -78,6 +78,7 @@ def test_service_control_run_uses_posix_spawn_not_fork():
     assert spy.hits == {"posix_spawn": 1, "fork_exec": 0}
 
 
+@pytest.mark.live_spawn  # 'systemctl show -p NRestarts' — reads, changes nothing
 def test_service_control_nrestarts_uses_posix_spawn_not_fork():
     import shutil
 
@@ -89,6 +90,7 @@ def test_service_control_nrestarts_uses_posix_spawn_not_fork():
     assert spy.hits.get("posix_spawn", 0) >= 1
 
 
+@pytest.mark.live_spawn  # 'wireplumber --version' — reads, changes nothing
 def test_pw_quirks_wireplumber_version_uses_posix_spawn_not_fork():
     import shutil
 

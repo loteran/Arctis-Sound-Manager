@@ -65,6 +65,11 @@ def _import_qt_or_exit():
 
 _SERVER_NAME = "ArctisManagerGui"
 
+# Basename of the installed desktop entry, without ".desktop". This is the
+# identity the XDG portals key their per-application state to — see where it is
+# applied in main().
+DESKTOP_ENTRY_NAME = "ArctisManager"
+
 
 def main():
     parser = ArgumentParser()
@@ -105,6 +110,25 @@ def main():
             "  - Try forcing a backend: QT_QPA_PLATFORM=xcb asm-gui\n"
         )
         sys.exit(4)
+
+    # ── Desktop identity ──────────────────────────────────────────────────────
+    #
+    # The portals identify an application by its desktop entry, and Qt only
+    # reports one when it is told which. Without this the session ran as app id
+    # "" — KDE logged "Could not register app ID: App info not found for ''" —
+    # and both portal features that key their state to the app id failed
+    # silently:
+    #
+    #   * ScreenCast restore tokens are stored per app, so the token saved
+    #     after every capture never restored: the screen picker appeared on
+    #     every single clip, forever, instead of once.
+    #   * GlobalShortcuts binds per app, so the shortcut was granted by the
+    #     user and then never routed back — Alt+F did nothing at all.
+    #
+    # The name must match the installed entry (ArctisManager.desktop) with no
+    # extension; anything else is as good as none.
+    app.setDesktopFileName(DESKTOP_ENTRY_NAME)
+    app.setApplicationName("Arctis Sound Manager")
 
     # ── Crash handler ─────────────────────────────────────────────────────────
     def _gui_crash_handler(exc_type, exc_value, exc_tb):

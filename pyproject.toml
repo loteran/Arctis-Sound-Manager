@@ -20,6 +20,7 @@ asm-daemon = "arctis_sound_manager.scripts.daemon:main"
 asm-cli = "arctis_sound_manager.scripts.cli:main"
 asm-gui = "arctis_sound_manager.scripts.gui:main"
 asm-router = "arctis_sound_manager.scripts.video_router:main"
+asm-clipd = "arctis_sound_manager.scripts.clipd:main"
 asm-setup = "arctis_sound_manager.scripts.setup:main"
 asm-diag-dinit = "arctis_sound_manager.scripts.diag_dinit:main"
 
