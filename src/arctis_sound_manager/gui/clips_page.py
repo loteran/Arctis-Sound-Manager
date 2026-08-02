@@ -255,27 +255,54 @@ class ClipsPage(QWidget):
         root.addWidget(self._hint)
 
         # ── controls ──────────────────────────────────────────────────────────
-        controls = QHBoxLayout()
-        controls.setSpacing(10)
+        # Two rows on purpose. The old single row ran the two things you press
+        # (Start, Save) in among the four you set once and leave alone, so the
+        # buttons that matter had no more weight than a spin box. Actions on
+        # top, settings underneath, each setting a label and its control in the
+        # same shape — which is also what the shortcut row is now, instead of a
+        # bare sentence with a button after it.
+        actions = QHBoxLayout()
+        actions.setSpacing(10)
 
         self._toggle_btn = QPushButton(_tr("clips_start", "Start capture"))
         self._toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._toggle_btn.clicked.connect(self._on_toggle)
-        controls.addWidget(self._toggle_btn)
+        actions.addWidget(self._toggle_btn)
 
-        controls.addWidget(QLabel(_tr("clips_length", "Length:")))
+        self._save_btn = QPushButton(_tr("clips_save", "Save last seconds"))
+        self._save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._save_btn.setEnabled(False)
+        self._save_btn.clicked.connect(self._on_save)
+        actions.addWidget(self._save_btn)
+
+        actions.addStretch(1)
+
+        self._folder_btn = QPushButton(_tr("clips_open_folder", "Open folder"))
+        self._folder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._folder_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(CLIP_DIR))))
+        actions.addWidget(self._folder_btn)
+
+        root.addLayout(actions)
+
+        settings = QHBoxLayout()
+        settings.setSpacing(10)
+
+        settings.addWidget(QLabel(_tr("clips_length", "Length:")))
         self._seconds = QSpinBox()
         self._seconds.setRange(5, 300)
         self._seconds.setValue(30)
         self._seconds.setSuffix(" s")
-        controls.addWidget(self._seconds)
+        settings.addWidget(self._seconds)
+
+        settings.addSpacing(12)
 
         # A ceiling, not a target — see clip_capture.FPS_CHOICES. It is offered
         # because it decides the keyframe interval and the encoder's budget, and
         # locked while capturing because both are fixed when the pipeline is
         # built: changing it live would mean tearing the capture down, and the
         # buffer with it.
-        controls.addWidget(QLabel(_tr("clips_fps", "Frame rate:")))
+        settings.addWidget(QLabel(_tr("clips_fps", "Frame rate:")))
         self._fps = QComboBox()
         for value in _FPS_CHOICES:
             self._fps.addItem(f"{value} fps", value)
@@ -285,46 +312,47 @@ class ClipsPage(QWidget):
             "The most this will record. The screen is only captured when it "
             "changes, so the real rate is usually lower — a clip can be set to "
             "an exact rate when you export it."))
-        controls.addWidget(self._fps)
+        settings.addWidget(self._fps)
 
-        self._save_btn = QPushButton(_tr("clips_save", "Save last seconds"))
-        self._save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._save_btn.setEnabled(False)
-        self._save_btn.clicked.connect(self._on_save)
-        controls.addWidget(self._save_btn)
+        settings.addSpacing(12)
 
-        controls.addStretch(1)
+        # What is being captured cannot be *shown* — the choice lives in the
+        # portal and Wayland never tells the app what was picked — so this
+        # offers the only honest thing: the way back to the picker.
+        settings.addWidget(QLabel(_tr("clips_source", "Capture:")))
+        self._source_btn = QPushButton(_tr("clips_change_source", "Change…"))
+        self._source_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._source_btn.setToolTip(_tr(
+            "clips_source_hint",
+            "Ask again which screen or window to record. The picker is shown "
+            "once and the answer is remembered, so this is the way to change "
+            "it."))
+        self._source_btn.clicked.connect(self._on_change_source)
+        settings.addWidget(self._source_btn)
 
-        self._folder_btn = QPushButton(_tr("clips_open_folder", "Open folder"))
-        self._folder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._folder_btn.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(CLIP_DIR))))
-        controls.addWidget(self._folder_btn)
+        settings.addSpacing(12)
 
-        root.addLayout(controls)
+        settings.addWidget(QLabel(_tr("clips_shortcut", "Shortcut:")))
+        self._shortcut_lbl = QLabel("")
+        self._shortcut_lbl.setStyleSheet(
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; "
+            f"background: transparent;")
+        settings.addWidget(self._shortcut_lbl)
+
+        self._shortcut_btn = QPushButton(_tr("clips_change_shortcut", "Change…"))
+        self._shortcut_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._shortcut_btn.setEnabled(False)
+        self._shortcut_btn.clicked.connect(self._on_configure_shortcut)
+        settings.addWidget(self._shortcut_btn)
+
+        settings.addStretch(1)
+        root.addLayout(settings)
 
         self._status = QLabel("")
         self._status.setStyleSheet(
             f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; "
             f"background: transparent;")
         root.addWidget(self._status)
-
-        # ── shortcut row ──────────────────────────────────────────────────────
-        shortcut_row = QHBoxLayout()
-        shortcut_row.setSpacing(8)
-        self._shortcut_lbl = QLabel("")
-        self._shortcut_lbl.setStyleSheet(
-            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; "
-            f"background: transparent;")
-        shortcut_row.addWidget(self._shortcut_lbl)
-
-        self._shortcut_btn = QPushButton(_tr("clips_change_shortcut", "Change…"))
-        self._shortcut_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._shortcut_btn.setEnabled(False)
-        self._shortcut_btn.clicked.connect(self._on_configure_shortcut)
-        shortcut_row.addWidget(self._shortcut_btn)
-        shortcut_row.addStretch(1)
-        root.addLayout(shortcut_row)
 
         # ── library ───────────────────────────────────────────────────────────
         library_bar = QHBoxLayout()
@@ -334,6 +362,15 @@ class ClipsPage(QWidget):
         self._select_all_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._select_all_btn.clicked.connect(self._on_select_all)
         library_bar.addWidget(self._select_all_btn)
+
+        # Select all had no counterpart. Clicking empty space clears a
+        # selection in a file manager, but this grid fills its width with
+        # cards and often leaves no empty space to click — so the way out of a
+        # selection was to ctrl-click every card back off.
+        self._select_none_btn = QPushButton(_tr("clips_select_none", "Deselect all"))
+        self._select_none_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._select_none_btn.clicked.connect(self._on_select_none)
+        library_bar.addWidget(self._select_none_btn)
 
         self._rename_btn = QPushButton(_tr("clips_rename", "Rename"))
         self._rename_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -503,6 +540,46 @@ class ClipsPage(QWidget):
         self._fps.setEnabled(False)
         self._update_status()
 
+    def _on_change_source(self) -> None:
+        """Bring the portal picker back, so what is captured can be re-chosen.
+
+        The picker appears once and never again: the portal is asked to persist
+        the choice and the saved token is replayed on every later start, which
+        is what stops a rolling capture from prompting each time it rebuilds
+        its pipeline. The cost is that the first answer was permanent — a user
+        who picked the wrong monitor, or picked a window and later wanted the
+        whole screen, had no way back short of `asm-clipd --forget` in a
+        terminal.
+
+        Dropping the token is all it takes; the next open() asks again. If a
+        capture is running it is restarted here rather than at some later
+        moment the user is not watching for, because a picker that appears
+        unprompted twenty minutes on is worse than one that appears now.
+        """
+        from arctis_sound_manager.clip_capture import ScreenCastPortal
+
+        ScreenCastPortal.forget()
+
+        if self._capture is None:
+            self._status.setText(_tr(
+                "clips_source_forgotten",
+                "You will be asked what to capture when you start again."))
+            return
+
+        try:
+            self._capture.restart()
+        except Exception as exc:
+            # Most likely the picker was cancelled. The old session is already
+            # closed by then, so there is no capture left to go back to — say
+            # so plainly rather than leaving a Stop button over a dead pipeline.
+            logger.warning("could not re-open the capture source: %s", exc)
+            self._error = str(exc)
+            self._stop_capture()
+            return
+
+        self._error = None
+        self._update_status()
+
     def _stop_capture(self) -> None:
         if self._capture is not None:
             try:
@@ -633,12 +710,18 @@ class ClipsPage(QWidget):
         # Renaming several files to one name is not a thing.
         self._rename_btn.setEnabled(count == 1)
         self._select_all_btn.setEnabled(self._list.count() > 0)
+        # Nothing selected is already the state this would produce.
+        self._select_none_btn.setEnabled(count > 0)
         self._selection_lbl.setText(
             "" if count == 0 else
             _tr("clips_selected", "{n} selected").replace("{n}", str(count)))
 
     def _on_select_all(self) -> None:
         self._list.selectAll()
+        self._list.setFocus()
+
+    def _on_select_none(self) -> None:
+        self._list.clearSelection()
         self._list.setFocus()
 
     def _on_delete(self) -> None:

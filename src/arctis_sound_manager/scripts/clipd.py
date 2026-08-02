@@ -60,7 +60,7 @@ def main() -> int:
                                                    ScreenCastPortal, detect_game)
 
     if args.forget:
-        ScreenCastPortal.forget(ScreenCastPortal)  # type: ignore[arg-type]
+        ScreenCastPortal.forget()
         log.info("Saved screen choice forgotten — the picker will appear next run.")
         return 0
 

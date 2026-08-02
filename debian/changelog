@@ -80,6 +80,29 @@ arctis-sound-manager (1.2.20-1) noble; urgency=medium
     play on, not by application name, so anything you move to an allowed
     channel is included automatically and nothing needs to be kept in a
     list.
+  * Clips: you can change what is being captured, without a terminal. The
+    screen picker appears once and never again — the choice is persisted and
+    replayed on every later start, which is what stops a rolling capture
+    from prompting each time it rebuilds its pipeline. The cost was that the
+    first answer was permanent: pick the wrong monitor, or pick a window and
+    later want the whole screen, and the only way back was asm-clipd
+    --forget from a terminal. There is now a Capture control beside Length
+    and Frame rate that asks again, and if a capture is running it restarts
+    there and then rather than springing the picker on you twenty minutes
+    later. What is captured still cannot be *displayed* — the choice lives
+    inside the portal and Wayland never tells the app what was picked — so
+    the control offers the only honest thing, which is the way back to the
+    picker.
+  * Clips: the controls were rearranged, and Select all finally has an
+    opposite. The two things you press, Start and Save, sat in one row among
+    the four you set once and leave alone, so they carried no more weight
+    than a spin box; they are now a row of their own above the settings. The
+    shortcut stopped being a loose sentence with a button after it and
+    became a labelled control like the others. And a grid that offered
+    Select all offered no way out of a selection: clicking empty space
+    clears one in a file manager, but a grid of cards usually leaves no
+    empty space to click, so the only route was ctrl-clicking every card
+    back off.
   * Record symbols piled up in the corner of the screen, one per capture you
     had ever started. Three overlapping indicators, reported from a session
     that had stopped and restarted the capture a couple of times. They were

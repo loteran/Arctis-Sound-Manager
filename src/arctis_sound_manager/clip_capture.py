@@ -632,7 +632,16 @@ class ScreenCastPortal:
         self.session = None
         self.closed = True
 
-    def forget(self) -> None:
+    @staticmethod
+    def forget() -> None:
+        """Drop the saved choice, so the next open() asks the picker again.
+
+        A staticmethod because it touches nothing on an instance and is called
+        without one — the caller wanting to re-pick a source has, by
+        definition, no live session to call it on. It was previously an
+        instance method invoked as `ScreenCastPortal.forget(ScreenCastPortal)`,
+        which worked by passing the class as `self` and read like a mistake.
+        """
         TOKEN_FILE.unlink(missing_ok=True)
 
     @staticmethod
