@@ -15,9 +15,12 @@ imported at ASM start-up for that reason.
 Four things about this pipeline were established by measurement on real
 hardware, and each of them fails in a way that points somewhere else:
 
-* **The portal session must outlive the capture.** It is bound to the D-Bus
-  client that created it; drop that and the node id stays valid-looking while
-  its stream is dead. pipewiresrc then reports "target not found".
+* **The portal session must last as long as the capture.** It is bound to the
+  D-Bus client that created it; drop that and the node id stays valid-looking
+  while its stream is dead. pipewiresrc then reports "target not found". It
+  must also be closed once the capture is over — see ScreenCastPortal.close().
+  Releasing the reference is not closing it, and the compositor draws a
+  recording indicator for every session still open.
 * **Downstream caps must be concrete.** With an ANY-caps sink, pipewiresrc has
   no format to offer, connects with "no format given", and the core rejects it
   as — again — "target not found", a message about the target for what is
@@ -518,6 +521,9 @@ class ScreenCastPortal:
         self.closed = False
         self._result: tuple[int, dict] | None = None
         self._token = 0
+        # Kept so close() can drop it: a subscription outlives the session it
+        # was made for, and the callback holds this object alive with it.
+        self._closed_sub: int | None = None
 
     def _call(self, method: str, signature: str, pre_args: tuple, options: dict) -> dict:
         GLib, Gio = self._GLib, self._Gio
@@ -564,7 +570,7 @@ class ScreenCastPortal:
             "session_handle_token": GLib.Variant("s", f"asm_clip_{os.getpid()}")})
         self.session = res["session_handle"]
 
-        self.bus.signal_subscribe(
+        self._closed_sub = self.bus.signal_subscribe(
             PORTAL, "org.freedesktop.portal.Session", "Closed", self.session,
             None, Gio.DBusSignalFlags.NONE,
             lambda *a: setattr(self, "closed", True))
@@ -594,6 +600,37 @@ class ScreenCastPortal:
             GLib.Variant("(oa{sv})", (self.session, {})),
             GLib.VariantType("(h)"), Gio.DBusCallFlags.NONE, -1, None, None)
         return fds.get(reply.unpack()[0]), node_id
+
+    def close(self) -> None:
+        """Close the portal session on the bus, not just this reference to it.
+
+        Dropping the Python object does nothing: the portal keeps a session
+        alive until its client calls Close or disconnects from the bus, and the
+        GUI does neither when a capture stops — it goes on running. The
+        compositor draws one recording indicator per live session, so every
+        Stop/Start cycle and every restart() left another indicator on screen,
+        stacked in the corner and pointing at a session with no pipeline behind
+        it. Reported as three overlapping record symbols.
+
+        Never raises: this runs on the way out of a capture, and a session that
+        cannot be closed is not a reason to fail the stop.
+        """
+        if self.session is None:
+            return
+        if self._closed_sub is not None:
+            try:
+                self.bus.signal_unsubscribe(self._closed_sub)
+            except Exception:  # noqa: BLE001
+                pass
+            self._closed_sub = None
+        try:
+            self.bus.call_sync(
+                PORTAL, self.session, "org.freedesktop.portal.Session", "Close",
+                None, None, self._Gio.DBusCallFlags.NONE, -1, None)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("could not close the screencast session: %s", exc)
+        self.session = None
+        self.closed = True
 
     def forget(self) -> None:
         TOKEN_FILE.unlink(missing_ok=True)
@@ -660,8 +697,23 @@ class ClipCapture:
     def start(self) -> None:
         Gst = self._Gst
 
+        # A session already here means a previous start was never stopped.
+        # Overwriting the reference would strand it on the bus, still drawing
+        # its own recording indicator, with nothing left able to close it.
+        if self.portal is not None:
+            self.portal.close()
+            self.portal = None
+
         self.portal = ScreenCastPortal()
-        fd, node_id = self.portal.open(window=self.window)
+        try:
+            fd, node_id = self.portal.open(window=self.window)
+        except BaseException:
+            # CreateSession may well have succeeded before whatever failed
+            # here — a cancelled picker, a refused stream. That half-open
+            # session is exactly as visible to the compositor as a working one.
+            self.portal.close()
+            self.portal = None
+            raise
         log.info("screencast node %s on fd %s", node_id, fd)
 
         # gop == fps gives a keyframe every second, which bounds how far the
@@ -873,10 +925,15 @@ class ClipCapture:
     def restart(self) -> None:
         """Tear the pipeline down and build it again on the next video path.
 
-        Used when a branch fails to negotiate. The portal session is kept — it
-        is what the stream hangs off, and reopening it would put the picker back
-        in front of the user for a failure they did not cause. The buffer is
-        cleared because its timestamps belong to the pipeline that produced them.
+        Used when a branch fails to negotiate. start() opens a fresh session
+        from the saved restore token, so the picker stays out of the user's way
+        for a failure they did not cause — but the old session still has to be
+        closed on the bus first. Leaving it open is what stacked a second and
+        third recording indicator in the corner, each one a session whose
+        pipeline had already been torn down.
+
+        The buffer is cleared because its timestamps belong to the pipeline
+        that produced them.
         """
         Gst = self._Gst
         if self.pipeline is not None:
@@ -885,13 +942,19 @@ class ClipCapture:
         self.buffer.clear()
         self.caps.clear()
         self._pts_offset.clear()
-        self.portal = None      # start() opens a fresh session from the token
+        if self.portal is not None:
+            self.portal.close()
+        self.portal = None
         self.start()
 
     def stop(self) -> None:
         if self.pipeline is not None:
             self.pipeline.set_state(self._Gst.State.NULL)
             self.pipeline = None
+        if self.portal is not None:
+            # Closed, not just dropped — otherwise the session outlives the
+            # capture and the compositor keeps showing it as recording.
+            self.portal.close()
         self.portal = None
 
     @property

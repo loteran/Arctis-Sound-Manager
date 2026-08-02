@@ -80,6 +80,19 @@ arctis-sound-manager (1.2.20-1) noble; urgency=medium
     play on, not by application name, so anything you move to an allowed
     channel is included automatically and nothing needs to be kept in a
     list.
+  * Record symbols piled up in the corner of the screen, one per capture you
+    had ever started. Three overlapping indicators, reported from a session
+    that had stopped and restarted the capture a couple of times. They were
+    real: each one was a live screen-share session that ASM had opened and
+    then let go of without closing. Releasing the reference is not the same
+    as closing the session — the portal keeps one alive until its client
+    closes it or leaves the bus, and the app goes on running after a capture
+    stops. So every Stop and Start, every pipeline restart, and every
+    capture that failed to begin left another session open, each still
+    drawing its own indicator and each still telling the desktop that the
+    screen was being recorded. Sessions are now closed when the capture that
+    owns them ends, including the half-made one left behind when the screen
+    picker is cancelled.
   * A clip opened outside ASM played in silence, with two perfectly loud
     tracks sitting inside it. Reported as "the clips have no sound — it
     failed to capture the audio". The capture was fine; the file was telling
