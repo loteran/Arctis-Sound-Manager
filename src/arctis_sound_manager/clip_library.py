@@ -43,8 +43,15 @@ CLIP_SUFFIXES = (".mkv",)
 # Written next to a clip by the editor.
 TRIM_SUFFIX = ".trim.json"
 
+# Per-channel levels, also written by the editor. Kept for the same reason the
+# trim is: deciding that the microphone is too loud in a clip and that the chat
+# channel should be off is work, and closing the editor used to throw all of it
+# away. It is stored per clip rather than as a global default because it is a
+# judgement about *this* recording — the mic was hot in this one, not always.
+MIX_SUFFIX = ".mix.json"
+
 # Written next to a clip by the capture (channel names per audio track).
-_SIDECAR_SUFFIXES = (TRIM_SUFFIX, ".tracks.json")
+_SIDECAR_SUFFIXES = (TRIM_SUFFIX, MIX_SUFFIX, ".tracks.json")
 
 
 def clip_dir() -> Path:
@@ -159,6 +166,49 @@ def write_trim(clip: Path, start_s: float, end_s: float) -> bool:
         return True
     except OSError as exc:
         log.debug("could not remember the trim for %s: %s", clip.name, exc)
+        return False
+
+
+# ── remembered channel levels ─────────────────────────────────────────────────
+
+def mix_sidecar(clip: Path) -> Path:
+    return clip.with_suffix(MIX_SUFFIX)
+
+
+def read_mix(clip: Path) -> dict[str, tuple[float, bool]]:
+    """Per-channel ``{name: (volume, muted)}`` last chosen for *clip*.
+
+    Keyed by channel name rather than by position: a clip's track order is
+    fixed, but reading it back by index would silently apply the microphone's
+    settings to the game channel if the sidecar were ever written by a
+    different version. An unreadable or malformed file is treated as absent,
+    which leaves every channel at its default and is always a usable answer.
+    """
+    try:
+        raw = json.loads(mix_sidecar(clip).read_text())
+    except (OSError, ValueError):
+        return {}
+    out: dict[str, tuple[float, bool]] = {}
+    for name, entry in (raw.get("tracks") or {}).items():
+        try:
+            volume = float(entry["volume"])
+            muted = bool(entry["muted"])
+        except (TypeError, ValueError, KeyError):
+            continue
+        out[str(name)] = (min(max(volume, 0.0), 1.5), muted)
+    return out
+
+
+def write_mix(clip: Path, mix: dict[str, tuple[float, bool]]) -> bool:
+    """Remember *clip*'s channel levels. False when it could not be written."""
+    try:
+        mix_sidecar(clip).write_text(json.dumps({"tracks": {
+            name: {"volume": round(float(volume), 3), "muted": bool(muted)}
+            for name, (volume, muted) in mix.items()
+        }}, indent=2))
+        return True
+    except (OSError, TypeError, ValueError) as exc:
+        log.debug("could not remember the mix for %s: %s", clip.name, exc)
         return False
 
 

@@ -1,5 +1,5 @@
 Name:           arctis-sound-manager
-Version:        1.2.19
+Version:        1.2.20
 Release:        1%{?dist}
 Summary:        Linux GUI for SteelSeries Arctis headsets
 
@@ -67,25 +67,29 @@ Requires:       curl
 # initial install, so existing users would otherwise stay broken until
 # they ran `dnf reinstall arctis-sound-manager` manually.
 Requires:       ladspa-swh-plugins
-# ── Clips ────────────────────────────────────────────────────────────────
-# The clip feature captures the screen through the portal with GStreamer and
-# writes one audio track per Sonar channel. Hard requirements, like the LADSPA
-# packs above: without them the Clips page is present and does nothing.
+# ── Clips (opt-in) ───────────────────────────────────────────────────────
+# Unlike the LADSPA packs above, none of this is needed to run ASM: Clips is
+# off by default and its packages are installed from the toggle that turns it
+# on (Settings → Clips, which runs these same commands through pkexec). A
+# mixer-and-EQ install should not drag in a screen recorder's encoders, so
+# these are weak dependencies — dnf installs them by default, and anyone who
+# does not want them can --setopt=install_weak_deps=False and still have a
+# working ASM.
 #   python3-gobject      — the Gst/Gio bindings the capture is written against
 #   pipewire-gstreamer   — pipewiresrc, the portal's screen stream
 #   gstreamer1-plugins-base — appsrc, audioconvert/audioresample, opusenc
 #   gstreamer1-plugins-good — pulsesrc (channel audio), matroskamux (the .mkv)
 #   gstreamer1-plugins-ugly-free — x264enc, the software encoder fallback
-#   ffmpeg-free          — poster frames for the library grid
-Requires:       python3-gobject
-Requires:       pipewire-gstreamer
-Requires:       gstreamer1-plugins-base
-Requires:       gstreamer1-plugins-good
-Requires:       gstreamer1-plugins-ugly-free
-Requires:       ffmpeg-free
-# Hardware H.264 encoders are a performance choice only — the capture probes
-# for them and falls back to x264enc, so these stay soft.
-Recommends:     gstreamer1-plugins-bad-free
+#   ffmpeg-free          — poster frames, track levels, export
+Recommends:     python3-gobject
+Recommends:     pipewire-gstreamer
+Recommends:     gstreamer1-plugins-base
+Recommends:     gstreamer1-plugins-good
+Recommends:     gstreamer1-plugins-ugly-free
+Recommends:     ffmpeg-free
+# Hardware H.264 encoders are a performance choice on top of that — the
+# capture probes for them and falls back to x264enc.
+Suggests:       gstreamer1-plugins-bad-free
 %if ! %{bundle_dbus_next}
 Requires:       python3-dbus-next
 %endif

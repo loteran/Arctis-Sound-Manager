@@ -128,12 +128,63 @@ def test_an_empty_span_is_not_remembered(tmp_path):
 
 def test_sidecars_follow_the_convention_the_capture_already_uses(tmp_path):
     """clip_….tracks.json is written by the capture with with_suffix(); the
-    trim has to be named the same way or deleting a clip leaves one behind."""
+    trim and the mix have to be named the same way or deleting a clip leaves
+    one behind."""
     clip = _clip(tmp_path)
     names = {p.name for p in clip_library.sidecars(clip)}
     assert names == {"clip_2026-07-30_23-15-02_Pal.trim.json",
+                     "clip_2026-07-30_23-15-02_Pal.mix.json",
                      "clip_2026-07-30_23-15-02_Pal.tracks.json"}
     assert clip_library.trim_sidecar(clip) in set(clip_library.sidecars(clip))
+    assert clip_library.mix_sidecar(clip) in set(clip_library.sidecars(clip))
+
+
+# ── remembered channel levels ─────────────────────────────────────────────────
+#
+# From use: "this setting should stick". Deciding the microphone is too loud in
+# a clip and the chat channel should be off is a judgement about that recording,
+# and closing the editor threw it away — so reopening a clip to adjust an export
+# meant making every one of those decisions again from scratch.
+
+def test_a_mix_survives_a_round_trip(tmp_path):
+    clip = _clip(tmp_path)
+    assert clip_library.write_mix(clip, {"game": (0.8, False), "mic": (1.0, True)})
+
+    assert clip_library.read_mix(clip) == {"game": (0.8, False), "mic": (1.0, True)}
+
+
+def test_a_mix_is_keyed_by_channel_not_by_position(tmp_path):
+    """Read back by index, a sidecar written when the clip had a different set
+    of channels would apply the microphone's settings to the game."""
+    clip = _clip(tmp_path)
+    clip_library.write_mix(clip, {"mic": (0.2, True)})
+
+    assert clip_library.read_mix(clip)["mic"] == (0.2, True)
+    assert "game" not in clip_library.read_mix(clip)
+
+
+def test_no_mix_yet_leaves_every_channel_at_its_default(tmp_path):
+    assert clip_library.read_mix(_clip(tmp_path)) == {}
+
+
+def test_a_corrupt_mix_is_treated_as_absent(tmp_path):
+    """Defaults are always a usable answer; refusing to open the clip is not."""
+    clip = _clip(tmp_path)
+    clip_library.mix_sidecar(clip).write_text("{not json")
+
+    assert clip_library.read_mix(clip) == {}
+
+
+def test_a_nonsense_level_cannot_reach_the_mixer(tmp_path):
+    """A volume of 40 would be a burst of noise at the first unmute."""
+    clip = _clip(tmp_path)
+    clip_library.mix_sidecar(clip).write_text(
+        '{"tracks": {"game": {"volume": 40, "muted": false},'
+        ' "chat": {"volume": "loud", "muted": false}}}')
+
+    mix = clip_library.read_mix(clip)
+    assert mix["game"][0] <= 1.5
+    assert "chat" not in mix
 
 
 # ── deletion ──────────────────────────────────────────────────────────────────

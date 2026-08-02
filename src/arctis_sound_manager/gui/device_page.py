@@ -421,6 +421,36 @@ class DevicePage(QWidget):
         telemetry_row.addStretch(1)
         content_layout.addWidget(telemetry_roww)
 
+        content_layout.addSpacing(16)
+
+        # ── Clips toggle ──────────────────────────────────────────────────────
+        # The only feature whose packages a base install does not already have,
+        # so it is the only one with a switch that installs them.
+        from arctis_sound_manager.settings import GeneralSettings as _GS
+
+        clips_roww = QWidget()
+        clips_row = QHBoxLayout()
+        clips_row.setContentsMargins(0, 4, 0, 4)
+        clips_roww.setLayout(clips_row)
+        clips_label = QLabel(I18n.translate("ui", "clips_enable_setting"))
+        clips_label.setFixedWidth(260)
+        clips_label.setWordWrap(True)
+        clips_label.setStyleSheet(
+            f"color: {TEXT_PRIMARY}; font-size: 11pt; background: transparent;"
+        )
+        clips_row.addWidget(clips_label)
+
+        self._clips_toggle = QDualState(
+            off_text=I18n.translate("settings_values", "off"),
+            on_text=I18n.translate("settings_values", "on"),
+            init_state="right" if _GS.read_from_file().clips_enabled else "left",
+        )
+        self._clips_toggle.setToolTip(I18n.translate("ui", "clips_enable_tooltip"))
+        self._clips_toggle.checkStateChanged.connect(self._on_clips_toggled)
+        clips_row.addWidget(self._clips_toggle)
+        clips_row.addStretch(1)
+        content_layout.addWidget(clips_roww)
+
         content_layout.addStretch(1)
 
         scroll.setWidget(content)
@@ -615,6 +645,79 @@ class DevicePage(QWidget):
 
     def _on_autostart_toggled(self, state: Qt.CheckState) -> None:
         set_autostart(state == Qt.CheckState.Checked)
+
+    def _on_clips_toggled(self, state: Qt.CheckState) -> None:
+        """Switch Clips on or off, installing its packages on the way on.
+
+        Turning it on is the one setting in ASM that can require an install, so
+        it is also the one that has to be able to fail: if the capture packages
+        are still missing when the deps dialog closes, the switch goes back to
+        off. A Clips page that is present and does nothing is precisely the
+        outcome shipping the feature off is meant to avoid — better to leave
+        the switch where it was than to claim a feature the machine cannot run.
+
+        Only the BLOCKING deps get a veto. ffmpeg missing costs thumbnails and
+        export, gio costs the trash, canberra costs the shutter sound — real
+        losses, but the capture still records, so none of them is grounds for
+        refusing to turn the feature on.
+        """
+        from arctis_sound_manager.settings import GeneralSettings
+        from arctis_sound_manager.system_deps_checker import (
+            CheckResult, Severity, clip_dep_checks,
+        )
+
+        wanted = state == Qt.CheckState.Checked
+
+        settings = GeneralSettings.read_from_file()
+        settings.clips_enabled = wanted
+        settings.write_to_file()
+
+        if wanted:
+            missing = []
+            for check in clip_dep_checks():
+                try:
+                    ok = bool(check.detect())
+                except Exception:  # noqa: BLE001 — a broken probe reads as missing
+                    ok = False
+                if not ok:
+                    missing.append(CheckResult(check=check, ok=False))
+
+            if missing:
+                from arctis_sound_manager.gui.system_deps_dialog import SystemDepsDialog
+                SystemDepsDialog(self).exec()
+
+                still_blocking = [
+                    r for r in missing
+                    if r.check.severity is Severity.BLOCKING and not r.check.detect()
+                ]
+                if still_blocking:
+                    names = ", ".join(r.name for r in still_blocking)
+                    settings = GeneralSettings.read_from_file()
+                    settings.clips_enabled = False
+                    settings.write_to_file()
+                    self._clips_toggle.set_state("left")
+
+                    msg = QMessageBox(self)
+                    msg.setWindowTitle(I18n.translate("ui", "clips"))
+                    msg.setText(I18n.translate("ui", "clips_deps_missing").format(names))
+                    msg.setInformativeText(
+                        I18n.translate("ui", "clips_deps_missing_hint"))
+                    msg.setIcon(QMessageBox.Icon.Warning)
+                    msg.exec()
+
+        self._apply_clips_visibility()
+
+    def _apply_clips_visibility(self) -> None:
+        """Ask the sidebar to show or hide the Clips entry.
+
+        Looked up through the window rather than held as a reference, because
+        this page is constructed before the window has finished wiring itself.
+        A missing controller is not an error worth a dialog — the toggle has
+        already been saved, and the sidebar will match it at the next start.
+        """
+        controller = getattr(self.window(), "main_app", None)
+        if controller is not None:
+            controller.apply_clips_visibility()
 
     def _on_lang_combo(self, index: int):
         if index < 0 or index >= len(self._lang_codes):

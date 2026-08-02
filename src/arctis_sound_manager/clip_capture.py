@@ -35,6 +35,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import time
 from collections import deque
 from pathlib import Path
@@ -61,16 +62,48 @@ ENCODERS = [
     ("x264enc", "speed-preset=veryfast tune=zerolatency key-int-max={gop} bitrate={kbps}", False),
 ]
 
-# Apps that play audio but are never what a clip is about.
+# Apps that play audio but are never what a clip is about, as the *words* their
+# stream names are built from. Matching whole names was the mistake: PulseAudio
+# reports "Google Chrome", not "chrome", and "OBS Studio", not "obs" — so an
+# exact-membership test passed both straight through and clips came out labelled
+# after the browser the user happened to have open.
 _NOT_A_GAME = {
     "firefox", "chromium", "chrome", "brave", "vivaldi", "librewolf", "epiphany",
     "discord", "vesktop", "armcord", "spotify", "vlc", "mpv", "telegram",
     "speech-dispatcher", "obs", "asm-gui", "plasmashell", "kdeconnect", "zapzap",
-    # What Chromium-based apps call their audio stream. It is the name that
-    # actually reaches the graph, so blocking "chrome" alone let a browser tab
-    # label a clip "WEBRTC_VoiceEngine".
-    "webrtc voiceengine", "webrtc_voiceengine",
+    # Names that only mean anything as a phrase. "webrtc" and "voiceengine" are
+    # each too generic to block on their own; together they are what every
+    # Chromium tab calls its audio stream.
+    "webrtc voiceengine",
+    # The rest of the desktop's own noise, which is never the subject of a clip.
+    "asm", "arctis", "notification", "notifications", "canberra", "libcanberra",
 }
+
+
+def _is_not_a_game(name: str) -> bool:
+    """Whether *name* is one of the apps a clip is never about.
+
+    Split into words first, then tested word by word, because the names that
+    reach the audio graph are display names: "Google Chrome", "OBS Studio",
+    "Brave Browser", "WEBRTC_VoiceEngine". A whole-string test only ever caught
+    the bare binary name, which is the one form users do not see.
+
+    Word matching rather than a plain substring so a game is not blocked for
+    containing a blocked word inside a longer one — "Chromatic" is not Chrome.
+    Multi-word entries are matched against the normalised name as a phrase.
+    """
+    words = [w for w in "".join(
+        c if c.isalnum() else " " for c in name.lower()).split() if w]
+    if not words:
+        return True
+    normalised = " ".join(words)
+    for blocked in _NOT_A_GAME:
+        if " " in blocked or "-" in blocked:
+            if blocked.replace("-", " ") in normalised:
+                return True
+        elif blocked in words:
+            return True
+    return False
 
 # The Game channel, by the node names a stream can be sitting on: the virtual
 # sink when the Sonar EQ is off, its filter-chain input when it is on.
@@ -79,6 +112,17 @@ _GAME_SINK_NAMES = ("Arctis_Game", "effect_input.sonar-game-eq")
 # How much recent history the live rate read-outs average over. Long enough to
 # be steady, short enough that a stall shows up while it is still happening.
 _RATE_WINDOW_S = 4.0
+
+# Capture rates offered, and the one used unless asked otherwise.
+#
+# 30 rather than 60: the portal stream only produces a frame when the screen
+# changes, so the ceiling is a ceiling and nothing more — asking for 60 does not
+# make a compositor send 60. What it does do is set the keyframe interval (gop
+# == fps) and the encoder's workload against a rate that is rarely reached,
+# which costs bitrate and CPU for frames that never arrive. 60 is kept for the
+# machines that genuinely sustain it.
+FPS_CHOICES = (30, 60)
+DEFAULT_FPS = 30
 
 SONAR_MONITORS = [
     ("game", "Arctis_Game.monitor"),
@@ -137,6 +181,58 @@ def announce_clip(path: Path, seconds: float, game: str | None = None) -> None:
     log.debug("no sound player or cue file available for the clip cue")
 
 
+def _mark_default_audio_track(path: Path, order: list[str],
+                              frames: dict) -> None:
+    """Leave exactly one audio track flagged as the default one to play.
+
+    Matroska's FlagDefault is 1 when it is not written, and matroskamux never
+    writes it — so a clip carrying five channels tells every player that all
+    five are the default. The player then picks by its own tie-break, and since
+    most channels in a normal session are empty (nothing is routed to Chat, the
+    microphone is muted), what it usually picks is silence. The clip looks like
+    it recorded no audio when two of its tracks are perfectly loud, which is
+    exactly the report this fixes.
+
+    Which track to keep is decided by how many encoded bytes it holds. Opus
+    compresses silence to almost nothing — in the reported clip the three empty
+    channels came to ~15 kB each while the two real ones were 30 kB and 151 kB
+    — so the answer is already sitting in the buffer and costs nothing. It
+    beats picking the first channel, which is the Game channel and is empty for
+    anyone playing through the headset directly.
+
+    A stream copy, so it is a remux and not a re-encode: ~50 ms on a 30 s clip.
+    Any failure leaves the original file exactly as it was — a clip with an
+    awkward default flag is worth far more than no clip.
+    """
+    import subprocess
+
+    ffmpeg = shutil.which("ffmpeg")
+    audio = [t for t in order if t != "video"]
+    if ffmpeg is None or len(audio) < 2:
+        return
+
+    loudest = max(range(len(audio)),
+                  key=lambda i: sum(len(f.payload) for f in frames[audio[i]]))
+    temp = path.with_name(path.name + ".default.mkv")
+    try:
+        result = subprocess.run(
+            [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", str(path),
+             "-map", "0", "-c", "copy",
+             "-disposition:a", "0", f"-disposition:a:{loudest}", "default",
+             str(temp)],
+            capture_output=True, text=True, timeout=60)
+        if result.returncode != 0 or not temp.exists() or temp.stat().st_size == 0:
+            log.debug("could not set the default audio track: %s",
+                      (result.stderr or "").strip()[:200])
+            temp.unlink(missing_ok=True)
+            return
+        temp.replace(path)
+        log.info("clip default audio track: %s", audio[loudest])
+    except (OSError, subprocess.SubprocessError) as exc:
+        log.debug("could not set the default audio track: %s", exc)
+        temp.unlink(missing_ok=True)
+
+
 def _require_gst():
     """Import GStreamer, turning a missing optional dependency into a clear error."""
     try:
@@ -180,6 +276,12 @@ def _process_environ(pid: int) -> str:
 def detect_game() -> str | None:
     """Name the app a clip is most likely about, for labelling it.
 
+    This is a *name for the clip*, not the screen being captured. What is on
+    screen was chosen in the portal picker and Wayland never tells us what it
+    was — so anything built on this must say "Game", never "Recording": a user
+    who picked their OBS window and read "Recording: Google Chrome" has been
+    told the capture is pointed somewhere it is not.
+
     Wayland forbids enumerating other apps' windows, so the screen cannot say
     what is on it. The audio graph can, and ASM already watches it.
 
@@ -222,7 +324,7 @@ def detect_game() -> str | None:
                 if si.sink not in game_sinks:
                     continue
                 name = label(si)
-                if name and name.lower() not in _NOT_A_GAME:
+                if name and not _is_not_a_game(name):
                     return name
 
             # 1. A stream running under a known game runtime.
@@ -239,7 +341,7 @@ def detect_game() -> str | None:
             # 2. Fall back to "a playback stream that is not obviously not a game".
             for si in streams:
                 name = label(si)
-                if name and name.lower() not in _NOT_A_GAME:
+                if name and not _is_not_a_game(name):
                     return name
     except Exception as exc:
         log.debug("game detection failed: %s", exc)
@@ -524,7 +626,7 @@ def pick_encoder(Gst, gop: int, kbps: int) -> tuple[str, bool]:
 class ClipCapture:
     """Runs the capture and answers save_clip() from the rolling buffer."""
 
-    def __init__(self, history_s: float = 90.0, fps: int = 60,
+    def __init__(self, history_s: float = 90.0, fps: int = DEFAULT_FPS,
                  bitrate_kbps: int = 20000, window: bool = False):
         self._Gio, self._GLib, self._Gst = _require_gst()
         self._Gst.init(None)
@@ -533,6 +635,10 @@ class ClipCapture:
         # capture is actually managing is measured from the buffer and read off
         # the `fps` property below.
         self.max_fps = fps
+        # What the last saved clip actually measured, so a save can report the
+        # number that ended up in the file rather than leaving it to be
+        # discovered in a player. See `fps` for why the two differ.
+        self.last_clip_fps = 0.0
         self.bitrate_kbps = bitrate_kbps
         self.window = window
         self.buffer: ClipBuffer = ClipBuffer(window_s=history_s)
@@ -747,6 +853,7 @@ class ClipCapture:
         if not (1.0 <= fps <= 240.0):
             log.debug("measured %.1f fps — leaving the caps alone", fps)
             return caps
+        self.last_clip_fps = fps
 
         # Built through the caps string rather than Gst.Fraction(num, den):
         # PyGObject 3.56 (GStreamer 1.28) ships Gst.Fraction as a plain
@@ -793,14 +900,38 @@ class ClipCapture:
 
     @property
     def fps(self) -> float:
-        """Frames per second capture is currently managing.
+        """Frames per second capture is managing *right now*.
 
         Surfaced because the recording rate is invisible until a clip is played
         back, and a capture quietly running at a third of the display rate looks
         like a broken clip rather than a slow pipeline.
+
+        A few seconds wide on purpose, which is also why it reads higher than
+        the rate a saved clip comes out at: the portal only sends a frame when
+        the screen changes, so a live 20 fps during activity and a 12 fps clip
+        average over thirty seconds that included idle moments are the same
+        capture, honestly measured over different spans. :attr:`buffered_fps`
+        is the one that predicts the file.
         """
         video = self.buffer.video
         return video.rate_hz() if video is not None else 0.0
+
+    @property
+    def buffered_fps(self) -> float:
+        """Average rate across everything still buffered — what a clip will claim.
+
+        The live rate above answers "is capture keeping up"; this answers "what
+        will the file say", and on a damage-driven screencast the two differ by
+        more than anyone expects. Showing only the first is what makes a status
+        bar reading 20 fps produce a 12 fps clip with no explanation.
+        """
+        video = self.buffer.video
+        if video is None or len(video.frames) < 2:
+            return 0.0
+        span_ns = video.span_ns
+        if span_ns <= 0:
+            return 0.0
+        return (len(video.frames) - 1) * NANOSECONDS / span_ns
 
     def _watch_source_rate(self) -> None:
         """Count frames as they leave the portal, before anything of ours.
@@ -974,6 +1105,8 @@ class ClipCapture:
             log.error("clip writer produced an empty file — %s", path)
             path.unlink(missing_ok=True)
             return None
+
+        _mark_default_audio_track(path, order, frames)
 
         log.info("clip saved: %s (%.1fs, %d tracks, %.1f MB%s)",
                  path, actual, len(order), size / (1024 * 1024),

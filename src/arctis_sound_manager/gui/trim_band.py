@@ -202,14 +202,28 @@ class TrimBand(QWidget):
         return x_to_s(x, self._duration, self.width())
 
     def _hit(self, x: float) -> str:
-        """What a press at *x* lands on."""
+        """What a press at *x* lands on.
+
+        The markers are tested before the playhead, which matters because a
+        freshly opened clip puts the playhead exactly on the in-point: with the
+        playhead winning there, the in-marker would be the one thing on the band
+        that could not be dragged. Scrubbing loses nothing by coming second —
+        pressing anywhere outside the selection scrubs too, and once the
+        playhead has moved off the marker it is grabbable on its own.
+        """
         if abs(x - self._x(self._start)) <= _HANDLE_GRAB_PX:
             return "start"
         if abs(x - self._x(self._end)) <= _HANDLE_GRAB_PX:
             return "end"
+        if abs(x - self._x(self._position)) <= _HANDLE_GRAB_PX:
+            return "playhead"
         if self._x(self._start) < x < self._x(self._end):
             return "range"
         return "outside"
+
+    def _scrub_to(self, x: float) -> None:
+        self.scrubbed.emit(self._s(x))
+        self.set_position(self._s(x))
 
     def mousePressEvent(self, event) -> None:
         if event.button() != Qt.MouseButton.LeftButton or self._duration <= 0:
@@ -220,27 +234,30 @@ class TrimBand(QWidget):
         self._press_start = self._start
         self._moved = False
         if target == "outside":
-            # Nothing to grab out here, so this is a seek. Dragging on from it
-            # would be ambiguous — leave the markers alone.
-            self._grab = None
-            self.scrubbed.emit(self._s(x))
-            self.set_position(self._s(x))
+            # Outside the selection there is nothing to move, so a press is a
+            # seek — and holding it scrubs, which is how you find a moment.
+            self._grab = "playhead"
+            self._scrub_to(x)
             return
         self._grab = target
+        if target == "playhead":
+            self._scrub_to(x)
 
     def mouseMoveEvent(self, event) -> None:
         x = event.position().x()
         if self._grab is None:
             self.setCursor(
                 Qt.CursorShape.SplitHCursor
-                if self._hit(x) in ("start", "end")
+                if self._hit(x) in ("start", "end", "playhead")
                 else Qt.CursorShape.PointingHandCursor)
             return
         if not self._moved and abs(x - self._press_x) < _DRAG_SLOP_PX:
             return
         self._moved = True
 
-        if self._grab == "start":
+        if self._grab == "playhead":
+            self._scrub_to(x)
+        elif self._grab == "start":
             self.set_range(self._s(x), self._end)
         elif self._grab == "end":
             self.set_range(self._start, self._s(x))
@@ -257,8 +274,7 @@ class TrimBand(QWidget):
         if self._grab == "range" and not self._moved:
             # A press inside the selection that never moved is a seek, not a
             # nudge: clicking the part you kept should play from there.
-            self.scrubbed.emit(self._s(event.position().x()))
-            self.set_position(self._s(event.position().x()))
+            self._scrub_to(event.position().x())
         self._grab = None
         self._moved = False
 

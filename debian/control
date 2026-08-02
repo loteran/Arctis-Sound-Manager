@@ -33,20 +33,24 @@ Depends: ${misc:Depends},
          pulseaudio-utils,
          libusb-1.0-0,
          curl,
-         swh-plugins,
-# Clips: the capture runs the screen portal through GStreamer and writes one
-# audio track per Sonar channel. Hard depends, like swh-plugins above —
-# without them the Clips page is present and does nothing.
-         python3-gi,
-         gstreamer1.0-pipewire,
-         gstreamer1.0-plugins-base,
-         gstreamer1.0-plugins-good,
-         gstreamer1.0-plugins-ugly,
-         ffmpeg
-# Hardware H.264 encoding only — the capture falls back to x264enc without it.
+         swh-plugins
+# Clips (opt-in): the capture runs the screen portal through GStreamer and
+# writes one audio track per Sonar channel. Deliberately not in Depends,
+# unlike swh-plugins above — Clips ships off, and the toggle that turns it on
+# (Settings → Clips) installs these through pkexec under these same names. An
+# install that only wants the mixer and the EQ never pulls a screen recorder's
+# encoders; apt still brings them in by default as Recommends, and
+# --no-install-recommends leaves a working ASM.
 Recommends: noise-suppression-for-voice,
-            gstreamer1.0-plugins-bad,
-            gstreamer1.0-vaapi
+            python3-gi,
+            gstreamer1.0-pipewire,
+            gstreamer1.0-plugins-base,
+            gstreamer1.0-plugins-good,
+            gstreamer1.0-plugins-ugly,
+            ffmpeg
+# Hardware H.264 encoding only — the capture falls back to x264enc without it.
+Suggests: gstreamer1.0-plugins-bad,
+          gstreamer1.0-vaapi
 Description: Linux GUI for SteelSeries Arctis headsets
  Arctis Sound Manager is a Linux application for configuring SteelSeries Arctis
  headsets. It provides a 4-channel audio mixer (Game / Chat / Media / HDMI),

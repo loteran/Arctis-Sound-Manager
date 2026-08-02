@@ -233,6 +233,43 @@ def _which(binary: str) -> bool:
     return shutil.which(binary) is not None
 
 
+def _gst_elements(*elements: str) -> bool:
+    """True when every named GStreamer element is registered.
+
+    Asked through `gst-inspect-1.0` rather than by importing Gst, because this
+    runs on machines where the whole point is that PyGObject is absent — and
+    importing GStreamer to find out whether GStreamer is installed also costs a
+    registry scan on every startup check. A missing gst-inspect is itself the
+    answer: no GStreamer, no elements.
+    """
+    inspect = shutil.which("gst-inspect-1.0")
+    if inspect is None:
+        return False
+    for element in elements:
+        try:
+            proc = subprocess.run([inspect, element], capture_output=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            return False
+        if proc.returncode != 0:
+            return False
+    return True
+
+
+def clips_enabled() -> bool:
+    """Whether the user has switched Clips on in Settings.
+
+    Read live rather than cached: the deps dialog is opened *by* the toggle, so
+    it has to see the value the toggle just wrote. Any failure reads as off,
+    which is the state that asks nothing of the user.
+    """
+    try:
+        from arctis_sound_manager.settings import GeneralSettings
+        return bool(GeneralSettings.read_from_file().clips_enabled)
+    except Exception as exc:  # noqa: BLE001 — a settings problem must not break the checker
+        log.debug("could not read clips_enabled, assuming off: %s", exc)
+        return False
+
+
 def _hrir_present() -> bool:
     p = Path.home() / ".local" / "share" / "pipewire" / "hrir_hesuvi" / "hrir.wav"
     try:
@@ -767,15 +804,156 @@ def _build_checks() -> list[DepCheck]:
     ]
 
 
+def clip_dep_checks() -> list[DepCheck]:
+    """The packages Clips needs, which nothing else in ASM does.
+
+    Kept apart from `_build_checks()` because they are the *only* deps tied to
+    a feature the user opts into. A mixer-and-EQ install has no use for a
+    screen recorder's encoders, and listing them unconditionally would report a
+    perfectly healthy machine as incomplete — which is the whole reason Clips
+    is off by default.
+
+    Returned whatever the toggle says: the Settings toggle installs from this
+    list *before* the feature is on, so it cannot be gated on the feature
+    being on.
+
+    The GStreamer plugin sets are grouped rather than listed one per row. A
+    user reading the dialog is answering "can this machine record?", not
+    auditing plugin packages, and grouping also means one `pacman -S` with
+    three packages instead of three password prompts.
+    """
+    return [
+        DepCheck(
+            # The bindings the capture is written against. Nothing else in ASM
+            # imports gi, which is why a base install can skip it entirely.
+            name="PyGObject (gi)",
+            severity=Severity.BLOCKING,
+            feature="clip capture",
+            detect=lambda: _can_import("gi"),
+            install_commands={
+                "fedora": ["dnf", "install", "-y", "python3-gobject"],
+                "debian": ["apt-get", "install", "-y", "python3-gi"],
+                "arch":   ["pacman", "-S", "--noconfirm", "python-gobject"],
+            },
+        ),
+        DepCheck(
+            # pipewiresrc is what the screen portal hands its stream to. It
+            # ships separately from the main GStreamer packages on every
+            # distro, and it is the one most often missing on a desktop that
+            # otherwise plays video fine.
+            name="GStreamer: screen capture (pipewiresrc)",
+            severity=Severity.BLOCKING,
+            feature="clip capture",
+            detect=lambda: _gst_elements("pipewiresrc"),
+            install_commands={
+                "fedora": ["dnf", "install", "-y", "pipewire-gstreamer"],
+                "debian": ["apt-get", "install", "-y", "gstreamer1.0-pipewire"],
+                "arch":   ["pacman", "-S", "--noconfirm", "gst-plugin-pipewire"],
+            },
+        ),
+        DepCheck(
+            # One row for the encode/mux chain: appsrc and opusenc (base),
+            # pulsesrc and matroskamux (good), x264enc (ugly). x264enc is the
+            # fallback every machine without a hardware encoder lands on, so it
+            # is required rather than optional despite living in "ugly".
+            name="GStreamer: encoding and muxing",
+            severity=Severity.BLOCKING,
+            feature="clip capture",
+            detect=lambda: _gst_elements("appsrc", "opusenc", "pulsesrc",
+                                         "matroskamux", "x264enc"),
+            install_commands={
+                # -ugly-free is the Fedora repos' build; the patent-encumbered
+                # half lives in RPM Fusion and holds nothing the capture uses.
+                "fedora": ["dnf", "install", "-y", "gstreamer1-plugins-base",
+                           "gstreamer1-plugins-good", "gstreamer1-plugins-ugly-free"],
+                "debian": ["apt-get", "install", "-y", "gstreamer1.0-plugins-base",
+                           "gstreamer1.0-plugins-good", "gstreamer1.0-plugins-ugly"],
+                "arch":   ["pacman", "-S", "--noconfirm", "gst-plugins-base",
+                           "gst-plugins-good", "gst-plugins-ugly"],
+            },
+        ),
+        DepCheck(
+            # Everything a clip does *after* it has been captured runs through
+            # ffmpeg: the poster frame on its card, the per-channel level scan
+            # that says which tracks are empty, and the export itself. The
+            # capture is GStreamer and keeps working without this, which is
+            # exactly what makes it worth naming — the recording succeeds and
+            # then nothing can be done with it.
+            name="ffmpeg / ffprobe",
+            severity=Severity.DEGRADED,
+            feature="clip thumbnails, track levels and export",
+            detect=lambda: _which("ffmpeg") and _which("ffprobe"),
+            install_commands={
+                # ffmpeg-free is the Fedora repos' build; the full ffmpeg needs
+                # RPM Fusion, and nothing here uses a codec it leaves out.
+                "fedora": ["dnf", "install", "-y", "ffmpeg-free"],
+                "debian": ["apt-get", "install", "-y", "ffmpeg"],
+                "arch":   ["pacman", "-S", "--noconfirm", "ffmpeg"],
+            },
+        ),
+        DepCheck(
+            # Deleting a clip goes to the system trash first so a mis-click on a
+            # grid of near-identical cards is recoverable. Without gio it still
+            # deletes — permanently, and with no way back.
+            name="gio (glib2)",
+            severity=Severity.OPTIONAL,
+            feature="deleting clips to the trash rather than permanently",
+            detect=lambda: _which("gio"),
+            install_commands={
+                "fedora": ["dnf", "install", "-y", "glib2"],
+                "debian": ["apt-get", "install", "-y", "libglib2.0-bin"],
+                "arch":   ["pacman", "-S", "--noconfirm", "glib2"],
+            },
+        ),
+        DepCheck(
+            # Qt's own opener is tried first and usually wins; this is the
+            # fallback for sessions where it cannot resolve a handler.
+            name="xdg-open (xdg-utils)",
+            severity=Severity.OPTIONAL,
+            feature="opening a clip or its folder in another app",
+            detect=lambda: _which("xdg-open"),
+            install_commands={
+                "fedora": ["dnf", "install", "-y", "xdg-utils"],
+                "debian": ["apt-get", "install", "-y", "xdg-utils"],
+                "arch":   ["pacman", "-S", "--noconfirm", "xdg-utils"],
+            },
+        ),
+        DepCheck(
+            # The shutter sound on a save. canberra plays the theme's own
+            # sample — the one the user chose and other apps use for the same
+            # event — and clip_feedback falls back to pw-play/paplay on a file
+            # when it is absent, so this only ever costs the themed version.
+            name="canberra-gtk-play",
+            severity=Severity.OPTIONAL,
+            feature="the themed shutter sound when a clip is saved",
+            detect=lambda: _which("canberra-gtk-play"),
+            install_commands={
+                "fedora": ["dnf", "install", "-y", "libcanberra-gtk3"],
+                "debian": ["apt-get", "install", "-y", "libcanberra-gtk3-module"],
+                "arch":   ["pacman", "-S", "--noconfirm", "libcanberra"],
+            },
+        ),
+    ]
+
+
 def run_all_checks() -> list[CheckResult]:
     """Run every dep check and return one CheckResult per check.
 
     Cheap (~200 ms total on a normal install — most checks are file
     existence / `shutil.which`). Safe to call from GUI startup, the
     daemon's `--verify-setup`, or a CLI subcommand.
+
+    The Clips deps join the list only once the feature is switched on. With
+    Clips off they are not missing dependencies, they are packages this
+    install has no use for, and reporting them would make a healthy machine
+    look broken every time the startup check runs.
     """
+    checks = _build_checks()
+    if clips_enabled():
+        checks += clip_dep_checks()
+
     results: list[CheckResult] = []
-    for check in _build_checks():
+    for check in checks:
         try:
             ok = bool(check.detect())
         except Exception as exc:

@@ -1,6 +1,6 @@
 # Maintainer: loteran <https://github.com/loteran>
 pkgname=arctis-sound-manager
-pkgver=1.2.19
+pkgver=1.2.20
 pkgrel=1
 pkgdesc="Linux GUI for SteelSeries Arctis headsets — all GG/Sonar features: mixer, EQ, ANC, mic processing, surround"
 arch=('any')
@@ -42,30 +42,24 @@ depends=(
     # the same transaction. This is intentional — the alternative
     # (optdepends) means the toggle silently does nothing.
     'noise-suppression-for-voice'
-    # ── Clips ────────────────────────────────────────────────────────────
-    # The clip feature captures the screen through the portal with GStreamer
-    # and writes one audio track per Sonar channel. Hard dependencies for the
-    # same reason as swh-plugins above: without them the Clips page is present
-    # and does nothing, which is worse than not shipping it.
-    #   python-gobject     — the Gst/Gio bindings the capture is written against
-    #   gst-plugin-pipewire— pipewiresrc, the portal's screen stream
-    #   gst-plugins-base   — appsrc, audioconvert/audioresample, opusenc
-    #   gst-plugins-good   — pulsesrc (channel audio), matroskamux (the .mkv)
-    #   gst-plugins-ugly   — x264enc, the software encoder every machine falls
-    #                        back to when no hardware encoder is present
-    #   ffmpeg             — poster frames for the library grid (ffmpeg/ffprobe)
-    'python-gobject'
-    'gstreamer'
-    'gst-plugin-pipewire'
-    'gst-plugins-base'
-    'gst-plugins-good'
-    'gst-plugins-ugly'
-    'ffmpeg'
 )
 optdepends=(
-    # Hardware H.264 encoders. Purely a performance choice: the capture probes
-    # for these and falls back to x264enc, so their absence costs CPU, not the
-    # feature.
+    # ── Clips (opt-in) ───────────────────────────────────────────────────
+    # Deliberately not in depends(), unlike swh-plugins above. Clips ships
+    # off, and the toggle that turns it on (Settings → Clips) installs these
+    # through pkexec with the same package names — so an install that only
+    # wants the mixer and the EQ never pulls a screen recorder's encoders,
+    # and one that wants Clips is one dialog away from having them.
+    'python-gobject: clip capture (Gst/Gio bindings)'
+    'gstreamer: clip capture'
+    'gst-plugin-pipewire: clip capture — pipewiresrc, the portal screen stream'
+    'gst-plugins-base: clip capture — appsrc, audioconvert/audioresample, opusenc'
+    'gst-plugins-good: clip capture — pulsesrc, matroskamux'
+    'gst-plugins-ugly: clip capture — x264enc, the software encoder fallback'
+    'ffmpeg: clip thumbnails, track levels and export'
+    # Hardware H.264 encoders. Purely a performance choice on top of that: the
+    # capture probes for these and falls back to x264enc, so their absence
+    # costs CPU, not the feature.
     'gst-plugin-va: hardware H.264 encoding on Intel/AMD GPUs'
     'gst-plugins-bad: hardware H.264 encoding on NVIDIA GPUs (nvcodec)'
 )

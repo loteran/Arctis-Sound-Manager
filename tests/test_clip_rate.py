@@ -188,3 +188,81 @@ def test_absurd_measurement_is_not_written():
     caps = _stamp([Frame(pts=0, payload=b""), Frame(pts=1, payload=b"")])
 
     assert _framerate(caps) == 0.0
+
+
+# ── the live rate and the clip's rate are different numbers ────────────────────
+#
+# Reported from use: the status bar read 20 fps while the clip it saved came out
+# at 12. Both were right. The screencast only produces a frame when the screen
+# changes, so a few seconds of activity and thirty seconds that included idle
+# stretches genuinely differ — and showing only the first is what made the
+# second look like a bug.
+
+def _capture_with(frames_spec):
+    """A ClipCapture with a filled video buffer and no GStreamer behind it."""
+    from arctis_sound_manager.clip_capture import ClipCapture
+
+    capture = ClipCapture.__new__(ClipCapture)
+    capture.buffer = ClipBuffer(window_s=90.0)
+    track = capture.buffer.add_video()
+    for fps, seconds, start in frames_spec:
+        _fill(track, fps=fps, seconds=seconds, start_s=start)
+    return capture
+
+
+def _live_fps(capture) -> float:
+    """The `fps` property, read off an instance built without __init__."""
+    from arctis_sound_manager.clip_capture import ClipCapture
+    return ClipCapture.fps.fget(capture)
+
+
+def test_buffered_rate_is_the_whole_history_not_the_last_seconds():
+    """20 fps now, 10 across the clip — the two numbers the report was about."""
+    capture = _capture_with([(8, 25, 0.0), (20, 5, 25.0)])
+
+    assert _live_fps(capture) == pytest.approx(20, rel=0.15)
+    assert capture.buffered_fps == pytest.approx(10, rel=0.2)
+
+
+def test_buffered_rate_of_an_empty_buffer_is_not_a_guess():
+    assert _capture_with([]).buffered_fps == 0.0
+
+
+def test_the_saved_rate_is_kept_for_reporting():
+    """So a save can say what the file claims instead of leaving it to be found
+    in a player — the whole reason the 20-versus-12 gap went unexplained."""
+    from arctis_sound_manager.clip_capture import ClipCapture
+
+    gst = _real_gst() or _StringGst
+    capture = ClipCapture.__new__(ClipCapture)
+    capture._Gst = gst
+    capture.last_clip_fps = 0.0
+    ClipCapture._with_measured_framerate(
+        capture, gst.Caps.from_string(_SOURCE_CAPS), _frames(fps=24, count=240))
+
+    assert capture.last_clip_fps == pytest.approx(24, rel=0.02)
+
+
+# ── the rate offered, and where it is offered from ─────────────────────────────
+
+def test_capture_defaults_to_the_documented_rate():
+    """60 was a ceiling the screencast almost never reached, paid for in
+    keyframes and encoder budget on frames that never arrived."""
+    import inspect
+
+    from arctis_sound_manager.clip_capture import DEFAULT_FPS, ClipCapture
+
+    assert DEFAULT_FPS == 30
+    signature = inspect.signature(ClipCapture.__init__)
+    assert signature.parameters["fps"].default == DEFAULT_FPS
+
+
+def test_the_page_offers_exactly_what_capture_supports():
+    """clips_page restates these rather than importing clip_capture, so that it
+    still builds without GStreamer. This is what keeps the two from drifting."""
+    from arctis_sound_manager.clip_capture import DEFAULT_FPS, FPS_CHOICES
+    from arctis_sound_manager.gui import clips_page
+
+    assert clips_page._FPS_CHOICES == FPS_CHOICES
+    assert clips_page._DEFAULT_FPS == DEFAULT_FPS
+    assert DEFAULT_FPS in FPS_CHOICES

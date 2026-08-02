@@ -152,3 +152,64 @@ def test_playhead_stays_inside_the_clip(_app):
     assert band._position == 30.0
     band.set_position(-5.0)
     assert band._position == 0.0
+
+
+# ── scrubbing ──────────────────────────────────────────────────────────────────
+#
+# From use: "we should be able to drag, back and forth". The band could only be
+# clicked to seek — dragging inside the selection moved the selection — so there
+# was no way to run over a moment looking for the frame a clip should start on.
+# The seek slider above the preview was the only draggable thing, and it was a
+# second, worse timeline for the same clip; it is gone, so this has to work.
+
+def _drag(band, from_s: float, to_s: float) -> list[float]:
+    """Press on *from_s*, drag to *to_s*, release. Returns what was scrubbed."""
+    from PySide6.QtCore import QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+
+    seen: list[float] = []
+    band.scrubbed.connect(seen.append)
+    y = band.HEIGHT / 2
+    for kind, seconds in ((QMouseEvent.Type.MouseButtonPress, from_s),
+                          (QMouseEvent.Type.MouseMove, to_s),
+                          (QMouseEvent.Type.MouseButtonRelease, to_s)):
+        band.event(QMouseEvent(
+            kind, QPointF(band._x(seconds), y), Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier))
+    return seen
+
+
+def test_dragging_the_playhead_scrubs(_app):
+    band = _band(30.0)
+    band.set_position(25.0)
+    before = (band.start_s, band.end_s)
+
+    seen = _drag(band, 25.0, 22.0)
+
+    assert seen and seen[-1] == pytest.approx(22.0, abs=0.2)
+    assert (band.start_s, band.end_s) == before, "scrubbing moved the trim"
+
+
+def test_scrubbing_works_outside_the_selection_too(_app):
+    """Most of a clip is outside the selection; a press there has nothing to
+    grab, so it scrubs — and holding it keeps scrubbing."""
+    band = _band(30.0)
+
+    seen = _drag(band, 5.0, 12.0)
+
+    assert seen[0] == pytest.approx(5.0, abs=0.2)
+    assert seen[-1] == pytest.approx(12.0, abs=0.2)
+    assert band.start_s == 20.0, "a scrub outside the selection moved it"
+
+
+def test_the_markers_win_where_the_playhead_sits_on_them(_app):
+    """A freshly opened clip parks the playhead exactly on the in-point. With
+    the playhead taking the press there, the in-marker would be the one thing
+    on the band that could not be dragged."""
+    band = _band(30.0)
+    band.set_position(band.start_s)
+
+    _drag(band, 20.0, 14.0)
+
+    assert band.start_s == pytest.approx(14.0, abs=0.2)
+    assert band.end_s == 30.0

@@ -198,3 +198,39 @@ def test_a_browser_alone_is_still_not_a_game():
 
 def test_nothing_playing_is_not_a_guess():
     assert _detect(SINKS, []) is None
+
+
+# ── the blocklist matches display names, not binaries ─────────────────────────
+#
+# Reported from use: the status bar read "Recording: Google Chrome" while the
+# user had picked their OBS window in the portal picker. Two faults met there.
+# This is the first: the blocklist held "chrome" and the graph carries "Google
+# Chrome", and the test was exact membership — so every blocked app whose
+# display name is more than its binary name sailed straight through.
+
+@pytest.mark.parametrize("name", [
+    "Google Chrome", "Chromium", "OBS Studio", "Brave Browser",
+    "Firefox Web Browser", "Discord", "WEBRTC_VoiceEngine", "Spotify",
+    "speech-dispatcher",
+])
+def test_display_names_of_blocked_apps_are_blocked(name):
+    assert _detect(SINKS, [_stream(3, name)]) is None, name
+
+
+@pytest.mark.parametrize("name", ["Observation", "Chromatic Souls", "Vivid"])
+def test_a_game_is_not_blocked_for_a_word_inside_a_longer_one(name):
+    """A plain substring test would read "Observation" as OBS and "Vivid" as
+    Vivaldi. Only whole words count."""
+    assert _detect(SINKS, [_stream(3, name)]) == name
+
+
+def test_a_blocked_app_on_the_game_channel_is_still_blocked():
+    """Routing a browser to the Game channel does not make it the game — the
+    channel wins over the *order* streams come in, not over the blocklist."""
+    assert _detect(SINKS, [_stream(1, "Google Chrome")]) is None
+
+
+def test_an_unlisted_app_is_still_taken_as_the_game():
+    """The blocklist is a list of exceptions; anything not on it still counts,
+    or every native game would need to be known in advance."""
+    assert _detect(SINKS, [_stream(3, "Palworld")]) == "Palworld"

@@ -23,6 +23,7 @@ from PySide6.QtGui import (QColor, QDesktopServices, QIcon, QKeySequence,
                            QPainter, QPixmap, QPolygonF, QShortcut)
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -54,6 +55,12 @@ CARD_SIZE = QSize(THUMB_SIZE.width() + 24, THUMB_SIZE.height() + 62)
 # a freshly opened library responsive without handing the machine a job per
 # clip while a game is running — which is exactly when this page gets used.
 _THUMB_THREADS = 2
+
+# Mirrors clip_capture.FPS_CHOICES / DEFAULT_FPS, restated rather than imported
+# so this page still builds its controls on a machine with no GStreamer — the
+# rule the module docstring sets out. test_clip_rate keeps the two in step.
+_FPS_CHOICES = (30, 60)
+_DEFAULT_FPS = 30
 
 
 def _tr(key: str, fallback: str) -> str:
@@ -169,11 +176,16 @@ class _ThumbJob(QRunnable):
 class ClipGrid(QListWidget):
     """Clip library as a grid of preview cards, draggable into other apps.
 
-    Sharing a clip is the point of having one, and the fastest route is to drop
-    the file onto Discord, a browser upload box or a file manager. Qt will only
-    offer that if the drag carries ``text/uri-list``, so the payload is built
-    here rather than relying on the default (which drags the row's text and
-    lands as a meaningless string in the target).
+    Dragging a card carries the recording itself — a Matroska file, because that
+    is what holds one audio track per channel. That is the right payload for a
+    file manager or an editor, and the wrong one for Discord, which uploads a
+    .mkv and then cannot play it. The editor's export is the route there: it
+    writes MP4. The hint under the grid says so rather than leaving it to be
+    discovered by posting a clip nobody can watch.
+
+    Qt only offers a drag at all if it carries ``text/uri-list``, so the payload
+    is built here rather than relying on the default (which drags the row's text
+    and lands as a meaningless string in the target).
     """
 
     def __init__(self, parent=None):
@@ -257,6 +269,23 @@ class ClipsPage(QWidget):
         self._seconds.setValue(30)
         self._seconds.setSuffix(" s")
         controls.addWidget(self._seconds)
+
+        # A ceiling, not a target — see clip_capture.FPS_CHOICES. It is offered
+        # because it decides the keyframe interval and the encoder's budget, and
+        # locked while capturing because both are fixed when the pipeline is
+        # built: changing it live would mean tearing the capture down, and the
+        # buffer with it.
+        controls.addWidget(QLabel(_tr("clips_fps", "Frame rate:")))
+        self._fps = QComboBox()
+        for value in _FPS_CHOICES:
+            self._fps.addItem(f"{value} fps", value)
+        self._fps.setCurrentIndex(max(0, _FPS_CHOICES.index(_DEFAULT_FPS)))
+        self._fps.setToolTip(_tr(
+            "clips_fps_hint",
+            "The most this will record. The screen is only captured when it "
+            "changes, so the real rate is usually lower — a clip can be set to "
+            "an exact rate when you export it."))
+        controls.addWidget(self._fps)
 
         self._save_btn = QPushButton(_tr("clips_save", "Save last seconds"))
         self._save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -350,8 +379,9 @@ class ClipsPage(QWidget):
         self._open_hint = QLabel(_tr(
             "clips_open_hint",
             "Double-click a clip to open it — the last seconds are already "
-            "selected, ready to export. Drag one into Discord or a browser to "
-            "share the whole thing."))
+            "selected, and Export writes an MP4 you can post anywhere. Dragging "
+            "a card straight out gives the original recording, which Discord "
+            "uploads but cannot play."))
         self._open_hint.setWordWrap(True)
         self._open_hint.setStyleSheet(
             f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 8pt; "
@@ -450,7 +480,8 @@ class ClipsPage(QWidget):
 
         self._status.setText(_tr("clips_starting", "Starting capture…"))
         try:
-            capture = ClipCapture(history_s=max(90.0, self._seconds.value() * 2.0))
+            capture = ClipCapture(history_s=max(90.0, self._seconds.value() * 2.0),
+                                  fps=int(self._fps.currentData() or _DEFAULT_FPS))
             capture.start()
         except ClipCaptureUnavailable as exc:
             self._error = str(exc)
@@ -467,6 +498,9 @@ class ClipsPage(QWidget):
         self._capture = capture
         self._toggle_btn.setText(_tr("clips_stop", "Stop capture"))
         self._save_btn.setEnabled(True)
+        # The rate is baked into the pipeline (keyframe interval, encoder
+        # budget), so it can only change between captures.
+        self._fps.setEnabled(False)
         self._update_status()
 
     def _stop_capture(self) -> None:
@@ -478,6 +512,7 @@ class ClipsPage(QWidget):
             self._capture = None
         self._toggle_btn.setText(_tr("clips_start", "Start capture"))
         self._save_btn.setEnabled(False)
+        self._fps.setEnabled(True)
         self._update_status()
 
     def _on_save(self) -> None:
@@ -490,7 +525,12 @@ class ClipsPage(QWidget):
                 "Nothing buffered yet — give the capture a few seconds."))
             return
         self.refresh_clips()
-        self._status.setText(_tr("clips_saved", "Saved:") + f" {path.name}")
+        # The rate the file ended up with, not the live one — it is the number
+        # that will be argued about after watching the clip back, and saying it
+        # here is cheaper than having to open the file to find out.
+        written = getattr(self._capture, "last_clip_fps", 0.0)
+        rate = f"  ({written:.0f} fps)" if written else ""
+        self._status.setText(_tr("clips_saved", "Saved:") + f" {path.name}{rate}")
         # The shortcut is pressed while something else owns the screen, so a
         # status line nobody is looking at is not feedback. Sound first, for
         # the same reason every camera makes one.
@@ -742,10 +782,23 @@ class ClipsPage(QWidget):
             if source and abs(source - fps) > max(2.0, fps * 0.15):
                 text += "  " + _tr("clips_source_fps", "screen: {n} fps").replace(
                     "{n}", f"{source:.0f}")
+            # The live rate is a few seconds wide; a clip averages over its whole
+            # length, idle stretches included. Reported alone, the live number
+            # promises a smoothness the saved file does not have — which is
+            # exactly how a status bar reading 20 fps produced a 12 fps clip with
+            # nothing on screen to explain it.
+            buffered = getattr(self._capture, "buffered_fps", 0.0)
+            if buffered and abs(buffered - fps) > max(2.0, fps * 0.15):
+                text += "  " + _tr("clips_clip_fps", "clip: {n} fps").replace(
+                    "{n}", f"{buffered:.0f}")
             parts.append(text)
 
+        # "Game", never "Recording": this name comes from the audio graph, not
+        # from the screen. What is being captured was chosen in the portal picker
+        # and Wayland never says what it was, so calling it "Recording:" told
+        # anyone who picked a window that the capture was pointed elsewhere.
         if game:
-            parts.append(_tr("clips_recording", "Recording:") + f" {game}")
+            parts.append(_tr("clips_game", "Game:") + f" {game}")
         tracks = [name for name, _ in getattr(self._capture, "audio_tracks", [])]
         if tracks:
             parts.append(_tr("clips_tracks", "Tracks:") + " " + ", ".join(tracks))

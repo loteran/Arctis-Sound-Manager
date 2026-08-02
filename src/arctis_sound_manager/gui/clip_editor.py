@@ -1,21 +1,31 @@
 # Copyright (C) 2026 loteran
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Clip editor: preview, trim, per-track levels, and a share-sized export.
+"""Clip editor: preview, trim, per-channel levels, and a share-sized export.
 
 Opening a clip used to hand it to the system video player, which is the one
 thing that cannot be done with it — the reason to open a clip is to cut it
 down, quieten the microphone and send it somewhere. All of that lives here, and
 the result is dragged straight out of the dialog into whatever it is going to.
+
+The preview is a mixer, not a player. A clip carries the game, the chat, the
+media and the microphone as separate tracks, and a media player — Qt's included
+— decodes exactly one of them and picks the first, so a clip whose game channel
+was empty plays back in silence with three perfectly good channels sitting
+beside it. Every channel is therefore given a player of its own and run in
+step, which is what makes the level and mute controls mean something while you
+are listening rather than only after an export.
 """
 
 from __future__ import annotations
 
 import logging
+import shutil
+import tempfile
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, QThread, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QGuiApplication
+from PySide6.QtGui import QDesktopServices, QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -29,11 +39,14 @@ from PySide6.QtWidgets import (
 )
 
 import arctis_sound_manager.gui.theme as _theme
-from arctis_sound_manager.clip_export import (ExportPlan, TrackMix, duration_s,
+from arctis_sound_manager.clip_export import (FPS_CHOICES, SHARE_SUFFIX,
+                                             ExportPlan, TrackMix, duration_s,
                                              export, probe_tracks,
+                                             silent_tracks, split_tracks,
                                              video_bitrate_kbps)
-from arctis_sound_manager.clip_library import (export_destination, read_trim,
-                                               share_dir, write_trim)
+from arctis_sound_manager.clip_library import (export_destination, read_mix,
+                                               read_trim, share_dir, write_mix,
+                                               write_trim)
 from arctis_sound_manager.gui.trim_band import (DEFAULT_TAIL_S, LENGTH_PRESETS_S,
                                                 TrimBand)
 from arctis_sound_manager.i18n import I18n
@@ -51,6 +64,21 @@ SIZE_CHOICES: list[tuple[str, float | None]] = [
     ("100 MB", 100.0),
 ]
 
+# Frame rates offered at export. "As recorded" is the default because it is the
+# only choice that costs nothing: the screencast is variable-rate, so picking a
+# number here re-encodes the clip to hold that rate exactly. Worth it when a
+# clip plays back unevenly somewhere it is being shared; not worth it by
+# default.
+FPS_LABELS: list[tuple[str, int | None]] = [
+    ("As recorded", None), *((f"{n} fps", n) for n in FPS_CHOICES),
+]
+
+# How far a channel may drift from the video before it is pulled back into
+# line. Each channel is its own decoder with its own clock, so they wander
+# apart by a few milliseconds over a long clip. The threshold is deliberately
+# well above audible lip-sync error: correcting a 20 ms drift costs an audible
+# hitch every few seconds, which is far worse than the drift.
+_SYNC_TOLERANCE_MS = 250
 
 # Below this the rows stop fitting side by side: the trim band, its five preset
 # buttons and the span read-out share one line, as do the size picker and the
@@ -113,8 +141,114 @@ class _ExportWorker(QThread):
             "clip_export_failed", "Export failed — see the log for details."))
 
 
+class _TrackPrepWorker(QThread):
+    """Splits the channels out and measures which of them are empty.
+
+    Both jobs walk the same tracks and both shell out to ffmpeg, so they share
+    one thread and one pass. Neither is allowed to hold the dialog closed: the
+    split is a demux and takes milliseconds, but the level scan decodes each
+    channel, and the editor is perfectly usable while the answer is on its way.
+    """
+
+    done = Signal(list, list)       # ([per-channel file], [is_silent])
+
+    def __init__(self, path: Path, count: int, workdir: Path, parent=None):
+        super().__init__(parent)
+        self._path = path
+        self._count = count
+        self._workdir = workdir
+
+    def run(self) -> None:
+        files: list[Path] = []
+        flags: list[bool] = []
+        try:
+            files = split_tracks(self._path, self._count, self._workdir)
+        except Exception:
+            logger.debug("could not split the clip's channels", exc_info=True)
+        try:
+            flags = silent_tracks(self._path, self._count)
+        except Exception:
+            logger.debug("could not measure channel levels", exc_info=True)
+        self.done.emit(files, flags)
+
+
+class _ChannelMixer:
+    """Every channel playing at once, one player each, driven together.
+
+    Qt's player exposes an *active* audio track, singular — there is no API for
+    hearing two at the same time, and no volume that applies to one of them.
+    Handing each channel its own single-track file sidesteps that entirely: the
+    players are ordinary, the volumes are ordinary, and the only new problem is
+    keeping them in step, which the video's own position solves.
+
+    The video player keeps its own audio silent throughout. It would otherwise
+    contribute the first channel a second time, at full volume, immune to that
+    channel's mute — audible as the one track the mute button did not work on.
+    """
+
+    def __init__(self, parent) -> None:
+        self._parent = parent
+        self._players: list = []
+        self._outputs: list = []
+
+    @property
+    def ready(self) -> bool:
+        return bool(self._players)
+
+    def load(self, files: list[Path]) -> bool:
+        """Build one player per channel file. False when Qt Multimedia is absent."""
+        try:
+            from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+        except ImportError:                          # pragma: no cover - env dependent
+            return False
+
+        self.release()
+        for path in files:
+            player = QMediaPlayer(self._parent)
+            output = QAudioOutput(self._parent)
+            player.setAudioOutput(output)
+            player.setSource(QUrl.fromLocalFile(str(path)))
+            self._players.append(player)
+            self._outputs.append(output)
+        return bool(self._players)
+
+    def set_level(self, index: int, volume: float, muted: bool) -> None:
+        if 0 <= index < len(self._outputs):
+            self._outputs[index].setVolume(0.0 if muted else max(0.0, volume))
+
+    def seek(self, ms: int) -> None:
+        for player in self._players:
+            player.setPosition(ms)
+
+    def play(self, ms: int) -> None:
+        for player in self._players:
+            player.setPosition(ms)
+            player.play()
+
+    def pause(self) -> None:
+        for player in self._players:
+            player.pause()
+
+    def stop(self) -> None:
+        for player in self._players:
+            player.stop()
+
+    def resync(self, ms: int) -> None:
+        """Pull back any channel that has wandered away from the video."""
+        for player in self._players:
+            if abs(player.position() - ms) > _SYNC_TOLERANCE_MS:
+                player.setPosition(ms)
+
+    def release(self) -> None:
+        for player in self._players:
+            player.stop()
+            player.setSource(QUrl())
+        self._players.clear()
+        self._outputs.clear()
+
+
 class ClipEditor(QDialog):
-    """Trim a clip, set its track levels, and export it at a share size."""
+    """Trim a clip, set its channel levels, and export it at a share size."""
 
     def __init__(self, path: Path, parent=None):
         super().__init__(parent)
@@ -122,7 +256,13 @@ class ClipEditor(QDialog):
         self._duration = duration_s(path)
         self._exported: Path | None = None
         self._worker: _ExportWorker | None = None
+        self._prep_worker: _TrackPrepWorker | None = None
         self._seeked_to_start = False
+        self._mixer = _ChannelMixer(self)
+        # Channel files live here for as long as the dialog does. A directory
+        # rather than loose files so cleanup is one call and cannot leave a
+        # stray track behind in /tmp for every clip ever opened.
+        self._workdir = Path(tempfile.mkdtemp(prefix="asm-clip-"))
 
         self.setWindowTitle(f"{_tr('clips_edit', 'Edit clip')} — {path.name}")
         # The minimum is what every row needs side by side. Below it the trim
@@ -148,16 +288,25 @@ class ClipEditor(QDialog):
             f"background: transparent;")
         root.addWidget(self._status)
 
+        # Space is what every player uses, and the video has to be clicked to
+        # be focused otherwise — which is itself a play/pause here.
+        play_pause = QShortcut(QKeySequence(Qt.Key.Key_Space), self)
+        play_pause.activated.connect(self._toggle_play)
+
         self._update_estimate()
 
     # ── preview ───────────────────────────────────────────────────────────────
 
     def _build_preview(self) -> QWidget:
-        """A player when Qt Multimedia is present, a hint when it is not.
+        """The picture, and nothing else.
 
-        The preview is the least essential part of the dialog: trimming and
-        levels are still usable without it, so a missing multimedia backend
-        must not stop the editor from opening.
+        There is no transport bar. It carried a play button and a seek slider,
+        and both were a second, worse copy of something already on screen: the
+        trim band under the preview is a timeline with a playhead on it, drawn
+        against the same clip, showing the span being exported as well as the
+        position. Two scrubbers for one clip is one too many, and the one that
+        knows about the trim is the one worth keeping. Clicking the picture
+        starts and stops it, which is what clicking a video does everywhere.
         """
         try:
             from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
@@ -171,70 +320,84 @@ class ClipEditor(QDialog):
             hint.setStyleSheet(f"color: {_theme.c('TEXT_SECONDARY')};")
             return hint
 
-        video = QVideoWidget()
+        class _ClickableVideo(QVideoWidget):
+            """A video surface that answers a click."""
+
+            clicked = Signal()
+
+            def mousePressEvent(self, event) -> None:
+                if event.button() == Qt.MouseButton.LeftButton:
+                    self.clicked.emit()
+                super().mousePressEvent(event)
+
+        video = _ClickableVideo()
         video.setMinimumHeight(260)
+        video.setCursor(Qt.CursorShape.PointingHandCursor)
+        video.setToolTip(_tr("clip_preview_hint",
+                             "Click to play or pause. Drag the playhead on the "
+                             "band below to scrub."))
+        video.clicked.connect(self._toggle_play)
+
         self._player = QMediaPlayer(self)
-        self._audio_out = QAudioOutput(self)
-        self._player.setAudioOutput(self._audio_out)
+        # The video player's own audio stays off for good: the channels are
+        # played separately and mixing its copy back in would make the first
+        # channel unmutable.
+        self._video_audio = QAudioOutput(self)
+        self._video_audio.setVolume(0.0)
+        self._player.setAudioOutput(self._video_audio)
         self._player.setVideoOutput(video)
         self._player.setSource(QUrl.fromLocalFile(str(self._path)))
 
         # Setting a source only loads it — the widget stays black until frames
         # are decoded, so the editor opened onto an empty rectangle and the trim
-        # sliders had nothing to aim at. Playing and immediately pausing renders
+        # markers had nothing to aim at. Playing and immediately pausing renders
         # the first frame without the clip starting up on its own.
         self._player.play()
         self._player.pause()
-
-        controls = QWidget()
-        row = QHBoxLayout(controls)
-        row.setContentsMargins(0, 0, 0, 0)
-        self._play_btn = QPushButton("▶")
-        self._play_btn.setFixedWidth(44)
-        self._play_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._play_btn.clicked.connect(self._toggle_play)
-        self._seek = QSlider(Qt.Orientation.Horizontal)
-        self._seek.sliderMoved.connect(self._player.setPosition)
         self._player.positionChanged.connect(self._on_position)
         self._player.durationChanged.connect(self._on_media_duration)
-        row.addWidget(self._play_btn)
-        row.addWidget(self._seek, stretch=1)
-
-        wrapper = QWidget()
-        col = QVBoxLayout(wrapper)
-        col.setContentsMargins(0, 0, 0, 0)
-        col.setSpacing(6)
-        col.addWidget(video, stretch=1)
-        col.addWidget(controls)
-        return wrapper
+        return video
 
     def _toggle_play(self) -> None:
+        player = getattr(self, "_player", None)
+        if player is None:
+            return
         if self._is_playing():
-            self._player.pause()
-            self._play_btn.setText("▶")
+            player.pause()
+            self._mixer.pause()
             return
         # Play the selection. Starting from wherever the playhead was left —
         # usually outside the trim — plays the part being thrown away.
         band = getattr(self, "_band", None)
-        if band is not None and not (band.start_s <= self._player.position() / 1000.0
-                                     < band.end_s):
-            self._player.setPosition(int(band.start_s * 1000))
-        self._player.play()
-        self._play_btn.setText("⏸")
+        position = player.position()
+        if band is not None and not (band.start_s <= position / 1000.0 < band.end_s):
+            position = int(band.start_s * 1000)
+            player.setPosition(position)
+        player.play()
+        self._mixer.play(position)
+
+    def _seek(self, seconds: float) -> None:
+        """Move everything — the picture and every channel — to *seconds*."""
+        player = getattr(self, "_player", None)
+        if player is None:
+            return
+        ms = int(max(0.0, seconds) * 1000)
+        player.setPosition(ms)
+        self._mixer.seek(ms)
 
     def _on_position(self, ms: int) -> None:
-        if not self._seek.isSliderDown():
-            self._seek.setValue(ms)
         band = getattr(self, "_band", None)
         if band is not None:
             band.set_position(ms / 1000.0)
+        if self._is_playing():
+            self._mixer.resync(ms)
         # Preview what will be exported, not what is on disk: playback stops at
         # the out point and returns to the in point. Running on past the trim
         # means the preview never shows the clip being made.
         if band is not None and self._is_playing() and ms >= band.end_s * 1000:
             self._player.pause()
-            self._play_btn.setText("▶")
-            self._player.setPosition(int(band.start_s * 1000))
+            self._mixer.pause()
+            self._seek(band.start_s)
 
     def _is_playing(self) -> bool:
         from PySide6.QtMultimedia import QMediaPlayer as _QMP
@@ -266,10 +429,11 @@ class ClipEditor(QDialog):
             self._band.set_range(*remembered)
         self._band.setToolTip(
             _tr("clip_trim_hint",
-                "Opens on the last {n} seconds — drag the markers to change it.")
+                "Opens on the last {n} seconds — drag the markers to change it, "
+                "or drag the playhead to scrub.")
             .replace("{n}", f"{DEFAULT_TAIL_S:.0f}"))
         self._band.rangeChanged.connect(self._on_trim_changed)
-        self._band.scrubbed.connect(self._on_scrub)
+        self._band.scrubbed.connect(self._seek)
         col.addWidget(self._band)
 
         row = QHBoxLayout()
@@ -309,11 +473,6 @@ class ClipEditor(QDialog):
     def _on_trim_changed(self, *_args) -> None:
         self._update_estimate()
 
-    def _on_scrub(self, seconds: float) -> None:
-        player = getattr(self, "_player", None)
-        if player is not None:
-            player.setPosition(int(seconds * 1000))
-
     def _on_media_duration(self, ms: int) -> None:
         """Take the player's length over ffprobe's when they disagree.
 
@@ -322,7 +481,6 @@ class ClipEditor(QDialog):
         decodes. Whichever number is used has to be the one the band is drawn
         against, or the end marker sits somewhere other than the end.
         """
-        self._seek.setRange(0, max(1, ms))
         if not hasattr(self, "_band"):      # duration can land mid-construction
             return
         length = ms / 1000.0
@@ -339,7 +497,7 @@ class ClipEditor(QDialog):
         # the recording: the preview should open on what is about to be shared.
         if not self._seeked_to_start and self._band.start_s > 0:
             self._seeked_to_start = True
-            self._player.setPosition(int(self._band.start_s * 1000))
+            self._seek(self._band.start_s)
 
     @property
     def _start_s(self) -> float:
@@ -349,9 +507,21 @@ class ClipEditor(QDialog):
     def _end_s(self) -> float:
         return self._band.end_s
 
-    # ── tracks ────────────────────────────────────────────────────────────────
+    # ── channels ──────────────────────────────────────────────────────────────
 
     def _build_tracks(self) -> QWidget:
+        """One row per channel: its name, its level, and whether to keep it.
+
+        Every channel plays, always. There is no "listen to this one" — that
+        was a workaround for the player's one-track-at-a-time limit dressed up
+        as a feature, and it put the word *Listen* in front of four channel
+        names that were the only thing worth reading. Mute is the control that
+        decides what you hear, and it is the same control that decides what
+        gets exported, so the preview is the export.
+
+        Levels are restored from the sidecar, so a clip reopened to adjust an
+        export does not start again with the microphone back at full.
+        """
         box = QWidget()
         col = QVBoxLayout(box)
         col.setContentsMargins(0, 0, 0, 0)
@@ -359,32 +529,104 @@ class ClipEditor(QDialog):
 
         names = probe_tracks(self._path)
         self._track_rows: list[tuple[str, QSlider, QCheckBox]] = []
+        self._silent_labels: list[QLabel] = []
         if not names:
             col.addWidget(QLabel(_tr("clip_no_tracks", "No audio tracks found.")))
             return box
 
-        col.addWidget(QLabel(_tr("clip_tracks", "Audio tracks:")))
-        for name in names:
+        header = QHBoxLayout()
+        header.addWidget(QLabel(_tr("clip_tracks", "Audio channels:")))
+        header.addStretch(1)
+        hint = QLabel(_tr("clip_channels_hint",
+                          "All channels play together — mute the ones you do "
+                          "not want. This is exactly what gets exported."))
+        hint.setStyleSheet(f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 8pt;")
+        header.addWidget(hint)
+        col.addLayout(header)
+
+        remembered = read_mix(self._path)
+        for index, name in enumerate(names):
             row = QHBoxLayout()
             label = QLabel(name)
             label.setMinimumWidth(110)
+
             slider = QSlider(Qt.Orientation.Horizontal)
             slider.setRange(0, 150)
-            slider.setValue(100)
-            slider.valueChanged.connect(self._update_estimate)
             mute = QCheckBox(_tr("clip_mute", "Mute"))
-            mute.toggled.connect(self._update_estimate)
+            volume, muted = remembered.get(name, (1.0, False))
+            slider.setValue(int(round(volume * 100)))
+            mute.setChecked(muted)
+            slider.valueChanged.connect(self._on_levels_changed)
+            mute.toggled.connect(self._on_levels_changed)
+
+            silent = QLabel("")
+            silent.setStyleSheet(f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 8pt;")
+            self._silent_labels.append(silent)
 
             row.addWidget(label)
             row.addWidget(slider, stretch=1)
+            row.addWidget(silent)
             row.addWidget(mute)
             col.addLayout(row)
             self._track_rows.append((name, slider, mute))
+
+        self._start_track_prep(len(names))
         return box
 
     def _tracks(self) -> list[TrackMix]:
         return [TrackMix(name=n, volume=s.value() / 100.0, muted=m.isChecked())
                 for n, s, m in getattr(self, "_track_rows", [])]
+
+    def _on_levels_changed(self) -> None:
+        """A slider or a mute moved: hear it now, and remember it."""
+        for index, track in enumerate(self._tracks()):
+            self._mixer.set_level(index, track.volume, track.muted)
+        self._update_estimate()
+
+    def _start_track_prep(self, count: int) -> None:
+        """Split the channels out and scan their levels, off the UI thread."""
+        self._prep_worker = _TrackPrepWorker(self._path, count, self._workdir, self)
+        self._prep_worker.done.connect(self._on_tracks_prepared)
+        self._prep_worker.start()
+
+    def _on_tracks_prepared(self, files: list, flags: list) -> None:
+        """Bring the channels online and say which of them are empty."""
+        if files and self._mixer.load([Path(f) for f in files]):
+            self._on_levels_changed()
+            if (band := getattr(self, "_band", None)) is not None:
+                self._mixer.seek(int(band.start_s * 1000))
+        else:
+            # The channels could not be split, so there is no mixer — and the
+            # video player's audio is off precisely because there normally is
+            # one. Left there, the preview would be completely silent, which is
+            # worse than the single-track playback this replaced. Give the
+            # video its own audio back as the degraded mode, and say why the
+            # per-channel controls are not doing anything.
+            if (audio := getattr(self, "_video_audio", None)) is not None:
+                audio.setVolume(1.0)
+            if shutil.which("ffmpeg") is None:
+                message = _tr("clip_no_ffmpeg",
+                              "ffmpeg is not installed, so clips cannot be "
+                              "exported and the preview plays one track only.")
+            else:
+                message = _tr("clip_no_channel_preview",
+                              "Could not separate this clip's channels, so the "
+                              "preview plays one track and the level sliders "
+                              "only affect the export.")
+            self._status.setText("⚠ " + message)
+
+        audible = False
+        for index, is_silent in enumerate(flags):
+            if index < len(self._silent_labels):
+                self._silent_labels[index].setText(
+                    _tr("clip_track_silent", "silent") if is_silent else "")
+            audible = audible or not is_silent
+
+        if flags and not audible:
+            self._status.setText("⚠ " + _tr(
+                "clip_all_silent",
+                "Every audio channel in this clip is empty. Check that the game "
+                "and chat are routed through the Sonar channels on the Home page."))
 
     # ── export ────────────────────────────────────────────────────────────────
 
@@ -398,6 +640,18 @@ class ClipEditor(QDialog):
             self._size.addItem(label, mb)
         self._size.currentIndexChanged.connect(self._update_estimate)
         row.addWidget(self._size)
+
+        row.addWidget(QLabel(_tr("clip_fps", "Frame rate:")))
+        self._fps = QComboBox()
+        for label, value in FPS_LABELS:
+            self._fps.addItem(_tr(f"clip_fps_{value or 'source'}", label), value)
+        self._fps.setToolTip(_tr(
+            "clip_fps_hint",
+            "The screen is captured whenever it changes, so a recording holds "
+            "whatever rate it managed. Choosing one here re-encodes the clip to "
+            "hold it exactly — use it if a clip plays back unevenly."))
+        self._fps.currentIndexChanged.connect(self._update_estimate)
+        row.addWidget(self._fps)
 
         row.addStretch(1)
 
@@ -426,7 +680,13 @@ class ClipEditor(QDialog):
         self._trim_label.setText(f"{_mmss(self._start_s)} – {_mmss(self._end_s)}"
                                  f"  ({length:.1f}s)")
         if not target:
-            self._status.setText("")
+            # Without a size target the export is normally a stream copy, which
+            # is instant. Fixing the rate is not, and an export that suddenly
+            # takes a minute with no warning reads as a hang.
+            self._status.setText("" if not self._fps.currentData() else _tr(
+                "clip_fps_reencode",
+                "Fixing the frame rate re-encodes the clip — this takes longer "
+                "than a plain export."))
             self._export_btn.setEnabled(True)
             return
         try:
@@ -442,7 +702,9 @@ class ClipEditor(QDialog):
 
     def _on_export(self) -> None:
         target = self._size.currentData()
-        suffix = ".mp4" if target else self._path.suffix
+        # Always MP4, whatever the settings — see clip_export.SHARE_SUFFIX for
+        # why the recording's own container is not an option here.
+        suffix = SHARE_SUFFIX
         # Exports go under the library, not beside the recordings: written next
         # to them they came back as extra cards in the grid, and opening one of
         # those to export again produced "_share_share".
@@ -453,13 +715,13 @@ class ClipEditor(QDialog):
             logger.warning("cannot prepare the share folder: %s", exc)
             destination = self._path.with_name(f"{self._path.stem}_share{suffix}")
 
-        # The span being exported is the one worth reopening on.
-        write_trim(self._path, self._start_s, self._end_s)
+        self._remember()
 
         plan = ExportPlan(
             source=self._path, destination=destination,
             start_s=self._start_s, end_s=self._end_s,
             target_mb=target, tracks=self._tracks(),
+            fps=self._fps.currentData(),
         )
 
         self._export_btn.setEnabled(False)
@@ -489,17 +751,32 @@ class ClipEditor(QDialog):
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
-    def closeEvent(self, event) -> None:
-        # Keep the span even when the editor is closed without exporting: the
-        # trim is the work, and having to redo it is what makes a second visit
-        # feel like starting over.
+    def _remember(self) -> None:
+        """Write the trim and the channel levels beside the clip.
+
+        Both are work, and both used to be discarded by closing the dialog. The
+        trim is where the clip starts and ends; the mix is the decision that the
+        microphone was too loud and the chat channel should be off, which is no
+        less of a judgement and no less annoying to make twice.
+        """
         band = getattr(self, "_band", None)
         if band is not None:
             write_trim(self._path, band.start_s, band.end_s)
+        rows = getattr(self, "_track_rows", [])
+        if rows:
+            write_mix(self._path, {
+                name: (slider.value() / 100.0, mute.isChecked())
+                for name, slider, mute in rows})
+
+    def closeEvent(self, event) -> None:
+        self._remember()
         player = getattr(self, "_player", None)
         if player is not None:
             player.stop()
-        worker = self._worker
-        if worker is not None and worker.isRunning():
-            worker.wait(2000)
+        self._mixer.release()
+        for worker in (self._worker, self._prep_worker):
+            if worker is not None and worker.isRunning():
+                worker.wait(2000)
+        # The split channels are only good for this dialog's lifetime.
+        shutil.rmtree(self._workdir, ignore_errors=True)
         super().closeEvent(event)

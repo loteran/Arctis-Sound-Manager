@@ -28,13 +28,19 @@ from arctis_sound_manager.log_setup import configure_logging
 
 
 def main() -> int:
+    # Safe this early: clip_capture keeps GStreamer behind _require_gst(), so
+    # importing it for two constants does not pull gi in on a machine without it.
+    from arctis_sound_manager.clip_capture import DEFAULT_FPS
+
     parser = argparse.ArgumentParser(prog="asm-clipd", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--seconds", type=float, default=30.0,
                         help="clip length to save (default: 30)")
     parser.add_argument("--history", type=float, default=90.0,
                         help="seconds of history to keep buffered (default: 90)")
-    parser.add_argument("--fps", type=int, default=60)
+    parser.add_argument("--fps", type=int, default=DEFAULT_FPS,
+                        help=f"capture rate ceiling (default: {DEFAULT_FPS}); "
+                             "the screencast decides the real rate")
     parser.add_argument("--bitrate", type=int, default=20000, help="kbit/s")
     parser.add_argument("--window", action="store_true",
                         help="capture a single window instead of a screen")

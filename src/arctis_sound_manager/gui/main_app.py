@@ -219,6 +219,12 @@ class QMainApp(QBaseDesktopApp):
 
     def _build_window(self) -> QMainAppProtoWidget:
         window = QMainAppProtoWidget()
+        # The pages are children of this widget, while the controller is a
+        # QObject beside it — so a page that needs to ask the controller for
+        # something (the Settings toggle asking the sidebar to show Clips) has
+        # no parent chain to walk. One link from the window closes that gap;
+        # a page reaches it with `self.window().main_app`.
+        window.main_app = self
         window.setWindowFlags(Qt.WindowType.Window)
         window.setWindowTitle("Arctis Sound Manager")
         window.setWindowIcon(QIcon(get_icon_pixmap()))
@@ -270,6 +276,8 @@ class QMainApp(QBaseDesktopApp):
             btn.clicked.connect(lambda checked=False, i=idx: self._switch_page(i))
             sidebar_layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignHCenter)
             self._sidebar_buttons.append(btn)
+
+        self.apply_clips_visibility()
 
         sidebar_layout.addStretch(1)
 
@@ -372,6 +380,36 @@ class QMainApp(QBaseDesktopApp):
         active_idx = PAGE_SETTINGS if index == PAGE_THEME_EDITOR else index
         for i, btn in enumerate(self._sidebar_buttons):
             btn.set_active(i == active_idx)
+
+    def apply_clips_visibility(self) -> None:
+        """Show or hide the Clips sidebar entry to match the Settings toggle.
+
+        The button is hidden rather than removed, and the page stays in the
+        stack: every sidebar index is also its stack index, so dropping one
+        entry would silently renumber Settings and Help. Keeping both costs
+        nothing — ClipsPage builds no capture in its constructor (`_capture` is
+        None until Start is pressed) and no clip module imports GStreamer at
+        module level, which is what lets a machine without any of it still
+        build this window.
+
+        Called again by the toggle, so switching the feature on does not need a
+        restart to be visible.
+        """
+        from arctis_sound_manager.settings import GeneralSettings
+
+        try:
+            enabled = bool(GeneralSettings.read_from_file().clips_enabled)
+        except Exception as exc:  # noqa: BLE001 — never lose the window over a setting
+            self.logger.debug("could not read clips_enabled, hiding Clips: %s", exc)
+            enabled = False
+
+        if PAGE_CLIPS < len(self._sidebar_buttons):
+            self._sidebar_buttons[PAGE_CLIPS].setVisible(enabled)
+
+        # Turning the feature off while sitting on its page would leave the
+        # user on a page no button leads back to.
+        if not enabled and self._stack.currentIndex() == PAGE_CLIPS:
+            self._switch_page(PAGE_HOME)
 
     def _check_upgraded_under_us(self) -> None:
         """Surface an upgrade that landed while this window was open."""

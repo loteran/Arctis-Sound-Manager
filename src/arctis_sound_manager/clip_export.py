@@ -52,6 +52,27 @@ class TrackMix:
         return 0.0 if self.muted else max(0.0, self.volume)
 
 
+# Frame rates offered at export, on top of "leave it alone".
+#
+# This is where a rate can honestly be *fixed*, which capture cannot do: the
+# recording is whatever the screencast produced, frame by frame, with the gaps
+# it had. Asking ffmpeg for a rate here fills those gaps by duplicating frames,
+# so the shared file is constant-rate — which is what uploads, browsers and
+# every "why does this stutter" report actually want.
+FPS_CHOICES = (30, 60)
+
+# What an export is written as, regardless of the settings.
+#
+# Recordings are Matroska because that is the container that holds one audio
+# track per Sonar channel. Nothing an export is for can read it: Discord uploads
+# a .mkv and then cannot play it in the client, and a browser will not either —
+# for a feature whose whole purpose is sharing, that is indistinguishable from
+# failing. Reaching MP4 is free from here. The video is H.264 already and is
+# stream-copied when no size was asked for, and the tracks are mixed down to one
+# AAC stream in every case, so the container is the only thing that changes.
+SHARE_SUFFIX = ".mp4"
+
+
 @dataclass
 class ExportPlan:
     """Everything the export needs, resolved from the user's choices."""
@@ -62,6 +83,7 @@ class ExportPlan:
     end_s: float = 0.0
     target_mb: float | None = None
     tracks: list[TrackMix] = field(default_factory=list)
+    fps: int | None = None
 
     @property
     def duration_s(self) -> float:
@@ -133,8 +155,23 @@ def build_command(plan: ExportPlan) -> list[str]:
         kbps = video_bitrate_kbps(plan.target_mb, plan.duration_s, len(audible) or 1)
         cmd += ["-c:v", "libx264", "-preset", "medium", "-b:v", f"{kbps}k",
                 "-maxrate", f"{int(kbps * 1.2)}k", "-bufsize", f"{kbps * 2}k"]
+    elif plan.fps:
+        # A rate cannot be imposed on a stream copy, and asking anyway is worse
+        # than being ignored: measured here, `-c:v copy -r 30` on a 2 s / 20
+        # frame clip wrote a file still holding 20 frames but declaring 30, so
+        # it plays back at three times speed. The frames have to be produced,
+        # which means re-encoding. CRF rather than a bitrate because no size was
+        # asked for, so there is no budget to hit — only quality to keep.
+        cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20"]
     else:
         cmd += ["-c:v", "copy"]
+
+    if plan.fps:
+        # `-r` alone, not `-fps_mode cfr`: it does the same job on an output
+        # stream and has meant the same thing in every ffmpeg, where -fps_mode
+        # only arrived in 5.1 and would fail outright on the versions still
+        # shipping in stable distributions.
+        cmd += ["-r", str(plan.fps)]
 
     if audible:
         cmd += ["-c:a", "aac", "-b:a", f"{AUDIO_KBPS}k"]
@@ -205,6 +242,97 @@ def probe_tracks(path: Path) -> list[str]:
         title = line.split(",", 1)[1].strip() if "," in line else ""
         names.append(title or f"Track {n + 1}")
     return names
+
+
+# Below this a track holds nothing anyone could hear. volumedetect reports
+# digital silence as -91 dB (the floor of 16-bit), so the threshold sits just
+# above it: a track that only ever reached -80 dB is not "quiet", it is a
+# channel nothing was routed to.
+SILENT_PEAK_DB = -70.0
+
+
+def track_peak_db(path: Path, index: int, timeout: float = 30.0) -> float | None:
+    """Loudest sample in audio track *index* of *path*, in dB, or None.
+
+    Exists because "the clip has no sound" and "the clip's first track has no
+    sound" are indistinguishable in a player: every player, Qt's included,
+    decodes one audio track at a time and picks the first. A clip whose game
+    channel was empty — because the game was on the headset directly rather
+    than through Sonar — plays silent while the chat track next to it is fine,
+    and nothing on screen says so.
+    """
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        return None
+    try:
+        result = subprocess.run(
+            [ffmpeg, "-hide_banner", "-nostats", "-i", str(path),
+             "-map", f"0:a:{index}", "-af", "volumedetect", "-f", "null", "-"],
+            capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    # volumedetect writes to stderr, as a log line rather than as output.
+    for line in (result.stderr or "").splitlines():
+        if "max_volume:" in line:
+            try:
+                return float(line.split("max_volume:")[1].strip().split()[0])
+            except (IndexError, ValueError):
+                return None
+    return None
+
+
+def split_tracks(path: Path, count: int, into: Path,
+                 timeout: float = 60.0) -> list[Path]:
+    """Write each of *path*'s first *count* audio tracks into its own file.
+
+    The editor needs every channel audible at once, with a live level and mute
+    per channel — which is what anyone expects of a mixer, and what a media
+    player cannot do: Qt's player, like every other, decodes one audio track
+    and picks the first. One track per file turns that limitation into an
+    ordinary problem, because a player per file *can* be run side by side and
+    given a volume each.
+
+    Stream-copied, so this is a demux and costs milliseconds rather than a
+    decode of the whole clip. Returns the files written, in track order, or an
+    empty list if any of them fails — a partial split would silently drop a
+    channel from the preview, which is the exact failure being fixed.
+    """
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None or count <= 0:
+        return []
+    out: list[Path] = []
+    for index in range(count):
+        # Matroska again on the way out: it holds Opus without transcoding,
+        # which is what keeps this a copy.
+        target = into / f"track_{index}.mka"
+        try:
+            result = subprocess.run(
+                [ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+                 "-i", str(path), "-map", f"0:a:{index}", "-c", "copy",
+                 str(target)],
+                capture_output=True, text=True, timeout=timeout)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            log.debug("could not split track %d out of %s: %s", index, path.name, exc)
+            return []
+        if result.returncode != 0 or not target.exists() or target.stat().st_size == 0:
+            log.debug("track %d of %s did not split: %s", index, path.name,
+                      (result.stderr or "").strip()[:200])
+            return []
+        out.append(target)
+    return out
+
+
+def silent_tracks(path: Path, count: int) -> list[bool]:
+    """Which of the first *count* audio tracks hold nothing audible.
+
+    Unknown counts as not silent: a missing ffmpeg or an unreadable track must
+    not put a "silent" label on audio that is actually there.
+    """
+    out: list[bool] = []
+    for index in range(count):
+        peak = track_peak_db(path, index)
+        out.append(peak is not None and peak <= SILENT_PEAK_DB)
+    return out
 
 
 def duration_s(path: Path) -> float:
