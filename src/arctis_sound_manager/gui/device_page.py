@@ -5,6 +5,7 @@
 Device / Settings page — ArctisSonar GUI visual style.
 Matches the ref_settingsPage.png design.
 """
+import logging
 import shutil
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QFrame,
     QHBoxLayout,
@@ -33,6 +35,8 @@ from arctis_sound_manager.gui.components import (
 )
 from arctis_sound_manager.gui.settings_widget import QSettingsWidget
 from arctis_sound_manager.autostart import active_backend_name, autostart_enabled, set_autostart
+log = logging.getLogger(__name__)
+
 import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.gui.theme import (
     ACCENT,
@@ -440,16 +444,29 @@ class DevicePage(QWidget):
         )
         clips_row.addWidget(clips_label)
 
-        self._clips_toggle = QDualState(
-            off_text=I18n.translate("settings_values", "off"),
-            on_text=I18n.translate("settings_values", "on"),
-            init_state="right" if _GS.read_from_file().clips_enabled else "left",
+        # A button, not a switch. A switch says the state is ASM's to flip;
+        # this one installs or removes distro packages, which is slow, asks for
+        # a password, and can fail — none of which a switch can express. It also
+        # stops the feature from being toggled off and on casually, which is
+        # what turned an off-by-default feature into a package transaction the
+        # user did not know they had started.
+        self._clips_btn = QPushButton("")
+        self._clips_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._clips_btn.setToolTip(I18n.translate("ui", "clips_enable_tooltip"))
+        self._clips_btn.clicked.connect(self._on_clips_button)
+        clips_row.addWidget(self._clips_btn)
+
+        self._clips_status = QLabel("")
+        self._clips_status.setWordWrap(True)
+        self._clips_status.setStyleSheet(
+            f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;"
         )
-        self._clips_toggle.setToolTip(I18n.translate("ui", "clips_enable_tooltip"))
-        self._clips_toggle.checkStateChanged.connect(self._on_clips_toggled)
-        clips_row.addWidget(self._clips_toggle)
-        clips_row.addStretch(1)
+        clips_row.addWidget(self._clips_status, stretch=1)
+
+        clips_row.addStretch(0)
         content_layout.addWidget(clips_roww)
+
+        self._refresh_clips_row()
 
         content_layout.addStretch(1)
 
@@ -646,66 +663,207 @@ class DevicePage(QWidget):
     def _on_autostart_toggled(self, state: Qt.CheckState) -> None:
         set_autostart(state == Qt.CheckState.Checked)
 
-    def _on_clips_toggled(self, state: Qt.CheckState) -> None:
-        """Switch Clips on or off, installing its packages on the way on.
+    # ── Clips: install / uninstall ────────────────────────────────────────────
+    #
+    # This was a switch that opened the general dependency dialog when anything
+    # was missing. That dialog lists *every* failing check in ASM, and one of
+    # them — "pipewire-pulse running" — is remediated by restarting PipeWire and
+    # pipewire-pulse. Pressing its Install-all button therefore tore down the
+    # audio graph: the headset's card came back with its profile off, and
+    # WirePlumber persisted that, so switching Clips on took the user's sound
+    # away and kept it away. Reported as "the Clips button breaks it".
+    #
+    # Nothing here reaches that dialog any more. Clips owns its own packages,
+    # installs and removes only those, and cannot touch a service.
 
-        Turning it on is the one setting in ASM that can require an install, so
-        it is also the one that has to be able to fail: if the capture packages
-        are still missing when the deps dialog closes, the switch goes back to
-        off. A Clips page that is present and does nothing is precisely the
-        outcome shipping the feature off is meant to avoid — better to leave
-        the switch where it was than to claim a feature the machine cannot run.
+    def _clips_missing(self) -> list:
+        from arctis_sound_manager.system_deps_checker import clip_dep_checks
 
-        Only the BLOCKING deps get a veto. ffmpeg missing costs thumbnails and
-        export, gio costs the trash, canberra costs the shutter sound — real
-        losses, but the capture still records, so none of them is grounds for
-        refusing to turn the feature on.
+        missing = []
+        for check in clip_dep_checks():
+            try:
+                ok = bool(check.detect())
+            except Exception:  # noqa: BLE001 — a broken probe reads as missing
+                ok = False
+            if not ok:
+                missing.append(check)
+        return missing
+
+    def _refresh_clips_row(self) -> None:
+        """Put the button in the state the machine is actually in."""
+        from arctis_sound_manager.settings import GeneralSettings
+
+        try:
+            enabled = bool(GeneralSettings.read_from_file().clips_enabled)
+        except Exception:  # noqa: BLE001
+            enabled = False
+
+        missing = self._clips_missing()
+        if enabled:
+            from arctis_sound_manager.system_deps_checker import Severity
+
+            broken = [c.name for c in missing if c.severity is Severity.BLOCKING]
+            if broken:
+                # On but unusable: an install that half-succeeded, or a package
+                # removed from underneath the feature afterwards. Saying
+                # "Installed" here is the lie that made the old switch feel
+                # broken — offer the repair instead.
+                self._clips_btn.setText(I18n.translate("ui", "clips_repair"))
+                self._clips_status.setText(
+                    I18n.translate("ui", "clips_enabled_but_missing").format(
+                        ", ".join(broken)))
+                return
+            self._clips_btn.setText(I18n.translate("ui", "clips_uninstall"))
+            self._clips_status.setText(I18n.translate("ui", "clips_installed"))
+        else:
+            self._clips_btn.setText(I18n.translate("ui", "clips_install"))
+            self._clips_status.setText(
+                I18n.translate("ui", "clips_will_install").format(len(missing))
+                if missing else I18n.translate("ui", "clips_ready_to_enable"))
+
+    def _on_clips_button(self) -> None:
+        from arctis_sound_manager.settings import GeneralSettings
+
+        try:
+            enabled = bool(GeneralSettings.read_from_file().clips_enabled)
+        except Exception:  # noqa: BLE001
+            enabled = False
+
+        from arctis_sound_manager.system_deps_checker import Severity
+
+        broken = any(c.severity is Severity.BLOCKING
+                     for c in self._clips_missing())
+        if enabled and not broken:
+            self._uninstall_clips()
+        else:
+            # Enabled but missing something it cannot record without: the
+            # button says Repair, and repairing is installing.
+            self._install_clips()
+
+    def _clips_pkexec(self, argvs: list[list[str]], busy_text: str) -> bool:
+        """Run package commands as one elevated batch, and report the outcome.
+
+        One `pkexec` for the whole batch so the password is asked once. Runs
+        synchronously because the button has nothing useful to offer while it
+        waits, and the result decides whether the feature is on.
+
+        Only ever handed package-manager argv built from the Clips group —
+        never an `_internal` remediation, which is how the old path ended up
+        able to restart the audio stack.
+        """
+        import subprocess
+
+        if not shutil.which("pkexec"):
+            self._clips_status.setText(I18n.translate("ui", "clips_no_pkexec"))
+            return False
+
+        def _quote(args: list[str]) -> str:
+            return " ".join(f"'{a}'" if " " in a else a for a in args)
+
+        self._clips_btn.setEnabled(False)
+        self._clips_status.setText(busy_text)
+        QApplication.processEvents()
+        try:
+            proc = subprocess.run(
+                ["pkexec", "sh", "-c", " && ".join(_quote(a) for a in argvs)],
+                capture_output=True, text=True, timeout=900)
+        except (OSError, subprocess.SubprocessError) as exc:
+            log.warning("clip package command failed: %s", exc)
+            self._clips_status.setText(str(exc))
+            return False
+        finally:
+            self._clips_btn.setEnabled(True)
+
+        if proc.returncode != 0:
+            detail = (proc.stderr or proc.stdout or "").strip().splitlines()
+            self._clips_status.setText(detail[-1] if detail else
+                                       I18n.translate("ui", "clips_pkg_failed"))
+            return False
+        return True
+
+    def _install_clips(self) -> None:
+        from arctis_sound_manager.settings import GeneralSettings
+        from arctis_sound_manager.system_deps_checker import (
+            Severity, install_command_for)
+
+        missing = self._clips_missing()
+        argvs = [cmd for cmd in (install_command_for(c) for c in missing) if cmd]
+
+        if argvs and not self._clips_pkexec(
+                argvs, I18n.translate("ui", "clips_installing")):
+            self._refresh_clips_row()
+            return
+
+        # Re-probe rather than trust the exit code: a package manager can
+        # succeed and still leave the thing undetectable (wrong package for the
+        # distro, a plugin that needs a re-scan).
+        still = [c for c in self._clips_missing()
+                 if c.severity is Severity.BLOCKING]
+        if still:
+            names = ", ".join(c.name for c in still)
+            msg = QMessageBox(self)
+            msg.setWindowTitle(I18n.translate("ui", "clips"))
+            msg.setText(I18n.translate("ui", "clips_deps_missing").format(names))
+            msg.setInformativeText(I18n.translate("ui", "clips_deps_missing_hint"))
+            msg.setIcon(QMessageBox.Icon.Warning)
+            msg.exec()
+            self._refresh_clips_row()
+            return
+
+        settings = GeneralSettings.read_from_file()
+        settings.clips_enabled = True
+        settings.write_to_file()
+        self._refresh_clips_row()
+        self._apply_clips_visibility()
+
+    def _uninstall_clips(self) -> None:
+        """Turn Clips off, and offer to remove the packages it brought in.
+
+        Removing is offered separately from disabling, and defaults to no. Every
+        one of these packages is shared with the rest of the desktop — ffmpeg
+        and the GStreamer sets are used by video players, browsers and
+        screenshot tools — so "I am done with clips" is not the same statement
+        as "nothing else here needs ffmpeg". The commands do not force, so a
+        package another program depends on makes the package manager refuse,
+        and the feature still ends up off either way.
         """
         from arctis_sound_manager.settings import GeneralSettings
         from arctis_sound_manager.system_deps_checker import (
-            CheckResult, Severity, clip_dep_checks,
-        )
+            clip_dep_checks, remove_command_for)
 
-        wanted = state == Qt.CheckState.Checked
+        argvs, packages = [], []
+        for check in clip_dep_checks():
+            cmd = remove_command_for(check)
+            if cmd:
+                argvs.append(cmd)
+                packages.extend(a for a in cmd[3:] if not a.startswith("-"))
+
+        answer = QMessageBox.StandardButton.No
+        if argvs:
+            box = QMessageBox(self)
+            box.setWindowTitle(I18n.translate("ui", "clips_uninstall"))
+            box.setText(I18n.translate("ui", "clips_remove_packages_q"))
+            box.setInformativeText(
+                I18n.translate("ui", "clips_remove_packages_hint").format(
+                    ", ".join(sorted(set(packages)))))
+            box.setIcon(QMessageBox.Icon.Question)
+            box.setStandardButtons(QMessageBox.StandardButton.Yes
+                                   | QMessageBox.StandardButton.No
+                                   | QMessageBox.StandardButton.Cancel)
+            box.setDefaultButton(QMessageBox.StandardButton.No)
+            answer = box.exec()
+            if answer == QMessageBox.StandardButton.Cancel:
+                return
 
         settings = GeneralSettings.read_from_file()
-        settings.clips_enabled = wanted
+        settings.clips_enabled = False
         settings.write_to_file()
-
-        if wanted:
-            missing = []
-            for check in clip_dep_checks():
-                try:
-                    ok = bool(check.detect())
-                except Exception:  # noqa: BLE001 — a broken probe reads as missing
-                    ok = False
-                if not ok:
-                    missing.append(CheckResult(check=check, ok=False))
-
-            if missing:
-                from arctis_sound_manager.gui.system_deps_dialog import SystemDepsDialog
-                SystemDepsDialog(self).exec()
-
-                still_blocking = [
-                    r for r in missing
-                    if r.check.severity is Severity.BLOCKING and not r.check.detect()
-                ]
-                if still_blocking:
-                    names = ", ".join(r.name for r in still_blocking)
-                    settings = GeneralSettings.read_from_file()
-                    settings.clips_enabled = False
-                    settings.write_to_file()
-                    self._clips_toggle.set_state("left")
-
-                    msg = QMessageBox(self)
-                    msg.setWindowTitle(I18n.translate("ui", "clips"))
-                    msg.setText(I18n.translate("ui", "clips_deps_missing").format(names))
-                    msg.setInformativeText(
-                        I18n.translate("ui", "clips_deps_missing_hint"))
-                    msg.setIcon(QMessageBox.Icon.Warning)
-                    msg.exec()
-
+        self._refresh_clips_row()
         self._apply_clips_visibility()
+
+        if answer == QMessageBox.StandardButton.Yes:
+            self._clips_pkexec(argvs, I18n.translate("ui", "clips_removing"))
+            self._refresh_clips_row()
 
     def _apply_clips_visibility(self) -> None:
         """Ask the sidebar to show or hide the Clips entry.

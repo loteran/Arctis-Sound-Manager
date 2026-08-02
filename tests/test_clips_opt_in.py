@@ -141,54 +141,80 @@ def _blocking_check(detected: bool) -> sdc.DepCheck:
     )
 
 
-def test_enabling_without_the_capture_packages_puts_the_switch_back(
+def test_installing_never_reaches_the_general_dependency_dialog(
         device_page, monkeypatch):
-    """The failure this whole change exists to prevent: a Clips page that is
-    present and does nothing. If the packages are still missing when the deps
-    dialog closes, the feature must not claim to be on."""
-    from PySide6.QtCore import Qt
+    """The bug that took a user's sound away.
 
+    The old switch opened SystemDepsDialog whenever anything was missing. That
+    dialog lists every failing check in ASM, and one of them — "pipewire-pulse
+    running" — is fixed by restarting PipeWire and pipewire-pulse. Pressing its
+    Install-all button tore down the audio graph: the headset's card came back
+    with its profile off and WirePlumber persisted that, so enabling Clips
+    silenced the machine and kept it silenced.
+
+    Clips must only ever run its own package commands.
+    """
+    monkeypatch.setattr(sdc, "clip_dep_checks", lambda: [_blocking_check(False)])
+    monkeypatch.setattr("PySide6.QtWidgets.QMessageBox.exec", lambda self: 0)
+
+    def _boom(*a, **k):
+        raise AssertionError("Clips opened the general dependency dialog")
+
+    monkeypatch.setattr(
+        "arctis_sound_manager.gui.system_deps_dialog.SystemDepsDialog", _boom)
+
+    ran: list[list[list[str]]] = []
+    monkeypatch.setattr(type(device_page), "_clips_pkexec",
+                        lambda self, argvs, text: ran.append(argvs) or True)
+
+    device_page._install_clips()
+
+    assert ran, "no package command was run"
+    for argv in ran[0]:
+        assert argv[0] in ("pacman", "dnf", "apt-get"), argv
+        # An _internal remediation is what could restart a service.
+        assert argv[0] != "systemctl", argv
+
+
+def test_a_package_command_that_fails_leaves_the_feature_off(
+        device_page, monkeypatch):
+    """A Clips page that is present and does nothing is the outcome shipping
+    the feature off is meant to avoid."""
     from arctis_sound_manager.settings import GeneralSettings
 
     monkeypatch.setattr(sdc, "clip_dep_checks", lambda: [_blocking_check(False)])
-    monkeypatch.setattr(
-        "arctis_sound_manager.gui.system_deps_dialog.SystemDepsDialog",
-        lambda *a, **k: type("_Dlg", (), {"exec": lambda self: 0})())
-    monkeypatch.setattr(
-        "PySide6.QtWidgets.QMessageBox.exec", lambda self: 0)
+    monkeypatch.setattr("PySide6.QtWidgets.QMessageBox.exec", lambda self: 0)
+    monkeypatch.setattr(type(device_page), "_clips_pkexec",
+                        lambda self, argvs, text: False)
 
-    # Where the user just put it, so the revert is something to observe rather
-    # than the state it started in.
-    device_page._clips_toggle.set_state("right")
-    assert device_page._clips_toggle.toggle.isChecked() is True
-
-    device_page._on_clips_toggled(Qt.CheckState.Checked)
+    device_page._install_clips()
 
     assert GeneralSettings.read_from_file().clips_enabled is False
-    assert device_page._clips_toggle.toggle.isChecked() is False
 
 
-def test_enabling_with_the_packages_present_sticks(device_page, monkeypatch):
-    from PySide6.QtCore import Qt
-
+def test_installing_with_everything_present_enables_without_asking_for_a_password(
+        device_page, monkeypatch):
     from arctis_sound_manager.settings import GeneralSettings
 
     monkeypatch.setattr(sdc, "clip_dep_checks", lambda: [_blocking_check(True)])
 
-    device_page._on_clips_toggled(Qt.CheckState.Checked)
+    called: list[str] = []
+    monkeypatch.setattr(type(device_page), "_clips_pkexec",
+                        lambda self, argvs, text: called.append(text) or True)
+
+    device_page._install_clips()
 
     assert GeneralSettings.read_from_file().clips_enabled is True
+    assert not called, "asked for a password with nothing to install"
 
-    # And back off again, so the test leaves the setting where it found it.
-    device_page._on_clips_toggled(Qt.CheckState.Unchecked)
-    assert GeneralSettings.read_from_file().clips_enabled is False
+    settings = GeneralSettings.read_from_file()
+    settings.clips_enabled = False
+    settings.write_to_file()
 
 
 def test_a_degraded_dep_does_not_veto_the_feature(device_page, monkeypatch):
     """ffmpeg missing costs thumbnails and export — a real loss, but the
-    capture still records, so it is not grounds for refusing to switch on."""
-    from PySide6.QtCore import Qt
-
+    capture still records, so it is not grounds for refusing to turn it on."""
     from arctis_sound_manager.settings import GeneralSettings
 
     degraded = sdc.DepCheck(
@@ -196,15 +222,73 @@ def test_a_degraded_dep_does_not_veto_the_feature(device_page, monkeypatch):
         feature="thumbnails", detect=lambda: False,
         install_commands={"arch": ["pacman", "-S", "ffmpeg"]})
     monkeypatch.setattr(sdc, "clip_dep_checks", lambda: [degraded])
-    monkeypatch.setattr(
-        "arctis_sound_manager.gui.system_deps_dialog.SystemDepsDialog",
-        lambda *a, **k: type("_Dlg", (), {"exec": lambda self: 0})())
+    monkeypatch.setattr(type(device_page), "_clips_pkexec",
+                        lambda self, argvs, text: True)
 
-    device_page._on_clips_toggled(Qt.CheckState.Checked)
+    device_page._install_clips()
 
     assert GeneralSettings.read_from_file().clips_enabled is True
 
-    device_page._on_clips_toggled(Qt.CheckState.Unchecked)
+    settings = GeneralSettings.read_from_file()
+    settings.clips_enabled = False
+    settings.write_to_file()
+
+
+def test_uninstalling_switches_off_even_when_the_packages_stay(
+        device_page, monkeypatch):
+    """Removal is offered separately and defaults to No, because these packages
+    are shared with the rest of the desktop. Declining must still turn the
+    feature off — the user asked to be done with Clips, not to keep it."""
+    from PySide6.QtWidgets import QMessageBox
+
+    from arctis_sound_manager.settings import GeneralSettings
+
+    settings = GeneralSettings.read_from_file()
+    settings.clips_enabled = True
+    settings.write_to_file()
+
+    monkeypatch.setattr("PySide6.QtWidgets.QMessageBox.exec",
+                        lambda self: QMessageBox.StandardButton.No)
+    removed: list = []
+    monkeypatch.setattr(type(device_page), "_clips_pkexec",
+                        lambda self, argvs, text: removed.append(argvs) or True)
+
+    device_page._uninstall_clips()
+
+    assert GeneralSettings.read_from_file().clips_enabled is False
+    assert not removed, "removed packages the user declined to remove"
+
+
+def test_cancelling_the_uninstall_changes_nothing(device_page, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    from arctis_sound_manager.settings import GeneralSettings
+
+    settings = GeneralSettings.read_from_file()
+    settings.clips_enabled = True
+    settings.write_to_file()
+
+    monkeypatch.setattr("PySide6.QtWidgets.QMessageBox.exec",
+                        lambda self: QMessageBox.StandardButton.Cancel)
+
+    device_page._uninstall_clips()
+
+    assert GeneralSettings.read_from_file().clips_enabled is True
+
+    settings = GeneralSettings.read_from_file()
+    settings.clips_enabled = False
+    settings.write_to_file()
+
+
+def test_removal_commands_never_force():
+    """Every clip package is shared with the desktop. When something else needs
+    one, the right outcome is the package manager refusing — not ASM
+    overriding it."""
+    for check in sdc.clip_dep_checks():
+        for distro, argv in check.remove_commands.items():
+            joined = " ".join(argv)
+            for forced in ("--nodeps", "-d", "--force", "--assume-removed"):
+                assert forced not in argv, f"{check.name}/{distro}: {joined}"
 
 
 # ── The window ────────────────────────────────────────────────────────────────

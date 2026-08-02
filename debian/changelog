@@ -1,32 +1,34 @@
 arctis-sound-manager (1.2.20-1) noble; urgency=medium
 
   * Clips: save the last thirty seconds, with each Sonar channel on its own
-    audio track. Off until you switch it on in Settings, and deliberately
-    so: capture is the one feature that needs packages a desktop does not
-    already have — PyGObject, four GStreamer plugin sets and ffmpeg — and an
-    install that only wants the mixer and the equaliser should not carry a
-    screen recorder's encoders. Turning it on offers to install them,
-    through the same dependency dialog the rest of ASM uses, and if the
-    capture packages are still missing when that dialog closes the switch
-    goes back off rather than leaving a page that is present and does
-    nothing. A rolling capture runs in the background; the Clips page — or
-    asm-clipd bound to a key — writes the preceding seconds to ~/Videos/ASM
-    Clips as an .mkv carrying Game, Chat and Mic as separate tracks, so what
-    you keep can still be remixed afterwards. The library is a grid of
-    poster frames rather than a list of timestamps that differ only by the
-    second they were taken; the frame is lifted from five seconds before the
-    end, inside the span the editor opens with, because the middle of a clip
-    is usually the part where nothing has happened yet. The editor trims,
-    remembers the span per clip, and exports to a separate Shared/ folder so
-    an export never comes back as another card in the library. Exports are
-    always MP4, whatever the settings: Matroska is the only container that
-    holds a track per channel, and it is also one Discord will upload and
-    then refuse to play, so the recording format and the sharing format are
-    deliberately not the same thing. Exporting ends in a share step with the
-    poster frame as a drag-out card — drag it straight into Discord. Select,
-    rename and delete in bulk; deletion goes through the system trash,
-    because a mis-click on a grid of near-identical cards should be
-    recoverable.
+    audio track. Installed from Settings rather than shipped with ASM, and
+    deliberately so: capture is the one feature that needs packages a
+    desktop does not already have — PyGObject, four GStreamer plugin sets
+    and ffmpeg — and an install that only wants the mixer and the equaliser
+    should not carry a screen recorder's encoders. Settings offers an
+    Install button that fetches exactly those packages and nothing else, and
+    an Uninstall that turns the feature off and offers to take them away
+    again; removal is a separate question with No as the answer it defaults
+    to, because ffmpeg and GStreamer belong to your video player and your
+    browser as much as to this. If a package goes missing afterwards the
+    button says Repair rather than claiming the feature works. A rolling
+    capture runs in the background; the Clips page — or asm-clipd bound to a
+    key — writes the preceding seconds to ~/Videos/ASM Clips as an .mkv
+    carrying Game, Chat and Mic as separate tracks, so what you keep can
+    still be remixed afterwards. The library is a grid of poster frames
+    rather than a list of timestamps that differ only by the second they
+    were taken; the frame is lifted from five seconds before the end, inside
+    the span the editor opens with, because the middle of a clip is usually
+    the part where nothing has happened yet. The editor trims, remembers the
+    span per clip, and exports to a separate Shared/ folder so an export
+    never comes back as another card in the library. Exports are always MP4,
+    whatever the settings: Matroska is the only container that holds a track
+    per channel, and it is also one Discord will upload and then refuse to
+    play, so the recording format and the sharing format are deliberately
+    not the same thing. Exporting ends in a share step with the poster frame
+    as a drag-out card — drag it straight into Discord. Select, rename and
+    delete in bulk; deletion goes through the system trash, because a
+    mis-click on a grid of near-identical cards should be recoverable.
   * Clips: the editor's preview is a mixer — every channel plays at once,
     with a live level and mute on each. A media player decodes exactly one
     audio track and picks the first, Qt's included, so a clip whose Game
@@ -65,21 +67,6 @@ arctis-sound-manager (1.2.20-1) noble; urgency=medium
     whole length, idle stretches included. Both are shown when they
     disagree, alongside the rate the screencast itself is producing, and a
     save reports the rate the file actually ended up with.
-  * Stream Guard: screen sharing no longer broadcasts your whole system.
-    Discord's Linux client has no way to pick which audio a screen share
-    carries. When a share starts it creates its own capture node and links
-    *every* playback stream into it — the browser tab you left open, your
-    music, the voice call itself — and it keeps relinking, so unlinking by
-    hand does not hold. A new bar at the top of the Sonar page picks which
-    channels are allowed out: leave it on Game and only the game goes to the
-    call, while Media and Chat stay in your headset. The asm-stream-guard
-    service enforces the choice on PipeWire graph events rather than on a
-    timer, so a stream Discord has just relinked is cut in tens of
-    milliseconds instead of on the next poll — the gap during which private
-    audio is already on the wire. Sources are matched by the channel they
-    play on, not by application name, so anything you move to an allowed
-    channel is included automatically and nothing needs to be kept in a
-    list.
   * Clips: you can change what is being captured, without a terminal. The
     screen picker appears once and never again — the choice is persisted and
     replayed on every later start, which is what stops a rolling capture
@@ -103,6 +90,16 @@ arctis-sound-manager (1.2.20-1) noble; urgency=medium
     clears one in a file manager, but a grid of cards usually leaves no
     empty space to click, so the only route was ctrl-clicking every card
     back off.
+  * Switching Clips on could take your sound away, and keep it away. The
+    switch opened ASM's general dependency dialog whenever a capture package
+    was missing. That dialog lists every failing check in the app, and one
+    of them — "pipewire-pulse running" — is fixed by restarting PipeWire and
+    pipewire-pulse, so its Install-all button restarted the audio stack. The
+    headset's card came back with its profile switched off, WirePlumber
+    remembered that as a deliberate choice, and replugging the headset
+    afterwards did not help because the remembered answer was replayed each
+    time. Clips now installs and removes only its own packages, through its
+    own commands, and cannot restart a service.
   * Record symbols piled up in the corner of the screen, one per capture you
     had ever started. Three overlapping indicators, reported from a session
     that had stopped and restarted the capture a couple of times. They were
@@ -146,18 +143,6 @@ arctis-sound-manager (1.2.20-1) noble; urgency=medium
     which Wayland never reveals to us. The list now matches on words, so
     display names are caught without a game called *Observation* being
     mistaken for OBS, and the label reads "Game:".
-  * The microphone chain could be fed by the headset's own output — and
-    other people heard it. On an Arctis Nova 7 sitting on an iec958-stereo
-    profile the headset exposes no capture node of its own, and the
-    microphone slot fell back to the *output* sink. That sink's monitor was
-    then linked into the microphone EQ, so everything audible on the machine
-    — a browser tab, the game — was transmitted as if it were the
-    microphone: a video played in a browser went out over a Discord call as
-    though the user were speaking it. It came back on every daemon restart,
-    which is why it reappeared with each update. The input no longer
-    inherits the output's fallback, and the capture link is now refused
-    outright when the proposed source is a sink. This is the one input-side
-    mistake that is completely inaudible to the person making it.
 
  -- loteran <axel.valadon@gmail.com>  Sun, 02 Aug 2026 00:00:00 +0000
 

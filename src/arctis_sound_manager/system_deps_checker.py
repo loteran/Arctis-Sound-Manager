@@ -84,6 +84,16 @@ class DepCheck:
     # Use "_internal" key when the fix is an ASM script, not a distro
     # package install (e.g. `asm-setup` to re-download the HRIR file).
     install_commands: dict[str, list[str]] = field(default_factory=dict)
+    # distro id -> argv that removes the packages again, for the one feature
+    # the user can uninstall (Clips). Deliberately not filled in for anything
+    # else: the rest of these are what ASM needs to run, and offering to remove
+    # them would be offering to break the app.
+    #
+    # The commands must never force. Every clip package is shared with the rest
+    # of the desktop — ffmpeg and the GStreamer sets especially — so the right
+    # outcome when something else depends on one is for the package manager to
+    # refuse, not for ASM to override it.
+    remove_commands: dict[str, list[str]] = field(default_factory=dict)
     # Extra step the user must take after the install command runs
     # (e.g. "log out and back in" for a group change).
     user_action: str | None = None
@@ -173,6 +183,27 @@ def install_command_for(check: DepCheck) -> list[str] | None:
                 return list(check.install_commands[known])
     if "_internal" in check.install_commands:
         return list(check.install_commands["_internal"])
+    return None
+
+
+def remove_command_for(check: DepCheck) -> list[str] | None:
+    """Build the argv to remove a dep again, for the checks that allow it.
+
+    Same distro resolution as `install_command_for`, and the same contract:
+    argv without a leading `pkexec`. Returns None for every check that has no
+    `remove_commands`, which is all of them except the Clips group — nothing
+    else here is optional, so nothing else is removable.
+    """
+    if not check.remove_commands:
+        return None
+    distro = detect_distro()
+    if distro in check.remove_commands:
+        return list(check.remove_commands[distro])
+    pkg_mgr = _package_manager_for(distro)
+    if pkg_mgr:
+        for known in check.remove_commands:
+            if _package_manager_for(known) == pkg_mgr:
+                return list(check.remove_commands[known])
     return None
 
 
@@ -835,6 +866,11 @@ def clip_dep_checks() -> list[DepCheck]:
                 "debian": ["apt-get", "install", "-y", "python3-gi"],
                 "arch":   ["pacman", "-S", "--noconfirm", "python-gobject"],
             },
+            remove_commands={
+                "fedora": ["dnf", "remove", "-y", "python3-gobject"],
+                "debian": ["apt-get", "remove", "-y", "python3-gi"],
+                "arch":   ["pacman", "-Rs", "--noconfirm", "python-gobject"],
+            },
         ),
         DepCheck(
             # pipewiresrc is what the screen portal hands its stream to. It
@@ -849,6 +885,11 @@ def clip_dep_checks() -> list[DepCheck]:
                 "fedora": ["dnf", "install", "-y", "pipewire-gstreamer"],
                 "debian": ["apt-get", "install", "-y", "gstreamer1.0-pipewire"],
                 "arch":   ["pacman", "-S", "--noconfirm", "gst-plugin-pipewire"],
+            },
+            remove_commands={
+                "fedora": ["dnf", "remove", "-y", "pipewire-gstreamer"],
+                "debian": ["apt-get", "remove", "-y", "gstreamer1.0-pipewire"],
+                "arch":   ["pacman", "-Rs", "--noconfirm", "gst-plugin-pipewire"],
             },
         ),
         DepCheck(
@@ -871,6 +912,11 @@ def clip_dep_checks() -> list[DepCheck]:
                 "arch":   ["pacman", "-S", "--noconfirm", "gst-plugins-base",
                            "gst-plugins-good", "gst-plugins-ugly"],
             },
+            remove_commands={
+                "fedora": ["dnf", "remove", "-y", "gstreamer1-plugins-ugly-free"],
+                "debian": ["apt-get", "remove", "-y", "gstreamer1.0-plugins-ugly"],
+                "arch":   ["pacman", "-Rs", "--noconfirm", "gst-plugins-ugly"],
+            },
         ),
         DepCheck(
             # Everything a clip does *after* it has been captured runs through
@@ -889,6 +935,11 @@ def clip_dep_checks() -> list[DepCheck]:
                 "fedora": ["dnf", "install", "-y", "ffmpeg-free"],
                 "debian": ["apt-get", "install", "-y", "ffmpeg"],
                 "arch":   ["pacman", "-S", "--noconfirm", "ffmpeg"],
+            },
+            remove_commands={
+                "fedora": ["dnf", "remove", "-y", "ffmpeg-free"],
+                "debian": ["apt-get", "remove", "-y", "ffmpeg"],
+                "arch":   ["pacman", "-Rs", "--noconfirm", "ffmpeg"],
             },
         ),
         DepCheck(
