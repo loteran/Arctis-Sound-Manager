@@ -207,6 +207,45 @@ def test_a_degraded_dep_does_not_veto_the_feature(device_page, monkeypatch):
     device_page._on_clips_toggled(Qt.CheckState.Unchecked)
 
 
+# ── The window ────────────────────────────────────────────────────────────────
+
+
+def test_the_main_window_builds_with_clips_off():
+    """The gating shipped broken once, and this is the test that would have
+    caught it.
+
+    apply_clips_visibility() was called with the sidebar buttons, which is
+    long before there is a stack to ask which page is showing — and the branch
+    that reads the stack only runs when Clips is *off*, which is the new
+    default. So the very first launch after the change raised AttributeError
+    inside the window constructor: the tray icon appeared, nothing opened, and
+    the traceback was in a log nobody was watching.
+
+    Building the real window is the only thing that catches it. Both pages that
+    were smoke-tested at the time — DevicePage and ClipsPage — construct
+    perfectly well on their own.
+    """
+    pytest.importorskip("PySide6")
+    import logging
+
+    from PySide6.QtWidgets import QApplication
+
+    from arctis_sound_manager.gui.main_app import PAGE_CLIPS, QMainApp
+
+    app = QApplication.instance() or QApplication([])
+    main = QMainApp(app, logging.WARNING)
+    try:
+        assert main.main_window is not None
+        # Hidden, not removed: sidebar index is stack index, so dropping the
+        # entry would renumber Settings and Help.
+        assert main._stack.count() == 8
+        assert main._sidebar_buttons[PAGE_CLIPS].isVisible() is False
+        # The link a settings page walks to reach the sidebar.
+        assert getattr(main.main_window, "main_app", None) is main
+    finally:
+        main.main_window.deleteLater()
+
+
 # ── Packaging ─────────────────────────────────────────────────────────────────
 
 

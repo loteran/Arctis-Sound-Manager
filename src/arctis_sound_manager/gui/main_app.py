@@ -277,8 +277,6 @@ class QMainApp(QBaseDesktopApp):
             sidebar_layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignHCenter)
             self._sidebar_buttons.append(btn)
 
-        self.apply_clips_visibility()
-
         sidebar_layout.addStretch(1)
 
         # Bottom block: logo + github + kofi + version, groupés serré
@@ -370,6 +368,11 @@ class QMainApp(QBaseDesktopApp):
         content_layout.addWidget(self._stack)
         root_layout.addWidget(content_wrapper, stretch=1)
 
+        # After the stack exists, not with the sidebar buttons: this reads the
+        # current page to move off Clips when the feature is off, and the
+        # sidebar is built long before there is a stack to ask.
+        self.apply_clips_visibility()
+
         return window
 
     # ── Page switching ────────────────────────────────────────────────────────
@@ -403,12 +406,20 @@ class QMainApp(QBaseDesktopApp):
             self.logger.debug("could not read clips_enabled, hiding Clips: %s", exc)
             enabled = False
 
-        if PAGE_CLIPS < len(self._sidebar_buttons):
-            self._sidebar_buttons[PAGE_CLIPS].setVisible(enabled)
+        buttons = getattr(self, "_sidebar_buttons", None) or []
+        if PAGE_CLIPS < len(buttons):
+            buttons[PAGE_CLIPS].setVisible(enabled)
 
         # Turning the feature off while sitting on its page would leave the
         # user on a page no button leads back to.
-        if not enabled and self._stack.currentIndex() == PAGE_CLIPS:
+        #
+        # getattr rather than attribute access: this is called once while the
+        # window is still being assembled, and reaching for a stack that does
+        # not exist yet took the whole window down with it — the tray icon
+        # appeared and nothing opened, because the failure is inside the
+        # constructor. Nothing here is worth a window.
+        stack = getattr(self, "_stack", None)
+        if not enabled and stack is not None and stack.currentIndex() == PAGE_CLIPS:
             self._switch_page(PAGE_HOME)
 
     def _check_upgraded_under_us(self) -> None:
