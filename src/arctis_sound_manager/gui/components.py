@@ -43,6 +43,7 @@ CHAT_ICON = os.path.join(IMAGES_DIR, "chat_icon.svg")
 MEDIA_ICON = os.path.join(IMAGES_DIR, "media_icon.svg")
 HDMI_ICON = os.path.join(IMAGES_DIR, "hdmi_icon.svg")
 GAMEDAC_ICON = os.path.join(IMAGES_DIR, "gamedac_icon.svg")
+CLIPS_ICON = os.path.join(IMAGES_DIR, "clips_icon.svg")
 
 
 # ── SvgIconWidget ──────────────────────────────────────────────────────────────

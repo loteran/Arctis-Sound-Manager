@@ -21,6 +21,7 @@ Arctis device is currently attached (`device_state.is_device_set()` == False).
 from __future__ import annotations
 
 import logging
+import json
 import re
 from pathlib import Path
 
@@ -245,6 +246,46 @@ def _get_physical_out_chat() -> str:
     return _ds.get_physical_out_chat()
 
 
+CHANNEL_OUTPUTS_FILE = Path.home() / ".config" / "arctis_manager" / "channel_output_devices.json"
+
+
+def _load_channel_outputs() -> dict:
+    try:
+        data = json.loads(CHANNEL_OUTPUTS_FILE.read_text())
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def channel_destination(channel: str, data: list | None = None) -> str:
+    """Which device *channel* should end up on.
+
+    The user's per-channel choice when they have made one, and the headset
+    otherwise. Selecting a device has to mean "send this channel there", not
+    "drag this channel's applications onto that sink" — the latter is what the
+    home page used to do, and the routing-override replay dragged them straight
+    back, so the choice appeared to do nothing at all.
+
+    A saved device that is not in the graph (earbuds in their case, a dock
+    unplugged) falls back to the headset rather than leaving the channel linked
+    to nothing, and is picked up again by the watchdog as soon as it returns.
+    """
+    from arctis_sound_manager.pw_utils import pw_node_exists
+
+    physical = (_get_physical_out_chat() if channel == "chat"
+                else _get_physical_out_game())
+
+    chosen = _load_channel_outputs().get(channel)
+    if not chosen or chosen == physical:
+        return physical
+    if pw_node_exists(chosen, data):
+        return chosen
+
+    _log.info("channel '%s': saved output '%s' is not present — using %s",
+              channel, chosen, physical or "(no device)")
+    return physical
+
+
 def _get_physical_in() -> str:
     """Return the ALSA input node name for the currently connected device, or ''."""
     from arctis_sound_manager import device_state as _ds
@@ -449,6 +490,9 @@ _ASM_CONF_NAMES = frozenset({
     "sonar-output-eq.conf",
     "sonar-micro-eq.conf",
     "sink-virtual-surround-7.1-hesuvi.conf",
+    # Media's own HeSuVi instance — without it here, safe mode would move the
+    # game stage aside and leave Media's behind, i.e. half a spatial setup.
+    "sink-virtual-surround-7.1-hesuvi-media.conf",
 })
 
 # Backup dir for safe mode: a sibling of _CONF_DIR. PipeWire's filter-chain
@@ -1833,6 +1877,7 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
         dynamic_hesuvi = _CONF_DIR / "sink-virtual-surround-7.1-hesuvi.conf"
         if not dynamic_hesuvi.exists():
             generate_hesuvi_conf()
+            generate_hesuvi_conf(channel="media")
         fixed = True
         needs_pw_restart = True
 
@@ -1979,6 +2024,13 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
                     immersion_pct=_spatial.get("immersion", 50),
                     distance_pct=_spatial.get("distance", 50),
                 )
+                # Media has its own stage so its device menu is independent of
+                # Game's; generated alongside, never on its own.
+                generate_hesuvi_conf(
+                    immersion_pct=_spatial.get("immersion", 50),
+                    distance_pct=_spatial.get("distance", 50),
+                    channel="media",
+                )
                 fixed = True
         else:
             hesuvi_content = hesuvi_path.read_text()
@@ -1987,6 +2039,13 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
                 generate_hesuvi_conf(
                     immersion_pct=_spatial.get("immersion", 50),
                     distance_pct=_spatial.get("distance", 50),
+                )
+                # Media has its own stage so its device menu is independent of
+                # Game's; generated alongside, never on its own.
+                generate_hesuvi_conf(
+                    immersion_pct=_spatial.get("immersion", 50),
+                    distance_pct=_spatial.get("distance", 50),
+                    channel="media",
                 )
                 fixed = True
             elif _conf_has_bare_ladspa(hesuvi_content):
@@ -2000,6 +2059,13 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
                 generate_hesuvi_conf(
                     immersion_pct=_spatial.get("immersion", 50),
                     distance_pct=_spatial.get("distance", 50),
+                )
+                # Media has its own stage so its device menu is independent of
+                # Game's; generated alongside, never on its own.
+                generate_hesuvi_conf(
+                    immersion_pct=_spatial.get("immersion", 50),
+                    distance_pct=_spatial.get("distance", 50),
+                    channel="media",
                 )
                 fixed = True
             elif _conf_is_outdated(hesuvi_content):
@@ -2017,6 +2083,13 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
                 generate_hesuvi_conf(
                     immersion_pct=_spatial.get("immersion", 50),
                     distance_pct=_spatial.get("distance", 50),
+                )
+                # Media has its own stage so its device menu is independent of
+                # Game's; generated alongside, never on its own.
+                generate_hesuvi_conf(
+                    immersion_pct=_spatial.get("immersion", 50),
+                    distance_pct=_spatial.get("distance", 50),
+                    channel="media",
                 )
                 fixed = True
 
@@ -2219,8 +2292,13 @@ def ensure_spatial_eq_links(
         if channel not in ("game", "media"):
             continue
         enabled = _spatial_enabled(channel)
-        target = _SURROUND if enabled else _get_physical_out_game()
-        if enabled and not pw_node_exists(_SURROUND, data):
+        # Spatial OFF: this channel reaches its device directly, so it can have
+        # one of its own. Spatial ON: it goes through the shared HeSuVi stage
+        # and the device is decided there — game and media cannot differ while
+        # they are mixed into the same node.
+        surround_in, _, _ = hesuvi_nodes(channel)
+        target = surround_in if enabled else channel_destination(channel, data)
+        if enabled and not pw_node_exists(surround_in, data):
             # HeSuVi is not in the graph. If its HRIR WAV is missing the
             # convolver can never load and the node will never appear —
             # targeting it here would be permanent silence, so fall back to
@@ -2229,7 +2307,7 @@ def ensure_spatial_eq_links(
             # (filter-chain restarting): keep targeting HeSuVi and let the
             # next watchdog tick relink, rather than flap onto physical.
             if not _HRIR_DEST.exists():
-                phys = _get_physical_out_game()
+                phys = channel_destination(channel, data)
                 if phys:
                     _log.warning(
                         "Spatial ON but HeSuVi is not loaded and no HRIR is present; "
@@ -2353,13 +2431,24 @@ def ensure_physical_output_links(data: list | None = None) -> dict[str, bool]:
 
     results: dict[str, bool] = {}
 
-    chat_target = _get_physical_out_chat()
+    chat_target = channel_destination("chat", data)
     if chat_target:
         results["chat"] = ensure_loopback_link(_CHAT_OUTPUT_NAME, chat_target, data=data)
 
-    game_target = _get_physical_out_game()
-    if game_target:
-        results["hesuvi"] = ensure_loopback_link(_HESUVI_OUTPUT_NAME, game_target, data=data)
+    # Each channel's HeSuVi stage reaches that channel's own device. Sharing
+    # one instance is what made Media's menu inert and dragged it along with
+    # Game — the shared node had a single output and it followed Game.
+    for _ch in ("game", "media"):
+        _, _hes_out, _ = hesuvi_nodes(_ch)
+        _dest = channel_destination(_ch, data)
+        if not _dest:
+            continue
+        # "hesuvi" stays the game key so existing callers keep working; media
+        # is additive. ensure_loopback_link already reports False when the node
+        # is absent (media's stage only exists once it has been generated), so
+        # no separate existence check is needed here.
+        _key = "hesuvi" if _ch == "game" else "hesuvi_media"
+        results[_key] = ensure_loopback_link(_hes_out, _dest, data=data)
 
     # The Output channel's last hop (EQ → external sink: HDMI, TV, speakers)
     # was owned by nobody at all. Unlike chat/game/media it is not covered by
@@ -2508,10 +2597,27 @@ _HESUVI_CONV_MIX_LINKS = [
 ]
 
 
+def hesuvi_nodes(channel: str) -> tuple[str, str, str]:
+    """(capture node, playback node, conf filename) for *channel*'s HeSuVi stage.
+
+    Game and Media used to share one instance, which meant they shared its
+    single output too: picking a device for Media did nothing, and picking one
+    for Game silently moved Media with it. Giving Media its own instance is
+    what makes the two menus independent — the cost is a second HRTF
+    convolution, paid only while Media actually has spatial audio on.
+    """
+    if channel == "media":
+        return (f"{_SURROUND}-media", f"{_HESUVI_OUTPUT_NAME}-media",
+                "sink-virtual-surround-7.1-hesuvi-media.conf")
+    return (_SURROUND, _HESUVI_OUTPUT_NAME,
+            "sink-virtual-surround-7.1-hesuvi.conf")
+
+
 def generate_hesuvi_conf(
     immersion_pct: int = 50,
     distance_pct: int = 50,
     output_path: Path | None = None,
+    channel: str = "game",
 ) -> str:
     """Generate a dynamic HeSuVi 7.1 virtual surround PipeWire filter-chain config.
 
@@ -2536,8 +2642,12 @@ def generate_hesuvi_conf(
         _log.warning("Skipping HeSuVi config generation: no Arctis device attached.")
         return ""
 
+    _hes_in, _hes_out, _hes_file = hesuvi_nodes(channel)
+    _hes_desc = ("Virtual Surround Sink" if channel != "media"
+                 else "Virtual Surround Sink (Media)")
+    _hes_dest = channel_destination(channel)
     if output_path is None:
-        output_path = _CONF_DIR / "sink-virtual-surround-7.1-hesuvi.conf"
+        output_path = _CONF_DIR / _hes_file
         # Remove any static copy from pipewire.conf.d to avoid duplicate node name conflict.
         # install.sh places the static HeSuVi config there; ASM's dynamic version (here)
         # supersedes it when Sonar mode is active. Having both causes the game channel to
@@ -2678,8 +2788,8 @@ context.modules = [
   {{ name = libpipewire-module-filter-chain
     flags = [ nofail ]
     args = {{
-      node.description = "Virtual Surround Sink"
-      media.name       = "Virtual Surround Sink"
+      node.description = "{_hes_desc}"
+      media.name       = "{_hes_desc}"
       filter.graph = {{
         nodes = [
 {nodes_text}
@@ -2691,15 +2801,15 @@ context.modules = [
 {outputs_line}
       }}
       capture.props = {{
-        node.name      = "effect_input.virtual-surround-7.1-hesuvi"
+        node.name      = "{_hes_in}"
         media.class    = Audio/Sink/Internal
         audio.channels = 8
         audio.position = [ FL FR FC LFE RL RR SL SR ]
       }}
       playback.props = {{
-        node.name          = "effect_output.virtual-surround-7.1-hesuvi"
-        node.target        = "{_get_physical_out_game()}"
-        target.object      = "{_get_physical_out_game()}"
+        node.name          = "{_hes_out}"
+        node.target        = "{_hes_dest}"
+        target.object      = "{_hes_dest}"
         node.dont-fallback = true
         node.linger        = true
         audio.channels     = 2

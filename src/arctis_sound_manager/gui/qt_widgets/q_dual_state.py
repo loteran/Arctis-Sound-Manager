@@ -33,3 +33,18 @@ class QDualState(QWidget):
     
     def _on_state_changed(self, state: Qt.CheckState):
         self.status_label.setText(self.on_text if state == Qt.CheckState.Checked else self.off_text)
+
+    def set_state(self, state: Literal['left', 'right']) -> None:
+        """Move the switch in code, without reporting it as a user action.
+
+        For the cases where something has to put the switch back: an install
+        the user cancelled, a setting the daemon refused. The label follows so
+        the widget never disagrees with itself, but checkStateChanged stays
+        quiet — the handler doing the reverting is usually the one listening to
+        it, and re-entering it would undo the revert.
+        """
+        checked = state == 'right'
+        self.toggle.blockSignals(True)
+        self.toggle.setChecked(checked)
+        self.toggle.blockSignals(False)
+        self.status_label.setText(self.on_text if checked else self.off_text)

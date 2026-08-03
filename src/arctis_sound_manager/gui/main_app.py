@@ -7,7 +7,7 @@ Main application window — ArctisSonar GUI visual style.
 """
 import logging
 
-from PySide6.QtCore import Qt, QUrl, Slot
+from PySide6.QtCore import Qt, QTimer, QUrl, Slot
 from pathlib import Path
 
 from PySide6.QtGui import QDesktopServices, QIcon, QPainter, QPixmap
@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 
 from arctis_sound_manager.gui.base_app import QBaseDesktopApp
 from arctis_sound_manager.gui.components import (
+    CLIPS_ICON,
     EQUALIZER_ICON,
     GAMEDAC_ICON,
     HDMI_ICON,
@@ -39,6 +40,7 @@ from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
 from arctis_sound_manager.gui.dac_page import DacPage
 from arctis_sound_manager.gui.device_page import DevicePage
 from arctis_sound_manager.gui.headset_page import HeadsetPage
+from arctis_sound_manager.gui.clips_page import ClipsPage
 from arctis_sound_manager.gui.help_page import HelpPage
 from arctis_sound_manager.gui.equalizer_page import EqualizerPage
 from arctis_sound_manager.gui.home_page import HomePage
@@ -64,6 +66,19 @@ from arctis_sound_manager.settings import GeneralSettings
 
 
 # ── Main application window ───────────────────────────────────────────────────
+
+# Page indices, shared by the sidebar buttons and the stack — the two must stay
+# in step. They were bare numbers scattered across the file, so inserting a page
+# silently sent the theme editor and its "back" action to the wrong widgets.
+PAGE_HOME = 0
+PAGE_EQUALIZER = 1
+PAGE_HEADSET = 2
+PAGE_DAC = 3
+PAGE_CLIPS = 4
+PAGE_SETTINGS = 5
+PAGE_HELP = 6
+PAGE_THEME_EDITOR = 7
+
 
 class QMainApp(QBaseDesktopApp):
     app: QApplication
@@ -117,10 +132,17 @@ class QMainApp(QBaseDesktopApp):
         self.dbus_wrapper.sig_settings.connect(self._device_page.update_settings)
 
         # DAC tab hidden by default until device confirms it has a DAC
-        self._sidebar_buttons[3].setVisible(False)
+        self._sidebar_buttons[PAGE_DAC].setVisible(False)
 
         # Start on home page
-        self._switch_page(0)
+        self._switch_page(PAGE_HOME)
+
+        # Offer to put Sonar in the audio path, once, if it is not already.
+        # Deferred: the loopback sinks are created by the daemon and are not
+        # in the graph the instant the window builds, so asking immediately
+        # would classify a healthy setup as "no Sonar channels" and stay quiet
+        # exactly when the offer is needed.
+        QTimer.singleShot(6000, self._maybe_offer_sonar_default)
 
         # Check for updates (non-blocking background thread)
         from arctis_sound_manager.update_checker import UpdateCheckWorker
@@ -134,7 +156,6 @@ class QMainApp(QBaseDesktopApp):
         # disk change during a `pacman -Syu`; this process keeps running the
         # code it loaded at startup, and would otherwise go on doing so until
         # the next reboot — reporting a version it is not executing.
-        from PySide6.QtCore import QTimer
         self._staleness_timer = QTimer(self)
         self._staleness_timer.setInterval(5 * 60 * 1000)
         self._staleness_timer.timeout.connect(self._check_upgraded_under_us)
@@ -198,6 +219,12 @@ class QMainApp(QBaseDesktopApp):
 
     def _build_window(self) -> QMainAppProtoWidget:
         window = QMainAppProtoWidget()
+        # The pages are children of this widget, while the controller is a
+        # QObject beside it — so a page that needs to ask the controller for
+        # something (the Settings toggle asking the sidebar to show Clips) has
+        # no parent chain to walk. One link from the window closes that gap;
+        # a page reaches it with `self.window().main_app`.
+        window.main_app = self
         window.setWindowFlags(Qt.WindowType.Window)
         window.setWindowTitle("Arctis Sound Manager")
         window.setWindowIcon(QIcon(get_icon_pixmap()))
@@ -231,6 +258,7 @@ class QMainApp(QBaseDesktopApp):
             (EQUALIZER_ICON, I18n.translate('ui', 'equalizer'), current_accent),
             (HEADPHONE_ICON, I18n.translate('ui', 'headset'),   current_accent),
             (GAMEDAC_ICON,   I18n.translate('ui', 'dac'),       current_accent),
+            (CLIPS_ICON,     I18n.translate('ui', 'clips'),     current_accent),
             (SETTINGS_ICON,  I18n.translate('ui', 'settings'),  current_accent),
             (HELP_ICON,      I18n.translate('ui', 'help'),      current_accent),
         ]
@@ -323,6 +351,7 @@ class QMainApp(QBaseDesktopApp):
         self._headset_page   = HeadsetPage()
         self._dac_page       = DacPage()
         self._device_page    = DevicePage()
+        self._clips_page     = ClipsPage()
         self._help_page      = HelpPage()
 
         self._theme_editor_page = ThemeEditorPage()
@@ -331,12 +360,18 @@ class QMainApp(QBaseDesktopApp):
         self._stack.addWidget(self._equalizer_page)   # index 1 → Equalizer
         self._stack.addWidget(self._headset_page)     # index 2 → Headset
         self._stack.addWidget(self._dac_page)         # index 3 → DAC
-        self._stack.addWidget(self._device_page)      # index 4 → Settings
-        self._stack.addWidget(self._help_page)        # index 5 → Help
-        self._stack.addWidget(self._theme_editor_page) # index 6 → Theme Editor
+        self._stack.addWidget(self._clips_page)       # index 4 → Clips
+        self._stack.addWidget(self._device_page)      # index 5 → Settings
+        self._stack.addWidget(self._help_page)        # index 6 → Help
+        self._stack.addWidget(self._theme_editor_page) # index 7 → Theme Editor
 
         content_layout.addWidget(self._stack)
         root_layout.addWidget(content_wrapper, stretch=1)
+
+        # After the stack exists, not with the sidebar buttons: this reads the
+        # current page to move off Clips when the feature is off, and the
+        # sidebar is built long before there is a stack to ask.
+        self.apply_clips_visibility()
 
         return window
 
@@ -344,9 +379,48 @@ class QMainApp(QBaseDesktopApp):
 
     def _switch_page(self, index: int):
         self._stack.setCurrentIndex(index)
-        active_idx = 4 if index == 6 else index
+        # The theme editor has no button of its own; it lights up Settings.
+        active_idx = PAGE_SETTINGS if index == PAGE_THEME_EDITOR else index
         for i, btn in enumerate(self._sidebar_buttons):
             btn.set_active(i == active_idx)
+
+    def apply_clips_visibility(self) -> None:
+        """Show or hide the Clips sidebar entry to match the Settings toggle.
+
+        The button is hidden rather than removed, and the page stays in the
+        stack: every sidebar index is also its stack index, so dropping one
+        entry would silently renumber Settings and Help. Keeping both costs
+        nothing — ClipsPage builds no capture in its constructor (`_capture` is
+        None until Start is pressed) and no clip module imports GStreamer at
+        module level, which is what lets a machine without any of it still
+        build this window.
+
+        Called again by the toggle, so switching the feature on does not need a
+        restart to be visible.
+        """
+        from arctis_sound_manager.settings import GeneralSettings
+
+        try:
+            enabled = bool(GeneralSettings.read_from_file().clips_enabled)
+        except Exception as exc:  # noqa: BLE001 — never lose the window over a setting
+            self.logger.debug("could not read clips_enabled, hiding Clips: %s", exc)
+            enabled = False
+
+        buttons = getattr(self, "_sidebar_buttons", None) or []
+        if PAGE_CLIPS < len(buttons):
+            buttons[PAGE_CLIPS].setVisible(enabled)
+
+        # Turning the feature off while sitting on its page would leave the
+        # user on a page no button leads back to.
+        #
+        # getattr rather than attribute access: this is called once while the
+        # window is still being assembled, and reaching for a stack that does
+        # not exist yet took the whole window down with it — the tray icon
+        # appeared and nothing opened, because the failure is inside the
+        # constructor. Nothing here is worth a window.
+        stack = getattr(self, "_stack", None)
+        if not enabled and stack is not None and stack.currentIndex() == PAGE_CLIPS:
+            self._switch_page(PAGE_HOME)
 
     def _check_upgraded_under_us(self) -> None:
         """Surface an upgrade that landed while this window was open."""
@@ -361,15 +435,27 @@ class QMainApp(QBaseDesktopApp):
 
     # ── Theme editor ──────────────────────────────────────────────────────────
 
+    def _maybe_offer_sonar_default(self) -> None:
+        """Ask once whether the system default should go through Sonar."""
+        try:
+            from arctis_sound_manager.gui.sonar_default_dialog import maybe_offer
+            if maybe_offer(self.main_window):
+                self.logger.info("system default output routed through Sonar")
+        except Exception:
+            # A failed offer must never keep the window from being usable.
+            self.logger.exception("Sonar default offer failed")
+
+    # ── Theme editor ──────────────────────────────────────────────────────────
+
     def _open_theme_editor_new(self) -> None:
         self._theme_before_edit = self._general_settings.theme
         self._theme_editor_page.open_for_new(base_theme_id=self._general_settings.theme)
-        self._switch_page(6)
+        self._switch_page(PAGE_THEME_EDITOR)
 
     def _open_theme_editor_edit(self, theme_id: str) -> None:
         self._theme_before_edit = self._general_settings.theme
         self._theme_editor_page.open_for_edit(theme_id)
-        self._switch_page(6)
+        self._switch_page(PAGE_THEME_EDITOR)
 
     def _on_theme_preview(self, colors: dict) -> None:
         set_preview_colors(colors)
@@ -379,12 +465,12 @@ class QMainApp(QBaseDesktopApp):
         set_preview_colors(None)
         self._device_page.refresh_theme_combo(theme_id)
         self._apply_theme(theme_id)   # save=True → persiste
-        self._switch_page(4)
+        self._switch_page(PAGE_SETTINGS)
 
     def _on_theme_editor_cancelled(self) -> None:
         set_preview_colors(None)
         self._apply_theme(self._theme_before_edit, save=False)
-        self._switch_page(4)
+        self._switch_page(PAGE_SETTINGS)
 
     # ── Public API (called by systray_app) ────────────────────────────────────
 
@@ -403,9 +489,9 @@ class QMainApp(QBaseDesktopApp):
             return
         self.settings = settings
         has_dac = settings.get('has_dac', False)
-        self._sidebar_buttons[3].setVisible(has_dac)
-        if not has_dac and self._stack.currentIndex() == 3:
-            self._switch_page(0)
+        self._sidebar_buttons[PAGE_DAC].setVisible(has_dac)
+        if not has_dac and self._stack.currentIndex() == PAGE_DAC:
+            self._switch_page(PAGE_HOME)
 
         # Headsets with no on-device equaliser can't do anything with the
         # custom band sliders; only offer the switch to those that can (#146).

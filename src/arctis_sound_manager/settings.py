@@ -134,6 +134,18 @@ class GeneralSettings(JsonSerializable):
     # is treated as the node.name of the source to pin the capture to.
     micro_input_source: str = "__auto__"
 
+    # Clips is the one feature whose dependencies are not already on a desktop:
+    # PyGObject, four GStreamer plugin sets and ffmpeg, none of which the mixer
+    # or the EQ need. Making them hard requirements would charge every user who
+    # only wants a headset mixer for a screen recorder they never open, so the
+    # feature ships off and its packages are installed from the toggle that
+    # turns it on (see _CLIP_DEP_NAMES in system_deps_checker).
+    #
+    # False rather than "on if the packages happen to be present": a capture
+    # that starts recording because a dependency arrived with something else is
+    # a surprise, and this one holds a rolling buffer of the screen.
+    clips_enabled: bool = False
+
     # OLED display brightness (0–10)
     oled_brightness: int = 8
 

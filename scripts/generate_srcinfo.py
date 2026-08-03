@@ -62,6 +62,11 @@ def generate(pkgbuild_path: Path, version: str, sha256: str) -> str:
     licenses = _array(text, "license")
     makedeps = _array(text, "makedepends")
     depends  = _array(text, "depends")
+    # optdepends was never emitted, which cost nothing while it held only
+    # hardware encoders. Clips is opt-in and lives entirely in optdepends now,
+    # so leaving it out would hide the feature's packages from anyone reading
+    # the AUR page or installing with `paru --needed` prompts.
+    optdeps  = _array(text, "optdepends")
 
     pkg = f"arctis-sound-manager"
     src_file = f"{pkg}-{pkgver}.tar.gz"
@@ -87,6 +92,8 @@ def generate(pkgbuild_path: Path, version: str, sha256: str) -> str:
         lines += [f"\tmakedepends = {m}"]
     for d in depends:
         lines += [f"\tdepends = {d}"]
+    for o in optdeps:
+        lines += [f"\toptdepends = {o}"]
     lines += [f"\tsource = {source}"]
     lines += [f"\tsha256sums = {checksum}"]
     lines += [""]

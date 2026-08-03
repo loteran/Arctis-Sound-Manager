@@ -82,6 +82,7 @@ from arctis_sound_manager.gui.theme import (
 
 from arctis_sound_manager.channel_volumes import save_channel_volume
 from arctis_sound_manager.i18n import I18n
+from arctis_sound_manager.power_status import HeadsetPower, normalize_power_value
 from arctis_sound_manager.pw_utils import (
     app_override_key,
     get_native_streams,
@@ -490,12 +491,27 @@ class ToggleSwitch(QWidget):
 
 # ── Device status bar ─────────────────────────────────────────────────────────
 
-_STATUS_COLORS = {
-    "online":         "#04C5A8",   # teal
-    "cable_charging": "#2791CE",   # blue
-    "offline":        "#8D96AA",   # gray
-    None:             "#8D96AA",
-}
+_STATUS_ONLINE_COLOR  = "#04C5A8"   # teal
+_STATUS_CHARGING_COLOR = "#2791CE"  # blue
+_STATUS_UNKNOWN_COLOR = "#8D96AA"   # gray
+
+
+def _status_color(key) -> str:
+    """Pill colour for a headset_power_status value, in either vocabulary.
+
+    Device YAMLs speak two dialects: 'online'/'offline'/'cable_charging'
+    (Nova Pro Wireless, Elite, Omni, Arctis Pro Wireless) and plain 'on'/'off'
+    (Nova 5, Nova 7*, Arctis 7+, 9, 1 Wireless). This map only listed the first
+    set, so on half the supported headsets a powered-on device fell through to
+    the gray default and looked indistinguishable from a disconnected one —
+    the same split power_status.normalize_power_value() exists to paper over.
+    'cable_charging' normalizes to ON but keeps its own blue.
+    """
+    if isinstance(key, str) and key.strip().lower() == "cable_charging":
+        return _STATUS_CHARGING_COLOR
+    if normalize_power_value(key) is HeadsetPower.ON:
+        return _STATUS_ONLINE_COLOR
+    return _STATUS_UNKNOWN_COLOR
 
 def _status_label(key):
     if key is None:
@@ -599,7 +615,7 @@ class _DeviceStatusBar(QWidget):
         self._dac_bat_pill.set_visible(False)
 
     def update(self, power_status, headset_bat, dac_bat):
-        color = _STATUS_COLORS.get(power_status, "#8D96AA")
+        color = _status_color(power_status)
         label = _status_label(power_status)
         self._conn_pill.set_value(label, color)
 
@@ -1050,10 +1066,26 @@ class HomePage(QWidget):
         headset_bat_val = headset_bat.get("value") if headset_bat.get("type") == "percentage" else None
         dac_bat_val = dac_bat.get("value") if dac_bat.get("type") == "percentage" else None
 
+        # The wireless adapter keeps serving the last battery percentage it saw
+        # long after the headset is switched off, so the number alone is not a
+        # "headset present" signal — the home page went on displaying a frozen
+        # "Headset 57%" for a headset that was off, which reads as a battery
+        # gauge that is simply wrong. The tray already gates on power status for
+        # exactly this reason (#124 / PR #125, QSystrayApp._extract_battery_percent);
+        # the main window never got the same treatment. Only a definite OFF
+        # hides it: UNKNOWN ('standby', a vocabulary we have no rule for, or a
+        # device that reports no power status at all) must keep showing the
+        # reading rather than silently dropping a working gauge.
+        if normalize_power_value(power) is HeadsetPower.OFF:
+            headset_bat_val = None
+
         self._status_bar.update(power, headset_bat_val, dac_bat_val)
 
         if self._last_device_name:
-            if power == "offline":
+            # Was `power == "offline"`, which only ever matched the Nova Pro
+            # dialect: on a Nova 7 (reporting 'off') the name stayed lit as if
+            # the headset were still connected.
+            if normalize_power_value(power) is HeadsetPower.OFF:
                 self._headset_name_lbl.setStyleSheet(
                     "color: #8D96AA; font-size: 14pt; font-weight: bold; background: transparent;"
                 )
@@ -1481,12 +1513,33 @@ class HomePage(QWidget):
 
     def _refresh_device_combos(self, sinks) -> None:
         def _label(sink) -> str:
+            # pulsectl's own description before the node name. Both PipeWire
+            # properties are optional and Bluetooth sinks routinely ship
+            # without either, so a pair of earbuds was listed as
+            # "bluez_output.30_96_10_49_54_E2.1" — a MAC address where a
+            # product name belongs, which reads as a bug rather than a device.
+            # build_sink_options() already ends its ladder this way for the
+            # D-Bus pickers (#134 / #146); these combos never got it.
             return (sink.proplist.get("node.description")
                     or sink.proplist.get("node.nick")
+                    or getattr(sink, "description", "")
                     or sink.name)
 
         physical = [s for s in sinks if is_external_output_sink(s)]
-        default_label = I18n.translate("ui", "headset_output")
+        # Name the headset rather than saying "Headset". The default entry is a
+        # device like any other in this list, and calling it by a generic word
+        # while every sibling shows a product name reads as a placeholder —
+        # worse when a second headset is connected and neither row says which
+        # one this is. Falls back to the generic label only when the headset is
+        # absent, where there is no name to give.
+        headset = next(
+            (s for s in sinks
+             if is_external_output_sink(s, allow_headset=True)
+             and not is_external_output_sink(s)),
+            None,
+        )
+        default_label = (_label(headset) if headset is not None
+                         else I18n.translate("ui", "headset_output"))
         options = [("", default_label)] + [(s.name, _label(s)) for s in physical]
 
         # The Output card gets its own list: it is not "send this channel
@@ -1535,6 +1588,15 @@ class HomePage(QWidget):
             logger.warning("Could not save external output device: %r", exc)
 
     def _on_channel_output_changed(self, channel: str, sink_name: str) -> None:
+        """Send *channel* to *sink_name* — by moving the channel, not its apps.
+
+        This used to drag every application off the channel's virtual sink and
+        onto the chosen device. The routing overrides then pulled them back on
+        the next pass, so the selection undid itself within seconds and looked
+        like it did nothing. Re-linking the channel's own output leaves every
+        application exactly where the user put it, and there is nothing left to
+        contest the change.
+        """
         ch_outputs = _load_channel_outputs()
         if sink_name:
             ch_outputs[channel] = sink_name
@@ -1542,7 +1604,17 @@ class HomePage(QWidget):
             ch_outputs.pop(channel, None)
         _save_channel_outputs(ch_outputs)
         self._channel_outputs = ch_outputs
-        self._move_channel_streams_now(channel, sink_name)
+
+        # Apply now rather than waiting for the daemon's next tick — a device
+        # switch has to be immediate to feel like it worked. It has to go
+        # through the daemon: the enforcement passes resolve the headset via
+        # device_state, which is per-process and empty here, so running them in
+        # the GUI resolves an empty target and links nothing.
+        try:
+            from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
+            DbusWrapper.apply_channel_outputs()
+        except Exception:
+            logger.exception("could not retarget channel '%s'", channel)
 
     def _move_channel_streams_now(self, channel: str, sink_name: str) -> None:
         pulse = self._get_pulse()

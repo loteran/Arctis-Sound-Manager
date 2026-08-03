@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Clips (beta, opt-in): rolling video capture with one audio track per Sonar channel.** Installed on demand from the Video tab rather than shipped, so an install that only wants the mixer and EQ never pulls GStreamer, PyGObject or ffmpeg. Contributed by @Denkiyaa (#159), gating/tab work in progress.
+
 ## [1.2.20] - 2 August 2026
 
 ### Added

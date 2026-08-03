@@ -38,6 +38,29 @@ class ArctisManagerDbusConfigService(ServiceInterface):
         )
         return True
 
+    @method('ApplyChannelOutputs')
+    async def apply_channel_outputs(self) -> 'b':  # type: ignore
+        """Re-link each channel to the device saved for it, right now.
+
+        The GUI cannot do this itself: the enforcement passes resolve the
+        headset through ``device_state``, which is populated per process by
+        whichever one is talking to the USB device. Called from the GUI they
+        see no device, resolve an empty target and link nothing — the switch
+        silently does nothing until the daemon's next watchdog tick.
+
+        Routing belongs to the daemon, so the GUI writes the choice and asks
+        here. Nothing is recreated: only the links below the equalisers move,
+        which is what makes a device switch immediate instead of a rebuild.
+        """
+        def _apply() -> None:
+            from arctis_sound_manager.sonar_to_pipewire import (
+                ensure_physical_output_links, ensure_spatial_eq_links)
+            ensure_spatial_eq_links()
+            ensure_physical_output_links()
+
+        await asyncio.get_running_loop().run_in_executor(None, _apply)
+        return True
+
     @method('RecreateLoopbacks')
     async def recreate_loopbacks(self) -> 'b':  # type: ignore
         """Recreate the Arctis dynamic loopbacks (Game/Chat/Media).
@@ -524,7 +547,19 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
             if node_name.startswith('effect_') or 'sonar-' in node_name:
                 continue
 
-            name = s.proplist.get('node.description', node_name)
+            # `node.description` is optional, and Bluetooth headsets routinely
+            # ship without it: a bluez source then labelled itself with its raw
+            # node.name ("bluez_input.30:96:10:49:54:E2"), which reads as a MAC
+            # address rather than a device — users report the headset as simply
+            # "not in the list" because nothing in the entry names it. pulsectl
+            # resolves the friendly name ("HUAWEI FreeBuds 6") even when the
+            # PipeWire property is absent, so fall back to it before giving up
+            # on node.name. Same ladder build_sink_options() already uses for
+            # the output pickers (#134 / #146) — the input list simply never
+            # got it.
+            name = (s.proplist.get('node.description', '')
+                    or getattr(s, 'description', '')
+                    or node_name)
 
             if not any(r['id'] == node_name for r in result):
                 result.append({'id': node_name, 'name': name})
