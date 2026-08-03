@@ -351,7 +351,16 @@ class QMainApp(QBaseDesktopApp):
         self._headset_page   = HeadsetPage()
         self._dac_page       = DacPage()
         self._device_page    = DevicePage()
-        self._clips_page     = ClipsPage()
+        # The Video tab is always present. When the capture runtime isn't
+        # installed, it shows the install screen (what it does, which packages
+        # it needs, and a one-click install) instead of the recorder.
+        from arctis_sound_manager.gui.clips_install_page import (
+            ClipsInstallPage, clips_runtime_ready)
+        if clips_runtime_ready():
+            self._clips_page = ClipsPage()
+        else:
+            self._clips_page = ClipsInstallPage()
+            self._clips_page.clips_installed.connect(self._on_clips_installed)
         self._help_page      = HelpPage()
 
         self._theme_editor_page = ThemeEditorPage()
@@ -406,21 +415,46 @@ class QMainApp(QBaseDesktopApp):
             self.logger.debug("could not read clips_enabled, hiding Clips: %s", exc)
             enabled = False
 
+        # The Video tab is always visible now: when the runtime isn't there the
+        # tab is the install screen, so there is no state in which hiding it is
+        # the right call. `enabled` is still read (above) so a bad settings file
+        # is logged, but it no longer gates the button. No redirect either — the
+        # page always leads somewhere.
+        del enabled
         buttons = getattr(self, "_sidebar_buttons", None) or []
         if PAGE_CLIPS < len(buttons):
-            buttons[PAGE_CLIPS].setVisible(enabled)
+            buttons[PAGE_CLIPS].setVisible(True)
 
-        # Turning the feature off while sitting on its page would leave the
-        # user on a page no button leads back to.
-        #
-        # getattr rather than attribute access: this is called once while the
-        # window is still being assembled, and reaching for a stack that does
-        # not exist yet took the whole window down with it — the tray icon
-        # appeared and nothing opened, because the failure is inside the
-        # constructor. Nothing here is worth a window.
+    def _on_clips_installed(self) -> None:
+        """The install screen finished installing the runtime — swap it for the
+        real recorder in place, so no restart is needed. If the recorder cannot
+        be built in this process (a fresh gi import failing mid-run), leave the
+        install screen up and ask for a restart rather than crash the window."""
         stack = getattr(self, "_stack", None)
-        if not enabled and stack is not None and stack.currentIndex() == PAGE_CLIPS:
-            self._switch_page(PAGE_HOME)
+        old = getattr(self, "_clips_page", None)
+        if stack is None or old is None:
+            return
+        try:
+            new_page = ClipsPage()
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("clips installed but recorder failed to build in-process: %s", exc)
+            status = getattr(old, "_status", None)
+            if status is not None:
+                status.setText("✓ Installed — restart ASM to start recording.")
+            return
+        idx = stack.indexOf(old)
+        if idx < 0:
+            idx = PAGE_CLIPS
+        stack.insertWidget(idx, new_page)
+        stack.removeWidget(old)
+        old.deleteLater()
+        self._clips_page = new_page
+        if hasattr(new_page, "apply_theme"):
+            try:
+                new_page.apply_theme()
+            except Exception:  # noqa: BLE001
+                pass
+        self._switch_page(PAGE_CLIPS)
 
     def _check_upgraded_under_us(self) -> None:
         """Surface an upgrade that landed while this window was open."""

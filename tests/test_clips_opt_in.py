@@ -320,10 +320,11 @@ def test_the_main_window_builds_with_clips_off():
     main = QMainApp(app, logging.WARNING)
     try:
         assert main.main_window is not None
-        # Hidden, not removed: sidebar index is stack index, so dropping the
-        # entry would renumber Settings and Help.
         assert main._stack.count() == 8
-        assert main._sidebar_buttons[PAGE_CLIPS].isVisible() is False
+        # The Video tab is always visible: with the capture runtime absent (the
+        # default in tests) it shows the install screen rather than hiding, so
+        # someone who does not already know about Clips can still find it.
+        assert main._sidebar_buttons[PAGE_CLIPS].isVisible() is True
         # The link a settings page walks to reach the sidebar.
         assert getattr(main.main_window, "main_app", None) is main
     finally:
