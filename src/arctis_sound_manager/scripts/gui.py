@@ -71,6 +71,63 @@ _SERVER_NAME = "ArctisManagerGui"
 DESKTOP_ENTRY_NAME = "ArctisManager"
 
 
+def hand_off_to_running_instance(local_socket_cls, message: bytes,
+                                 reply_timeout_ms: int = 5000) -> bool:
+    """Give *message* to the instance that already owns this session.
+
+    Returns True when there was one — the caller must then exit without
+    starting a GUI of its own.
+
+    A connection that gets *accepted* is proof enough that another instance is
+    there: connecting to a Unix socket no process listens on is refused, it
+    does not hang. So once we are connected we hand the command over and get
+    out of the way, however long the reply takes.
+
+    Waiting for "ok" is only about how quickly it was picked up. The command is
+    already sitting in the socket buffer, and the running instance reads it
+    once it catches up, whether or not we are still there to hear it.
+    """
+    socket = local_socket_cls()
+    socket.connectToServer(_SERVER_NAME)
+    if not socket.waitForConnected(1500):
+        return False
+    socket.write(message)
+    socket.flush()
+    socket.waitForBytesWritten(1000)
+    socket.waitForReadyRead(reply_timeout_ms)
+    socket.disconnectFromServer()
+    return True
+
+
+def claim_instance_server(local_server_cls, local_socket_cls, message: bytes):
+    """Listen on the single-instance socket as the instance that owns it.
+
+    Returns the listening server, or None when another instance won the race
+    and has been handed *message* instead — the caller must then exit.
+
+    listen() first, and reach for ``removeServer()`` only once it has refused.
+    removeServer() unlinks the socket file whether or not somebody is listening
+    on it, so calling it up front is how a live instance loses its socket to a
+    launch that raced it — and how the session ends up with two GUIs.
+    """
+    server = local_server_cls()
+    if server.listen(_SERVER_NAME):
+        return server
+    # Refused: either a live instance claimed the name in the moment between
+    # our connect being refused and now, or the file was left behind by an
+    # instance that was killed. Ask before assuming the second one.
+    if hand_off_to_running_instance(local_socket_cls, message):
+        return None
+    local_server_cls.removeServer(_SERVER_NAME)
+    if not server.listen(_SERVER_NAME):
+        log.warning(
+            "Could not listen on the single-instance socket (%s) — a later "
+            "launch will not be able to reach this window.",
+            server.errorString(),
+        )
+    return server
+
+
 def main():
     parser = ArgumentParser()
     parser.add_argument('--systray', action='store_true',
@@ -137,30 +194,26 @@ def main():
     sys.excepthook = _gui_crash_handler
 
     # ── Single-instance guard ──────────────────────────────────────────────────
-    # Use a longer timeout (1500 ms) so that a second instance launched almost
-    # simultaneously by both XDG autostart and ~/.xprofile on XFCE/X11 (issue #25)
-    # is reliably detected before the first one finishes initialising Qt.
-    socket = QLocalSocket()
-    socket.connectToServer(_SERVER_NAME)
-    if socket.waitForConnected(1500):
-        # Send the command and wait for "ok" to confirm the instance is alive.
-        if args.url:
-            msg = b"url:" + args.url.encode()
-        else:
-            msg = b"show" if not args.systray else b"alive"
-        socket.write(msg)
-        socket.flush()
-        if socket.waitForReadyRead(500):
-            socket.disconnectFromServer()
-            return
-        # No response → stale socket file, clean up and continue.
-        socket.disconnectFromServer()
-        QLocalServer.removeServer(_SERVER_NAME)
+    # This used to give up after 500 ms of silence, delete the socket file and
+    # start a second full GUI. At login that is exactly what happens: the first
+    # instance starts listening immediately but does not reach its event loop
+    # until the tray, D-Bus and PipeWire setup are done, several seconds later.
+    # The second launch — the systemd user unit and the desktop entry (or the
+    # desktop's session restore) fire within a second of each other — connected,
+    # heard nothing back, took the socket away and ran a whole second GUI
+    # alongside the first. Two windows opening one after the other, two tray
+    # icons, both driving the same daemon.
+    if args.url:
+        msg = b"url:" + args.url.encode()
+    else:
+        msg = b"show" if not args.systray else b"alive"
+    if hand_off_to_running_instance(QLocalSocket, msg):
+        return
 
     # ── First instance: start systray + IPC server ────────────────────────────
-    QLocalServer.removeServer(_SERVER_NAME)
-    server = QLocalServer()
-    server.listen(_SERVER_NAME)
+    server = claim_instance_server(QLocalServer, QLocalSocket, msg)
+    if server is None:
+        return
 
     app.setQuitOnLastWindowClosed(False)
     q_object = QSystrayApp(app, log_level)
