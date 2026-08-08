@@ -15,7 +15,7 @@ from time import monotonic, sleep
 from dbus_next.aio.message_bus import MessageBus
 from dbus_next.constants import MessageType
 from dbus_next.message import Message
-from PySide6.QtCore import QFileSystemWatcher, QThread, Signal, Slot
+from PySide6.QtCore import QFileSystemWatcher, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
@@ -741,8 +741,17 @@ class QSystrayApp(QBaseDesktopApp):
     def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         # Trigger = left single-click. Open (or raise) the main GUI window.
         # Context (right-click) is handled by the attached context menu.
+        #
+        # Hand the work back to the event loop instead of doing it here. This
+        # slot runs inside KStatusNotifierItem::activate() — a D-Bus call the
+        # tray host is still on the stack for. Building the main window is slow
+        # enough that Qt processes events underneath it, and a status poll that
+        # lands there hides the battery item, which deletes the very
+        # KStatusNotifierItem whose activate() we are standing in. Returning
+        # into freed memory killed the whole app with SIGSEGV: window, tray
+        # icon and all, which reads from the outside as "it just closed".
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
-            self.open_main_window()
+            QTimer.singleShot(0, self.open_main_window)
 
     def open_main_window(self):
         if not hasattr(self, '_main_app'):
