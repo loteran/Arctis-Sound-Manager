@@ -238,6 +238,44 @@ def _lookup_override(overrides: dict, key: str, app: str) -> str | None:
     return None
 
 
+# Arctis virtual channel -> the key used in channel_output_devices.json
+# (the Channels tab's per-channel "output device" picker). Kept in one place
+# so _resolve_channel_output and the enforcement pass below can't drift.
+_CHANNEL_VIRTUAL_TO_KEY = {"Arctis_Game": "game", "Arctis_Chat": "chat", "Arctis_Media": "media"}
+
+
+def _resolve_channel_output(sink_name: str, channel_outputs: dict, sink_map: dict) -> str:
+    """Resolve *sink_name* through the user's per-channel output-device pick.
+
+    ``channel_output_devices.json`` (Channels tab -> per-channel "output
+    device" combo) redirects a whole Arctis virtual channel to an external
+    physical sink (e.g. Media -> onboard speakers). Every other place that
+    decides where a stream should go — most importantly per-app overrides in
+    ``routing_overrides.json`` — used to resolve straight to the bare virtual
+    sink name (``"Arctis_Media"``), ignoring that redirect entirely. Both
+    the app-override enforcement pass and the separate per-channel
+    enforcement pass then fought over the same stream every tick: the
+    override pass moved it back to ``Arctis_Media``, the channel-output pass
+    immediately moved it back out to the physical sink, forever — the user's
+    channel output device pick could never actually stick for any app that
+    also had (or acquired) a saved override.
+
+    Called wherever a target sink name is about to be compared/moved to, so
+    every enforcement path agrees on the same effective destination. Returns
+    *sink_name* unchanged when it isn't an Arctis virtual channel, the
+    channel has no configured external output, or that output isn't
+    currently present in the graph (falls back to the virtual channel rather
+    than silently going nowhere).
+    """
+    channel = _CHANNEL_VIRTUAL_TO_KEY.get(sink_name)
+    if channel is None:
+        return sink_name
+    target_name = channel_outputs.get(channel)
+    if not target_name or target_name not in sink_map:
+        return sink_name
+    return target_name
+
+
 def load_overrides() -> dict:
     if OVERRIDES_FILE.exists():
         try:
@@ -384,6 +422,7 @@ def _process_tick(pulse: pulsectl.Pulse) -> None:
         return
 
     overrides = load_overrides()
+    channel_outputs = _load_channel_outputs()
     sink_inputs = pulse.sink_input_list()
     sink_map = {s.name: s.index for s in sinks}
     sink_idx_to_name = {s.index: s.name for s in sinks}
@@ -455,6 +494,11 @@ def _process_tick(pulse: pulsectl.Pulse) -> None:
                 wanted = auto
 
         if wanted is not None:
+            # Route through the user's per-channel output-device pick (Media
+            # -> onboard speakers, etc.) so this pass and the per-channel
+            # enforcement pass below agree on the same destination instead of
+            # fighting over it every tick (see _resolve_channel_output).
+            wanted = _resolve_channel_output(wanted, channel_outputs, sink_map)
             wanted_index = sink_map.get(wanted)
             if wanted_index is not None and si.sink != wanted_index:
                 log.info("Override: moving '%s' -> %s", app, wanted)
@@ -535,6 +579,8 @@ def _process_tick(pulse: pulsectl.Pulse) -> None:
                 wanted = auto
 
         if wanted is not None:
+            # Same channel-output redirect as the PA-stream pass above.
+            wanted = _resolve_channel_output(wanted, channel_outputs, sink_map)
             if s["sink_name"] is None or s["sink_name"] != wanted:
                 log.info("Override native: moving '%s' -> %s", app, wanted)
                 move_native_stream(s["id"], wanted)

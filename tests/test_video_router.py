@@ -25,6 +25,7 @@ from arctis_sound_manager.scripts.video_router import (
     _pa_placed,
     _native_placed,
     _process_tick,
+    _resolve_channel_output,
 )
 
 
@@ -531,3 +532,75 @@ def test_get_headset_power_unreachable_daemon_is_unknown():
         result = video_router.get_headset_power(force=True)
 
     assert result == HeadsetPower.UNKNOWN
+
+
+# ── _resolve_channel_output / channel-output-device tug-of-war ───────────────
+#
+# channel_output_devices.json (Channels tab -> per-channel "output device"
+# combo) redirects a whole Arctis virtual channel to an external physical
+# sink. Before this fix, only the dedicated "Channel output" enforcement
+# pass at the end of _process_tick knew about that redirect — the earlier
+# per-app override enforcement pass resolved straight to the bare virtual
+# sink name. For any app that ALSO had a saved routing override pointing at
+# that channel (e.g. "Brave": "Arctis_Media"), the two passes fought every
+# tick: the channel-output pass moved the stream out to the physical sink,
+# then the very next tick the override pass moved it straight back to
+# Arctis_Media, forever — the channel-output setting could never actually
+# stick for that app.
+
+def test_resolve_channel_output_redirects_configured_channel():
+    speakers = _FakeSink(5, "alsa_output.usb-Generic_USB_Audio-00.HiFi__hw_Audio__sink")
+    sink_map = {"Arctis_Media": 1, speakers.name: speakers.index}
+    channel_outputs = {"media": speakers.name}
+
+    assert _resolve_channel_output("Arctis_Media", channel_outputs, sink_map) == speakers.name
+
+
+def test_resolve_channel_output_passthrough_when_not_configured():
+    sink_map = {"Arctis_Media": 1}
+    assert _resolve_channel_output("Arctis_Media", {}, sink_map) == "Arctis_Media"
+
+
+def test_resolve_channel_output_passthrough_for_non_virtual_sink():
+    sink_map = {"Arctis_Media": 1, "alsa_output.hdmi-stereo": 0}
+    channel_outputs = {"media": "alsa_output.hdmi-stereo"}
+    # Not one of the three Arctis virtual channels — never redirected.
+    assert _resolve_channel_output("alsa_output.hdmi-stereo", channel_outputs, sink_map) == \
+        "alsa_output.hdmi-stereo"
+
+
+def test_resolve_channel_output_falls_back_when_target_sink_absent():
+    """The configured external output isn't in the current graph (unplugged,
+    not yet enumerated) — fall back to the virtual channel rather than
+    resolving to a sink that doesn't exist."""
+    sink_map = {"Arctis_Media": 1}
+    channel_outputs = {"media": "alsa_output.usb-Generic_USB_Audio-00.HiFi__hw_Audio__sink"}
+    assert _resolve_channel_output("Arctis_Media", channel_outputs, sink_map) == "Arctis_Media"
+
+
+def test_tick_override_and_channel_output_agree_no_oscillation():
+    """The regression this fix targets: an app with BOTH a saved override
+    pointing at 'Arctis_Media' AND a channel_output_devices.json redirect of
+    'media' to a physical sink must land on the physical sink in a single
+    tick — and a second tick must be a no-op (no further moves), never an
+    infinite back-and-forth."""
+    media = _FakeSink(1, "Arctis_Media")
+    speakers = _FakeSink(2, "alsa_output.usb-Generic_USB_Audio-00.HiFi__hw_Audio__sink")
+    si = _FakeSinkInput(10, sink=media.index, proplist={"application.name": "Brave"})
+    pulse = _FakePulse([media, speakers], [si], default_sink_name=media.name)
+
+    with patch("arctis_sound_manager.scripts.video_router.get_headset_power",
+               return_value=HeadsetPower.ON), \
+         patch("arctis_sound_manager.scripts.video_router.load_overrides",
+               return_value={"Brave": "Arctis_Media"}), \
+         patch("arctis_sound_manager.scripts.video_router.save_overrides"), \
+         patch("arctis_sound_manager.scripts.video_router._load_channel_outputs",
+               return_value={"media": speakers.name}):
+        _process_tick(pulse)
+        assert pulse.moves == [(si.index, speakers.index)]
+        assert si.sink == speakers.index
+
+        # Second tick: already on the resolved target — must be a no-op.
+        _process_tick(pulse)
+        assert pulse.moves == [(si.index, speakers.index)]
+        assert si.sink == speakers.index
