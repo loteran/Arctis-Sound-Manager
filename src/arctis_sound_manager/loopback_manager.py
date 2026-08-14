@@ -233,7 +233,8 @@ def _build_pw_loopback_argv(spec: LoopbackSpec) -> list[str]:
 
         pw-loopback
           --capture-props='node.name=Arctis_Media media.class=Audio/Sink
-                           audio.channels=2 audio.position=[FL FR]'
+                           audio.channels=2 audio.position=[FL FR]
+                           node.pause-on-idle=true'
           --playback-props='node.name=Arctis_Media_sink_out
                             node.description=Media
                             audio.channels=2 audio.position=[FL FR]
@@ -241,7 +242,8 @@ def _build_pw_loopback_argv(spec: LoopbackSpec) -> list[str]:
                             target.object=effect_input.sonar-media-eq
                             node.target=effect_input.sonar-media-eq
                             node.dont-fallback=true node.autoconnect=false
-                            node.linger=true latency.msec=50'
+                            node.linger=true node.pause-on-idle=true
+                            latency.msec=50'
 
     The playback node uses ``node.autoconnect=false`` so WirePlumber never
     routes it: ASM owns the playback→EQ link itself (issue #100), which makes
@@ -262,6 +264,9 @@ def _build_pw_loopback_argv(spec: LoopbackSpec) -> list[str]:
         f" media.class=Audio/Sink"
         f" audio.channels=2"
         f" audio.position=[FL FR]"
+        # Same reason as the playback side below (#180): a channel nobody is
+        # playing to must not keep the chain, and through it the headset, awake.
+        f" node.pause-on-idle=true"
     )
     playback_props = (
         f"node.name={spec.playback_name}"
@@ -293,6 +298,25 @@ def _build_pw_loopback_argv(spec: LoopbackSpec) -> list[str]:
         # tug-of-war anymore.
         f" node.autoconnect=false"
         f" node.linger=true"
+        # Let the node go quiet when nothing is playing, so the headset can
+        # reach its own inactivity timeout (#180).
+        #
+        # Without this the loopback keeps its link to the physical sink fed
+        # forever, ASM's watchdog re-establishes it whenever WirePlumber tries
+        # to suspend it, and the device sits in RUNNING even with every virtual
+        # channel IDLE. From the firmware's side that is continuous playback:
+        # the auto-off timer never starts, and a headset configured to power
+        # down after 30 minutes simply never does. Confirmed on the reporter's
+        # machine — with ASM stopped the headset powers off normally, and
+        # playing pure silence to it (paplay /dev/zero) with ASM not running at
+        # all keeps it awake, which isolates the stream itself as the cause
+        # rather than anything ASM sends over HID.
+        #
+        # The cost is that a paused chain has to spin back up when sound
+        # returns, which can clip the first instant of audio. That is the
+        # normal behaviour of every ALSA sink on the system, and it is a better
+        # trade than a headset that never sleeps and drains itself flat.
+        f" node.pause-on-idle=true"
         f" latency.msec=50"
     )
     return [

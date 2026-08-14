@@ -201,6 +201,21 @@ class TestBuildArgv:
         argv = _build_pw_loopback_argv(media_spec)
         assert "latency.msec=50" in argv[2]
 
+    def test_both_sides_pause_on_idle(self, media_spec: LoopbackSpec) -> None:
+        """Both loopback nodes must go quiet when nothing is playing (#180).
+
+        Without this the chain keeps feeding the physical sink forever and the
+        headset never reaches its own inactivity timeout: every virtual channel
+        reads IDLE while the device sits in RUNNING, so a headset set to power
+        off after 30 minutes never does. Locking it down in a test because it
+        is a one-property fix that is easy to drop during an unrelated rewrite
+        of this argv builder, and the symptom (a headset that quietly never
+        sleeps) is not one anybody notices quickly.
+        """
+        argv = _build_pw_loopback_argv(media_spec)
+        assert "node.pause-on-idle=true" in argv[1]
+        assert "node.pause-on-idle=true" in argv[2]
+
     def test_playback_description(self, media_spec: LoopbackSpec) -> None:
         argv = _build_pw_loopback_argv(media_spec)
         # Description is quoted because it contains spaces.
