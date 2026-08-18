@@ -120,6 +120,29 @@ class GeneralSettings(JsonSerializable):
     # External output device (HDMI, sound card, etc.) shown on home page
     external_output_device: str|None = None
 
+    # Run ASM without SteelSeries hardware (#189).
+    #
+    # The audio half of ASM — the four channels, the Sonar EQ, HeSuVi, the
+    # router, Clips — only ever manipulates PipeWire sink names. It is the USB
+    # HID conversation (battery, ANC, sidetone, ChatMix, OLED) that needs an
+    # Arctis, and this mode simply does without it: the generic profile
+    # declares no settings and no status, so those pages come up empty rather
+    # than showing controls that would do nothing.
+    #
+    # Off by default and never inferred. A user with an Arctis must not land
+    # here because their headset was asleep during a scan.
+    generic_device_mode: bool = False
+
+    # Which sink the channels come out of in generic mode. Replaces the
+    # vendor-id discovery that finds an Arctis' own ALSA nodes — there is no
+    # vendor id to look for, so the user names the device instead.
+    generic_output_device: str|None = None
+
+    # Optional: the capture device the microphone EQ chain reads from. Left
+    # empty, the mic chain is simply not set up; a user routing only playback
+    # should not have to pick a microphone to get their channels.
+    generic_input_device: str|None = None
+
     # HRIR profile for HeSuVi spatial audio. Defaults to a bundled profile
     # (not None) so Spatial Audio works out of the box: the HeSuVi convolver
     # references ~/.local/share/pipewire/hrir_hesuvi/hrir.wav, and if no HRIR
@@ -242,6 +265,9 @@ class GeneralSettings(JsonSerializable):
         ConfigSetting('redirect_audio_on_disconnect', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('redirect_audio_on_disconnect_device', SettingType.SELECT, None, options_source='pulse_audio_devices', options_mapping={ 'value': 'id', 'label': 'description' }),
         ConfigSetting('external_output_device', SettingType.SELECT, None, options_source='external_audio_devices', options_mapping={ 'value': 'id', 'label': 'description' }),
+        ConfigSetting('generic_device_mode', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
+        ConfigSetting('generic_output_device', SettingType.SELECT, None, options_source='external_audio_devices', options_mapping={ 'value': 'id', 'label': 'description' }),
+        ConfigSetting('generic_input_device', SettingType.SELECT, None, options_source='pulse_audio_sources', options_mapping={ 'value': 'id', 'label': 'description' }),
         ConfigSetting('hrir_id', SettingType.SELECT, None, options_source='hrir_files', options_mapping={ 'value': 'id', 'label': 'name' }),
         ConfigSetting('micro_input_source', SettingType.SELECT, "__auto__", options_source='pulse_audio_sources', options_mapping={ 'value': 'id', 'label': 'name' }),
         ConfigSetting('micro_alt_source', SettingType.SELECT, "", options_source='pulse_audio_sources', options_mapping={ 'value': 'id', 'label': 'name' }),

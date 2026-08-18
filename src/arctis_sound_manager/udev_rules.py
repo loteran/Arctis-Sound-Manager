@@ -71,6 +71,13 @@ def load_devices(paths: Iterable[Path]) -> list[tuple[int, list[int], str]]:
     for f in _iter_yaml_files(paths):
         data = yaml.load(f)
         device = data['device']
+        # A generic profile stands in for "no USB device at all" (#189): it has
+        # no vendor id and no product ids, so there is nothing to grant access
+        # to. Skipped rather than tolerated with defaults — a rule for
+        # vendor 0000 would be meaningless, and reading a missing key here used
+        # to abort the whole generator, taking the packaging build with it.
+        if device.get('generic', False):
+            continue
         vid = int(device['vendor_id'])
         name = str(device['name'])
         key = (vid, name)

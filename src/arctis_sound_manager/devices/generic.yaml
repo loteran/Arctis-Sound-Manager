@@ -1,0 +1,52 @@
+# Generic audio device — ASM without SteelSeries hardware (#189)
+#
+# Every other profile in this folder describes a headset ASM talks to over USB
+# HID: battery, ANC, sidetone, ChatMix, the OLED. This one describes the
+# absence of that conversation.
+#
+# What still works without it is the whole audio half: the four virtual
+# channels, per-channel volume, the Sonar EQ, HeSuVi spatial audio, the
+# application router and Clips. None of that touches USB — it only needs the
+# names of PipeWire sinks, and in this mode the user supplies them instead of
+# ASM discovering them from a vendor id.
+#
+# `product_ids` is deliberately empty. The USB scan matches on product id, so
+# this profile can never be selected by accident: reaching it requires the
+# `generic_device_mode` setting, an explicit choice.
+#
+# Declaring no `settings` and no `status` is what produces the degraded UI,
+# and it costs no GUI code at all: the pages are built from whatever the
+# profile declares (#146), so Headset and DAC come up empty on their own. The
+# rule that stops a headset showing dead widgets for features it lacks is the
+# same rule that makes this profile possible.
+#
+# No `online_status` either — is_device_online() returns True when a profile
+# omits it, so the channels are treated as reachable and the routing that
+# depends on it (redirect on connect, repatriation on disconnect) behaves.
+device:
+  name: Generic audio device
+  # Exempts this profile from the USB validation a real headset must pass,
+  # and is what _setup_generic_device looks for. Explicit on purpose.
+  generic: true
+  product_ids: []
+
+  # Never used: nothing is sent to this device. Present because the parser
+  # expects a transport, and `interrupt` is the inert default.
+  command_transport: interrupt
+  command_interface_index: [-1, -1]
+  listen_interface_indexes: []
+
+  command_padding:
+    length: 64
+    position: end
+    filler: 0x00
+
+  # No device_init: there is no device to initialise.
+  # No status: nothing to poll, so no battery, no ANC, no ChatMix dial.
+  # No settings: the Headset and DAC pages have nothing to draw.
+  # No hardware_eq: the on-device equaliser belongs to the headset, not to ASM.
+  #                 The software Sonar EQ is unaffected and works as usual.
+
+  # HeSuVi runs entirely in PipeWire, so spatial audio is available here like
+  # anywhere else.
+  spatial_engine: hesuvi

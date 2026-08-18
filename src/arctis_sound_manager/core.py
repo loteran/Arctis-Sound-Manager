@@ -1538,6 +1538,114 @@ class CoreEngine:
             self.logger.warning("reset_filter_chain_safe_mode failed: %r", exc)
             return False
 
+    def _resolve_sink_name(self, wanted: str) -> str | None:
+        """Turn a saved device id into the ``node.name`` the graph uses.
+
+        Settings store whichever id the picker offered — a ``node.nick`` from
+        the Channels tab, a ``node.name`` elsewhere — so both are matched, the
+        same rule the rest of the app follows.
+        """
+        if not wanted:
+            return None
+        try:
+            import pulsectl
+            with pulsectl.Pulse("asm-generic-resolve") as pulse:
+                for sink in pulse.sink_list():
+                    if wanted in (sink.name, sink.proplist.get("node.nick", "")):
+                        return sink.name
+        except Exception as exc:
+            self.logger.debug("could not resolve generic output %r: %r", wanted, exc)
+        return None
+
+    def _setup_generic_device(self) -> bool:
+        """Build the channels on a device ASM does not talk to (#189).
+
+        Everything below the HID layer is unchanged: the loopbacks, the Sonar
+        EQ chains, HeSuVi and the router only ever need sink names. What is
+        skipped is the conversation with the headset — init_device() and the
+        OLED — because there is no headset to hold it with.
+
+        Returns True when generic mode handled this pass, so the caller stops
+        treating "no Arctis found" as an error.
+        """
+        # Read through a missing attribute, not just a missing value: this runs
+        # on the "no device found" path, which is reached before general_settings
+        # exists in some start-up orders — and by every test that builds a bare
+        # engine. Anything raising here would turn "no headset attached", an
+        # ordinary state, into a crash.
+        settings = getattr(self, "general_settings", None)
+        if not getattr(settings, "generic_device_mode", False):
+            return False
+
+        device_config = next(
+            (c for c in self.device_configurations if getattr(c, "generic", False)), None)
+        if device_config is None:
+            self.logger.error(
+                "generic_device_mode is on but no profile declaring 'generic: true' "
+                "was loaded — devices/generic.yaml is missing or was skipped as "
+                "invalid; see the 'Skipping invalid device YAML' warnings above")
+            return False
+
+        wanted = getattr(settings, "generic_output_device", None)
+        sink = self._resolve_sink_name(wanted or "")
+        if sink is None:
+            # Not an error worth repeating on every rescan: a Bluetooth headset
+            # in its case is the ordinary case, and it comes back on its own.
+            if not self._logged_no_device:
+                self.logger.warning(
+                    "Generic mode: output device %r is not in the graph — "
+                    "waiting for it. Pick another in Settings if it is gone for good.",
+                    wanted or "(unset)")
+                self._logged_no_device = True
+            return True
+
+        self._logged_no_device = False
+
+        if self.device_config is not None and self.device_config != device_config:
+            self.teardown()
+
+        self.device_config = device_config
+        self.usb_device = None          # nothing to claim, detach or write to
+        self.device_status = None
+
+        source = self._resolve_sink_name(
+            getattr(settings, "generic_input_device", None) or "")
+
+        # Game and Chat share one sink here. A real Arctis exposes two PCMs and
+        # ASM separates them; a generic headset has one output, so both channels
+        # land on it. They stay independent where it matters — own volume, own
+        # EQ, own place in the mixer and in ChatMix — they simply end up in the
+        # same jack.
+        device_state.set_current_device(
+            physical_out_game=sink,
+            physical_out_chat=sink,
+            physical_in=source or "",
+            spatial_engine=device_config.spatial_engine,
+            device_name=device_config.name,
+        )
+        self.logger.info(
+            "Generic mode: channels on %s%s", sink,
+            f", microphone from {source}" if source else ", no microphone configured")
+
+        try:
+            from arctis_sound_manager.sonar_to_pipewire import check_and_fix_stale_configs
+            fixed, needs_pw_restart = check_and_fix_stale_configs()
+            if fixed:
+                from arctis_sound_manager import service_control as sc
+                if needs_pw_restart:
+                    sc.restart("pipewire", "wireplumber", "pipewire-pulse", timeout=20)
+                sc.restart("filter-chain", timeout=20)
+        except Exception as exc:
+            self.logger.warning("generic mode: config repair failed: %r", exc)
+
+        self.setup_loopbacks()
+        if source:
+            self._claim_default_source()
+
+        self.redirect_to_media_sink()
+        self._device_ready = True
+        return True
+
     def configure_virtual_sinks(self) -> None:
         with self._detect_lock:
             usb_device: Device | Any | None = None
@@ -1549,6 +1657,13 @@ class CoreEngine:
                     break
 
             if not device_config or not usb_device:
+                # No Arctis — but the audio half of ASM does not need one. The
+                # channels, the Sonar EQ, HeSuVi, the router and Clips only ever
+                # manipulate PipeWire sink names; it is the HID conversation
+                # (battery, ANC, sidetone, ChatMix, OLED) that needs the device.
+                # Generic mode does without it, on a sink the user names (#189).
+                if self._setup_generic_device():
+                    return
                 # Log only on the first miss to avoid spamming every re-scan cycle.
                 if not self._logged_no_device:
                     self.logger.warning("No supported device connected, skipping virtual sink setup")
@@ -2018,6 +2133,14 @@ class CoreEngine:
                                             or self.device_config.hardware_eq_format))
     
     def is_device_online(self) -> bool:
+        # Generic mode has no device to be online or offline (#189). "Online"
+        # is the honest answer: the channels point at a sink that is in the
+        # graph — _setup_generic_device refuses to build them otherwise — so
+        # the routing that keys off this (adopting the default on connect,
+        # handing it back on disconnect) behaves as it does with a headset on.
+        if (getattr(getattr(self, "general_settings", None), "generic_device_mode", False)
+                and self.usb_device is None):
+            return bool(device_state.get_physical_out_game())
         if self.device_status is None or self.device_config is None:
             return False
 

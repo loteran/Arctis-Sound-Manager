@@ -186,6 +186,7 @@ class DeviceConfiguration:
     name: str
     vendor_id: int
     product_ids: list[int]
+    generic: bool  # no USB device behind this profile at all (#189)
     command_interface_index: list[int]
     command_transport: CommandTransport
     # HID report id carried by control-transfer commands (ctrl_output / ctrl_feature).
@@ -238,6 +239,9 @@ class DeviceConfiguration:
         self.name = raw_config.get('name', '')
         self.vendor_id = raw_config.get('vendor_id', 0)
         self.product_ids = raw_config.get('product_ids', [])
+        # True for the profile that stands in for 'no SteelSeries hardware'.
+        # See the validation block below and _setup_generic_device (#189).
+        self.generic = bool(raw_config.get('generic', False))
         self.command_interface_index = raw_config.get('command_interface_index', (-1, -1))
         self.command_transport = CommandTransport(raw_config.get('command_transport', 'interrupt'))
         self.command_report_id = raw_config.get('command_report_id', None)
@@ -305,16 +309,29 @@ class DeviceConfiguration:
 
         if not self.name:
             raise ValueError("Invalid configuration: 'device.name' must be specified and non-empty")
-        if self.vendor_id == 0:
-            raise ValueError("Invalid configuration: 'device.vendor_id' must be specified and non-zero")
-        if not self.product_ids:
-            raise ValueError("Invalid configuration: 'device.product_ids' must be a non-empty list")
-        if not self.command_interface_index[0] >= 0 or not self.command_interface_index[1] >= 0:
-            raise ValueError("Invalid configuration: 'device.command_interface_index' must represent [bInterfaceNumber and bAlternateSetting]")
-        if not self.listen_interface_indexes:
-            raise ValueError("Invalid configuration: 'device.listen_interface_indexes' must be a non-empty list")
-        if any(i < 0 for i in self.listen_interface_indexes):
-            raise ValueError("Invalid configuration: 'device.listen_interface_indexes' must contain only non-negative integers")
+
+        # A generic profile describes no USB device at all (#189): ASM drives
+        # the audio graph and never opens a HID handle. Every check below asks
+        # whether a device can be found and spoken to, so none of them applies.
+        # Opting out is explicit rather than inferred from empty fields — those
+        # same checks exist to catch a headset profile someone left half
+        # written, and that must keep failing loudly.
+        if self.generic:
+            if self.product_ids:
+                raise ValueError(
+                    "Invalid configuration: a 'device.generic' profile must not declare "
+                    "product_ids — it would then be selected by the USB scan")
+        else:
+            if self.vendor_id == 0:
+                raise ValueError("Invalid configuration: 'device.vendor_id' must be specified and non-zero")
+            if not self.product_ids:
+                raise ValueError("Invalid configuration: 'device.product_ids' must be a non-empty list")
+            if not self.command_interface_index[0] >= 0 or not self.command_interface_index[1] >= 0:
+                raise ValueError("Invalid configuration: 'device.command_interface_index' must represent [bInterfaceNumber and bAlternateSetting]")
+            if not self.listen_interface_indexes:
+                raise ValueError("Invalid configuration: 'device.listen_interface_indexes' must be a non-empty list")
+            if any(i < 0 for i in self.listen_interface_indexes):
+                raise ValueError("Invalid configuration: 'device.listen_interface_indexes' must contain only non-negative integers")
 
         raw_padding = raw_config.get('command_padding', {})
         if raw_padding:

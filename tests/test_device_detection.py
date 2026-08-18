@@ -92,6 +92,13 @@ def _all_config_pid_pairs():
 def test_yaml_loads_without_error(path: Path):
     cfg = _load_config(path)
     assert cfg.name
+    if getattr(cfg, "generic", False):
+        # The generic profile describes no USB device at all (#189): no vendor,
+        # no product ids, and it must stay that way or the USB scan could reach
+        # it. The identity checks below are about being a SteelSeries headset.
+        assert cfg.vendor_id == 0
+        assert cfg.product_ids == []
+        return
     assert cfg.vendor_id == 0x1038
     assert cfg.product_ids
 
