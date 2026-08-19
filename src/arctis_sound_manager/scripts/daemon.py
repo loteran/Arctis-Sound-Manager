@@ -184,6 +184,17 @@ async def main_async():
     except Exception as exc:
         logger.warning('could not reconcile device profile overrides: %r', exc)
 
+    # Same reasoning as the block above, for the tray unit renamed in v1.3.0:
+    # anyone whose "launch at login" pointed at the packaged arctis-gui.service
+    # lost it, because the upgrade removed that file and nothing enabled its
+    # replacement (#191). The GUI failing to start *is* the symptom, so this
+    # cannot live there — the daemon is what still runs.
+    try:
+        from arctis_sound_manager.autostart import migrate_legacy_gui_autostart
+        migrate_legacy_gui_autostart()
+    except Exception as exc:
+        logger.warning('could not migrate the tray autostart unit: %r', exc)
+
     from arctis_sound_manager.udev_checker import is_udev_rules_valid
     if not is_udev_rules_valid():
         logger.warning('udev rules are missing or invalid — USB access may fail (errno 13). Run: sudo asm-cli udev write-rules --force --reload')

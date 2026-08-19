@@ -18,6 +18,9 @@ _SERVICE = "arctis-manager.service"
 # removed when the new unit is put in place.
 _GUI_SERVICE = "app-ArctisManager.service"
 _LEGACY_GUI_SERVICE = "arctis-gui.service"
+#: Where a distribution package drops its user units. A module constant so
+#: a test can point it somewhere else instead of patching Path.exists.
+_PACKAGED_UNIT_DIR = Path("/usr/lib/systemd/user")
 _GUI_SERVICE_TEMPLATE = """\
 [Unit]
 Description=Arctis Sound Manager — System Tray
@@ -33,6 +36,102 @@ RestartSec=5
 [Install]
 WantedBy=graphical-session.target
 """
+
+
+def _find_legacy_want() -> Path | None:
+    """The leftover .wants symlink for the old tray unit, if there is one.
+
+    Walked by hand rather than with glob(): pathlib's glob drops broken
+    symlinks, and a broken symlink is exactly the case worth finding — it is
+    what an upgrade leaves behind when it removes the packaged unit the link
+    pointed at. Globbing here looked right and found nothing at all.
+    """
+    units = Path.home() / ".config" / "systemd" / "user"
+    try:
+        wants_dirs = [d for d in units.iterdir()
+                      if d.name.endswith(".target.wants") and d.is_dir()]
+    except OSError:
+        return None
+    for d in wants_dirs:
+        try:
+            for entry in d.iterdir():
+                if entry.name == _LEGACY_GUI_SERVICE:
+                    return entry
+        except OSError:
+            continue
+    return None
+
+
+def migrate_legacy_gui_autostart() -> bool:
+    """Carry an existing "launch at login" across the unit rename (#191).
+
+    v1.3.0 renamed the tray unit from arctis-gui.service to
+    app-ArctisManager.service, so the portal can read an app id off the cgroup
+    and the clip shortcut can bind. Nobody carried the *enablement* across.
+
+    For anyone whose autostart pointed at the packaged unit, the upgrade
+    deleted the file the symlink pointed to, and the replacement was never
+    enabled: the tray simply stopped appearing at login, on a machine where
+    nothing else looked wrong. Reported on two machines by TheJurassicSnark.
+
+    Runs from the daemon rather than the GUI on purpose. The GUI not starting
+    is the symptom, so a migration living there would only run once the user
+    had already worked around it by hand.
+
+    Returns True when it changed something. Does nothing — deliberately — when
+    the old unit was not enabled: this restores an autostart, it never grants
+    one to somebody who had switched it off.
+    """
+    legacy_enabled = sc.is_enabled("arctis-gui.service")
+    legacy_file = Path.home() / ".config" / "systemd" / "user" / _LEGACY_GUI_SERVICE
+    # A dangling symlink is the packaged-unit case: enable state can read as
+    # anything once the target is gone, so the leftover want is the evidence.
+    legacy_want = _find_legacy_want()
+
+    if not (legacy_enabled or legacy_want):
+        return False
+
+    logger.info(
+        "autostart: found the pre-1.3.0 tray unit still enabled — moving it to %s (#191)",
+        _GUI_SERVICE)
+
+    changed = False
+    try:
+        # The replacement ships with the package; write a user copy only when
+        # the package did not provide one, which is how the old one worked too.
+        packaged = _PACKAGED_UNIT_DIR / _GUI_SERVICE
+        user_unit = Path.home() / ".config" / "systemd" / "user" / _GUI_SERVICE
+        if not packaged.exists() and not user_unit.exists():
+            asm_gui = shutil.which("asm-gui")
+            if asm_gui:
+                user_unit.parent.mkdir(parents=True, exist_ok=True)
+                user_unit.write_text(_GUI_SERVICE_TEMPLATE.format(asm_gui=asm_gui))
+                sc.daemon_reload()
+
+        if packaged.exists() or user_unit.exists():
+            sc.enable("arctis-gui")     # maps to app-ArctisManager, see _SERVICE_MAP
+            changed = True
+        else:
+            logger.warning(
+                "autostart: neither %s nor a user copy exists — cannot restore "
+                "the tray autostart; asm-gui was not found on PATH", _GUI_SERVICE)
+
+        # Only now retire the old one, so a failure above leaves the user with
+        # the autostart they had rather than none at all.
+        if changed:
+            sc.disable("arctis-gui.service")
+            if legacy_file.exists():
+                legacy_file.unlink()
+            if legacy_want is not None and legacy_want.is_symlink():
+                legacy_want.unlink(missing_ok=True)
+            sc.daemon_reload()
+    except OSError as exc:
+        logger.warning("autostart: could not migrate the tray unit: %r", exc)
+        return changed
+
+    if changed:
+        logger.info("autostart: tray autostart restored as %s", _GUI_SERVICE)
+    return changed
 
 
 def detect_environment() -> str:
