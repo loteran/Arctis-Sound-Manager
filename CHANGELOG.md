@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 20 August 2026
+
+### Added
+
+- **ASM now runs without a SteelSeries headset.** Asked for twice, two months apart — once with a Beyerdynamic TYGR 300R, once with a Focusrite Scarlett and an HD560S — and answered no both times, because the daemon only ever started once an Arctis replied over USB. That was true of the daemon, not of the app: the four channels, per-channel volume, the Sonar EQ, HeSuVi spatial audio, the application router and Clips never touch USB at all. They manipulate PipeWire sink names, nothing more. What genuinely needs an Arctis is the conversation with the headset — battery, ANC, sidetone, ChatMix, the OLED — and this mode does without it. Turn on *Use ASM without a SteelSeries headset* in Settings, pick the output your headphones are plugged into, and the channels are built on it. The Headset and DAC pages come up empty rather than showing controls that would do nothing, and no microphone has to be chosen if you only want playback. Nothing changes for a SteelSeries headset: the mode is off by default, it can only be reached deliberately, and a connected Arctis always wins. ([#189](https://github.com/loteran/Arctis-Sound-Manager/issues/189), [discussion #95](https://github.com/loteran/Arctis-Sound-Manager/discussions/95))
+
+### Fixed
+
+- **"Launch at login" stopped working after updating to 1.3.0.** 1.3.0 renamed the tray unit so the desktop can attach a keyboard shortcut to it — necessary, and correct. What was missed is that the rename left the old unit behind: for anyone whose autostart pointed at the one shipped in the package, the update deleted the file it pointed to and never switched the replacement on. The tray simply stopped appearing at login, on a machine where nothing else looked wrong, and starting it by hand gave a window with no daemon behind it. The daemon now moves the setting across on its own, at the first start after the update — it restores an autostart that existed and never grants one to someone who had turned it off. Reported on two machines by [@TheJurassicSnark](https://github.com/TheJurassicSnark). ([#191](https://github.com/loteran/Arctis-Sound-Manager/issues/191))
+
 ## [1.3.0] - 18 August 2026
 
 ### Added
