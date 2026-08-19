@@ -307,3 +307,46 @@ def test_the_tray_shows_no_battery_rather_than_breaking():
     assert extract({}) is None
     assert extract({"headset": {}}) is None
     assert extract(None) is None
+
+
+# ── the loop must yield when there is nothing to listen on ────────────────────
+
+def test_the_main_loop_does_not_spin_when_no_interface_is_listened_on():
+    """Found on hardware, not in a test — which is why this one exists.
+
+    A generic profile declares no listen interfaces, so listen_coroutines comes
+    out empty. asyncio.gather() over an empty list returns immediately, so the
+    while-loop ran with nothing to await: 100% of a core, and the event loop
+    starved to the point the daemon never acquired its D-Bus name. The GUI then
+    finds no daemon at all, which looks nothing like the actual cause.
+
+    The loop must sleep instead. Asserted on the source because reproducing the
+    spin means running the real loop and measuring CPU.
+    """
+    import re
+    from pathlib import Path
+
+    import arctis_sound_manager.core as core_mod
+
+    src = Path(core_mod.__file__).read_text()
+    body = re.search(r"async def loop\(self\):(.*?)\n    def ", src, re.S)
+    assert body, "loop() moved — this test needs updating"
+    body = body.group(1)
+
+    guard = body.index("if not listen_coroutines:")
+    gather = body.index("await asyncio.gather(*listen_coroutines")
+    assert guard < gather, "the empty-list guard must come before the gather"
+    assert "await asyncio.sleep" in body[guard:gather], (
+        "the guard must yield to the event loop, not just continue")
+
+
+def test_every_headset_profile_has_something_to_listen_on():
+    """Which is why no headset can hit the spin: they all declare interfaces,
+    and the validation refuses a profile that does not."""
+    from arctis_sound_manager.config import load_device_configurations
+
+    for c in load_device_configurations():
+        if getattr(c, "generic", False):
+            assert c.listen_interface_indexes == [], "generic has none by design"
+        else:
+            assert c.listen_interface_indexes, f"{c.name} declares no listen interface"

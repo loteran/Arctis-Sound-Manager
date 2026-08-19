@@ -1424,6 +1424,19 @@ class CoreEngine:
                 if poll_task is None or poll_task.done():
                     poll_task = asyncio.create_task(self._status_poll_loop())
 
+            if not listen_coroutines:
+                # Nothing to listen on. gather() over an empty list returns
+                # immediately, so this while-loop would spin at 100% CPU and
+                # never yield — the event loop never gets to acquire the D-Bus
+                # name, and the GUI finds no daemon at all.
+                #
+                # No headset reaches this: every profile declares at least one
+                # listen interface, and the validation refuses one that does
+                # not. The generic profile (#189) has none by definition, which
+                # is how this surfaced — on hardware, not in a test.
+                await asyncio.sleep(1)
+                continue
+
             await asyncio.gather(*listen_coroutines, return_exceptions=True)
 
         # Cleanup on stop
