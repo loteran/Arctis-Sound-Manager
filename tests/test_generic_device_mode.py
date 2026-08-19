@@ -198,3 +198,112 @@ def test_generic_mode_counts_as_online_so_routing_behaves():
         assert engine.is_device_online() is True
     finally:
         device_state.clear()
+
+
+# ── switching between the two worlds ──────────────────────────────────────────
+
+def _engine_for_switch(*, generic_mode: bool):
+    """An engine wired for configure_virtual_sinks, with the USB scan mocked."""
+    from arctis_sound_manager.core import CoreEngine
+
+    engine = _engine(generic_mode=generic_mode)
+    engine._detect_lock = threading.Lock()
+    engine._device_lock = threading.Lock()
+    engine.loopback_manager = MagicMock()
+    engine.redirect_audio_on_disconnect = MagicMock()
+    engine.release_all_interfaces = MagicMock()
+    engine.kernel_attach = MagicMock()
+    engine.kernel_detach = MagicMock(return_value=True)
+    engine.device_settings = None
+    engine._claim_default_source = MagicMock()
+    # _engine() stubs teardown for the unit tests above; this group is about
+    # what teardown actually does, so put the real one back.
+    del engine.teardown
+    return engine
+
+
+def test_a_real_arctis_appearing_takes_over_from_generic_mode():
+    """The switch that decides whether this feature is safe to ship.
+
+    Someone runs generic mode on their onboard output, then plugs their Arctis
+    in. The USB scan must win: teardown of the generic setup, then the normal
+    path. teardown() guards its USB work with `if self.usb_device`, which is
+    None here — so it must not raise on a session that never had a device.
+    """
+    from arctis_sound_manager import device_state
+    from arctis_sound_manager.config import load_device_configurations
+
+    engine = _engine_for_switch(generic_mode=True)
+
+    # First pass: no Arctis, generic mode builds the channels.
+    with patch("arctis_sound_manager.sonar_to_pipewire.check_and_fix_stale_configs",
+               return_value=(False, False)):
+        engine._setup_generic_device()
+    try:
+        assert engine.device_config is not None and engine.device_config.generic
+        assert engine.usb_device is None
+
+        # Second pass: the headset is now attached. teardown must survive being
+        # called with no usb_device, and the generic profile must be dropped.
+        engine.teardown()
+
+        assert engine.usb_device is None
+        engine.loopback_manager.stop_all.assert_called()
+        # No USB call was attempted on a session that never had a device.
+        engine.release_all_interfaces.assert_not_called()
+        engine.kernel_attach.assert_not_called()
+    finally:
+        device_state.clear()
+
+
+def test_the_usb_scan_still_wins_over_the_generic_profile():
+    """configure_virtual_sinks tries every profile before falling back.
+
+    The generic one contributes nothing to that loop — no product ids to match
+    — so a connected Arctis is found exactly as before and _setup_generic_device
+    is never consulted.
+    """
+    engine = _engine_for_switch(generic_mode=True)
+    engine._setup_generic_device = MagicMock(return_value=True)
+
+    real = next(c for c in engine.device_configurations if not getattr(c, "generic", False))
+    engine._find_hid_device = lambda vid, pids: (
+        MagicMock(idProduct=real.product_ids[0], idVendor=real.vendor_id)
+        if pids == real.product_ids else None)
+
+    with patch.object(type(engine), "_discover_physical_nodes",
+                      return_value=(None, None, None)):
+        engine.configure_virtual_sinks()
+
+    engine._setup_generic_device.assert_not_called()
+
+
+# ── the UI degrades on its own ────────────────────────────────────────────────
+
+def test_the_profile_declares_nothing_for_the_headset_pages_to_draw():
+    """This is what makes the feature cheap.
+
+    Pages are built from whatever the profile declares (#146 — the rule that
+    stops a headset showing dead widgets for features it does not have). A
+    profile with no settings and no status therefore empties the Headset and
+    DAC pages with no conditional GUI code at all.
+    """
+    from arctis_sound_manager.config import load_device_configurations
+
+    generic = next(c for c in load_device_configurations() if getattr(c, "generic", False))
+    assert generic.settings == {} or len(generic.settings) == 0
+    assert generic.status is None
+    assert generic.oled is None, "no OLED to drive"
+    assert generic.hardware_eq_command is None, "the on-device EQ belongs to the headset"
+    assert generic.online_status is None, "so is_device_online() answers True"
+
+
+def test_the_tray_shows_no_battery_rather_than_breaking():
+    """The tray reads battery out of the status payload, which is empty here."""
+    pytest.importorskip("PySide6")
+    from arctis_sound_manager.gui.systray_app import QSystrayApp
+
+    extract = QSystrayApp._extract_battery_percent
+    assert extract({}) is None
+    assert extract({"headset": {}}) is None
+    assert extract(None) is None
