@@ -162,6 +162,33 @@ class DacPage(QWidget):
 
     # ── Theme propagation ─────────────────────────────────────────────────────
 
+    def update_status(self, status: dict) -> None:
+        """Take the Battery row away on a device that has no battery.
+
+        The list of screen elements is static, so every DAC was offered a
+        "Battery" checkbox — including the wired ones, which have no battery
+        anywhere in them. Ticking it put "Offline" on the screen, which reads as
+        a connection fault rather than "this device has nothing to report".
+
+        Only a *populated* status is allowed to hide the row: an empty payload
+        means the daemon has not answered yet, and a missing key there says
+        nothing about the hardware. So the row survives startup and disappears
+        only once the device has actually described itself.
+        """
+        if not status:
+            return
+
+        row = self._display_rows.get('oled_show_battery')
+        if row is None:
+            return
+
+        has_battery = any(
+            isinstance(category, dict)
+            and isinstance(category.get('headset_battery_charge'), dict)
+            for category in status.values()
+        )
+        row.setVisible(has_battery)
+
     def apply_theme(self, t=None) -> None:
         """Restyle the DAC page for the current active theme."""
         self.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
@@ -307,6 +334,7 @@ class DacPage(QWidget):
         col.setSpacing(2)
 
         self._display_checkboxes: dict[str, QCheckBox] = {}
+        self._display_rows: dict[str, QWidget] = {}
         self._font_spinboxes: dict[str, QSpinBox] = {}
         cb_style = self._checkbox_style()
         sp_style = self._spinbox_style()
@@ -329,6 +357,9 @@ class DacPage(QWidget):
                 fixed_hl.addWidget(sp)
                 self._font_spinboxes[font_key] = sp
             col.addWidget(fixed_row)
+            # Kept so update_status() can take the battery row away on a device
+            # that has no battery to put in it.
+            self._display_rows[key] = fixed_row
 
             # Indented sub-options (e.g. 24h/12h clock under the Time row).
             for sub_key, sub_label in _FIXED_SUB_OPTIONS.get(key, []):

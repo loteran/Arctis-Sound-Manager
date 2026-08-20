@@ -401,6 +401,38 @@ def _arctis_pw_nodes(objects: list | None = None) -> str:
     return '\n'.join(kept).strip()
 
 
+def _device_status_dump() -> str:
+    """The daemon's GetStatus payload, pretty-printed, or why it is missing.
+
+    Asked over D-Bus rather than read from a file: this is what the daemon
+    decoded from the device a moment ago, which is exactly the thing a status
+    bug is about. A daemon that is not running is itself worth reporting, so
+    the failure is written into the report instead of being swallowed.
+    """
+    import json
+
+    from arctis_sound_manager.constants import (DBUS_BUS_NAME,
+                                                DBUS_STATUS_INTERFACE_NAME,
+                                                DBUS_STATUS_OBJECT_PATH)
+
+    out = _run_out([
+        'busctl', '--user', '--json=short', 'call',
+        DBUS_BUS_NAME, DBUS_STATUS_OBJECT_PATH,
+        DBUS_STATUS_INTERFACE_NAME, 'GetStatus',
+    ])
+    if not out:
+        return '(no reply — is the arctis-manager daemon running?)'
+
+    # busctl --json=short wraps the reply as {"type":"s","data":["<json>"]};
+    # unwrap it so the report shows the status itself rather than two layers of
+    # quoting. Anything unexpected is printed as it came back.
+    try:
+        payload = json.loads(out)['data'][0]
+        return json.dumps(json.loads(payload), indent=2, sort_keys=True)
+    except (KeyError, IndexError, TypeError, ValueError):
+        return out
+
+
 def collect_system_info() -> dict:
     info: dict = {}
 
@@ -457,6 +489,17 @@ def collect_system_info() -> dict:
         info['usb_hid'] = r.stdout.strip() if r.returncode == 0 else r.stderr.strip()
     except Exception:
         info['usb_hid'] = ''
+
+    # What the daemon actually decodes from the device: the battery level, the
+    # power status, and every other status variable this model reports.
+    #
+    # Added after a Discord report ("battery just shows offline on my DAC")
+    # that could not be settled from a bug report: the USB section says which
+    # device is plugged in, but nothing said what ASM reads out of it — and the
+    # difference between "this model has no battery" and "the battery is not
+    # being decoded" is the whole answer. Redacted of nothing: the payload is
+    # levels and mode names, no identifiers.
+    info['device_status'] = _device_status_dump()
 
     # PipeWire audio cards
     try:
@@ -787,6 +830,16 @@ def format_bug_report(traceback_str: Optional[str] = None) -> str:
             '## Crash traceback',
             '```',
             traceback_str.strip(),
+            '```',
+            '',
+        ]
+
+    device_status = info.get('device_status', '')
+    if device_status:
+        lines += [
+            '## Device status (what the daemon decodes)',
+            '```json',
+            device_status,
             '```',
             '',
         ]

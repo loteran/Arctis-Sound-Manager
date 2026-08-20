@@ -20,6 +20,8 @@ from pathlib import Path
 from PIL import Image
 
 from arctis_sound_manager.oled_protocol import OledProtocol
+from arctis_sound_manager.power_status import (HeadsetPower,
+                                               normalize_power_value)
 from arctis_sound_manager.oled_renderer import OledRenderer
 from arctis_sound_manager.weather_service import WeatherData, WeatherService
 from arctis_sound_manager.config import parsed_status
@@ -293,10 +295,36 @@ class OledManager:
             self._last_update_time = datetime.now().timestamp()
 
         parsed = parsed_status(status, self._core.device_config)
-        power_status = parsed.get("headset_power_status", "")
+        # Three states, not two. This used to be a raw string test against
+        # ("offline", "paired_offline", ""), which folded two different answers
+        # into one: a headset that is *off*, and a device that never reports a
+        # power status at all. The empty string is the second one — and on a
+        # wired DAC, which has no battery and no power status to give, it meant
+        # the screen wrote "Offline" forever. Reported on Discord as "battery
+        # just shows offline on my DAC".
+        #
+        # normalize_power_value() also settles the vocabulary: device YAMLs say
+        # 'off' (Nova 5, Nova 7*, Arctis 7+/9/1 Wireless) or 'offline' (Nova Pro
+        # Wireless, Elite, Omni). Only 'offline' was listed here, so on an
+        # 'off' device a powered-down headset would have kept a frozen
+        # percentage on screen — the same half-the-devices mistake as #124. No
+        # 'off' device has an OLED today, so this was latent rather than live;
+        # it is fixed here because the next one might.
+        power_raw = parsed.get("headset_power_status")
         battery = int(parsed.get("headset_battery_charge", -1))
-        charging = power_status == "cable_charging"
-        connected = power_status not in ("offline", "paired_offline", "")
+        power = normalize_power_value(power_raw)
+        # Kept as a literal: 'cable_charging' is one dialect's word for "on, and
+        # on its stand", and normalizing it to ON deliberately loses the detail
+        # the charging icon needs.
+        charging = (isinstance(power_raw, str)
+                    and power_raw.strip().lower() == "cable_charging")
+        connected = power is not HeadsetPower.OFF
+        # UNKNOWN is not OFF. A device that reports a level but no power status
+        # (or one whose status word we have no rule for, like the Elite's
+        # 'standby') has a perfectly good reading, and hiding it behind
+        # "Offline" throws away the only thing the user asked to see. The home
+        # page already draws this distinction; the screen did not.
+        has_battery = battery >= 0
 
         device_config = self._core.device_config
         active_profile = profile_manager.active_profile_name() or (
@@ -337,7 +365,13 @@ class OledManager:
             eq_preset=eq_preset,
             weather=weather_data,
             show_time=gs.oled_show_time,
-            show_battery=gs.oled_show_battery,
+            # Nothing to say beats saying the wrong thing: a device with no
+            # battery to report and no power status simply gets no battery
+            # element. "Offline" would be a claim about a connection on a DAC
+            # that has no wireless link at all. A headset that is genuinely off
+            # still gets it — there, "Offline" is the answer.
+            show_battery=gs.oled_show_battery and (has_battery
+                                                   or power is HeadsetPower.OFF),
             show_profile=gs.oled_show_profile,
             show_eq=gs.oled_show_eq,
             show_mic_status=gs.oled_show_mic_status,
