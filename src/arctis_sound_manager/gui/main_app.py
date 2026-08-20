@@ -566,11 +566,27 @@ class QMainApp(QBaseDesktopApp):
             from arctis_sound_manager.gui.udev_dialog import UdevRulesDialog
             from PySide6.QtWidgets import QDialog
             dlg = UdevRulesDialog(parent=self.main_window, mode='reload')
-            if dlg.exec() == QDialog.DialogCode.Accepted:
-                self.dbus_wrapper.reload_configs()
-                self._perm_dialog_shown = False
+            # Kept on the instance so the branch below can dismiss it: the
+            # daemon goes on retrying while this is open, so udev landing late
+            # (or the user fixing it from another window) can make the dialog
+            # obsolete while the user is still reading it. Asking someone to
+            # act on a problem that no longer exists is its own bug.
+            self._perm_dialog = dlg
+            try:
+                if dlg.exec() == QDialog.DialogCode.Accepted:
+                    self.dbus_wrapper.reload_configs()
+                    self._perm_dialog_shown = False
+            finally:
+                self._perm_dialog = None
         elif not settings.get('permission_error'):
             self._perm_dialog_shown = False
+            dlg = getattr(self, '_perm_dialog', None)
+            if dlg is not None:
+                self.logger.info(
+                    "USB access recovered while the permissions dialog was "
+                    "open — closing it, there is nothing left to fix."
+                )
+                dlg.reject()
 
     def on_status_received(self, status: dict):
         if status == self.status:
