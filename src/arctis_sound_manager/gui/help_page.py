@@ -256,6 +256,16 @@ HELP_CONTENT: dict[str, dict] = {
                     "The slider controls compression intensity (threshold, ratio and makeup gain). "
                     "Useful for keeping a consistent mic level in voice chat.\n"
                     "Requires: swh-plugins package.\n\n"
+                    "── DeepFilterNet ──\n"
+                    "A second noise-cancellation engine, offered alongside ClearCast. It is "
+                    "heavier on the CPU and better on steady background noise; ClearCast "
+                    "reacts faster. Only one runs at a time — pick whichever sounds better "
+                    "on your voice and your room.\n\n"
+                    "── Which microphone ──\n"
+                    "By default the chain follows your headset's microphone. You can point "
+                    "it at a desk microphone instead, and have ASM switch between the two on "
+                    "its own — when the headset is disconnected, when its mic is muted, or "
+                    "both.\n\n"
                     "Processing chain order: EQ → Boost → Noise Reduction → Noise Gate → "
                     "ClearCast → Compressor."
                 ),
@@ -314,6 +324,50 @@ HELP_CONTENT: dict[str, dict] = {
                 ),
             },
             {
+                "heading": "Clips",
+                "body": (
+                    "Clips keeps the last thirty seconds of your screen in memory and writes them "
+                    "to a file when you ask for them — nothing is recorded to disk until you press "
+                    "Save, so the moment worth keeping is already captured by the time you decide "
+                    "it was.\n\n"
+                    "Clips ships switched off. Turn it on from the Clips page; the packages it "
+                    "needs are installed from that same switch.\n\n"
+                    "── Saving a clip ──\n"
+                    "• Start arms the rolling buffer. Save writes what it holds.\n"
+                    "• A global shortcut saves without switching windows. Your desktop owns that "
+                    "binding, so the combination shown is the one it actually gave out — change it "
+                    "with the Change… button, which opens your system's own shortcut settings.\n"
+                    "• Capture automatically while a game is running arms the buffer when a game "
+                    "starts playing audio and releases it when the game is gone. A buffer that has "
+                    "to be armed by hand is armed after the moment worth keeping.\n\n"
+                    "── What is in the file ──\n"
+                    "Each Sonar channel is written as its own audio track: game, chat, media and "
+                    "the microphone stay separate, so a clip can be re-mixed afterwards instead of "
+                    "being stuck with what you happened to be hearing.\n\n"
+                    "── The editor ──\n"
+                    "Double-click a clip to open it. The preview is a mixer: every track plays at "
+                    "once with its own level and mute, and what you set is what gets exported. "
+                    "Drag on the timeline to scrub, drag the lit block to move the selection, its "
+                    "edges to resize it. Trim and levels are saved per clip, so closing the editor "
+                    "no longer throws that work away.\n\n"
+                    "── Where clips are saved ──\n"
+                    "In your video folder, under \"ASM Clips\". Change it from the gear on the "
+                    "Clips page — Folder: Change…. Clips already recorded stay where they are; "
+                    "only new ones follow the new folder. Default returns to the video folder."
+                ),
+            },
+            {
+                "heading": "Stream Guard",
+                "body": (
+                    "When you share your screen, the sound that goes with it is normally everything "
+                    "your machine is playing. Stream Guard keeps the channels you have not allowed "
+                    "out of that stream, so a private call or a video in another window does not "
+                    "reach your audience.\n\n"
+                    "It runs as its own background service and only acts while something is "
+                    "actually capturing your screen."
+                ),
+            },
+            {
                 "heading": "Settings",
                 "body": (
                     "The Settings page contains all configurable parameters for your device.\n\n"
@@ -336,6 +390,23 @@ HELP_CONTENT: dict[str, dict] = {
                     "dialog: for package manager installs (pacman, dnf, apt) it shows the command "
                     "and can open a terminal automatically; for pipx/pip installs it downloads and "
                     "installs the wheel in-app."
+                ),
+            },
+            {
+                "heading": "Using ASM without a SteelSeries headset",
+                "body": (
+                    "The channels, per-channel volume, the Sonar equaliser, spatial audio, the "
+                    "application router and Clips never talk to USB — they work on PipeWire "
+                    "devices. Only the conversation with the headset needs an Arctis: battery, "
+                    "ANC, sidetone, ChatMix, the OLED screen.\n\n"
+                    "So ASM can run on any output. In Settings, turn on \"Use ASM without a "
+                    "SteelSeries headset\" and pick the device your headphones are plugged into. "
+                    "An input device is optional — leave it empty if you only want playback, and "
+                    "no microphone chain is set up.\n\n"
+                    "The Headset and DAC pages come up empty in this mode rather than showing "
+                    "controls that would do nothing.\n\n"
+                    "Nothing changes for a SteelSeries headset: the mode is off by default, it is "
+                    "never turned on for you, and a connected Arctis always takes precedence."
                 ),
             },
             {
@@ -656,6 +727,16 @@ HELP_CONTENT: dict[str, dict] = {
                     "Le curseur contrôle l'intensité de la compression. "
                     "Utile pour garder un niveau micro constant en chat vocal.\n"
                     "Nécessite : paquet swh-plugins.\n\n"
+                    "── DeepFilterNet ──\n"
+                    "Un second moteur de réduction de bruit, proposé à côté de ClearCast. Il "
+                    "coûte plus de CPU et se débrouille mieux sur un bruit de fond constant ; "
+                    "ClearCast réagit plus vite. Un seul fonctionne à la fois : choisissez "
+                    "celui qui rend le mieux sur votre voix et dans votre pièce.\n\n"
+                    "── Quel microphone ──\n"
+                    "Par défaut, la chaîne suit le micro de votre casque. Vous pouvez la "
+                    "diriger vers un micro de bureau, et laisser ASM basculer tout seul "
+                    "entre les deux : quand le casque est déconnecté, quand son micro est "
+                    "coupé, ou les deux.\n\n"
                     "Ordre de la chaîne : EQ → Boost → Noise Reduction → Noise Gate → "
                     "ClearCast → Compresseur."
                 ),
@@ -715,6 +796,53 @@ HELP_CONTENT: dict[str, dict] = {
                 ),
             },
             {
+                "heading": "Clips",
+                "body": (
+                    "Clips garde les trente dernières secondes de votre écran en mémoire et ne les "
+                    "écrit dans un fichier que lorsque vous le demandez — rien n'est enregistré sur "
+                    "le disque avant que vous n'appuyiez sur Enregistrer, si bien que le moment qui "
+                    "méritait d'être gardé l'est déjà quand vous vous en apercevez.\n\n"
+                    "Clips est désactivé par défaut. Activez-le depuis la page Clips ; les paquets "
+                    "nécessaires s'installent depuis ce même interrupteur.\n\n"
+                    "── Enregistrer un clip ──\n"
+                    "• Démarrer arme le tampon glissant. Enregistrer écrit ce qu'il contient.\n"
+                    "• Un raccourci global enregistre sans changer de fenêtre. C'est votre bureau "
+                    "qui décide de ce raccourci : la combinaison affichée est celle qu'il a "
+                    "réellement attribuée. Le bouton Changer… ouvre les réglages de raccourcis de "
+                    "votre système.\n"
+                    "• Capturer automatiquement pendant qu'un jeu tourne arme le tampon dès qu'un "
+                    "jeu émet du son et le relâche quand il disparaît. Un tampon qu'il faut armer "
+                    "à la main est armé après le moment qu'on voulait garder.\n\n"
+                    "── Ce que contient le fichier ──\n"
+                    "Chaque canal Sonar occupe sa propre piste audio : jeu, chat, média et micro "
+                    "restent séparés. Un clip peut donc être remixé après coup au lieu de rester "
+                    "figé sur ce que vous entendiez à cet instant.\n\n"
+                    "── L'éditeur ──\n"
+                    "Double-cliquez sur un clip pour l'ouvrir. L'aperçu est une table de mixage : "
+                    "toutes les pistes jouent ensemble, chacune avec son niveau et sa coupure, et "
+                    "ce que vous réglez est ce qui sera exporté. Faites glisser sur la frise pour "
+                    "vous déplacer, le bloc éclairé pour déplacer la sélection, ses bords pour la "
+                    "redimensionner. Découpe et niveaux sont enregistrés par clip : fermer "
+                    "l'éditeur ne jette plus ce travail.\n\n"
+                    "── Où sont enregistrés les clips ──\n"
+                    "Dans votre dossier vidéo, sous « ASM Clips ». Changez-le depuis l'engrenage de "
+                    "la page Clips — Dossier : Changer…. Les clips déjà enregistrés restent où ils "
+                    "sont ; seuls les nouveaux suivent le nouveau dossier. Défaut revient au "
+                    "dossier vidéo."
+                ),
+            },
+            {
+                "heading": "Stream Guard",
+                "body": (
+                    "Quand vous partagez votre écran, le son qui l'accompagne est normalement tout "
+                    "ce que votre machine joue. Stream Guard tient les canaux que vous n'avez pas "
+                    "autorisés à l'écart de ce flux : un appel privé ou une vidéo dans une autre "
+                    "fenêtre n'atteint pas votre audience.\n\n"
+                    "Il tourne comme son propre service en arrière-plan et n'agit que pendant "
+                    "qu'une capture d'écran est réellement en cours."
+                ),
+            },
+            {
                 "heading": "Paramètres",
                 "body": (
                     "La page Paramètres regroupe tous les réglages configurables de l'appareil.\n\n"
@@ -737,6 +865,25 @@ HELP_CONTENT: dict[str, dict] = {
                     "via gestionnaire de paquets (pacman, dnf, apt) il affiche la commande et peut "
                     "ouvrir un terminal automatiquement ; pour pipx/pip il télécharge et installe "
                     "le wheel directement dans l'application."
+                ),
+            },
+            {
+                "heading": "Utiliser ASM sans casque SteelSeries",
+                "body": (
+                    "Les canaux, le volume par canal, l'égaliseur Sonar, le son spatial, le "
+                    "routeur d'applications et Clips ne parlent jamais à l'USB : ils travaillent "
+                    "sur des périphériques PipeWire. Seul le dialogue avec le casque exige un "
+                    "Arctis : batterie, ANC, retour micro, ChatMix, écran OLED.\n\n"
+                    "ASM peut donc fonctionner sur n'importe quelle sortie. Dans les Paramètres, "
+                    "activez « Utiliser ASM sans casque SteelSeries » et choisissez le "
+                    "périphérique sur lequel votre casque est branché. Le périphérique d'entrée "
+                    "est facultatif : laissez-le vide si vous ne voulez que la lecture, aucune "
+                    "chaîne micro ne sera alors créée.\n\n"
+                    "Dans ce mode, les pages Casque et DAC s'affichent vides plutôt que de "
+                    "proposer des réglages sans effet.\n\n"
+                    "Rien ne change pour un casque SteelSeries : le mode est désactivé par "
+                    "défaut, il ne s'active jamais tout seul, et un Arctis connecté a toujours "
+                    "la priorité."
                 ),
             },
             {
@@ -1060,6 +1207,16 @@ HELP_CONTENT: dict[str, dict] = {
                     "El deslizador controla la intensidad de la compresión. "
                     "Útil para mantener un nivel de micro constante en chat de voz.\n"
                     "Requiere: paquete swh-plugins.\n\n"
+                    "── DeepFilterNet ──\n"
+                    "Un segundo motor de cancelación de ruido, ofrecido junto a ClearCast. "
+                    "Consume más CPU y se defiende mejor con un ruido de fondo constante; "
+                    "ClearCast reacciona más rápido. Solo funciona uno a la vez: elija el "
+                    "que suene mejor con su voz y en su sala.\n\n"
+                    "── Qué micrófono ──\n"
+                    "De forma predeterminada, la cadena sigue el micrófono de sus "
+                    "auriculares. Puede apuntarla a un micrófono de escritorio y dejar que "
+                    "ASM cambie solo entre ambos: cuando los auriculares se desconectan, "
+                    "cuando su micrófono está silenciado, o ambas cosas.\n\n"
                     "Orden de la cadena: EQ → Boost → Noise Reduction → Noise Gate → "
                     "ClearCast → Compresor."
                 ),
@@ -1119,6 +1276,52 @@ HELP_CONTENT: dict[str, dict] = {
                 ),
             },
             {
+                "heading": "Clips",
+                "body": (
+                    "Clips mantiene en memoria los últimos treinta segundos de su pantalla y solo "
+                    "los escribe en un archivo cuando usted lo pide: no se graba nada en el disco "
+                    "hasta que pulsa Guardar, de modo que el momento que merecía conservarse ya "
+                    "está capturado cuando se da cuenta de ello.\n\n"
+                    "Clips viene desactivado. Actívelo desde la página Clips; los paquetes que "
+                    "necesita se instalan desde ese mismo interruptor.\n\n"
+                    "── Guardar un clip ──\n"
+                    "• Iniciar arma el búfer continuo. Guardar escribe lo que contiene.\n"
+                    "• Un atajo global guarda sin cambiar de ventana. Es su escritorio quien "
+                    "decide ese atajo: la combinación mostrada es la que él ha asignado "
+                    "realmente. El botón Cambiar… abre los ajustes de atajos de su sistema.\n"
+                    "• Capturar automáticamente mientras se ejecuta un juego arma el búfer cuando "
+                    "un juego empieza a emitir sonido y lo libera cuando el juego desaparece. Un "
+                    "búfer que hay que armar a mano se arma después del momento que se quería.\n\n"
+                    "── Qué contiene el archivo ──\n"
+                    "Cada canal de Sonar ocupa su propia pista de audio: juego, chat, multimedia y "
+                    "micrófono quedan separados. Así, un clip puede remezclarse después en lugar "
+                    "de quedar fijado a lo que usted oía en ese instante.\n\n"
+                    "── El editor ──\n"
+                    "Haga doble clic en un clip para abrirlo. La vista previa es una mesa de "
+                    "mezclas: todas las pistas suenan a la vez, cada una con su nivel y su "
+                    "silencio, y lo que ajuste es lo que se exportará. Arrastre sobre la línea de "
+                    "tiempo para desplazarse, el bloque iluminado para mover la selección y sus "
+                    "bordes para redimensionarla. El recorte y los niveles se guardan por clip: "
+                    "cerrar el editor ya no descarta ese trabajo.\n\n"
+                    "── Dónde se guardan los clips ──\n"
+                    "En su carpeta de vídeos, dentro de «ASM Clips». Cámbiela desde el engranaje "
+                    "de la página Clips — Carpeta: Cambiar…. Los clips ya grabados se quedan donde "
+                    "están; solo los nuevos siguen la nueva carpeta. Predeterminada vuelve a la "
+                    "carpeta de vídeos."
+                ),
+            },
+            {
+                "heading": "Stream Guard",
+                "body": (
+                    "Cuando comparte su pantalla, el sonido que la acompaña es normalmente todo lo "
+                    "que su equipo está reproduciendo. Stream Guard mantiene fuera de esa "
+                    "transmisión los canales que usted no ha autorizado: una llamada privada o un "
+                    "vídeo en otra ventana no llega a su audiencia.\n\n"
+                    "Funciona como su propio servicio en segundo plano y solo actúa mientras algo "
+                    "está capturando realmente su pantalla."
+                ),
+            },
+            {
                 "heading": "Ajustes",
                 "body": (
                     "La página de Ajustes agrupa todos los parámetros configurables del "
@@ -1141,6 +1344,24 @@ HELP_CONTENT: dict[str, dict] = {
                     "haz clic en el resultado para abrir el diálogo de actualización: para installs "
                     "con gestor de paquetes (pacman, dnf, apt) muestra el comando y puede abrir un "
                     "terminal automáticamente; para pipx/pip descarga e instala el wheel directamente."
+                ),
+            },
+            {
+                "heading": "Usar ASM sin auriculares SteelSeries",
+                "body": (
+                    "Los canales, el volumen por canal, el ecualizador Sonar, el audio espacial, "
+                    "el enrutador de aplicaciones y Clips nunca hablan con el USB: trabajan sobre "
+                    "dispositivos de PipeWire. Solo la conversación con los auriculares necesita "
+                    "un Arctis: batería, ANC, retorno de micrófono, ChatMix, pantalla OLED.\n\n"
+                    "Por eso ASM puede funcionar con cualquier salida. En Ajustes, active «Usar "
+                    "ASM sin auriculares SteelSeries» y elija el dispositivo donde están "
+                    "conectados sus auriculares. El dispositivo de entrada es opcional: déjelo "
+                    "vacío si solo quiere reproducción y no se creará ninguna cadena de "
+                    "micrófono.\n\n"
+                    "En este modo, las páginas Auriculares y DAC aparecen vacías en lugar de "
+                    "mostrar controles que no harían nada.\n\n"
+                    "Nada cambia para unos auriculares SteelSeries: el modo viene desactivado, "
+                    "nunca se activa solo y unos Arctis conectados siempre tienen prioridad."
                 ),
             },
             {
