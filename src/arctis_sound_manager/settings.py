@@ -190,6 +190,14 @@ class GeneralSettings(JsonSerializable):
     # the switch is for people who would rather decide each time.
     clips_autostart: bool = True
 
+    # Where clips are written. None means "wherever the desktop says videos
+    # go" — see clip_library.clip_dir(), which owns the whole resolution
+    # order. Stored as a plain string rather than a Path because this file is
+    # YAML and round-trips primitives; the empty string is treated as unset,
+    # so clearing the field in the UI (or by hand) returns to the default
+    # rather than writing clips to the current working directory (#192).
+    clips_directory: str | None = None
+
     # Stability mode: force PipeWire's quantum (buffer size) while ASM runs.
     # 0 = leave PipeWire alone (default).
     #

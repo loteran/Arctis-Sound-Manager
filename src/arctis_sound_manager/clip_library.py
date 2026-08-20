@@ -95,15 +95,45 @@ MIX_SUFFIX = ".mix.json"
 _SIDECAR_SUFFIXES = (TRIM_SUFFIX, MIX_SUFFIX, ".tracks.json")
 
 
+def configured_clip_dir() -> Path | None:
+    """The folder the user picked, or None if they never picked one.
+
+    Kept separate from :func:`clip_dir` so the UI can tell "I chose this" from
+    "this is where it happens to go", and so a broken settings file degrades to
+    the default instead of taking the Clips page down with it.
+    """
+    try:
+        from arctis_sound_manager.settings import GeneralSettings
+
+        raw = GeneralSettings.read_from_file().clips_directory
+    except Exception:  # noqa: BLE001 — a broken settings file is not fatal here
+        log.debug("could not read clips_directory, using the default", exc_info=True)
+        return None
+    if not raw or not str(raw).strip():
+        return None
+    return Path(str(raw)).expanduser()
+
+
 def clip_dir() -> Path:
     """Where clips are read from and written to.
 
-    A legacy ~/Videos/ASM Clips that already holds recordings stays the active
-    folder. Moving someone's videos out from under them on an upgrade is not
-    this function's call to make, and a user who has clips there has a file
-    manager, a link, or a muscle memory pointing at that path. Only an absent
-    or empty legacy folder hands over to the localised location.
+    In order:
+
+    1. the folder the user chose, which beats everything — it was a deliberate
+       act, and second-guessing it would make the setting a suggestion;
+    2. a legacy ~/Videos/ASM Clips that already holds recordings. Moving
+       someone's videos out from under them on an upgrade is not this
+       function's call to make, and a user who has clips there has a file
+       manager, a link, or a muscle memory pointing at that path;
+    3. the localised video folder, which is where a fresh install lands.
+
+    Note that (1) is not checked for existence: a chosen folder sitting on an
+    unmounted drive is still the user's answer, and the writer creates it. The
+    Clips page is what tells them when it cannot be written to.
     """
+    chosen = configured_clip_dir()
+    if chosen is not None:
+        return chosen
     if _LEGACY_CLIP_DIR.is_dir() and _has_clips(_LEGACY_CLIP_DIR):
         return _LEGACY_CLIP_DIR
     return _videos_dir() / _CLIP_DIR_NAME

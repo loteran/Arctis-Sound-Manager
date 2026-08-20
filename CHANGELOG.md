@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.4.1] - 20 August 2026
 
+### Added
+
+- **The clips folder can be changed.** Under the gear in the Clips page, next to the capture settings: pick any folder you can write to, and new clips go there. Clips already recorded stay where they are — moving a library means moving each clip's trim, mix and track files with it, possibly across drives and possibly while a capture is running, and a library you want moved is one you can move yourself. "Default" returns to your desktop's video folder. ([#192](https://github.com/loteran/Arctis-Sound-Manager/issues/192))
+
 ### Fixed
 
 - **Clips now go to your actual video folder.** The save location was the literal path `~/Videos/ASM Clips` — but "Videos" is the English name of a folder every desktop translates: `~/Vidéos`, `~/Videók`, `~/ビデオ`. On any system not running in English, ASM quietly created a second video folder beside the real one, and clips landed somewhere the file manager never points at. The folder is now read from your desktop's own configuration, so it follows whatever your system calls it. If you already have clips in `~/Videos/ASM Clips`, that stays your folder — nothing is moved out from under you. ([#192](https://github.com/loteran/Arctis-Sound-Manager/issues/192))

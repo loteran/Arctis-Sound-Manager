@@ -13,6 +13,7 @@ neither, rather than taking the whole window down with an ImportError.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import subprocess
 import time
@@ -27,6 +28,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QFileDialog,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -416,6 +418,30 @@ class ClipsPage(QWidget):
         self._source_btn.clicked.connect(self._on_change_source)
         _row("clips_source", "Capture:", self._source_btn)
 
+        # Where clips land. Shown rather than assumed: the default follows the
+        # desktop's own video folder, whatever it is called in the user's
+        # language, so "the usual place" is not a thing anyone can point at
+        # from memory (#192).
+        self._folder_lbl = QLabel("")
+        self._folder_lbl.setStyleSheet(
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; "
+            f"background: transparent;")
+        self._folder_btn_change = QPushButton(_tr("clips_change_folder", "Change…"))
+        self._folder_btn_change.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._folder_btn_change.setToolTip(_tr(
+            "clips_folder_hint",
+            "Choose where clips are saved. Clips already recorded stay where "
+            "they are — only new ones go to the new folder."))
+        self._folder_btn_change.clicked.connect(self._on_change_folder)
+        self._folder_reset_btn = QPushButton(_tr("clips_reset_folder", "Default"))
+        self._folder_reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._folder_reset_btn.setToolTip(_tr(
+            "clips_reset_folder_hint",
+            "Go back to your desktop's video folder."))
+        self._folder_reset_btn.clicked.connect(self._on_reset_folder)
+        _row("clips_folder", "Folder:", self._folder_lbl,
+             self._folder_btn_change, self._folder_reset_btn)
+
         self._shortcut_lbl = QLabel("")
         self._shortcut_lbl.setStyleSheet(
             f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; "
@@ -562,6 +588,7 @@ class ClipsPage(QWidget):
 
         self._shortcut = None
         self._bind_shortcut()
+        self._update_folder_label()
         self.refresh_clips()
         self._update_status()
         # Asked once at startup as well as on the timer: a page opened while a
@@ -662,6 +689,73 @@ class ClipsPage(QWidget):
         # budget), so it can only change between captures.
         self._fps.setEnabled(False)
         self._update_status()
+
+    # ── where clips are saved ─────────────────────────────────────────────────
+
+    def _update_folder_label(self) -> None:
+        """Show the folder in use, and offer "Default" only when it can do
+        something — a button that resets what is already the default is noise."""
+        from arctis_sound_manager.clip_library import clip_dir as _dir
+        from arctis_sound_manager.clip_library import configured_clip_dir
+
+        current = str(_dir())
+        # Elided from the left: the tail (…/Vidéos/ASM Clips) is what tells the
+        # folders apart, while the leading /home/<user> is the same every time.
+        metrics = self._folder_lbl.fontMetrics()
+        self._folder_lbl.setText(
+            metrics.elidedText(current, Qt.TextElideMode.ElideLeft, 260))
+        self._folder_lbl.setToolTip(current)
+        self._folder_reset_btn.setVisible(configured_clip_dir() is not None)
+
+    def _on_change_folder(self) -> None:
+        """Pick a new folder for clips to be saved into.
+
+        Existing clips are deliberately left where they are. Moving them would
+        mean moving their sidecars too (trim, mix, tracks), across filesystems,
+        while a capture may be writing — and a user who wants their library
+        moved can move it, whereas one who does not cannot undo it.
+        """
+        from arctis_sound_manager.clip_library import clip_dir as _dir
+
+        chosen = QFileDialog.getExistingDirectory(
+            self, _tr("clips_pick_folder", "Where should clips be saved?"),
+            str(_dir()))
+        if not chosen:
+            return
+
+        target = Path(chosen)
+        if not os.access(target, os.W_OK):
+            # Caught here rather than at the moment a clip is saved: that
+            # moment is the one where the recording is lost.
+            QMessageBox.warning(
+                self, _tr("clips_folder_unwritable_title", "Cannot write there"),
+                _tr("clips_folder_unwritable",
+                    "ASM cannot write to that folder, so clips would fail to "
+                    "save. Pick another one."))
+            return
+
+        self._set_clips_directory(str(target))
+
+    def _on_reset_folder(self) -> None:
+        self._set_clips_directory(None)
+
+    def _set_clips_directory(self, value: str | None) -> None:
+        try:
+            from arctis_sound_manager.settings import GeneralSettings
+            settings = GeneralSettings.read_from_file()
+            settings.clips_directory = value
+            settings.write_to_file()
+        except Exception:  # noqa: BLE001
+            logger.warning("could not persist clips_directory", exc_info=True)
+            QMessageBox.warning(
+                self, _tr("clips_folder_save_failed_title", "Not saved"),
+                _tr("clips_folder_save_failed",
+                    "The new folder could not be saved to your settings."))
+            return
+        self._update_folder_label()
+        # The library on screen is the old folder's — reload so the page shows
+        # what the new one holds rather than clips it will no longer write to.
+        self.refresh_clips()
 
     def _on_change_source(self) -> None:
         """Bring the portal picker back, so what is captured can be re-chosen.

@@ -118,3 +118,82 @@ def test_no_module_hard_codes_the_english_folder() -> None:
     for module in (clip_capture, clips_page):
         src = inspect.getsource(module)
         assert '"Videos"' not in src, f"{module.__name__} still hard-codes ~/Videos"
+
+
+# ── the folder the user picked (issue #192, the request itself) ───────────────
+
+def _set_setting(monkeypatch, value):
+    """Stand in for the settings file, which is YAML on a real home."""
+    class _Settings:
+        clips_directory = value
+
+    class _Loader:
+        @staticmethod
+        def read_from_file():
+            return _Settings()
+
+    import sys
+    import types
+    module = types.ModuleType("arctis_sound_manager.settings")
+    module.GeneralSettings = _Loader
+    monkeypatch.setitem(sys.modules, "arctis_sound_manager.settings", module)
+
+
+def test_configured_folder_wins(home: Path, monkeypatch) -> None:
+    _write_user_dirs(home, '"$HOME/Vidéos"')
+    _set_setting(monkeypatch, str(home / "games" / "clips"))
+    assert clip_library.clip_dir() == home / "games" / "clips"
+
+
+def test_configured_folder_beats_a_populated_legacy(home: Path, monkeypatch) -> None:
+    """A deliberate choice outranks the folder we kept for continuity."""
+    legacy = home / "Videos" / "ASM Clips"
+    legacy.mkdir(parents=True)
+    (legacy / "clip.mkv").write_bytes(b"")
+    _set_setting(monkeypatch, str(home / "elsewhere"))
+    assert clip_library.clip_dir() == home / "elsewhere"
+
+
+def test_tilde_is_expanded(home: Path, monkeypatch) -> None:
+    _set_setting(monkeypatch, "~/somewhere")
+    assert clip_library.clip_dir() == Path("~/somewhere").expanduser()
+
+
+@pytest.mark.parametrize("value", [None, "", "   "])
+def test_unset_or_blank_falls_back(home: Path, monkeypatch, value) -> None:
+    """Clearing the field must return to the default, not write clips into
+    whatever the working directory happens to be."""
+    _write_user_dirs(home, '"$HOME/Vidéos"')
+    _set_setting(monkeypatch, value)
+    assert clip_library.clip_dir() == home / "Vidéos" / "ASM Clips"
+
+
+def test_broken_settings_file_falls_back(home: Path, monkeypatch) -> None:
+    import sys
+    import types
+
+    class _Loader:
+        @staticmethod
+        def read_from_file():
+            raise OSError("settings file is a directory")
+
+    module = types.ModuleType("arctis_sound_manager.settings")
+    module.GeneralSettings = _Loader
+    monkeypatch.setitem(sys.modules, "arctis_sound_manager.settings", module)
+    _write_user_dirs(home, '"$HOME/Vidéos"')
+    assert clip_library.clip_dir() == home / "Vidéos" / "ASM Clips"
+
+
+def test_configured_dir_reported_separately(home: Path, monkeypatch) -> None:
+    """The UI needs "did they choose one" as well as "where does it go", to
+    know whether offering a reset button means anything."""
+    _set_setting(monkeypatch, None)
+    assert clip_library.configured_clip_dir() is None
+    _set_setting(monkeypatch, str(home / "picked"))
+    assert clip_library.configured_clip_dir() == home / "picked"
+
+
+def test_configured_folder_need_not_exist_yet(home: Path, monkeypatch) -> None:
+    """An unmounted drive is still the user's answer; the writer creates it."""
+    _set_setting(monkeypatch, "/run/media/loteran/ssd/clips")
+    assert clip_library.clip_dir() == Path("/run/media/loteran/ssd/clips")
