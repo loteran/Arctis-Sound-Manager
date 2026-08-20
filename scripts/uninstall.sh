@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Arctis Sound Manager — uninstaller
 #
-# Detects every existing install (pipx + system packages) and lets the user
-# pick which one(s) to remove. Designed for the common case "I want to drop
+# Detects every existing install (distro package, pipx, distrobox, and a
+# `pip install --user` copy in ~/.local) and lets the user pick which one(s)
+# to remove. Designed for the common case "I want to drop
 # the system package and switch to pipx" (or vice-versa) without nuking the
 # install I want to keep.
 #
@@ -11,6 +12,7 @@
 #   bash scripts/uninstall.sh --all          # remove every detected install
 #   bash scripts/uninstall.sh --pipx         # remove only the pipx install
 #   bash scripts/uninstall.sh --pkg          # remove only the distro package
+#   bash scripts/uninstall.sh --pip-user     # remove only the ~/.local pip copy
 #   bash scripts/uninstall.sh --purge        # also wipe ~/.config/arctis_manager,
 #                                            # PipeWire configs and udev rules
 #   bash scripts/uninstall.sh --yes          # skip confirmations
@@ -43,12 +45,16 @@ SELECTED=""   # "pipx", "pkg", "all" or empty (= ask)
 while [ $# -gt 0 ]; do
     case "$1" in
         --pipx)  SELECTED="pipx" ;;
+        --pip-user) SELECTED="pip-user" ;;
         --pkg)   SELECTED="pkg" ;;
         --all)   SELECTED="all" ;;
         --purge) PURGE=1 ;;
         --yes|-y) ASSUME_YES=1 ;;
         -h|--help)
-            sed -n '2,18p' "$0" | sed 's/^# *//'
+            # Printed from the header above, stopping at the first line that
+            # is no longer a comment. A fixed line range silently truncated
+            # the usage block every time a line was added to it.
+            sed -n '2,${/^#/!q; s/^# \?//; p}' "$0"
             exit 0 ;;
         *) err "Unknown argument: $1"; exit 2 ;;
     esac
@@ -69,11 +75,21 @@ declare -a PKG_INSTALLS=()      # rpm | pacman | apt
 declare -A PKG_VERSIONS=()
 PIPX_VERSION=""
 
-if command -v rpm >/dev/null 2>&1 && rpm -q arctis-sound-manager >/dev/null 2>&1; then
-    v=$(rpm -q --qf "%{VERSION}" arctis-sound-manager)
-    PKG_INSTALLS+=("rpm")
-    PKG_VERSIONS[rpm]="$v"
-    info "rpm:    arctis-sound-manager $v"
+# Both names are checked: Terra (enabled by default on Nobara and Ultramarine)
+# ships this project's source as python3-arctis-sound-manager. Looking only for
+# our own name meant the uninstaller reported "nothing to do" on the very
+# distros where people most often need it (discussion #190).
+declare -a RPM_PKGS=()
+if command -v rpm >/dev/null 2>&1; then
+    for rpm_name in arctis-sound-manager python3-arctis-sound-manager; do
+        if rpm -q "$rpm_name" >/dev/null 2>&1; then
+            v=$(rpm -q --qf "%{VERSION}" "$rpm_name")
+            RPM_PKGS+=("$rpm_name")
+            PKG_VERSIONS[rpm]="$v"
+            info "rpm:    $rpm_name $v"
+        fi
+    done
+    [ "${#RPM_PKGS[@]}" -gt 0 ] && PKG_INSTALLS+=("rpm")
 fi
 
 if command -v pacman >/dev/null 2>&1 && pacman -Q arctis-sound-manager >/dev/null 2>&1; then
@@ -105,6 +121,25 @@ elif [ -f "$HOME/.local/bin/asm-daemon" ] && grep -q "distrobox" "$HOME/.local/b
     info "distrobox: stubs detected in ~/.local/bin (container may be missing)"
 fi
 
+# A `pip install --user` copy. This one is treated as a real install rather
+# than as information, because it behaves like one: it sits in ~/.local, it
+# SHADOWS the distro package (Python finds user site-packages first), and it
+# keeps starting at boot. Someone who removed the distro package and still has
+# ASM running after a reboot has this and nothing else — and the script used to
+# answer "nothing to do" three lines after printing the offending binary
+# (discussion #190).
+declare -a PIP_USER_DIRS=()
+while IFS= read -r d; do
+    [ -n "$d" ] && PIP_USER_DIRS+=("$d")
+done < <(find "$HOME/.local/lib" -maxdepth 3 -type d -name "arctis_sound_manager" \
+             -path "*/site-packages/*" 2>/dev/null || true)
+
+HAS_PIP_USER=0
+if [ "${#PIP_USER_DIRS[@]}" -gt 0 ]; then
+    HAS_PIP_USER=1
+    for d in "${PIP_USER_DIRS[@]}"; do info "pip --user: $d"; done
+fi
+
 # Orphan binaries in PATH (catches manual `pip install --user` etc.)
 ORPHAN_BINS=$(command -v -a asm-daemon 2>/dev/null || true)
 if [ -n "$ORPHAN_BINS" ]; then
@@ -117,13 +152,15 @@ HAS_PKG=0
 HAS_PIPX=0
 [ -n "$PIPX_VERSION" ] && HAS_PIPX=1
 
-if [ "$HAS_PKG" -eq 0 ] && [ "$HAS_PIPX" -eq 0 ] && [ "$HAS_DISTROBOX" -eq 0 ]; then
+if [ "$HAS_PKG" -eq 0 ] && [ "$HAS_PIPX" -eq 0 ] && [ "$HAS_DISTROBOX" -eq 0 ] \
+   && [ "$HAS_PIP_USER" -eq 0 ]; then
     ok "No Arctis Sound Manager installation detected — nothing to do."
     exit 0
 fi
 
 # Distrobox install: delegate to the dedicated uninstaller
-if [ "$HAS_DISTROBOX" -eq 1 ] && [ "$HAS_PKG" -eq 0 ] && [ "$HAS_PIPX" -eq 0 ]; then
+if [ "$HAS_DISTROBOX" -eq 1 ] && [ "$HAS_PKG" -eq 0 ] && [ "$HAS_PIPX" -eq 0 ] \
+   && [ "$HAS_PIP_USER" -eq 0 ]; then
     warn "Distrobox install detected. The regular uninstaller cannot remove it."
     DISTROBOX_UNINSTALL="$SCRIPT_DIR/distrobox/uninstall.sh"
     if [ -f "$DISTROBOX_UNINSTALL" ]; then
@@ -167,11 +204,18 @@ EOF
             info "Cancelled."; exit 0
         fi
         SELECTED="pipx"
-    else
+    elif [ "$HAS_PKG" -eq 1 ]; then
         if ! confirm "Remove distro package(s): ${PKG_INSTALLS[*]} ?"; then
             info "Cancelled."; exit 0
         fi
         SELECTED="pkg"
+    else
+        # Only a pip --user copy is left. Nothing to choose between, but it
+        # still has to be offered — this is the case that used to exit early.
+        if ! confirm "Remove the pip --user copy in ~/.local ?"; then
+            info "Cancelled."; exit 0
+        fi
+        SELECTED="all"
     fi
 fi
 
@@ -182,6 +226,10 @@ if [ "$SELECTED" = "pipx" ] && [ "$HAS_PIPX" -eq 0 ]; then
 fi
 if [ "$SELECTED" = "pkg" ] && [ "$HAS_PKG" -eq 0 ]; then
     err "--pkg requested but no distro package install detected."
+    exit 1
+fi
+if [ "$SELECTED" = "pip-user" ] && [ "$HAS_PIP_USER" -eq 0 ]; then
+    err "--pip-user requested but no pip --user copy detected."
     exit 1
 fi
 
@@ -204,10 +252,56 @@ if [ "$SELECTED" = "pipx" ] || [ "$SELECTED" = "all" ]; then
     if [ "$HAS_PIPX" -eq 1 ]; then
         step "Removing pipx install"
         if confirm "Run 'pipx uninstall arctis-sound-manager' ?"; then
-            pipx uninstall arctis-sound-manager || warn "pipx uninstall failed"
-            ok "pipx removed"
+            if pipx uninstall arctis-sound-manager; then
+                ok "pipx removed"
+            else
+                err "pipx could not remove it — it is still installed"
+            fi
         else
             warn "skipped pipx removal"
+        fi
+    fi
+fi
+
+# ── Remove a pip --user copy ─────────────────────────────────────────────────
+# This is the one that makes ASM look uninstallable: it shadows the distro
+# package, survives `dnf remove`, and keeps starting at boot. pip is asked
+# first so its dist-info goes too; whatever it leaves (or if pip is not there
+# at all) is removed by hand.
+if [ "$SELECTED" = "pip-user" ] || [ "$SELECTED" = "all" ]; then
+    if [ "$HAS_PIP_USER" -eq 1 ]; then
+        step "Removing pip --user copy"
+        if confirm "Remove arctis-sound-manager from ~/.local ?"; then
+            if command -v python3 >/dev/null 2>&1; then
+                python3 -m pip uninstall -y arctis-sound-manager >/dev/null 2>&1 \
+                    || true   # not pip-installed, or no pip: the rm below is the real work
+            fi
+            for d in "${PIP_USER_DIRS[@]}"; do
+                rm -rf "$d"
+                info "removed $d"
+                # The dist-info sits beside the package and keeps the copy
+                # "installed" as far as pip and ASM's own multi-install
+                # detection are concerned.
+                rm -rf "$(dirname "$d")"/arctis_sound_manager-*.dist-info
+                rm -rf "$(dirname "$d")"/arctis_sound_manager-*.egg-info
+            done
+            # The console scripts. Distrobox stubs share these names, so they
+            # are left alone when a container is in play — removing them there
+            # would break an install this script is not uninstalling.
+            if [ "$HAS_DISTROBOX" -eq 0 ]; then
+                for b in asm-daemon asm-cli asm-gui asm-router asm-stream-guard \
+                         asm-clipd asm-setup asm-diag-dinit; do
+                    if [ -e "$HOME/.local/bin/$b" ]; then
+                        rm -f "$HOME/.local/bin/$b"
+                        info "removed ~/.local/bin/$b"
+                    fi
+                done
+            else
+                warn "~/.local/bin left alone — a Distrobox install shares those names"
+            fi
+            ok "pip --user copy removed"
+        else
+            warn "skipped pip --user removal"
         fi
     fi
 fi
@@ -218,25 +312,36 @@ if [ "$SELECTED" = "pkg" ] || [ "$SELECTED" = "all" ]; then
         step "Removing distro package ($m)"
         case "$m" in
             rpm)
-                if confirm "Run 'sudo dnf remove -y arctis-sound-manager' ?"; then
-                    sudo dnf remove -y arctis-sound-manager || warn "dnf remove failed"
-                    ok "rpm removed"
-                else
-                    warn "skipped rpm removal"
-                fi
+                for rpm_name in "${RPM_PKGS[@]}"; do
+                    if confirm "Run 'sudo dnf remove -y $rpm_name' ?"; then
+                        if sudo dnf remove -y "$rpm_name"; then
+                            ok "$rpm_name removed"
+                        else
+                            err "dnf could not remove $rpm_name — it is still installed"
+                        fi
+                    else
+                        warn "skipped $rpm_name removal"
+                    fi
+                done
                 ;;
             apt)
                 if confirm "Run 'sudo apt-get remove -y arctis-sound-manager' ?"; then
-                    sudo apt-get remove -y arctis-sound-manager || warn "apt remove failed"
-                    ok "apt removed"
+                    if sudo apt-get remove -y arctis-sound-manager; then
+                        ok "apt removed"
+                    else
+                        err "apt could not remove the package — it is still installed"
+                    fi
                 else
                     warn "skipped apt removal"
                 fi
                 ;;
             pacman)
                 if confirm "Run 'sudo pacman -Rns --noconfirm arctis-sound-manager' ?"; then
-                    sudo pacman -Rns --noconfirm arctis-sound-manager || warn "pacman remove failed"
-                    ok "pacman removed"
+                    if sudo pacman -Rns --noconfirm arctis-sound-manager; then
+                        ok "pacman removed"
+                    else
+                        err "pacman could not remove the package — it is still installed"
+                    fi
                 else
                     warn "skipped pacman removal"
                 fi
