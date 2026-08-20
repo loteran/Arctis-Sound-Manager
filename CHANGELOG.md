@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A channel's volume can be bound to a key.** Sonar on Windows let you bind a key to a channel — turn a dial on a macropad, and Chat goes up or down by a fixed step without alt-tabbing. ASM cannot claim a key for itself on Wayland (the compositor owns that, and the mechanism that hands keys out is neither available everywhere nor able to grant a *specific* key like F20), so the action is a command your desktop binds instead: `asm-cli volume game +5`, `chat mute`, `media 40`, or several at once with `game +5 chat -5`. Bind it in your desktop's keyboard settings like any other shortcut. It goes straight to PipeWire, so a bound key works whether or not the window is open, and the new level is remembered exactly as the sliders' are. ([#193](https://github.com/loteran/Arctis-Sound-Manager/issues/193))
 - **The clips folder can be changed.** Under the gear in the Clips page, next to the capture settings: pick any folder you can write to, and new clips go there. Clips already recorded stay where they are — moving a library means moving each clip's trim, mix and track files with it, possibly across drives and possibly while a capture is running, and a library you want moved is one you can move yourself. "Default" returns to your desktop's video folder. ([#192](https://github.com/loteran/Arctis-Sound-Manager/issues/192))
 
 ### Fixed
