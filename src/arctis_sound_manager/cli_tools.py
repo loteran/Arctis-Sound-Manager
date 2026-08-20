@@ -25,18 +25,32 @@ def endpoint_direction(bEndpointAddress):
 
 
 def arctis_usb_info(vendor_id: int = 0x1038, bInterfaceClass: int = 0x03):
-    usb_elements = usb.core.find(idVendor=vendor_id)
+    # find_all=True, and it matters more than it looks. Without it, find()
+    # returns a *single* Device, and iterating a Device yields its
+    # configurations — so this listed one SteelSeries device and then walked
+    # its configs, which is why the loop below had to special-case
+    # Configuration at all.
+    #
+    # The cost was not cosmetic. This output is the "USB HID devices" section
+    # of every bug report, and it is what we read to learn which model someone
+    # has. On a desk with a SteelSeries keyboard or mouse next to the headset,
+    # whichever one libusb happened to return first was the only one reported
+    # and the headset was simply absent — see issue #197, where a Nova Pro
+    # Wired never appeared because an Apex Pro came back first.
+    devices = list(usb.core.find(find_all=True, idVendor=vendor_id) or [])
 
-    if not usb_elements:
+    if not devices:
         raise ValueError(f"No devices found with vendor ID {vendor_id:04x}")
-    
-    for element in usb_elements:
+
+    for element in devices:
         device: TypedDevice
+        # Kept for callers that hand in a Configuration, and because a
+        # defensive cast costs nothing here.
         if isinstance(element, usb.core.Configuration):
             device = cast(TypedDevice, element.device)
         else:
             device = cast(TypedDevice, element)
-        
+
         if not hasattr(device, 'langids') or not device.langids:
             device._langids = (1033,) # Fixed value for English (United States)
 
