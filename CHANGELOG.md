@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.3] - 21 August 2026
+
+### Fixed
+
+- **A headset that reports nothing is no longer described as connected.** When ASM had not managed to read a single status frame, it filled in "Online" by itself — a placeholder meant for wired headsets that have no power state to report, but applied to every device. So a headset ASM could not hear from was shown as connected, with no battery, while the DAC screen right next to it said "Offline" for the same headset at the same moment. The window and the screen now agree, and when nothing has been read, ASM says so instead of inventing an answer. ([#198](https://github.com/loteran/Arctis-Sound-Manager/issues/198))
+- **USB timeouts in the status poll are no longer silent.** That poll runs every two seconds for as long as ASM is running, and three kinds of USB failure were being discarded outright — including the one that means "this device never answers". A headset that had stopped talking to ASM therefore produced no log line at all, indefinitely: no battery, no explanation, nothing to report. It now says so once when the trouble starts, once a minute while it lasts, and once when it clears, and it names what the failure costs you. This is what turned a user's missing battery into a three-day investigation. ([#198](https://github.com/loteran/Arctis-Sound-Manager/issues/198))
+- **"Offline" is no longer used to mean "this device has no battery".** A wired DAC has no battery anywhere in it, and the screen said Offline — which reads as a connection fault rather than as "there is nothing here to report". Devices with no battery no longer get a battery element at all, and the checkbox offering one is hidden on hardware that cannot fill it. A headset that is genuinely off still says Offline, because there the word is correct. Along the way, a battery reading that arrived without a power state beside it was being hidden; it is now shown, which is what a device that reports the level but not the state was owed.
+- **Bug reports list every SteelSeries device, not just the first one.** Only one device was ever read, so on a desk with a SteelSeries keyboard or mouse next to the headset, whichever one the system returned first was the only one described — and the headset was simply absent from the report. That section is the one used to identify which model someone has, so a report from anyone with two SteelSeries devices was describing the wrong one. ([#197](https://github.com/loteran/Arctis-Sound-Manager/issues/197))
+
+### Added
+
+- **Bug reports now include what the daemon reads from your device.** The battery level, the power state, and every other value ASM decodes, exactly as it sees them. The report already said which device was plugged in; it never said what ASM was making of it — and the difference between "this model has no battery" and "the battery is not being decoded" is the whole answer to a class of report that otherwise takes several rounds of questions.
+
 ## [1.4.2] - 20 August 2026
 
 ### Added
