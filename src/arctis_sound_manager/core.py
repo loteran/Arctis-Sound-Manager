@@ -3051,6 +3051,46 @@ class CoreEngine:
             # gets the log line instead.
             self.logger.debug("notify-send unavailable: %r", exc)
 
+    # Status-poll error reporting (#198) ──────────────────────────────────────
+    #
+    # These errors used to be dropped on the floor: errno 16/19/110 were all
+    # skipped, and this loop runs every two seconds forever. A device whose
+    # command channel never answers therefore produced *no log line at all*,
+    # indefinitely — the status stayed empty, the battery never appeared, and
+    # nothing anywhere said why. That is how #198 reached three rounds of
+    # questions before anyone could see what was happening.
+    #
+    # They stay quiet-by-default for a good reason, though: EBUSY and ENODEV
+    # are ordinary during a hotplug or a suspend/resume, and a warning every
+    # two seconds is its own kind of useless. So: say it once when a streak
+    # starts, once a minute while it lasts, and once when it clears — enough to
+    # find in a journal, never enough to bury one.
+    _STATUS_POLL_LOG_EVERY = 30          # polls, i.e. ~60s at period=2.0
+
+    def _note_status_poll_error(self, exc: usb.core.USBError) -> None:
+        errno_val = getattr(exc, 'errno', None)
+        streak = getattr(self, '_status_poll_fail_streak', 0) + 1
+        self._status_poll_fail_streak = streak
+
+        if streak == 1 or streak % self._STATUS_POLL_LOG_EVERY == 0:
+            hint = ""
+            if errno_val == 110:
+                # The one worth explaining: nothing is wrong with the cable or
+                # the permissions, the device simply never answers.
+                hint = (" — the device is not answering status requests, so no "
+                        "battery or mode will be shown")
+            elif errno_val == 16:
+                hint = " — something else is holding the interface"
+            self.logger.warning(
+                "Status poll USB error (x%d): %r%s", streak, exc, hint)
+
+    def _note_status_poll_ok(self) -> None:
+        if getattr(self, '_status_poll_fail_streak', 0):
+            self.logger.info(
+                "Status poll recovered after %d failed attempts",
+                self._status_poll_fail_streak)
+            self._status_poll_fail_streak = 0
+
     async def _status_poll_loop(self, period: float = 2.0):
         # Nova 5 and 7 firmwares only emit a status frame when the radio link
         # changes. If the user powers off the headset while the dongle stays
@@ -3069,9 +3109,9 @@ class CoreEngine:
                 if have_device:
                     try:
                         self.request_device_status()
+                        self._note_status_poll_ok()
                     except usb.core.USBError as e:
-                        if getattr(e, 'errno', None) not in (16, 19, 110):
-                            self.logger.warning(f"Status poll USB error: {e!r}")
+                        self._note_status_poll_error(e)
                     except Exception as e:
                         self.logger.warning(f"Status poll failed: {e!r}")
                     # Keep the on-device EQ exclusive with the Sonar one. A

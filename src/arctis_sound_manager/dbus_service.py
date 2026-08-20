@@ -137,21 +137,29 @@ class ArctisManagerDbusStatusService(ServiceInterface):
         if not config or not config.status:
             return json.dumps({})
 
-        # Device is ready but no valid status packet parsed yet — return a
-        # minimal "online" sentinel so the GUI shows Connected rather than
-        # "No device detected". This happens when the status byte offsets in
-        # the device YAML don't match the actual hardware response format.
+        # No status packet has been parsed yet. The sentinel below exists for
+        # devices that have no way to report a power state at all — an
+        # always-connected wired headset like the Nova 3 — where "nothing
+        # parsed" really does mean "connected, nothing to say".
+        #
+        # It used to be sent for *every* device, which is how #198 became
+        # unreadable. On a Nova Pro Wireless whose command channel answered
+        # nothing, this claimed "online" while the OLED on the same device
+        # showed "Offline" (it reads core.device_status directly and saw the
+        # empty dict it really is), with no battery on either. Two surfaces,
+        # opposite answers, same state — and this was the one inventing a
+        # reading. The reporter's entire GetStatus payload was this literal,
+        # character for character.
+        #
+        # A device that reports its power state and has told us nothing is a
+        # device we know nothing about, and saying so is what lets a broken
+        # command channel be seen instead of papered over.
         if not status and self.core_engine._device_ready:
             online_var = getattr(config.online_status, 'status_variable', None)
-            online_val = getattr(config.online_status, 'online_value', 'online')
             if online_var:
-                category = next(
-                    (cat for cat, fields in config.status.representation.items()
-                     if online_var in fields),
-                    'headset',
-                )
-                return json.dumps({category: {online_var: {'value': online_val, 'type': 'label'}}})
-            return json.dumps({})
+                return json.dumps({})
+            return json.dumps({'headset': {'headset_power_status': {
+                'value': 'online', 'type': 'label'}}})
 
         if not status:
             return json.dumps({})
@@ -187,7 +195,20 @@ class ArctisManagerDbusStatusService(ServiceInterface):
         # initialised the device (_device_ready=True), inject a minimal
         # "online" sentinel so the GUI shows Connected rather than
         # "No device detected".
-        if not result and self.core_engine._device_ready:
+        #
+        # `not online_var` is the part that was missing, and it cost a whole
+        # investigation (#198). On a headset that *does* report its power state,
+        # an empty result does not mean "connected, nothing to say" — it means
+        # nothing was read from the device at all, which is exactly what
+        # happens when the command channel times out. Claiming "online" there
+        # produced a window saying Connected next to an OLED saying Offline
+        # (which reads core.device_status directly and saw the empty dict), and
+        # no battery anywhere. Two surfaces, opposite answers, same state.
+        #
+        # So the sentinel now only covers what its comment always described:
+        # devices that have no way to report a power state. Everything else
+        # reports the truth, which is that we know nothing yet.
+        if not result and self.core_engine._device_ready and not online_var:
             result = {'headset': {'headset_power_status': {'value': 'online', 'type': 'label'}}}
 
         return json.dumps(result)
