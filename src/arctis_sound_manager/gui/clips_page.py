@@ -48,7 +48,10 @@ from arctis_sound_manager.i18n import I18n
 
 logger = logging.getLogger("ClipsPage")
 
-CLIP_DIR = Path.home() / "Videos" / "ASM Clips"
+# Resolved on each use rather than frozen at import: the folder is the
+# localised video directory (issue #192), and a legacy ~/Videos/ASM Clips
+# with recordings in it still wins — see clip_library.clip_dir().
+from arctis_sound_manager.clip_library import clip_dir
 
 # Card geometry. The thumbnail is 16:9 because that is what a captured screen
 # almost always is; a card wide enough to read the game name at a glance is the
@@ -336,7 +339,7 @@ class ClipsPage(QWidget):
         self._folder_btn = QPushButton(_tr("clips_open_folder", "Open folder"))
         self._folder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._folder_btn.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(CLIP_DIR))))
+            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(clip_dir()))))
         actions.addWidget(self._folder_btn)
 
         # Deliberately not beside Start and Save: it is the one control here
@@ -849,7 +852,7 @@ class ClipsPage(QWidget):
         from arctis_sound_manager.clip_library import list_clips
 
         self._list.clear()
-        clips = list_clips(CLIP_DIR)
+        clips = list_clips(clip_dir())
 
         self._empty.setVisible(not clips)
         self._open_hint.setVisible(bool(clips))
@@ -1008,7 +1011,7 @@ class ClipsPage(QWidget):
             "rename": self._on_rename,
             "delete": self._on_delete,
             "folder": lambda: QDesktopServices.openUrl(
-                QUrl.fromLocalFile(str(CLIP_DIR))),
+                QUrl.fromLocalFile(str(clip_dir()))),
         }
 
         menu = QMenu(self._list)

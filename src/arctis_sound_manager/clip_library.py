@@ -25,13 +25,54 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import subprocess
 from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-CLIP_DIR = Path.home() / "Videos" / "ASM Clips"
+# Where clips used to go, unconditionally. "Videos" is the English name of a
+# folder that is localised on every desktop — ~/Vidéos, ~/Videók, ~/ビデオ — so
+# on any system not in English this created a SECOND video folder next to the
+# real one, invisible where the user actually looks (issue #192).
+_LEGACY_CLIP_DIR = Path.home() / "Videos" / "ASM Clips"
+
+_CLIP_DIR_NAME = "ASM Clips"
+
+
+def _videos_dir() -> Path:
+    """The user's video folder, whatever their desktop calls it.
+
+    Reads the freedesktop user-dirs configuration directly rather than shelling
+    out to ``xdg-user-dir``: the file is the source that command reads too, and
+    it is not always installed (minimal installs, containers). Falls back to
+    ~/Videos, which is what the spec itself defaults to.
+    """
+    env = os.environ.get("XDG_VIDEOS_DIR")
+    if env:
+        return Path(os.path.expandvars(env)).expanduser()
+
+    config = Path(
+        os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config")
+    ) / "user-dirs.dirs"
+    try:
+        for line in config.read_text().splitlines():
+            line = line.strip()
+            key, sep, value = line.partition("=")
+            # Compared after the split, not with startswith: the latter also
+            # matches XDG_VIDEOS_DIR_ANYTHING.
+            if not sep or key.strip() != "XDG_VIDEOS_DIR":
+                continue
+            value = value.strip().strip('"')
+            if value:
+                # The file writes "$HOME/Vidéos"; expandvars turns that into a
+                # real path, and anything else is taken as already absolute.
+                return Path(os.path.expandvars(value)).expanduser()
+    except OSError:
+        pass
+
+    return Path.home() / "Videos"
 
 # Exports live under the library rather than beside the recordings.
 SHARE_DIR_NAME = "Shared"
@@ -55,12 +96,32 @@ _SIDECAR_SUFFIXES = (TRIM_SUFFIX, MIX_SUFFIX, ".tracks.json")
 
 
 def clip_dir() -> Path:
-    return CLIP_DIR
+    """Where clips are read from and written to.
+
+    A legacy ~/Videos/ASM Clips that already holds recordings stays the active
+    folder. Moving someone's videos out from under them on an upgrade is not
+    this function's call to make, and a user who has clips there has a file
+    manager, a link, or a muscle memory pointing at that path. Only an absent
+    or empty legacy folder hands over to the localised location.
+    """
+    if _LEGACY_CLIP_DIR.is_dir() and _has_clips(_LEGACY_CLIP_DIR):
+        return _LEGACY_CLIP_DIR
+    return _videos_dir() / _CLIP_DIR_NAME
+
+
+def _has_clips(directory: Path) -> bool:
+    """True if *directory* holds at least one recording. Stops at the first."""
+    try:
+        return any(
+            entry.suffix in CLIP_SUFFIXES for entry in directory.iterdir()
+        )
+    except OSError:
+        return False
 
 
 def share_dir() -> Path:
     """Where exports are written."""
-    return CLIP_DIR / SHARE_DIR_NAME
+    return clip_dir() / SHARE_DIR_NAME
 
 
 def is_export(path: Path) -> bool:
