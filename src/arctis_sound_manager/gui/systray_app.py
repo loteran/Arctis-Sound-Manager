@@ -36,8 +36,7 @@ from arctis_sound_manager.gui.tray_eq_presets import (
     list_custom_presets,
     list_sonar_channel_presets,
 )
-from arctis_sound_manager.gui.ui_utils import (get_battery_number_pixmap,
-                                               get_icon_pixmap,
+from arctis_sound_manager.gui.ui_utils import (get_tray_pixmap,
                                                resolve_tray_icon_color)
 from arctis_sound_manager.i18n import I18n
 from arctis_sound_manager.power_status import HeadsetPower, normalize_power_value
@@ -137,16 +136,19 @@ class QSystrayApp(QBaseDesktopApp):
 
         self.app = app
 
-        pixmap = get_icon_pixmap(color=_tray_icon_color())
+        pixmap = get_tray_pixmap(None, color=_tray_icon_color())
         self.tray_icon = QSystemTrayIcon(QIcon(pixmap), parent=self.app)
         self.tray_icon.setToolTip('Arctis Sound Manager')
 
-        # A separate tray item shows the battery % as a full-size number in its
-        # own slot next to the ASM icon (#119) — a single item can only occupy
-        # one square slot, so a second one is how we get "two icons wide". Hidden
-        # until a battery level is known and the setting is on.
-        self.battery_icon = QSystemTrayIcon(parent=self.app)
-        self.battery_icon.activated.connect(self._on_tray_activated)
+        # One tray item, created here and never destroyed. The battery % used to
+        # live in a second item that was hidden whenever the level became
+        # unknown — which is what happens the moment the headset powers off, and
+        # hide() on a QSystemTrayIcon destroys the KStatusNotifierItem behind
+        # it. A click already in flight from the tray host then ran
+        # KStatusNotifierItem::activate() on freed memory and took the whole app
+        # down (#194). The level now changes this item's *icon* (see
+        # get_tray_pixmap) and nothing else, so there is no longer a moment at
+        # which the thing the tray host is holding a reference to goes away.
 
         # React immediately when the systray_show_battery toggle changes: the
         # setting is written to the daemon's settings file (a different process),
@@ -176,7 +178,6 @@ class QSystrayApp(QBaseDesktopApp):
         self.menu.aboutToShow.connect(self.start_polling)
         self.menu.aboutToHide.connect(self.stop_polling)
         self.tray_icon.setContextMenu(self.menu)
-        self.battery_icon.setContextMenu(self.menu)
         # Left single-click on the tray icon opens the main window (launching it
         # the first time, raising it on later clicks). Right-click still shows
         # the context menu.
@@ -262,48 +263,32 @@ class QSystrayApp(QBaseDesktopApp):
         self._update_tray_icon(self.last_device_status)
 
     def _update_tray_icon(self, status: dict) -> None:
-        """Show/refresh the dedicated battery-% tray item next to the ASM icon
-        when enabled and a level is known (#119), and re-color both tray items
-        from the systray_icon_color setting (#130) — this is called on every
-        settings-file change (_on_settings_file_changed), so a color change
-        takes effect live without restarting the tray."""
+        """Repaint the single tray item: the ASM logo, with the battery % under
+        it when a level is known and the setting is on (#119), in the colour
+        from systray_icon_color (#130).
+
+        Called on every status update and on every settings-file change
+        (_on_settings_file_changed), so a colour change or a toggle takes effect
+        live without restarting the tray.
+
+        setIcon() and nothing else. There is deliberately no show()/hide() here:
+        the item is created once in __init__ and lives for the life of the
+        process, because destroying it under an in-flight click is what crashed
+        ASM in #194. "No battery to show" is now a different picture, not a
+        missing tray item.
+        """
         color = _tray_icon_color()
-        try:
-            self.tray_icon.setIcon(QIcon(get_icon_pixmap(color=color)))
-        except Exception as e:
-            self.logger.debug('Could not update tray icon color: %s', e)
 
         pct = None
         if _show_battery_in_tray():
             pct = self._extract_battery_percent(status)
+
         try:
-            if pct is None:
-                # Deferred, and only when there is actually something to hide.
-                #
-                # hide() on a QSystemTrayIcon destroys the KStatusNotifierItem
-                # behind it. Called straight from a D-Bus status update — which
-                # is exactly what happens the moment the headset powers off —
-                # it can delete the item while a click from the tray host is
-                # already in flight, and KStatusNotifierItem::activate() then
-                # runs on freed memory and takes the whole app down with
-                # SIGSEGV. Same failure as the one _on_tray_activated already
-                # guards against, reached from the other side: there the item
-                # died *during* activate(), here it dies just before the click
-                # lands. Handing the hide back to the event loop takes it out
-                # of the D-Bus call it would otherwise run inside.
-                #
-                # The isVisible() check matters as much as the defer: without
-                # it a hidden item was re-hidden on every status poll, so this
-                # ran constantly rather than once at power-off.
-                if self.battery_icon.isVisible():
-                    QTimer.singleShot(0, self.battery_icon.hide)
-            else:
-                self.battery_icon.setIcon(QIcon(get_battery_number_pixmap(pct, color=color)))
-                self.battery_icon.setToolTip(f'Arctis — {pct}%')
-                if not self.battery_icon.isVisible():
-                    self.battery_icon.show()
+            self.tray_icon.setIcon(QIcon(get_tray_pixmap(pct, color=color)))
+            self.tray_icon.setToolTip(f'Arctis — {pct}%' if pct is not None
+                                      else 'Arctis Sound Manager')
         except Exception as e:
-            self.logger.debug('Could not update battery tray item: %s', e)
+            self.logger.debug('Could not update the tray icon: %s', e)
 
     @staticmethod
     def _extract_battery_percent(status: dict) -> int | None:
