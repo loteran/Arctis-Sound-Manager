@@ -42,6 +42,8 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
   - [Features](#features)
     - [🎚️ Audio mixer](#️-audio-mixer)
     - [🎛️ EQ \& audio processing](#️-eq--audio-processing)
+    - [🎬 Clips](#-clips)
+    - [🛡️ Stream Guard](#️-stream-guard)
     - [🎧 Device control](#-device-control)
     - [⚙️ App \& system](#️-app--system)
   - [Screenshots](#screenshots)
@@ -101,7 +103,23 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
   - **Smart Volume** — dynamic compressor (Quiet / Balanced / Loud)
   - All changes applied live via PipeWire biquad nodes
 - **Custom 10-band EQ** — per-band gain (31 Hz – 16 kHz), save/load presets
+- **Hardware equaliser** — on nine models ASM drives the headset's own EQ instead of a software chain, so the curve survives on the device
+- **Microphone processing** — ClearCast (rnnoise) or **DeepFilterNet**, noise gate, compressor, and a mic the chain can switch between your headset and a desk microphone on its own
 - **Audio Profiles** — save and restore your complete configuration in one click (EQ mode, presets, macro values, Spatial Audio, volumes); instant switching from the Home page or system tray
+
+### 🎬 Clips
+
+- **Rolling 30-second capture** — the last thirty seconds of your screen are held in memory and only written to disk when you press Save, so the moment worth keeping is already recorded by the time you decide it was
+- **One audio track per Sonar channel** — game, chat, media and microphone stay separate in the file, so a clip can be re-mixed afterwards instead of being stuck with what you happened to be hearing
+- **Editor with a live mixer** — every track plays at once with its own level and mute; scrubbable timeline with a draggable selection, and trim and levels are saved per clip
+- **Global shortcut** — save without switching windows; the binding belongs to your desktop, and ASM shows the one it actually gave out
+- **Automatic arming** — the buffer arms when a game starts playing audio and is released when the game is gone
+- **Choose the folder** — clips land in your video folder under `ASM Clips`, wherever your system puts it; change it from the Clips page
+- **Opt-in** — ships switched off, and installs the packages it needs from the switch that turns it on
+
+### 🛡️ Stream Guard
+
+- **Screen shares carry only what you allow** — Discord's Linux client has no source picker and links every playback stream into its capture, so the whole system's audio goes out to the call. Stream Guard cuts the channels you have not allowed, as PipeWire announces them ([details](#how-the-mixer-works))
 
 ### 🎧 Device control
 
@@ -115,6 +133,7 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
 
 ### ⚙️ App & system
 
+- **Runs without a SteelSeries headset** — the channels, the Sonar EQ, spatial audio, the router and Clips work on any output device; only battery, ANC, sidetone, ChatMix and the OLED need an Arctis. Off by default, and a connected Arctis always wins
 - **Self-healing deps** — at startup ASM checks every system component (LADSPA plugins, HRIR, PipeWire, wpctl, udev rules…); a one-click dialog installs anything missing with a single `pkexec` prompt
 - **Check for updates** — in-app button forces an immediate GitHub check; installs via terminal (pacman / dnf / apt) or in-app wheel (pipx)
 - **One-click bug reports** — auto-uploads a full diagnostic as a GitHub gist and opens a pre-filled issue
