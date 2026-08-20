@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 20 August 2026
+
+### Fixed
+
+- **The headset can finally fall asleep.** With ASM running, a headset set to power off after N minutes of inactivity simply never did — stop ASM and it powered off normally. The cause was in every audio chain ASM builds: none of its nodes declared `node.passive`, so each one kept pushing its chain even with nothing playing. The physical device sat in RUNNING permanently, the firmware never saw an idle moment, and its auto-off timer never started counting. All six output chains and the three channel loopbacks are now passive: they follow the audio instead of driving it, so once applications stop, the whole graph — loopback, EQ, spatial audio, device — suspends, and the headset powers off exactly as configured. Playback wakes it back up. Confirmed on a Nova Pro Wireless: with auto-off at one minute, the headset powered down in 45 seconds, and all three channels still play normally. Existing configs are repaired in place on the next start, so nobody's EQ is touched. Thanks to [@Michsior14](https://github.com/Michsior14) for six rounds of captures on an Arctis 7+, and for the fix to the diagnostic script along the way. ([#180](https://github.com/loteran/Arctis-Sound-Manager/issues/180))
+
 ## [1.4.0] - 20 August 2026
 
 ### Added
