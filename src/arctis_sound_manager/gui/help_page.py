@@ -113,6 +113,27 @@ HELP_CONTENT: dict[str, dict] = {
                 ),
             },
             {
+                "heading": "Controlling channels from a key",
+                "body": (
+                    "A channel's volume can be bound to a key — including the unused function "
+                    "keys a macropad dial sends.\n\n"
+                    "ASM cannot claim a key combination for itself on Wayland: the compositor "
+                    "owns that, and the mechanism that hands them out is not available on every "
+                    "desktop, nor can it grant a *specific* key. So the action is a command "
+                    "instead, and your desktop binds the key — which works the same everywhere.\n\n"
+                    "Bind these in your desktop's keyboard settings:\n"
+                    "• asm-cli volume game +5 — five points up\n"
+                    "• asm-cli volume chat -5 — five points down\n"
+                    "• asm-cli volume media 40 — set an exact level\n"
+                    "• asm-cli volume game mute — also unmute, or toggle\n"
+                    "• asm-cli volume game +5 chat -5 — several channels from one key\n"
+                    "• asm-cli volume --list — what each channel is at right now\n\n"
+                    "The change goes straight to PipeWire, so a bound key works whether or not "
+                    "this window is open, and the new level is remembered exactly as the sliders' "
+                    "are."
+                ),
+            },
+            {
                 "heading": "Profiles",
                 "body": (
                     "Profiles let you save and restore your complete audio configuration in one click.\n\n"
@@ -576,6 +597,28 @@ HELP_CONTENT: dict[str, dict] = {
                     "indique combien d'applications ont été déplacées.\n\n"
                     "Vous pouvez cliquer à tout moment sans risque : s'il n'y a rien de mal routé, "
                     "il ne se passe rien."
+                ),
+            },
+            {
+                "heading": "Piloter les canaux au clavier",
+                "body": (
+                    "Le volume d'un canal peut être associé à une touche — y compris les touches "
+                    "de fonction inutilisées qu'envoie la molette d'un macropad.\n\n"
+                    "Sous Wayland, ASM ne peut pas s'attribuer une combinaison de touches : c'est "
+                    "le compositeur qui en décide, le mécanisme qui les distribue n'existe pas sur "
+                    "tous les bureaux, et il ne permet pas de réclamer une touche *précise*. "
+                    "L'action est donc une commande, et c'est votre bureau qui associe la touche — "
+                    "ce qui fonctionne partout de la même façon.\n\n"
+                    "À associer dans les réglages de clavier de votre bureau :\n"
+                    "• asm-cli volume game +5 — cinq points de plus\n"
+                    "• asm-cli volume chat -5 — cinq points de moins\n"
+                    "• asm-cli volume media 40 — régler une valeur exacte\n"
+                    "• asm-cli volume game mute — également unmute, ou toggle\n"
+                    "• asm-cli volume game +5 chat -5 — plusieurs canaux d'une seule touche\n"
+                    "• asm-cli volume --list — le niveau actuel de chaque canal\n\n"
+                    "Le changement va directement à PipeWire : une touche associée fonctionne que "
+                    "cette fenêtre soit ouverte ou non, et le nouveau niveau est mémorisé "
+                    "exactement comme celui des curseurs."
                 ),
             },
             {
@@ -1058,6 +1101,28 @@ HELP_CONTENT: dict[str, dict] = {
                     "una notificación indica cuántas aplicaciones se han movido.\n\n"
                     "Puedes pulsarlo en cualquier momento sin riesgo: si no hay nada mal enrutado, "
                     "no hace nada."
+                ),
+            },
+            {
+                "heading": "Controlar los canales con una tecla",
+                "body": (
+                    "El volumen de un canal puede asignarse a una tecla, incluidas las teclas de "
+                    "función sin usar que envía la rueda de un macropad.\n\n"
+                    "En Wayland, ASM no puede reservarse una combinación de teclas: eso lo decide "
+                    "el compositor, el mecanismo que las reparte no existe en todos los "
+                    "escritorios y tampoco permite pedir una tecla *concreta*. Por eso la acción "
+                    "es una orden y es su escritorio quien asigna la tecla, lo que funciona igual "
+                    "en todas partes.\n\n"
+                    "Asígnelas en los ajustes de teclado de su escritorio:\n"
+                    "• asm-cli volume game +5 — cinco puntos más\n"
+                    "• asm-cli volume chat -5 — cinco puntos menos\n"
+                    "• asm-cli volume media 40 — fijar un nivel exacto\n"
+                    "• asm-cli volume game mute — también unmute o toggle\n"
+                    "• asm-cli volume game +5 chat -5 — varios canales con una sola tecla\n"
+                    "• asm-cli volume --list — el nivel actual de cada canal\n\n"
+                    "El cambio va directamente a PipeWire: una tecla asignada funciona esté o no "
+                    "abierta esta ventana, y el nuevo nivel se recuerda igual que el de los "
+                    "deslizadores."
                 ),
             },
             {

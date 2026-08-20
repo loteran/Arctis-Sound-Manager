@@ -58,6 +58,7 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
     - [Exporting a preset](#exporting-a-preset)
     - [Importing a preset](#importing-a-preset)
     - [Community site — ASM Presets](#community-site--asm-presets)
+  - [Controlling channels from a key](#controlling-channels-from-a-key)
   - [Virtual surround 7.1](#virtual-surround-71)
   - [Themes](#themes)
     - [Custom themes](#custom-themes)
@@ -90,6 +91,7 @@ A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio
 - **Bring audio to headset** — one click moves any app that got stuck on the wrong output (HDMI, S/PDIF, another sound card) back to your headset; available on the Home page and in the system tray
 - **True multichannel output** — route apps directly to HDMI or external output (5.1 / 7.1 native passthrough)
 - **Volume sliders** per channel with live percentage display
+- **Keyboard control** — `asm-cli volume game +5`, `chat mute`, `media 40`, or several at once (`game +5 chat -5`); bind it to any key in your desktop's own shortcut settings, including the unused function keys a macropad dial sends ([details](#controlling-channels-from-a-key))
 - **Native PipeWire support** — detects apps that bypass PulseAudio (mpv, Haruna…)
 
 ### 🎛️ EQ & audio processing
@@ -658,6 +660,38 @@ ASM automatically detects the link format, downloads the preset if needed, and s
 | Vote for a preset | Click the ♡ button (requires GitHub login) |
 | Publish a preset | Click **Share a Preset**, sign in with GitHub, fill in the form |
 | Delete your preset | Click 🗑 on your own preset card (only visible when logged in) |
+
+---
+
+## Controlling channels from a key
+
+Sonar on Windows let you bind a key to a channel's volume. On Linux the same
+thing is available, from the other end: ASM exposes the action as a command,
+and your desktop binds the key.
+
+```bash
+asm-cli volume game +5          # five points up
+asm-cli volume chat -5          # five points down
+asm-cli volume media 40         # set an exact level
+asm-cli volume game mute        # mute, unmute, or toggle
+asm-cli volume game +5 chat -5  # several channels from one key
+asm-cli volume --list           # what each channel is at right now
+```
+
+Bind those in your desktop's keyboard settings — KDE's *Custom Shortcuts*,
+GNOME's *Custom Shortcuts*, or your window manager's config. A macropad that
+sends an otherwise unused key (F20, F21…) works exactly like any other key
+here, which is the usual way to get physical dials for the channels.
+
+Why a command rather than a shortcut inside ASM: on Wayland an application
+cannot claim a key combination for itself — the compositor owns that, and the
+portal that hands them out is not available on every desktop, nor can it grant
+a *specific* key. Binding a command has none of those limits and works the
+same on X11, Wayland, and any desktop.
+
+The volume is applied straight to PipeWire, so a bound key works whether or
+not the ASM window is open, and the new level is remembered the same way the
+sliders' are.
 
 ---
 
