@@ -270,7 +270,7 @@ def test_deleting_a_clip_does_not_throw_the_list_back_to_the_top(tmp_path,
         (tmp_path / f"clip_2026-08-01_10-{index // 60:02d}-{index % 60:02d}.mkv").write_bytes(b"video")
 
     app = QApplication.instance() or QApplication([])
-    monkeypatch.setattr(clips_page, "CLIP_DIR", tmp_path)
+    monkeypatch.setattr(clips_page, "clip_dir", lambda: tmp_path)
     # No poster frames: forty fake files would each start an ffmpeg run that
     # can only fail, and the failures land in Qt's worker threads.
     monkeypatch.setattr(clips_page.ClipsPage, "_queue_thumbnail",

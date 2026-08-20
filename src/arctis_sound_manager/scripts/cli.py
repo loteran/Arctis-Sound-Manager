@@ -407,12 +407,42 @@ def main():
     read_eq_parser.add_argument('--json', action='store_true',
                                 help='Print the raw JSON reply instead of a table')
 
+    # Volume — the piece a keybind binds to (issue #193). A command rather than
+    # an in-app shortcut because on Wayland the app cannot claim a key: the
+    # compositor owns that, and the GlobalShortcuts portal is neither universal
+    # nor able to grant a specific key. Every desktop can bind a command.
+    volume_parser = subparsers.add_parser(
+        'volume',
+        help='Adjust a channel volume — bind this to a key in your desktop '
+             'settings (e.g. asm-cli volume game +5)')
+    volume_parser.add_argument(
+        'args', nargs='*', metavar='CHANNEL ACTION',
+        help="pairs of channel and action: game|chat|media followed by "
+             "+N, -N, a number, mute, unmute or toggle. Several pairs may be "
+             "given, e.g. 'game +5 chat -5'.")
+    volume_parser.add_argument(
+        '--list', action='store_true',
+        help='Show each channel with its current level instead of changing it')
+
     # Diagnose — full local-only dump for bug reports.
     diagnose_parser = subparsers.add_parser('diagnose', help='Dump diagnostic info for bug reports (local-only, nothing is sent).')
     diagnose_parser.add_argument('--output', '-o', type=Path, default=None,
                                  help='Write the dump to this path instead of stdout.')
 
     args = parser.parse_args()
+
+    if args.command == 'volume':
+        from arctis_sound_manager import channel_control
+        if args.list:
+            print('\n'.join(channel_control.show()))
+            return
+        try:
+            for line in channel_control.apply_all(args.args):
+                print(line)
+        except channel_control.ChannelError as exc:
+            print(f'asm-cli volume: {exc}', file=sys.stderr)
+            sys.exit(2)
+        return
 
     if args.command == 'diagnose':
         from arctis_sound_manager.diagnose import diagnose

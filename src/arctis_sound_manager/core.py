@@ -46,7 +46,28 @@ class TypedDevice(Device):
 # seconds. Covers the boot-time race between udev applying the access rights
 # and the daemon claiming the device, without making a genuinely missing rules
 # file take noticeably longer to report.
-_USB_PERMISSION_RETRY_DELAYS = (1.0, 3.0, 6.0)
+# How long ASM waits for udev to catch up before it decides a USB EACCES is a
+# real permissions problem rather than a boot-time race.
+#
+# The first version of this stopped after 1+3+6 = 10 seconds. That is not
+# enough on a machine where the dongle is enumerated early in a busy boot:
+# udev had not applied the rules yet, ASM spent its whole budget, and the
+# dialog appeared even though the rules on disk were perfectly valid — the
+# exact symptom this retry was added to fix, still reported on a clean install
+# months later (discussion #140, #190).
+_USB_PERMISSION_RETRY_DELAYS = (1.0, 2.0, 4.0, 8.0, 15.0, 30.0)
+
+# Once the budget above is spent the dialog is shown — the user does need to
+# know — but ASM keeps trying at this interval instead of giving up forever.
+#
+# Giving up was the second half of the bug. The retry budget was only reset by
+# a successful acquisition or by the device disappearing, so on the common
+# setup where the dongle never leaves its port, a single slow boot meant the
+# popup stayed until the next physical replug. Nothing else in the running
+# system would ever re-check. With a slow watch, a late udev, a manual
+# `udevadm trigger` or a rules install from any other window repairs ASM on
+# its own, and the dialog the user is looking at stops being the only way out.
+_USB_PERMISSION_WATCH_INTERVAL = 30.0
 
 # Extra tokens a profile's update_sequence can use, for commands that carry a
 # byte derived from the setting rather than the setting itself. The Nova Pro
@@ -126,6 +147,9 @@ class CoreEngine:
         # (udev rules missing or not yet applied to the connected device).
         # Read by the GUI to surface a "Fix permissions" action.
         self.permission_error: bool = False
+        # True once the fast retries are spent and the slow watch is armed,
+        # so only one timer chain runs and the error is logged once.
+        self._usb_permission_watching: bool = False
         # How many permission retries are still pending for this device. A
         # dongle plugged in before boot can be enumerated before its access
         # rights are in place, so the very first acquisition of the session
@@ -1501,6 +1525,7 @@ class CoreEngine:
             # allowance of permission retries instead of inheriting a budget
             # already spent on the previous session.
             self._usb_permission_attempt = 0
+            self._usb_permission_watching = False
             self.teardown()
     
     def _update_active_dial_interfaces(self) -> None:
@@ -1735,7 +1760,10 @@ class CoreEngine:
                     # routinely enumerated before its access rights land.
                     self._schedule_usb_permission_retry()
                     return
+                # Acquired: stand the whole retry machinery down, including a
+                # slow watch that may have been running for hours.
                 self._usb_permission_attempt = 0
+                self._usb_permission_watching = False
 
             # Discover ALSA nodes for this device and update shared device state
             physical_out_game, physical_out_chat, physical_in = self._discover_physical_nodes(
@@ -2807,21 +2835,33 @@ class CoreEngine:
         permission flag stays down while attempts remain, so the GUI is only
         told about a genuine, lasting permission problem.
         """
-        if self._usb_permission_attempt >= len(_USB_PERMISSION_RETRY_DELAYS):
-            self.logger.error(
-                "USB access still denied after %d retries — surfacing the "
-                "permissions dialog.", len(_USB_PERMISSION_RETRY_DELAYS),
+        budget = len(_USB_PERMISSION_RETRY_DELAYS)
+        if self._usb_permission_attempt >= budget:
+            # Out of fast retries: tell the user, and keep trying anyway. The
+            # dialog is a way out, not the only one — see the note on
+            # _USB_PERMISSION_WATCH_INTERVAL.
+            delay = _USB_PERMISSION_WATCH_INTERVAL
+            self.permission_error = True
+            if not self._usb_permission_watching:
+                self._usb_permission_watching = True
+                self.logger.error(
+                    "USB access still denied after %d retries — surfacing the "
+                    "permissions dialog, and re-checking every %.0fs in case "
+                    "the rules land later.", budget, delay,
+                )
+            else:
+                self.logger.debug(
+                    "USB access still denied — next check in %.0fs", delay,
+                )
+        else:
+            delay = _USB_PERMISSION_RETRY_DELAYS[self._usb_permission_attempt]
+            self._usb_permission_attempt += 1
+            # Not a confirmed permission problem yet — don't prompt the user.
+            self.permission_error = False
+            self.logger.info(
+                "USB access denied on acquisition, retrying in %.1fs (attempt %d/%d)",
+                delay, self._usb_permission_attempt, budget,
             )
-            return
-
-        delay = _USB_PERMISSION_RETRY_DELAYS[self._usb_permission_attempt]
-        self._usb_permission_attempt += 1
-        # Not a confirmed permission problem yet — don't prompt the user.
-        self.permission_error = False
-        self.logger.info(
-            "USB access denied on acquisition, retrying in %.1fs (attempt %d/%d)",
-            delay, self._usb_permission_attempt, len(_USB_PERMISSION_RETRY_DELAYS),
-        )
 
         def _retry() -> None:
             try:

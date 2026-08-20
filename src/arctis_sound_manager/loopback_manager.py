@@ -293,6 +293,18 @@ def _build_pw_loopback_argv(spec: LoopbackSpec) -> list[str]:
         # tug-of-war anymore.
         f" node.autoconnect=false"
         f" node.linger=true"
+        # A loopback with no application playing into it is still a node that
+        # actively pushes silence down the chain, all the way to the headset —
+        # which never sees an idle moment and so never starts its auto-off
+        # timer (issue #180). node.passive makes it follow rather than drive:
+        # it cannot wake the device on its own, so once the applications stop,
+        # the whole chain (loopback → EQ → HeSuVi → headset) suspends. An
+        # application starting playback is an active node and wakes it back up.
+        # This must be paired with the same property on the filter-chain
+        # playback nodes (sonar_to_pipewire): ONE non-passive link anywhere in
+        # the chain keeps every node downstream of it — and the headset —
+        # awake, which is exactly why fixing only one half changed nothing.
+        f" node.passive=true"
         f" latency.msec=50"
     )
     return [

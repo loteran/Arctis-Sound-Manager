@@ -30,7 +30,7 @@ from arctis_sound_manager.gui import clips_page
 def page(tmp_path, monkeypatch):
     """A Clips page whose capture is a stand-in, so nothing touches the screen."""
     QApplication.instance() or QApplication([])
-    monkeypatch.setattr(clips_page, "CLIP_DIR", tmp_path)
+    monkeypatch.setattr(clips_page, "clip_dir", lambda: tmp_path)
     monkeypatch.setattr(clips_page.ClipsPage, "_queue_thumbnail",
                         lambda self, clip: None)
     # The page polls once through the event loop at startup; nothing has been
@@ -39,7 +39,7 @@ def page(tmp_path, monkeypatch):
 
     widget = clips_page.ClipsPage()
     monkeypatch.undo()
-    monkeypatch.setattr(clips_page, "CLIP_DIR", tmp_path)
+    monkeypatch.setattr(clips_page, "clip_dir", lambda: tmp_path)
 
     started: list[bool] = []
     stopped: list[bool] = []

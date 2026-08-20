@@ -51,7 +51,12 @@ SETTLE_SECONDS = 45
 
 
 def run(argv: list[str], **kw) -> subprocess.CompletedProcess:
-    return subprocess.run(argv, capture_output=True, text=True, timeout=60, **kw)
+    # setdefault, not timeout=60: callers that need longer (pw-top, asm-cli
+    # diagnose) pass their own, and a hard-coded keyword here made those calls
+    # raise "got multiple values for keyword argument 'timeout'" — reported
+    # with the fix by @Michsior14 on #180.
+    kw.setdefault("timeout", 60)
+    return subprocess.run(argv, capture_output=True, text=True, **kw)
 
 
 def loopback_manager_path() -> Path:

@@ -20,7 +20,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from arctis_sound_manager.core import _USB_PERMISSION_RETRY_DELAYS, CoreEngine
+from arctis_sound_manager.core import (CoreEngine,
+                                       _USB_PERMISSION_RETRY_DELAYS,
+                                       _USB_PERMISSION_WATCH_INTERVAL)
 
 
 @pytest.fixture
@@ -29,6 +31,9 @@ def engine() -> MagicMock:
     eng.logger = MagicMock()
     eng.permission_error = True          # kernel_detach just set it
     eng._usb_permission_attempt = 0
+    # Set explicitly: an unset attribute on a MagicMock is truthy, which would
+    # make the engine think the slow watch is already armed.
+    eng._usb_permission_watching = False
     eng._schedule_usb_permission_retry = lambda: CoreEngine._schedule_usb_permission_retry(eng)
     return eng
 
@@ -70,8 +75,15 @@ def test_retry_callback_swallows_exceptions(engine):
     assert engine.logger.warning.called
 
 
-def test_delays_back_off_then_give_up(engine):
-    """After the last attempt the flag is left standing, so the dialog shows."""
+def test_delays_back_off_then_keep_watching(engine):
+    """After the last attempt the flag is raised — but checking continues.
+
+    This used to assert that nothing further was scheduled. That was the bug:
+    the budget was only refilled by a successful acquisition or by the device
+    being unplugged, so on a machine where the dongle never leaves its port a
+    single slow boot left the popup up until the user physically replugged it
+    (discussions #140, #190).
+    """
     for expected in _USB_PERMISSION_RETRY_DELAYS:
         engine.permission_error = True
         with patch.object(threading, "Timer") as timer:
@@ -79,11 +91,12 @@ def test_delays_back_off_then_give_up(engine):
         assert timer.call_args[0][0] == expected
         assert engine.permission_error is False
 
-    # Attempts exhausted: a real permission problem, let the user know.
+    # Attempts exhausted: a real permission problem, let the user know — and
+    # keep re-checking, so late udev rules repair it without a click.
     engine.permission_error = True
     with patch.object(threading, "Timer") as timer:
         engine._schedule_usb_permission_retry()
 
-    timer.assert_not_called()
+    assert timer.call_args[0][0] == _USB_PERMISSION_WATCH_INTERVAL
     assert engine.permission_error is True
     assert engine.logger.error.called

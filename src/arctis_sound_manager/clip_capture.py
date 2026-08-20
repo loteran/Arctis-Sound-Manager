@@ -49,7 +49,11 @@ log = logging.getLogger(__name__)
 
 CONFIG_DIR = Path.home() / ".config" / "arctis_manager"
 TOKEN_FILE = CONFIG_DIR / "clip_screencast_token.json"
-CLIP_DIR = Path.home() / "Videos" / "ASM Clips"
+# The clip folder is resolved per save, not frozen here: it follows the
+# user's localised video directory (issue #192). clip_library is import-
+# cheap (json/shutil/subprocess), which matters because this module is
+# imported at ASM start-up.
+from arctis_sound_manager.clip_library import clip_dir
 
 PORTAL = "org.freedesktop.portal.Desktop"
 PORTAL_PATH = "/org/freedesktop/portal/desktop"
@@ -1127,10 +1131,11 @@ class ClipCapture:
 
         game = detect_game()
         if path is None:
-            CLIP_DIR.mkdir(parents=True, exist_ok=True)
+            target_dir = clip_dir()
+            target_dir.mkdir(parents=True, exist_ok=True)
             stamp = time.strftime("%Y-%m-%d_%H-%M-%S")
             label = f"_{game.replace(' ', '_')}" if game else ""
-            path = CLIP_DIR / f"clip_{stamp}{label}.mkv"
+            path = target_dir / f"clip_{stamp}{label}.mkv"
 
         order = [t for t in ("video", *(n for n, _ in self.audio_tracks)) if t in frames]
 
