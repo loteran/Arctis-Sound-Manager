@@ -1,3 +1,36 @@
+arctis-sound-manager (1.4.2-1) noble; urgency=medium
+
+  * Clips can be switched off. It could be switched on, but the only control
+    that turned it back off was "Uninstall" — which opens by asking whether
+    ffmpeg and GStreamer should be removed from your machine, packages the
+    rest of your desktop shares. Saying "stop recording" meant answering for
+    your whole system, so the feature read as having no off switch at all.
+    The Clips tab now carries a plain on/off switch next to its title. Off
+    stops the capture and hands the tab back to its start screen, whose
+    button says Enable — one switch, two faces. Your clips stay, the
+    packages stay, and Uninstall is still there for the day you want them
+    gone.
+  * Clicking the tray icon could kill ASM outright. Window, tray icon and
+    all — from the outside it read as "the app just closed". ASM showed the
+    battery percentage in a *second* tray item and took that item away
+    whenever the level became unknown, which is exactly what happens when
+    the headset powers off — and also the moment you are most likely to
+    click the tray, to find out why your audio just moved to another output.
+    Hiding a tray item destroys it, so a click already on its way from your
+    panel landed on memory that was no longer there. The battery now lives
+    in the ASM icon itself, in a strip under the logo: one tray item,
+    created when ASM starts and never taken away, so there is nothing left
+    to click on that can disappear first. A headset that is off simply shows
+    the logo on its own. (#194)
+  * Clips held on to your screen and your keyboard shortcut after being
+    switched off. The screen-recording session and the shortcut registered
+    with your desktop both outlive the page that created them, and neither
+    was handed back when the Clips tab closed. Turning Clips off and on
+    again therefore left the old session and keybinding behind, and the new
+    recorder then competed with one nothing on screen could account for.
+
+ -- loteran <axel.valadon@gmail.com>  Thu, 20 Aug 2026 00:00:00 +0000
+
 arctis-sound-manager (1.4.1-1) noble; urgency=medium
 
   * A channel's volume can be bound to a key. Sonar on Windows let you bind
