@@ -14,6 +14,7 @@ report GStreamer as a problem, and must not import it either.
 """
 from __future__ import annotations
 
+import logging
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -434,6 +435,110 @@ def test_uninstalling_from_the_tab_switches_off_and_asks_for_the_swap(
         assert swapped == [True]
     finally:
         page.deleteLater()
+
+
+def test_the_switch_turns_clips_off_without_touching_any_package(monkeypatch):
+    """The on/off switch is the everyday control, and it must not be the
+    uninstaller wearing a different hat.
+
+    Before it existed the only way off the recorder was Uninstall, which opens
+    by asking whether ffmpeg should be removed from the machine — so "stop
+    recording" could not be said without answering for the rest of the desktop,
+    and most people read the feature as having no off switch at all. Off here
+    means: the flag is written, the window is asked to swap the tab, and no
+    package manager and no dialog is involved.
+    """
+    pytest.importorskip("PySide6")
+    from PySide6.QtWidgets import QApplication
+
+    from arctis_sound_manager.gui import clips_setup
+    from arctis_sound_manager.gui.clips_page import ClipsPage
+
+    QApplication.instance() or QApplication([])
+
+    written: list[bool] = []
+    monkeypatch.setattr(clips_setup, "set_enabled", written.append)
+    monkeypatch.setattr(clips_setup, "remove_argvs",
+                        lambda: pytest.fail("the switch must not reach removal"))
+    monkeypatch.setattr("PySide6.QtWidgets.QMessageBox.exec",
+                        lambda self: pytest.fail("the switch must not ask anything"))
+
+    page = ClipsPage()
+    swapped: list[bool] = []
+    page.clips_disabled.connect(lambda: swapped.append(True))
+    try:
+        assert page._power_switch.isChecked()
+        page._power_switch.setChecked(False)
+        assert written == [False]
+        assert swapped == [True]
+    finally:
+        page.deleteLater()
+
+
+def test_switching_the_page_on_does_not_write_the_flag_again(monkeypatch):
+    """The switch is built checked on a page that only exists while Clips is
+    on, so the constructor's own `setChecked(True)` is state being restored —
+    not a user asking for anything, and not something to persist."""
+    pytest.importorskip("PySide6")
+    from PySide6.QtWidgets import QApplication
+
+    from arctis_sound_manager.gui import clips_setup
+    from arctis_sound_manager.gui.clips_page import ClipsPage
+
+    QApplication.instance() or QApplication([])
+
+    written: list[bool] = []
+    monkeypatch.setattr(clips_setup, "set_enabled", written.append)
+
+    page = ClipsPage()
+    try:
+        assert written == []
+    finally:
+        page.deleteLater()
+
+
+def test_swapping_the_tab_hands_back_what_the_recorder_held(monkeypatch):
+    """Switching Clips off has to release the ScreenCast portal session and the
+    compositor's global shortcut, not just drop the widget.
+
+    Both live outside this process and outlive a deleted QWidget, so a page
+    removed without `shutdown()` leaves a capture session and a keybinding
+    registered for a feature that is now off — and the next time Clips is
+    switched back on, the new recorder contends with one nobody can see.
+    """
+    pytest.importorskip("PySide6")
+    from PySide6.QtWidgets import QApplication, QStackedWidget, QWidget
+
+    from arctis_sound_manager.gui import clips_setup
+    from arctis_sound_manager.gui.main_app import QMainApp
+
+    QApplication.instance() or QApplication([])
+    monkeypatch.setattr(clips_setup, "clips_active", lambda: False)
+
+    released: list[bool] = []
+
+    class _Recorder(QWidget):
+        def shutdown(self):
+            released.append(True)
+
+    class _Window:
+        _sync_clips_page = QMainApp._sync_clips_page
+        _build_clips_page = QMainApp._build_clips_page
+        logger = logging.getLogger("test")
+
+        def _switch_page(self, index):
+            pass
+
+    window = _Window()
+    window._stack = QStackedWidget()
+    window._clips_page = _Recorder()
+    window._stack.addWidget(window._clips_page)
+
+    window._sync_clips_page()
+
+    assert released == [True]
+    assert window._clips_page is not None
+    assert not isinstance(window._clips_page, _Recorder)
 
 
 def test_one_package_the_machine_still_needs_does_not_abandon_the_rest(

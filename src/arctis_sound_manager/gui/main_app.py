@@ -475,6 +475,20 @@ class QMainApp(QBaseDesktopApp):
                 status.setText(I18n.translate("ui", "clips_install_restart"))
             return
 
+        # Hand back what the recorder holds outside this process before the
+        # widget goes: the ScreenCast portal session and the compositor's global
+        # shortcut both outlive a deleted QWidget, so switching Clips off and on
+        # again used to leave the old session and keybinding behind — a second
+        # capture then contends with a recorder nobody can see. deleteLater()
+        # alone never reached shutdown().
+        stop = getattr(old, "shutdown", None)
+        if callable(stop):
+            try:
+                stop()
+            except Exception:  # noqa: BLE001
+                self.logger.debug("clips page did not shut down cleanly",
+                                  exc_info=True)
+
         idx = stack.indexOf(old)
         if idx < 0:
             idx = PAGE_CLIPS

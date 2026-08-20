@@ -46,6 +46,7 @@ from PySide6.QtWidgets import (
 )
 
 import arctis_sound_manager.gui.theme as _theme
+from arctis_sound_manager.gui.qt_widgets.q_toggle import QToggle
 from arctis_sound_manager.i18n import I18n
 
 logger = logging.getLogger("ClipsPage")
@@ -287,11 +288,48 @@ class ClipsPage(QWidget):
         root.setContentsMargins(24, 20, 24, 20)
         root.setSpacing(14)
 
+        # ── title row ─────────────────────────────────────────────────────────
+        # The switch belongs with the title, not in the button row underneath:
+        # it turns the whole feature off, and sitting next to Start and Save it
+        # would read as a third capture control. Until it existed the only way
+        # off this page was "Uninstall", which opens with a question about
+        # removing ffmpeg — so someone who just wanted the recorder to stop had
+        # to walk through a package conversation to get there, and most people
+        # reasonably read that as "there is no way to turn this off".
+        header = QHBoxLayout()
+        header.setSpacing(10)
+
         title = QLabel(_tr("clips", "Clips"))
         title.setStyleSheet(
             f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 16pt; "
             f"font-weight: bold; background: transparent;")
-        root.addWidget(title)
+        header.addWidget(title)
+        header.addStretch(1)
+
+        self._power_lbl = QLabel(_tr("clips_power_on", "On"))
+        self._power_lbl.setStyleSheet(
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 10pt; "
+            f"background: transparent;")
+        header.addWidget(self._power_lbl)
+
+        # QToggle, the switch the Sonar page uses everywhere, rather than a
+        # styled checkbox: this is the same kind of control and it should not
+        # be the one place in ASM where an on/off switch looks like something
+        # else.
+        self._power_switch = QToggle(is_checkbox=True)
+        self._power_switch.setChecked(True)
+        self._power_switch.setToolTip(_tr(
+            "clips_power_tooltip",
+            "Turn Clips off. The recording stops and the tab goes back to the "
+            "start screen — your saved clips and the packages it uses are left "
+            "alone."))
+        # toggled(bool) rather than stateChanged(int): stateChanged hands over a
+        # Qt.CheckState, and bool(Qt.CheckState.Unchecked) is True — a switch
+        # wired to it reads every "off" as an "on".
+        self._power_switch.toggled.connect(self._on_power_toggled)
+        header.addWidget(self._power_switch)
+
+        root.addLayout(header)
 
         self._hint = QLabel(_tr(
             "clips_hint",
@@ -877,6 +915,33 @@ class ClipsPage(QWidget):
         self._auto_started = False
         self._stop_capture()
 
+    def _on_power_toggled(self, on: bool) -> None:
+        """The switch in the title row: off stops recording and puts the tab
+        back to the start screen, and does nothing else.
+
+        Deliberately not the Uninstall path. Turning a recorder off is an
+        everyday thing; being asked whether ffmpeg should leave the machine is
+        not, and while the two shared a button there was no way to do the first
+        without answering for the second. The packages stay, the saved clips
+        stay, and the start screen the tab falls back to offers Enable — so
+        this is one switch with two faces, not a one-way door.
+
+        Only the off direction is acted on: the switch is created checked on a
+        page that only exists while Clips is on, so an "on" here is the initial
+        state being set, not a user asking for anything.
+        """
+        if on:
+            return
+
+        from arctis_sound_manager.gui import clips_setup
+
+        self._power_lbl.setText(_tr("clips_power_off", "Off"))
+        self._stop_capture()
+        clips_setup.set_enabled(False)
+        # The window swaps this page out for the start screen, which is also
+        # what releases the portal session and the global shortcut.
+        self.clips_disabled.emit()
+
     def _on_uninstall(self) -> None:
         """Switch Clips off from the tab, and offer to remove its packages.
 
@@ -1302,6 +1367,9 @@ class ClipsPage(QWidget):
         ):
             widget.setStyleSheet(
                 f"color: {_theme.c(key)}; font-size: {size}; background: transparent;")
+        self._power_lbl.setStyleSheet(
+            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 10pt; "
+            f"background: transparent;")
         # The placeholder card is painted in theme colours, so it is stale now.
         # Cards already showing a real frame are unaffected.
         _PLACEHOLDER = None
