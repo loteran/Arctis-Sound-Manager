@@ -278,7 +278,25 @@ class QSystrayApp(QBaseDesktopApp):
             pct = self._extract_battery_percent(status)
         try:
             if pct is None:
-                self.battery_icon.hide()
+                # Deferred, and only when there is actually something to hide.
+                #
+                # hide() on a QSystemTrayIcon destroys the KStatusNotifierItem
+                # behind it. Called straight from a D-Bus status update — which
+                # is exactly what happens the moment the headset powers off —
+                # it can delete the item while a click from the tray host is
+                # already in flight, and KStatusNotifierItem::activate() then
+                # runs on freed memory and takes the whole app down with
+                # SIGSEGV. Same failure as the one _on_tray_activated already
+                # guards against, reached from the other side: there the item
+                # died *during* activate(), here it dies just before the click
+                # lands. Handing the hide back to the event loop takes it out
+                # of the D-Bus call it would otherwise run inside.
+                #
+                # The isVisible() check matters as much as the defer: without
+                # it a hidden item was re-hidden on every status poll, so this
+                # ran constantly rather than once at power-off.
+                if self.battery_icon.isVisible():
+                    QTimer.singleShot(0, self.battery_icon.hide)
             else:
                 self.battery_icon.setIcon(QIcon(get_battery_number_pixmap(pct, color=color)))
                 self.battery_icon.setToolTip(f'Arctis — {pct}%')
