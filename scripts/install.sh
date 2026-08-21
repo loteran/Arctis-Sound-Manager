@@ -5,7 +5,26 @@ set -euo pipefail
 # Ensure pipx/pipx-installed binaries (asm-cli, asm-daemon) are always in PATH,
 # regardless of whether uv was just installed or already present.
 export PATH="$HOME/.local/bin:$PATH"
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# This installer copies PipeWire configs, device YAMLs and desktop files out of
+# the repository around it, so it only works from a checkout. Piping it into
+# bash cannot work, and did not fail cleanly either: BASH_SOURCE is unset when
+# bash reads from stdin, which under `set -u` aborted the script on this line
+# with "unbound variable" before a single word of explanation. Say what is
+# wrong and what to do instead.
+_self="${BASH_SOURCE[0]:-}"
+if [ -z "$_self" ] || [ ! -f "$_self" ]; then
+    echo "  [ERROR] This installer must run from a clone of the repository," >&2
+    echo "          not piped into bash, it installs files that live beside it." >&2
+    echo >&2
+    echo "  Install from your package manager instead (see the README):" >&2
+    echo "    https://github.com/loteran/Arctis-Sound-Manager#installation" >&2
+    echo >&2
+    echo "  Or clone first:" >&2
+    echo "    git clone https://github.com/loteran/Arctis-Sound-Manager.git" >&2
+    echo "    cd Arctis-Sound-Manager && bash scripts/install.sh" >&2
+    exit 2
+fi
+REPO_DIR="$(cd "$(dirname "$_self")/.." && pwd)"
 SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 
 echo "==> Installing Arctis Sound Manager..."

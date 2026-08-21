@@ -422,5 +422,24 @@ def test_upgrade_source_unknowable_apt_error_assumes_tracked():
 def test_repo_setup_command_per_manager():
     assert "add-apt-repository" in repo_setup_command(InstallMethod.APT)
     assert "copr enable" in repo_setup_command(InstallMethod.RPM)
-    assert "install.sh" in repo_setup_command(InstallMethod.PACMAN)
     assert repo_setup_command(InstallMethod.PIP) is None
+
+    # Arch gets the signed pacman repository the README documents. This used
+    # to assert `"install.sh" in …`, which held right up until someone ran the
+    # command: piping that script into bash cannot work. It copies PipeWire
+    # configs and device YAMLs out of the checkout it expects around it, and a
+    # piped script has neither a checkout nor a BASH_SOURCE. The assertion
+    # pinned the command's spelling and never its premise.
+    pacman = repo_setup_command(InstallMethod.PACMAN)
+    assert "install.sh" not in pacman
+    assert "pacman-key --add" in pacman
+    assert "[arctis-sound-manager]" in pacman
+    assert "pacman -Sy arctis-sound-manager" in pacman
+
+
+def test_pacman_repo_setup_can_be_run_twice():
+    """Appending the repo block unconditionally would duplicate it in
+    pacman.conf every time the update dialog is used."""
+    pacman = repo_setup_command(InstallMethod.PACMAN)
+    assert "grep -q" in pacman, \
+        f"nothing stops the repo block being appended twice:\n{pacman}"

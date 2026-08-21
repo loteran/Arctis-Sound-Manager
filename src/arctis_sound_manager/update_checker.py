@@ -237,9 +237,30 @@ _REPO_SETUP_COMMANDS: dict[InstallMethod, str] = {
     InstallMethod.RPM:
         "sudo dnf copr enable loteran/arctis-sound-manager && "
         "sudo dnf install arctis-sound-manager",
+    # The signed pacman repository, exactly as the README documents it. This
+    # is what Arch users are told to install from while the AUR is frozen.
+    #
+    # This used to pipe scripts/install.sh into bash, which could not work on
+    # two counts: that script needs the repository checkout around it (it
+    # copies PipeWire configs and device YAMLs out of it), and piping any
+    # script into bash leaves BASH_SOURCE unset, which aborts it on the spot
+    # under `set -u`. Arch and CachyOS are the largest install base ASM has,
+    # and this is the command the update dialog handed every one of them.
+    #
+    # Idempotent on purpose: the repository block is appended only when it is
+    # not already in pacman.conf, so running it twice cannot duplicate it.
     InstallMethod.PACMAN:
-        "curl -fsSL https://raw.githubusercontent.com/loteran/"
-        "Arctis-Sound-Manager/main/scripts/install.sh | bash",
+        "curl -fsSL https://github.com/loteran/Arctis-Sound-Manager/releases/"
+        "download/pacman-repo/arctis-sound-manager.key -o /tmp/asm.key && "
+        "sudo pacman-key --add /tmp/asm.key && "
+        "sudo pacman-key --lsign-key \"$(gpg --show-keys --with-colons "
+        "/tmp/asm.key | awk -F: '/^fpr/ {print $10; exit}')\" && "
+        # Raw strings: the backslashes belong to grep and printf, not Python.
+        r"(grep -q '^\[arctis-sound-manager\]' /etc/pacman.conf || "
+        r"printf '\n[arctis-sound-manager]\nServer = https://github.com/"
+        r"loteran/Arctis-Sound-Manager/releases/download/pacman-repo\n' | "
+        "sudo tee -a /etc/pacman.conf >/dev/null) && "
+        "sudo pacman -Sy arctis-sound-manager",
 }
 
 
