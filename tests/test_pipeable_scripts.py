@@ -120,7 +120,16 @@ def test_pipeable_script_does_not_prompt_on_stdin(script: Path):
 def test_update_dialog_does_not_pipe_the_repo_installer_into_bash():
     """scripts/install.sh copies files out of the checkout around it, so it
     cannot work from a pipe: yet it was what the update dialog offered every
-    Arch and CachyOS user, the largest install base ASM has."""
+    Arch and CachyOS user, the largest install base ASM has.
+
+    Skipped where Qt cannot be imported: update_checker pulls PySide6, and the
+    distro matrix this file also runs in uses minimal images (debian-slim,
+    ubuntu) that carry no libglib. The rest of this file is deliberately free
+    of that dependency, since its whole point is to run on those images. The
+    same guarantee is asserted directly in test_update_checker.py, which runs
+    in the full suite where Qt is present.
+    """
+    pytest.importorskip("PySide6.QtCore", reason="Qt not available on this image")
     from arctis_sound_manager.update_checker import (
         InstallMethod, repo_setup_command,
     )
