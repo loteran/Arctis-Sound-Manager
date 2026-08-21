@@ -148,7 +148,19 @@ def _no_live_pulse_connection_suitewide(monkeypatch):
     """
     try:
         import pulsectl
-    except ImportError:
+    except (ImportError, OSError):
+        # OSError, not just ImportError: pulsectl dlopen()s libpulse.so.0 at
+        # import time and raises OSError when it is absent. On a container or
+        # a headless box without PulseAudio that took the whole suite down
+        # with a ctypes traceback, instead of skipping a guard that has
+        # nothing left to guard. No pulsectl means no live connection to make.
+        #
+        # `yield` and not a bare `return`: this is a generator fixture, and
+        # returning without yielding makes pytest fail the test outright with
+        # "did not yield a value". The original ImportError branch had the
+        # same hole; it was simply never reached in CI, where pulsectl is
+        # always importable.
+        yield
         return
 
     def _refuse(*_args, **_kwargs):

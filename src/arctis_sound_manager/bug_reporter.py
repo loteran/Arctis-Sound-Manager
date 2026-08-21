@@ -401,6 +401,134 @@ def _arctis_pw_nodes(objects: list | None = None) -> str:
     return '\n'.join(kept).strip()
 
 
+#: SteelSeries. Matched as a string because that is how sysfs stores it.
+_STEELSERIES_VID = '1038'
+
+
+def _usb_access(
+    rules_paths: list[str] | None = None,
+    sys_root: Path = Path('/sys/bus/usb/devices'),
+    dev_root: Path = Path('/dev/bus/usb'),
+) -> str:
+    """Why opening the headset succeeds or fails, from the kernel's side.
+
+    Every other USB section in this report goes through pyusb, which is
+    exactly what fails when permissions are wrong, so a permission bug made
+    the report blank in the one place that mattered (#190: "asked for the
+    permission every time" and "headset reads as not connected", with nothing
+    in the report to say why).
+
+    Nothing here needs access to the device:
+
+      * the rules file's own mode: it was once installed 0600 by a `pkexec cp`
+        and udev silently ignored it, so the dialog came back at every login;
+      * every SteelSeries device the kernel enumerated, straight from sysfs,
+        so a headset that pyusb cannot open is still listed with its PID;
+      * the /dev/bus/usb node's owner, mode and ACL. `TAG+="uaccess"` grants
+        access by adding an ACL entry for the logged-in user, so `user:1000:rw-`
+        present or absent is the difference between "the rules are fine but ran
+        too late for this device" and "the rules never matched it";
+      * whether this process can in fact write to the node, which is the
+        question the popup is really asking.
+
+    *sys_root* and *dev_root* exist so the tests can point this at a fixture
+    tree; nothing else should pass them.
+    """
+    out: list[str] = []
+
+    for p in (rules_paths or []):
+        try:
+            st = os.stat(p)
+            mode = oct(st.st_mode & 0o777)
+            flag = '' if (st.st_mode & 0o044) else '   <-- not world-readable: udev ignores it'
+            out.append(f'{p}: mode {mode} uid {st.st_uid} gid {st.st_gid}{flag}')
+        except OSError as e:
+            out.append(f'{p}: cannot stat ({e})')
+
+    found = 0
+    try:
+        entries = sorted(sys_root.iterdir()) if sys_root.is_dir() else []
+    except OSError as e:
+        entries = []
+        out.append(f'(cannot list {sys_root}: {e})')
+
+    for dev in entries:
+        try:
+            vid = (dev / 'idVendor').read_text().strip()
+        except OSError:
+            continue
+        if vid.lower() != _STEELSERIES_VID:
+            continue
+        found += 1
+
+        def _read(name: str) -> str:
+            try:
+                return (dev / name).read_text().strip()
+            except OSError:
+                return '?'
+
+        pid = _read('idProduct')
+        product = _read('product')
+        busnum, devnum = _read('busnum'), _read('devnum')
+        out.append('')
+        out.append(f'{dev.name}: {vid}:{pid} {product}')
+
+        if not (busnum.isdigit() and devnum.isdigit()):
+            out.append('  (no bus/dev number: cannot locate the device node)')
+            continue
+
+        node = str(dev_root / f'{int(busnum):03d}' / f'{int(devnum):03d}')
+        try:
+            st = os.stat(node)
+            out.append(
+                f'  node {node}: mode {oct(st.st_mode & 0o777)} '
+                f'uid {st.st_uid} gid {st.st_gid}'
+            )
+        except OSError as e:
+            out.append(f'  node {node}: cannot stat ({e})')
+            continue
+
+        # The ACL is the whole answer for uaccess-based rules: `user::rw-` is
+        # the owner's own permission bits and says nothing, while a *named*
+        # entry (`user:1000:rw-`) is what uaccess adds for the seat's user.
+        acl = _run_out(['getfacl', '-p', node], timeout=5.0)
+        if not acl:
+            out.append('  acl: getfacl unavailable (install acl to include this)')
+        else:
+            named = [
+                ln.strip() for ln in acl.splitlines()
+                if ln.strip().startswith('user:') and not ln.strip().startswith('user::')
+            ]
+            if named:
+                for entry in named:
+                    out.append(f'  acl {entry}')
+            else:
+                out.append('  acl: no named user entry  <-- uaccess never tagged this device')
+
+        writable = os.access(node, os.W_OK)
+        out.append(
+            f'  writable by this process: {"yes" if writable else "NO  <-- this is the popup"}'
+        )
+
+        # udev's own view: which rules matched, and whether the tag stuck.
+        tags = _run_out(
+            ['udevadm', 'info', '--query=property', f'--path={sys_root / dev.name}'],
+            timeout=5.0,
+        )
+        for line in tags.splitlines():
+            if line.startswith(('TAGS=', 'CURRENT_TAGS=', 'ID_VENDOR_ID=', 'ID_MODEL_ID=')):
+                out.append(f'  {line}')
+
+    if not found:
+        out.append('')
+        out.append(
+            f'No SteelSeries device (vendor {_STEELSERIES_VID}) is enumerated on '
+            f'this system, the dongle is unplugged, or the kernel did not bind it.'
+        )
+
+    return '\n'.join(out).strip()
+
+
 def _device_status_dump() -> str:
     """The daemon's GetStatus payload, pretty-printed, or why it is missing.
 
@@ -691,6 +819,9 @@ def collect_system_info() -> dict:
         info['udev_paths'] = []
         info['udev_valid'] = None
         info['udev_content'] = f'(udev probe failed: {e!r})'
+
+    # What the kernel actually granted us on the device node (see _usb_access).
+    info['usb_access'] = _usb_access(info.get('udev_paths', []))
 
     # USB monitor backend (pyudev event-driven vs polling fallback) — straight
     # from the module so we don't have to instantiate a second monitor.
@@ -1026,6 +1157,24 @@ def format_bug_report(traceback_str: Optional[str] = None) -> str:
             f'- Paths present: `{udev_paths}`',
             '```',
             info.get('udev_content', '')[:6000] or '(no rules file present on disk)',
+            '```',
+            '',
+        ]
+
+    usb_access = info.get('usb_access', '')
+    if usb_access:
+        lines += [
+            '## USB device access',
+            '<!-- Read straight from sysfs and the device node, so this section',
+            '     still fills in when ASM cannot open the device at all, which is',
+            '     the case every permission report is about (#190).',
+            '     "writable ... NO" with a rules file present and no named ACL',
+            '     entry = the rules did not reach THIS device (udev ran after the',
+            '     dongle enumerated); replugging it, or `udevadm trigger`, applies',
+            '     them. No SteelSeries device listed at all = nothing for the',
+            '     rules to match, and the problem is upstream of ASM. -->',
+            '```',
+            usb_access[:6000],
             '```',
             '',
         ]
