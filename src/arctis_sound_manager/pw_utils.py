@@ -52,10 +52,18 @@ def _pw_run(argv: list[str], **kwargs) -> subprocess.CompletedProcess:
     return subprocess.run(resolved, **kwargs)
 
 _LINK_DENIED = "not permitted"
-# Cleared on every daemon start; one repair attempt per (out, in) pair is
-# enough, and retrying forever would hammer pw-cli on a system where this
-# genuinely cannot be fixed.
-_perm_repair_attempted: set[tuple[int, int]] = set()
+# When each (out, in) pair was last repaired. Cleared on every daemon start.
+#
+# This used to be a set — one attempt per pair, for the lifetime of the daemon
+# — which quietly ruled out the case it was written for. Ports keep their ids
+# for as long as their loopback lives, so once the first attempt had been made
+# a channel could never be repaired again: if the grant failed for a reason
+# that passes (the session manager still starting, a transient pw-cli error),
+# it stayed failed, and the link stayed refused for the rest of the session.
+# Retry, but no more often than this, so a system where the grant genuinely
+# cannot succeed is not hammered.
+_PERM_REPAIR_RETRY_S = 60.0
+_perm_repair_attempted: dict[tuple[int, int], float] = {}
 
 
 # Node names ASM creates itself. Only the clients behind these are ever
@@ -121,14 +129,16 @@ def grant_link_permissions(out_port: int, in_port: int) -> bool:
     caller went on retrying a link that stayed refused (#181).
 
     Deliberately narrow. Only the two clients at the ends of a link ASM was
-    already trying to make are touched, once per port pair per daemon run, and
-    only after a refusal — never pre-emptively. Returns True when something was
-    granted and the caller should retry the link.
+    already trying to make are touched, at most once a minute per port pair,
+    and only after a refusal — never pre-emptively. Returns True when something
+    was granted and the caller should retry the link.
     """
     key = (out_port, in_port)
-    if key in _perm_repair_attempted:
+    now = time.monotonic()
+    last = _perm_repair_attempted.get(key)
+    if last is not None and now - last < _PERM_REPAIR_RETRY_S:
         return False
-    _perm_repair_attempted.add(key)
+    _perm_repair_attempted[key] = now
 
     if shutil.which("pw-cli") is None:
         return False
@@ -973,6 +983,7 @@ def retarget_output(target_name: str, data: list | None = None) -> bool:
 
 def ensure_loopback_link(
     playback_name: str, target_name: str, data: list | None = None,
+    outcome: dict | None = None,
 ) -> bool:
     """Ensure the playback side of a ``pw-loopback`` is linked to *target_name*.
 
@@ -995,6 +1006,13 @@ def ensure_loopback_link(
         Optional pre-fetched ``pw-dump`` payload; a fresh dump is executed when
         *None*. May be reused across channels within one watchdog tick — links
         for different channels are independent, so slightly stale data is safe.
+    outcome:
+        Optional dict, filled in with ``created``, ``total`` and ``denied``
+        (how many channels PipeWire refused on permissions). A caller that only
+        knows "this did not link" cannot tell a refusal from a missing node,
+        and those need opposite responses: recreating the loopback fixes the
+        second and makes the first worse, since the new client starts just as
+        restricted while the recreation drops whatever audio was flowing (#181).
 
     Returns
     -------
@@ -1083,6 +1101,7 @@ def ensure_loopback_link(
         ok = True
         linked_any = False
         created = 0
+        denied = 0
         for out_port, in_port in pairs:
             channel = out_port_to_channel.get(out_port, "?")
             if (out_port, in_port) in existing:
@@ -1112,6 +1131,8 @@ def ensure_loopback_link(
                 created += 1
             else:
                 ok = False
+                if _LINK_DENIED in err.lower():
+                    denied += 1
                 logger.warning(
                     "ensure_loopback_link: pw-link %s→%s (%s) failed: %s",
                     out_port, in_port, channel, err,
@@ -1122,6 +1143,9 @@ def ensure_loopback_link(
                 "ensure_loopback_link: '%s' → '%s' (%d/%d channels linked)",
                 playback_name, target_name, created, len(pairs),
             )
+        if outcome is not None:
+            outcome.update({"created": created, "total": len(pairs),
+                            "denied": denied})
         return linked_any and ok
     except Exception as exc:
         logger.warning("ensure_loopback_link failed: %s", exc)

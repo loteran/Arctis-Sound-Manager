@@ -189,3 +189,113 @@ def test_stderr_beats_a_zero_exit_status():
          patch.object(pw_utils, '_pw_run', run), \
          patch.object(pw_utils.shutil, 'which', lambda _: '/usr/bin/pw-cli'):
         assert pw_utils.grant_link_permissions(10, 20) is False
+
+
+# ---------------------------------------------------------------------------
+# Retrying the repair, and telling a refusal apart from a missing node (#181)
+# ---------------------------------------------------------------------------
+
+def test_repair_is_retried_after_the_cooldown_not_before():
+    """One attempt per pair for the life of the daemon was too few.
+
+    Port ids live as long as their loopback, so a pair that failed its single
+    attempt — session manager still coming up, a transient pw-cli error — could
+    never be repaired again, and its link stayed refused for the whole session.
+    """
+    calls: list[list[str]] = []
+    clock = {'now': 1000.0}
+
+    def run(argv, **_k):
+        calls.append(argv)
+        return SimpleNamespace(returncode=0, stdout=b'', stderr=b'')
+
+    with patch.object(pw_utils, '_pw_dump', _dump), \
+         patch.object(pw_utils, '_pw_run', run), \
+         patch.object(pw_utils.time, 'monotonic', lambda: clock['now']), \
+         patch.object(pw_utils.shutil, 'which', lambda _: '/usr/bin/pw-cli'):
+        assert pw_utils.grant_link_permissions(10, 20) is True
+        first = len(calls)
+
+        # A second later: refused, so pw-cli is not hammered on every tick.
+        clock['now'] += 1.0
+        assert pw_utils.grant_link_permissions(10, 20) is False
+        assert len(calls) == first
+
+        # Past the cooldown, the same pair is repairable again — the port ids
+        # have not changed and never will while the loopback lives.
+        clock['now'] += pw_utils._PERM_REPAIR_RETRY_S
+        assert pw_utils.grant_link_permissions(10, 20) is True
+        assert len(calls) > first
+
+
+def _graph_dump():
+    """A real-shaped pw-dump: the Game loopback and the Game EQ, no links yet.
+
+    Built from the same fields ensure_loopback_link reads (node.name, node.id,
+    port.direction, audio.channel) rather than by patching its internals, so
+    the test still fails if the way it walks the graph changes.
+    """
+    objs = [
+        {'id': 500, 'type': 'PipeWire:Interface:Node',
+         'info': {'props': {'node.name': 'Arctis_Game_sink_out',
+                            'client.id': '232'}}},
+        {'id': 600, 'type': 'PipeWire:Interface:Node',
+         'info': {'props': {'node.name': 'effect_input.sonar-game-eq',
+                            'client.id': '184'}}},
+    ]
+    for port_id, channel in ((10, 'FL'), (11, 'FR')):
+        objs.append({'id': port_id, 'type': 'PipeWire:Interface:Port',
+                     'info': {'props': {'node.id': 500, 'port.direction': 'out',
+                                        'audio.channel': channel}}})
+    for port_id, channel in ((20, 'FL'), (21, 'FR')):
+        objs.append({'id': port_id, 'type': 'PipeWire:Interface:Port',
+                     'info': {'props': {'node.id': 600, 'port.direction': 'in',
+                                        'audio.channel': channel}}})
+    return objs
+
+
+def test_outcome_reports_refusals_separately_from_failures():
+    """A caller that only knows "did not link" cannot choose what to do next.
+
+    Recreating the loopback is right when the node is missing and wrong when
+    the link was refused — the new client is restricted just the same, and the
+    recreation drops the channels that were still playing.
+    """
+    dump = _graph_dump()
+
+    def run(argv, **_k):
+        if argv[0] == 'pw-link':
+            return SimpleNamespace(
+                returncode=1, stdout=b'',
+                stderr=b'failed to link ports: Operation not permitted')
+        # pw-cli: the grant itself succeeds, so the refusals below are the
+        # link's own and not a repair that could not run.
+        return SimpleNamespace(returncode=0, stdout=b'', stderr=b'')
+
+    outcome: dict = {}
+    with patch.object(pw_utils, '_pw_dump', _graph_dump), \
+         patch.object(pw_utils, '_pw_run', run), \
+         patch.object(pw_utils.shutil, 'which', lambda _: '/usr/bin/pw-cli'):
+        linked = pw_utils.ensure_loopback_link(
+            'Arctis_Game_sink_out', 'effect_input.sonar-game-eq',
+            data=dump, outcome=outcome)
+
+    assert linked is False
+    assert outcome == {'created': 0, 'total': 2, 'denied': 2}, outcome
+
+
+def test_outcome_is_clean_when_the_links_go_through():
+    """The same call on a system that allows linking reports no refusal, which
+    is what keeps the watchdog free to recreate a loopback when it should."""
+    dump = _graph_dump()
+    outcome: dict = {}
+
+    with patch.object(pw_utils, '_pw_dump', _graph_dump), \
+         patch.object(pw_utils, '_pw_run', _ok), \
+         patch.object(pw_utils.shutil, 'which', lambda _: '/usr/bin/pw-cli'):
+        linked = pw_utils.ensure_loopback_link(
+            'Arctis_Game_sink_out', 'effect_input.sonar-game-eq',
+            data=dump, outcome=outcome)
+
+    assert linked is True
+    assert outcome == {'created': 2, 'total': 2, 'denied': 0}, outcome

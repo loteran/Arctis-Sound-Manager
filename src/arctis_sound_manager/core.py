@@ -684,6 +684,10 @@ class CoreEngine:
         # linked to its EQ target.  Reset to 0 as soon as the link succeeds or
         # the loopback is restarted.
         _none_ticks: dict[str, int] = {}
+        # Channels whose links PipeWire is refusing on permissions, and for
+        # which the explanation has already been logged. Without this the line
+        # would repeat every tick for as long as the condition lasts.
+        _perm_denied_logged: set[str] = set()
         # Timestamps of recent interventions per channel (monotonic clock).
         _flap_history: dict[str, list[float]] = {}
         # Monotonic timestamp past which the channel is in cooldown.
@@ -937,17 +941,44 @@ class CoreEngine:
                         # it tears down any stray link. This replaces the old
                         # pw-metadata relink that fought WirePlumber's policy; with
                         # autoconnect off there is nothing to fight.
+                        link_outcome: dict = {}
                         linked = await asyncio.get_running_loop().run_in_executor(
                             None,
                             ensure_loopback_link,
                             spec.playback_name,
                             spec.target,
                             link_data,
+                            link_outcome,
                         )
                         if linked:
                             _none_ticks.pop(channel, None)
                             _target_absent_ticks.pop(channel, None)
                             continue
+
+                        # PipeWire refused the link on permissions, it did not
+                        # fail to find the nodes. Recreating the loopback is the
+                        # wrong answer twice over: the new client comes up just
+                        # as restricted, and the recreation drops the channels
+                        # that *were* linked — which is how "no sound on Game"
+                        # turned into sound for thirty seconds, then one ear,
+                        # then silence, on a loop, every five seconds (#181).
+                        # Leave the loopback alone; grant_link_permissions()
+                        # retries the repair on its own schedule.
+                        if link_outcome.get("denied"):
+                            _none_ticks.pop(channel, None)
+                            _target_absent_ticks.pop(channel, None)
+                            if channel not in _perm_denied_logged:
+                                _perm_denied_logged.add(channel)
+                                self.logger.warning(
+                                    "_loopback_watchdog: PipeWire refused %d of %d "
+                                    "links for '%s' on permissions — not recreating "
+                                    "it, that would only drop what still plays. "
+                                    "This system starts our clients restricted (#181).",
+                                    link_outcome.get("denied"),
+                                    link_outcome.get("total"), channel,
+                                )
+                            continue
+                        _perm_denied_logged.discard(channel)
 
                         # Could not link: the loopback node is not in the graph yet,
                         # or the target EQ node is absent (filter-chain still
