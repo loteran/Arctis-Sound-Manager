@@ -65,8 +65,8 @@ device:
     - [0x01, 0x83, 'settings.station_screen_saver_timeout']
     - [0x01, 0xc1, 'settings.auto_off_time_minutes']
     - [0x01, 0xb8, 'settings.noise_cancelling_level']
-    - [0x01, 0x38, 0x01, 'settings.mic_sidetone_boom']
-    - [0x01, 0x39, 0x01, 'settings.mic_sidetone_ear']
+    - [0x01, 0x38, 'settings.mic_sidetone_boom.enabled', 'settings.mic_sidetone_boom.at_least_1'] # boom sidetone: state (0/1) + level 1-10
+    - [0x01, 0x39, 'settings.mic_sidetone_ear.enabled', 'settings.mic_sidetone_ear.at_least_1'] # on-ear sidetone: state (0/1) + level 1-10
     - [0x01, 0xbf, 'settings.mic_led_brightness']
     - [0x01, 0x37, 'settings.mic_volume']
     - [0x01, 0x89]
@@ -277,23 +277,32 @@ device:
           0x07: less nasal
           0x08: custom
       mic_sidetone_boom:
+        # Byte 2 is the on/off state and byte 3 the level 1-10, exactly as on
+        # the Nova Pro Omni (#161). The state byte used to be hardcoded to 1
+        # here, so the slider bottomed out at level 1 — audible enough that a
+        # keyboard next to the boom mic came back through the earcups — and the
+        # sidetone could never actually be turned off (#201). The slider now
+        # spans 0-10: 0 writes state=0, 1-10 write state=1 with that level. The
+        # level byte stays >= 1 even while off (value.at_least_1) because the
+        # firmware misbehaves on a 0 level.
         type: slider
-        min: 0x01
+        min: 0x00
         max: 0x0a
         step: 1
-        min_label: perc_10
+        min_label: off
         max_label: perc_100
         default: 0x05
-        update_sequence: [0x01, 0x38, 0x01, 'value']
+        update_sequence: [0x01, 0x38, 'value.enabled', 'value.at_least_1']
       mic_sidetone_ear:
+        # Same frame shape as mic_sidetone_boom above, on opcode 0x39 (#201).
         type: slider
-        min: 0x01
+        min: 0x00
         max: 0x0a
         step: 1
-        min_label: perc_10
+        min_label: off
         max_label: perc_100
         default: 0x05
-        update_sequence: [0x01, 0x39, 0x01, 'value']
+        update_sequence: [0x01, 0x39, 'value.enabled', 'value.at_least_1']
       mic_led_brightness:
         type: slider
         min: 0x01
