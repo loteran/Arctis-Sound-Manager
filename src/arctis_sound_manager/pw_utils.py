@@ -113,6 +113,13 @@ def grant_link_permissions(out_port: int, in_port: int) -> bool:
     flag that specifically allows linking and is *not* part of ``rwxm``:
     omitting it is why such a fix appears to do nothing.
 
+    The ``--`` matters as much as the flags. ``-1`` means "every object", but
+    pw-cli runs its arguments through getopt first, which reads it as an option
+    and dies with ``invalid option -- '1'`` before the command is ever parsed.
+    Without the separator this whole repair could not run at all, on any
+    system: it failed instantly, in a debug-level log nobody sees, and the
+    caller went on retrying a link that stayed refused (#181).
+
     Deliberately narrow. Only the two clients at the ends of a link ASM was
     already trying to make are touched, once per port pair per daemon run, and
     only after a refusal — never pre-emptively. Returns True when something was
@@ -148,16 +155,20 @@ def grant_link_permissions(out_port: int, in_port: int) -> bool:
     granted = False
     for owner in sorted(owners):
         try:
-            r = _pw_run(["pw-cli", "permissions", owner, "-1", "rwxml"],
+            r = _pw_run(["pw-cli", "--", "permissions", owner, "-1", "rwxml"],
                         check=False, timeout=5, capture_output=True)
         except Exception as exc:
-            logger.debug("could not grant link permissions to client %s: %r", owner, exc)
+            logger.warning("could not grant link permissions to client %s: %r", owner, exc)
             continue
-        if r.returncode == 0:
+        err = (r.stderr or b"").decode(errors="replace").strip()
+        # The exit status alone is not enough: pw-cli reports a command that
+        # failed on stderr and still exits 0, so trusting the status would call
+        # a refused grant a success and retry the link for nothing.
+        if r.returncode == 0 and not err:
             granted = True
         else:
-            logger.debug("pw-cli permissions %s failed: %s", owner,
-                         (r.stderr or b"").decode(errors="replace").strip())
+            logger.warning("pw-cli permissions %s failed: %s", owner,
+                           err or f"exit status {r.returncode}")
     if granted:
         logger.warning(
             "Link was refused by PipeWire; granted link permission to client(s) %s "
