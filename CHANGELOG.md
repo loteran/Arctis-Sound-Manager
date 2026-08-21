@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.4] - 21 August 2026
+
+### Fixed
+
+- **The right half of a wired GameDAC screen updates again.** On a wired Nova Pro the custom display only ever filled the left half of the panel; the right half kept whatever the DAC firmware had drawn there. The panel is 128 px wide and a frame goes out as two 64 px strips, one USB report each — and that DAC carries out screen writes without ever acknowledging them, so the first strip came back as a timeout on a write that had in fact drawn. ASM read that as a failure, retried it five times at a full second each, and then abandoned the rest of the frame, so the second strip was never sent at all. An unacknowledged report is not an unexecuted one: timeouts now count as delivered and are not retried, and a frame always sends every one of its strips. This is also why `ggoled text "hello"` printed `he` on the same hardware — the same give-up-on-first-error, in a different program. ([#197](https://github.com/loteran/Arctis-Sound-Manager/issues/197))
+- **Sidetone can be turned off on the Nova Elite.** The lowest setting was level 1, not silence — quiet enough to look like off, loud enough that a keyboard next to the boom mic came back through the earcups with no way to stop it. The frame carries the on/off state in one byte and the level in another, and the state byte was pinned to "on" whatever the slider said. It now follows the setting, on the sliders and in the sequence ASM replays every time the DAC is plugged in — fixing only the first would have let the next reconnection put it back. This is the same fix the Nova Pro Omni already carried. ([#201](https://github.com/loteran/Arctis-Sound-Manager/issues/201))
+- **The repair for restricted audio clients now actually runs.** On SteamOS ASM's clients come up with restricted permissions, and the routine meant to grant them has never once succeeded since it shipped: it passed an argument that the tool it calls reads as an option, so the command died before it ever got to the word "permissions". The repair fired, failed instantly, logged it where nobody would see it, and left the caller retrying a link PipeWire kept refusing — audio in one ear, an equaliser that changed nothing, applications that would not move between Game and Media. The command is now formed correctly, a refusal is recognised as a refusal even when the tool exits successfully, and a failed repair is logged loudly enough to end up in the journal. ([#181](https://github.com/loteran/Arctis-Sound-Manager/issues/181))
+- **The documented one-liner uninstall works.** `curl -fsSL .../uninstall.sh | bash` aborted before printing anything: piped into bash the script has no file of its own to sit in, and two lines assumed it did. The instruction has been in the README the whole time.
+- **Arch users are no longer offered an update command that cannot work.** The updater suggested a command that does not apply to a package installed from the AUR, which fails wherever it is pasted.
+
+### Changed
+
+- **Bug reports read USB access from the kernel instead of asking a library.** The access check went through a userspace call that can answer "fine" on a device the daemon cannot open, which is the exact situation the section exists to diagnose. It now reports what the kernel says about the device node, so a permissions problem shows up in the report as a permissions problem.
+
 ## [1.4.3] - 21 August 2026
 
 ### Fixed
