@@ -12,6 +12,13 @@ around it either: running `pw-link` by hand fails the same way.
 the permission for the clients it owns and retry. These tests pin the parts
 that make that safe: it only fires on an actual refusal, only touches the two
 clients at the ends of that link, and gives up rather than looping.
+
+They also pin the shape of the command itself, which is where this repair
+spent a release doing nothing at all: `-1` (every object) is eaten by pw-cli's
+getopt as an option unless `--` comes first, and pw-cli reports a command that
+failed on stderr while still exiting 0. Every assertion here mocks `_pw_run`,
+so nothing in this file can notice pw-cli rejecting its own arguments — that
+is what let the bug through, and why the argv shape is asserted explicitly.
 """
 from __future__ import annotations
 
@@ -62,7 +69,7 @@ def test_grants_only_the_two_clients_at_the_ends():
          patch.object(pw_utils.shutil, 'which', lambda _: '/usr/bin/pw-cli'):
         assert pw_utils.grant_link_permissions(10, 20) is True
 
-    targets = sorted(c[2] for c in calls if c[:2] == ['pw-cli', 'permissions'])
+    targets = sorted(c[3] for c in calls if c[:3] == ['pw-cli', '--', 'permissions'])
     assert targets == ['184', '232']
     # The linking flag is the point: "rwxm" alone would not help (#181).
     assert all(c[-1] == 'rwxml' for c in calls)
@@ -93,7 +100,7 @@ def test_third_party_clients_are_never_granted_anything():
         # Our node at one end, the device at the other.
         assert pw_utils.grant_link_permissions(10, 40) is True
 
-    targets = [c[2] for c in calls if c[:2] == ['pw-cli', 'permissions']]
+    targets = [c[3] for c in calls if c[:3] == ['pw-cli', '--', 'permissions']]
     assert targets == ['232'], 'only the ASM-owned end may be granted'
     assert '56' not in targets, "WirePlumber's client must be left alone"
 
@@ -135,6 +142,48 @@ def test_failed_grant_reports_false():
     """pw-cli refusing too means the caller must not bother retrying."""
     def run(argv, **_k):
         return SimpleNamespace(returncode=1, stdout=b'', stderr=b'denied')
+
+    with patch.object(pw_utils, '_pw_dump', _dump), \
+         patch.object(pw_utils, '_pw_run', run), \
+         patch.object(pw_utils.shutil, 'which', lambda _: '/usr/bin/pw-cli'):
+        assert pw_utils.grant_link_permissions(10, 20) is False
+
+
+def test_command_separates_options_from_the_subcommand():
+    """`--` before the sub-command, or the repair never runs (#181).
+
+    pw-cli hands its arguments to getopt before parsing the command, so `-1`
+    reads as an option: without the separator it exits with
+    `invalid option -- '1'` and the grant fails on every system, restricted or
+    not. Reproduced on pipewire 1.6.8, and by the reporter typing the same
+    command by hand.
+    """
+    calls: list[list[str]] = []
+
+    def run(argv, **_k):
+        calls.append(argv)
+        return SimpleNamespace(returncode=0, stdout=b'', stderr=b'')
+
+    with patch.object(pw_utils, '_pw_dump', _dump), \
+         patch.object(pw_utils, '_pw_run', run), \
+         patch.object(pw_utils.shutil, 'which', lambda _: '/usr/bin/pw-cli'):
+        assert pw_utils.grant_link_permissions(10, 20) is True
+
+    for argv in calls:
+        assert argv[1] == '--', f'{argv}: pw-cli would read -1 as an option'
+        assert argv.index('--') < argv.index('-1')
+
+
+def test_stderr_beats_a_zero_exit_status():
+    """pw-cli exits 0 on a command that failed, saying so only on stderr.
+
+    Trusting the status alone would report a grant that never happened, and the
+    caller would retry a link that is still refused.
+    """
+    def run(argv, **_k):
+        return SimpleNamespace(
+            returncode=0, stdout=b'',
+            stderr=b'Error: "permissions: unknown global \'232\'"')
 
     with patch.object(pw_utils, '_pw_dump', _dump), \
          patch.object(pw_utils, '_pw_run', run), \
