@@ -152,8 +152,13 @@ def test_repo_installer_refuses_to_run_from_a_pipe():
 # error and killed it outright. A developer on Ubuntu could not reproduce what
 # a user on Nobara was seeing.
 #
-# CI runs this suite on fedora:42, fedora:43, archlinux and cachyos among
-# others, so running the real thing here is what puts a current bash under it.
+# Where this runs matters, and it is not automatic. The full suite runs on
+# ubuntu-latest, which ships bash 5.2 and would have waved the old script
+# through exactly as a developer's own Ubuntu did. So this file is named
+# explicitly in the per-distro matrix of
+# .github/workflows/wheel-install-test.yaml, whose fedora:43, archlinux and
+# cachyos images carry bash 5.3. Drop it from there and this test still
+# passes, on the one version that cannot fail.
 
 def _run_piped(script: Path, *args: str) -> subprocess.CompletedProcess:
     """Feed *script* to bash on stdin, exactly as `curl … | bash` does.

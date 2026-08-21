@@ -137,7 +137,20 @@ jobs:
           # tests/test_device_detection.py covers all 13 device families and ~40 PIDs
           # via mocked usb.core / pyudev — must pass on every distro to guarantee
           # detection logic stays portable.
-          uv run pytest tests/test_device_detection.py -v
+          #
+          # tests/test_pipeable_scripts.py belongs here rather than only in the
+          # full suite, because what it checks is version-dependent. The
+          # uninstaller handed to people as `curl ... | bash` used to die on an
+          # unset BASH_SOURCE, but only where `cd ""` is an error, and that is
+          # bash 5.3: fedora:43, archlinux and cachyos ship it, ubuntu-latest
+          # (where the full suite runs) does not. So the bug was invisible both
+          # to CI and to anyone developing on Ubuntu, and reached users on
+          # Nobara and Arch instead (discussion #190). These images are the
+          # only place in this repository where it can be caught.
+          uv run pytest tests/test_device_detection.py tests/test_pipeable_scripts.py -v
+          # Which bash actually ran the check above, so a green tick on a distro
+          # that has quietly moved to another bash is still readable.
+          bash --version | head -1
 
       - name: Verify shared udev generator works headless
         run: |
