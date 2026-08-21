@@ -282,3 +282,85 @@ def test_breaker_resets_on_device_reattach(monkeypatch, caplog):
     # warning should fire yet even though this is nominally the 3rd call.
     assert manager._frame_fail_streak == 1
     assert not any(r.levelno == logging.WARNING for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Unacknowledged writes: the wired GameDAC's half-drawn panel (issue #197)
+# ---------------------------------------------------------------------------
+#
+# A 128 px panel goes out as two 64 px strips, one SET_REPORT each. The wired
+# GameDAC executes them and never acknowledges them, so pyusb raises ETIMEDOUT
+# on writes that actually drew. Giving up on the frame at the first such error
+# meant the right strip was never sent, and the DAC kept whatever it had there:
+# the reported symptom was a screen whose right half never updated.
+
+class _FailFirstUsbDevice(_FakeUsbDevice):
+    """Fails the first ctrl_transfer of every frame, accepts the rest."""
+
+    def __init__(self, fail_errno: int, fail_first_n: int = 1) -> None:
+        super().__init__(fail_errno=None)
+        self._errno = fail_errno
+        self._fail_first_n = fail_first_n
+
+    def ctrl_transfer(self, *args, **kwargs):
+        self.call_count += 1
+        if self.call_count <= self._fail_first_n:
+            raise usb.core.USBError("timed out", errno=self._errno)
+        return None
+
+
+def test_frame_sends_every_strip_even_after_one_fails(monkeypatch):
+    """The right half must still be sent when the left half's write failed."""
+    dev = _FailFirstUsbDevice(errno_mod.EIO, fail_first_n=5)  # exhaust retries
+    manager = _make_manager(dev, monkeypatch, packet_count=2)
+
+    manager._send_current_frame()
+
+    # 5 attempts on the first strip, then the second strip must go out too —
+    # before the fix the loop broke out and the second was never attempted.
+    assert dev.call_count == 6, (
+        f"expected the second strip to be sent after the first failed, "
+        f"got {dev.call_count} ctrl_transfer calls"
+    )
+
+
+def test_unacknowledged_write_counts_as_sent(monkeypatch):
+    """ETIMEDOUT means the ack was lost, not that the report never ran."""
+    dev = _FakeUsbDevice(fail_errno=errno_mod.ETIMEDOUT)
+    manager = _make_manager(dev, monkeypatch, packet_count=1)
+
+    assert manager._send_oled_packet([0, 0, 0, 0]) is True
+    # And exactly once: retrying redraws pixels that are already lit, at the
+    # cost of one full timeout each — five seconds per strip on real hardware.
+    assert dev.call_count == 1
+
+
+def test_timeouts_do_not_trip_the_busy_breaker(monkeypatch):
+    """A DAC that never acks must not be treated as a device held by someone
+    else — the breaker exists for EBUSY, and suspending here would blank the
+    screen on the one device that needs the frames."""
+    dev = _FakeUsbDevice(fail_errno=errno_mod.ETIMEDOUT)
+    manager = _make_manager(dev, monkeypatch, packet_count=2)
+
+    for _ in range(_OLED_BUSY_FAIL_THRESHOLD + 1):
+        manager._send_current_frame()
+
+    assert manager._frame_fail_streak == 0
+    assert manager._suspend_until == 0.0
+
+
+def test_send_uses_a_bounded_timeout(monkeypatch):
+    """pyusb's default is a full second; five attempts of that per strip is
+    what made every frame take seconds on the wired DAC."""
+    seen: list[dict] = []
+
+    class _RecordingDevice(_FakeUsbDevice):
+        def ctrl_transfer(self, *args, **kwargs):
+            seen.append(kwargs)
+            return super().ctrl_transfer(*args, **kwargs)
+
+    manager = _make_manager(_RecordingDevice(None), monkeypatch, packet_count=1)
+    manager._send_oled_packet([0, 0, 0, 0])
+
+    assert seen and "timeout" in seen[0], "no explicit timeout passed to pyusb"
+    assert 0 < seen[0]["timeout"] <= 500

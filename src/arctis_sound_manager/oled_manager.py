@@ -68,6 +68,13 @@ _EQ_SCROLL_PAUSE_END_S = 2.0    # pause at end before snapping back
 _OLED_BUSY_FAIL_THRESHOLD = 3
 _OLED_BUSY_SUSPEND_S = 60.0
 
+# How long to wait for a SET_REPORT to be acknowledged (issue #197). pyusb's
+# default is a full second, and the wired GameDAC never acknowledges its screen
+# writes at all: five attempts at one second each spent five seconds per strip
+# on a panel that had already drawn it. A report this panel accepts comes back
+# in single-digit milliseconds; past this, waiting longer buys nothing.
+_OLED_SEND_TIMEOUT_MS = 250
+
 _BURN_IN_INTERVAL_S = 60.0
 _BURN_IN_POSITIONS: list[tuple[int, int]] = [
     (0, 0), (1, 0), (1, 1), (0, 1), (-1, 1),
@@ -444,11 +451,16 @@ class OledManager:
             frame, self._protocol.DISPLAY_WIDTH, self._protocol.DISPLAY_HEIGHT
         )
 
+        # Every strip is sent, even after one fails (issue #197). A frame is
+        # split into strips of at most 64 px, each its own SET_REPORT; giving
+        # up at the first failure meant the right half of a 128 px panel was
+        # never sent at all, and the DAC kept whatever it had drawn there.
+        # On the wired GameDAC that happened on every single frame, because it
+        # executes screen writes without ever acknowledging them.
         frame_ok = True
         for packet in packets:
             if not self._send_oled_packet(packet):
                 frame_ok = False
-                break
 
         if frame_ok:
             self._frame_fail_streak = 0
@@ -511,10 +523,22 @@ class OledManager:
                         bmRequestType, 0x09,
                         wvalue, self._oled_interface,
                         packet,
+                        timeout=_OLED_SEND_TIMEOUT_MS,
                     )
                     return True
                 except usb.core.USBError as e:
                     last_err = e
+                    if e.errno == errno.ETIMEDOUT:
+                        # The wired GameDAC draws the strip and never sends the
+                        # acknowledgement back (issue #197). An unacknowledged
+                        # report is not an unexecuted one: resending it would
+                        # redraw pixels that are already lit, and each retry
+                        # costs another full timeout. Treat it as delivered.
+                        logger.debug(
+                            "OLED write not acknowledged (errno 110) — "
+                            "treating as sent, the panel draws it anyway"
+                        )
+                        return True
             # Back-off outside the lock so other USB users are not blocked.
             if attempt + 1 < _MAX_ATTEMPTS:
                 time.sleep(min((attempt + 1) ** 2, 50) / 1000.0)
