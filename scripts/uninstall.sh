@@ -78,7 +78,17 @@ while [ $# -gt 0 ]; do
             if [ -n "$_self" ] && [ -f "$_self" ]; then
                 sed -n '2,${/^#/!q; s/^# \?//; p}' "$_self"
             else
-                curl -fsSL "$SELF_URL" | sed -n '2,${/^#/!q; s/^# \?//; p}'
+                # Fetched into a variable rather than piped straight into sed:
+                # the `q` above quits at the first non-comment line, closing
+                # the pipe while curl is still writing. curl then dies of
+                # EPIPE with "(23) Failure writing output to destination", and
+                # `set -o pipefail` fails the whole script on it, so `--help`
+                # printed the usage and then exited 23.
+                _usage="$(curl -fsSL "$SELF_URL")" || {
+                    err "Could not fetch the usage text from $SELF_URL"
+                    exit 1
+                }
+                printf '%s\n' "$_usage" | sed -n '2,${/^#/!q; s/^# \?//; p}'
             fi
             exit 0 ;;
         *) err "Unknown argument: $1"; exit 2 ;;

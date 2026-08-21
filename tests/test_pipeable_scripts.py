@@ -33,6 +33,8 @@ one that happened to break.
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -139,3 +141,60 @@ def test_repo_installer_refuses_to_run_from_a_pipe():
         "install.sh still dereferences BASH_SOURCE[0] unguarded"
     assert "must run from a clone" in text, \
         "install.sh no longer explains why a piped run cannot work"
+
+
+# ── Actually run one through a pipe ──────────────────────────────────────────
+#
+# The checks above read the scripts; they never run them, and the bug they are
+# about only exists at run time. It is also version-dependent: piping the old
+# uninstaller into bash 5.2 printed a warning and carried on, while bash 5.3
+# (Fedora 42+, Nobara, Arch) turned the `cd ""` that followed into a hard
+# error and killed it outright. A developer on Ubuntu could not reproduce what
+# a user on Nobara was seeing.
+#
+# CI runs this suite on fedora:42, fedora:43, archlinux and cachyos among
+# others, so running the real thing here is what puts a current bash under it.
+
+def _run_piped(script: Path, *args: str) -> subprocess.CompletedProcess:
+    """Feed *script* to bash on stdin, exactly as `curl … | bash` does.
+
+    stdin is the script, so the process gets no terminal: this is also the
+    shape in which every prompt used to answer itself with "no".
+    """
+    return subprocess.run(
+        ["bash", "-s", "--", *args],
+        input=script.read_bytes(),
+        capture_output=True,
+        timeout=60,
+    )
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="no bash on this host")
+def test_uninstaller_survives_being_piped_into_bash():
+    """`--help` is the safe end of the script: it touches nothing, and it can
+    only print anything at all if the script got past the two lines that used
+    to kill it."""
+    r = _run_piped(SCRIPTS_DIR / "uninstall.sh", "--help")
+    err = r.stderr.decode(errors="replace")
+    out = r.stdout.decode(errors="replace")
+
+    assert "unbound variable" not in err, (
+        f"the piped script still aborts on an unset variable:\n{err}"
+    )
+    assert "null directory" not in err, (
+        f"`cd \"\"` still runs, which is fatal on bash 5.3+:\n{err}"
+    )
+    assert "Arctis Sound Manager" in out, (
+        f"nothing was printed, so the script died before its usage block.\n"
+        f"stdout: {out!r}\nstderr: {err!r}"
+    )
+    assert r.returncode == 0, f"exit {r.returncode}, stderr: {err!r}"
+
+
+# The other half of the fix, refusing instead of answering itself when there is
+# no terminal, is deliberately NOT exercised here. Reaching that prompt means
+# running the uninstaller for real, and it stops the ASM user services before
+# it asks anything: the test would cut the audio of whoever ran the suite, for
+# the same reason conftest blocks live audio commands. The static check above
+# covers the shape (`ask` reads from $ANSWER_FROM, never bare stdin), and the
+# behaviour was verified by hand against a throwaway install.
