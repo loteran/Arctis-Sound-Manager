@@ -21,7 +21,24 @@
 #   curl -fsSL https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/scripts/uninstall.sh | bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# `curl … | bash` leaves BASH_SOURCE unset: bash reads the script from stdin,
+# so there is no file to take a directory from. Under `set -u` that alone
+# aborts the script, and since bash 5.3 the `cd ""` that follows fails too,
+# which is how the documented one-liner died on this very line, before
+# printing anything, on every distro shipping a current bash.
+# An empty SCRIPT_DIR is the honest answer: every use of it below already
+# checks that the file it wants is actually there, and falls back to curl.
+_self="${BASH_SOURCE[0]:-}"
+if [ -n "$_self" ] && [ -f "$_self" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "$_self")" && pwd)"
+else
+    SCRIPT_DIR=""   # piped from curl, nothing local to delegate to
+fi
+
+#: Where this script lives when run remotely, used by the messages that tell
+#: the user how to re-run it, and by the Distrobox delegation below.
+RAW_BASE="https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/scripts"
+SELF_URL="$RAW_BASE/uninstall.sh"
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 if [ -t 1 ] && command -v tput >/dev/null 2>&1; then
@@ -54,17 +71,59 @@ while [ $# -gt 0 ]; do
             # Printed from the header above, stopping at the first line that
             # is no longer a comment. A fixed line range silently truncated
             # the usage block every time a line was added to it.
-            sed -n '2,${/^#/!q; s/^# \?//; p}' "$0"
+            #
+            # $0 is "bash" when the script is piped in, and `sed` then reads
+            # nothing at all, so `--help` printed an error instead of the
+            # usage. Fetch the header from the same URL the user just curled.
+            if [ -n "$_self" ] && [ -f "$_self" ]; then
+                sed -n '2,${/^#/!q; s/^# \?//; p}' "$_self"
+            else
+                curl -fsSL "$SELF_URL" | sed -n '2,${/^#/!q; s/^# \?//; p}'
+            fi
             exit 0 ;;
         *) err "Unknown argument: $1"; exit 2 ;;
     esac
     shift
 done
 
+# Where to read answers from. When the script itself arrives on stdin
+# (`curl … | bash`), stdin is the pipe rather than the keyboard: `read` gets
+# EOF instantly, every confirmation answers "no", and the uninstaller removes
+# nothing while looking like it ran to completion. The terminal is still
+# reachable as /dev/tty, so ask there.
+#
+# The test has to be an actual open. `[ -r /dev/tty ]` is true even with no
+# controlling terminal: the device node is there and readable, and the open
+# then fails with ENXIO, which left the answer variable unset and the script
+# dying on `unbound variable` instead of saying what was wrong.
+if [ -t 0 ]; then
+    ANSWER_FROM="/dev/stdin"  # stdin is already the terminal
+elif { exec 3</dev/tty; } 2>/dev/null; then
+    exec 3<&-                 # only probing, the reads reopen it themselves
+    ANSWER_FROM="/dev/tty"    # piped script, real terminal behind it
+else
+    ANSWER_FROM="none"        # no terminal at all (CI, `ssh -T`, a cron job)
+fi
+
+#: Every prompt goes through here, so there is exactly one place that can get
+#: this wrong again.
+ask() {
+    # Refuse rather than assume: silently answering "no" is what made the piped
+    # run look successful while leaving both installs in place.
+    if [ "$ANSWER_FROM" = "none" ]; then
+        echo >&2
+        err "No terminal to answer on, and --yes was not given: refusing to guess."
+        err "Re-run with --yes to confirm the removals up front:"
+        err "  curl -fsSL $SELF_URL | bash -s -- --all --purge --yes"
+        exit 3
+    fi
+    read -r "$1" < "$ANSWER_FROM"
+}
+
 confirm() {
     [ "$ASSUME_YES" -eq 1 ] && return 0
     printf "  %s [y/N]: " "$1"
-    read -r ans
+    ask ans
     case "$ans" in y|Y|yes|YES) return 0 ;; *) return 1 ;; esac
 }
 
@@ -172,7 +231,7 @@ if [ "$HAS_DISTROBOX" -eq 1 ] && [ "$HAS_PKG" -eq 0 ] && [ "$HAS_PIPX" -eq 0 ] \
         warn "Running from curl — fetching Distrobox uninstaller..."
         _tmp=$(mktemp -d)
         trap 'rm -rf "$_tmp"' EXIT
-        _base="https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/scripts"
+        _base="$RAW_BASE"
         curl -fsSL "$_base/distrobox/_common.sh"  -o "$_tmp/_common.sh"  || { err "Failed to fetch _common.sh";  exit 1; }
         curl -fsSL "$_base/distrobox/uninstall.sh" -o "$_tmp/uninstall.sh" || { err "Failed to fetch uninstall.sh"; exit 1; }
         exec bash "$_tmp/uninstall.sh" "$@"
@@ -191,7 +250,7 @@ if [ -z "$SELECTED" ]; then
 
 EOF
         printf "  Choice [3]: "
-        read -r choice
+        ask choice
         case "${choice:-3}" in
             1) SELECTED="pipx" ;;
             2) SELECTED="pkg" ;;
