@@ -802,13 +802,49 @@ def loopback_link_target(playback_name: str, data: list | None = None) -> str | 
     -------
     str | None
         The ``node.name`` of the linked input node, or *None* if the loopback
-        is not currently linked to anything or an error occurred.
+        is not currently linked to anything, *playback_name* is ambiguous
+        (see below), or an error occurred.
+
+    Ambiguity handling (CHA-1, read-only counterpart):
+        Resolving *which* node produced a link matters just as much here as
+        it does in :func:`ensure_loopback_link` — if two nodes share
+        *playback_name*, iterating the dump and returning on the first
+        matching Link answers about *whichever one happened to be found
+        first*, not about the one the caller (the loopback watchdog, or a
+        diagnostics view) actually means. That is silently misleading in
+        exactly the way CHA-1 warns about, even though this function never
+        touches the graph.
+
+        So *playback_name* is resolved through the same
+        :func:`_index_nodes_by_name` / :func:`_resolve_unique_node_id` path
+        the write-side siblings use, and an ambiguous name returns *None*
+        with a loud ``ERROR`` log — same sentinel as "not linked yet". This
+        is deliberately *not* the same as those siblings' "refuse to act"
+        behaviour: refusing to link protects a mutation, but a query has
+        nothing to protect by refusing — it would only turn a transient,
+        self-healing bit of uncertainty into a dead end for whoever reads
+        the answer. The existing caller contract already treats *None* as
+        "leave it alone, don't act on this tick" (see
+        ``core.py``'s ``_loopback_watchdog``), which is exactly the right
+        response to "I can't currently tell which node this is" — safer
+        than guessing, and it resolves itself the moment the duplicate goes
+        away.
+
+        The downstream side (the node the link actually points *at*) needs
+        no such treatment: once *playback_name* resolves to one concrete
+        node id, the link is looked up by that id, and the reported input
+        node is identified by its own id too — a duplicate name on that side
+        cannot make this function point at the wrong node, it can only make
+        the string it returns collide with another node's name (which is
+        already true of node.name in general, and orthogonal to what this
+        function is answering).
     """
     try:
         if data is None:
             data = _pw_dump()
 
-        # Build id → node.name map for all Node objects.
+        # Build id → node.name map for all Node objects (used to name the
+        # downstream/input side of the link once found).
         node_names: dict[int, str] = {}
         for obj in data:
             obj_type = obj.get("type", "")
@@ -819,7 +855,14 @@ def loopback_link_target(playback_name: str, data: list | None = None) -> str | 
             if node_name:
                 node_names[obj["id"]] = node_name
 
-        # Find the first Link whose output node is playback_name.
+        # Resolve playback_name to exactly one node id, refusing ambiguity
+        # (CHA-1) instead of guessing which same-named node the caller meant.
+        nodes_by_name = _index_nodes_by_name(data)
+        playback_id = _resolve_unique_node_id(nodes_by_name, playback_name, "loopback_link_target")
+        if playback_id is None:
+            return None
+
+        # Find the Link whose output node is playback_id.
         for obj in data:
             obj_type = obj.get("type", "")
             if not obj_type.endswith("Link"):
@@ -829,7 +872,7 @@ def loopback_link_target(playback_name: str, data: list | None = None) -> str | 
             input_node_id = props.get("link.input.node")
             if output_node_id is None or input_node_id is None:
                 continue
-            if node_names.get(output_node_id) == playback_name:
+            if output_node_id == playback_id:
                 return node_names.get(input_node_id)
 
         # No link found for this playback node — orphan / not yet linked.

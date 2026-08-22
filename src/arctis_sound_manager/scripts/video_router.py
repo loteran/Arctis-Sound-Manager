@@ -269,6 +269,89 @@ def save_overrides(overrides: dict) -> None:
     tmp.replace(OVERRIDES_FILE)
 
 
+# routing_overrides.json accumulates entries for ever unless something prunes
+# them: _reachable() (below) stops a dead override being *applied*, but
+# nothing ever removed one, so the file only grows and every entry is walked
+# on every replay (see the "Not restored" section of RAPPORT-CHAOS-ASM.md,
+# which found "pw-cat": "effect_input.chaos-nan" left behind by a probe node
+# that no longer existed).
+#
+# The obvious-looking prune — "the target sink isn't in the graph right now,
+# drop it" — is wrong: a Bluetooth speaker that's off, a monitor that's
+# unplugged, or the headset sitting in its case are all exactly the cases an
+# override exists to remember, and they are absent from the graph just as
+# often as something genuinely dead is. Presence right now says nothing
+# about whether the entry is safe to forget.
+#
+# What *can* be judged from the value alone, with no live graph needed: every
+# effect_input.* node this codebase ever creates comes from
+# sonar_to_pipewire.py, and every one of them starts with one of the two
+# prefixes below (checked against the whole tree, not just that file — see
+# the grep in this fix's report). effect_input.* is also documented as
+# internal-only immediately above (_EFFECT_REMAP): apps are never meant to
+# target it directly, so a saved override that does is already an anomaly.
+# A value in that namespace that matches neither prefix cannot be a node ASM
+# itself would ever create — it can only be a leftover from some external
+# process (a probe, a test tool, an impostor) that registered a node under
+# that name for the lifetime of that one process. Unlike a Bluetooth
+# speaker's MAC-derived name or a monitor's ALSA card path, that name is not
+# a persistent device identity: nothing "comes back online" under it, so
+# there is nothing to forget by dropping it. This is deliberately narrow —
+# it says nothing about whether a *legitimate* effect_input.* target
+# (sonar-media-eq mid filter-chain-restart, say) is safe to prune while
+# briefly absent, and it doesn't try to: it is left alone, same as any other
+# device-shaped value.
+_ASM_EFFECT_PREFIXES = ("effect_input.sonar-", "effect_input.virtual-surround-")
+
+
+def _is_dead_override_target(target, present_sinks) -> bool:
+    """True when *target* is a filter-chain node that is gone for good.
+
+    Two conditions, and both are needed.
+
+    Structural: the value must be in the ``effect_input.*`` namespace.
+    Everything else — Arctis_* channels, alsa_output.*/bluez_output.*
+    hardware, other apps' virtual sinks — names a device identity that can be
+    absent right now and come back: a Bluetooth speaker that is off, a monitor
+    unplugged, a headset in its case. Those are exactly what an override
+    exists to remember, and they are never pruned, however long they have been
+    gone.
+
+    Live: the node must also be missing from *present_sinks*. The structural
+    test alone is not enough, because ``effect_input.<name>`` is the naming
+    convention of PipeWire filter-chains in general, not just ASM's — a user
+    running their own chain and routing an app onto it through ASM's UI would
+    otherwise have that choice silently deleted on the next tick. A chain that
+    is loaded is present in the graph; the probe nodes this prune exists for
+    (``effect_input.chaos-nan`` and friends) are not, and never will be again.
+
+    ASM's own nodes are exempt from the live half: they legitimately vanish
+    while the filter-chain restarts, and the watchdog puts them back.
+    """
+    if not isinstance(target, str) or not target.startswith("effect_input."):
+        return False
+    if target.startswith(_ASM_EFFECT_PREFIXES):
+        return False
+    return target not in present_sinks
+
+
+def _prune_dead_overrides(overrides: dict, present_sinks=()) -> tuple[dict, list[str]]:
+    """Return (overrides with dead entries removed, keys that were dropped).
+
+    Does not mutate *overrides*. *present_sinks* is the set of sink names in
+    the graph this tick; see :func:`_is_dead_override_target` for why an entry
+    needs to fail both a structural and a liveness test before it is dropped.
+    """
+    present = set(present_sinks)
+    dead_keys = [key for key, target in overrides.items()
+                if _is_dead_override_target(target, present)]
+    if not dead_keys:
+        return overrides, []
+    pruned = {key: target for key, target in overrides.items()
+             if key not in dead_keys}
+    return pruned, dead_keys
+
+
 def _sink_name(sinks, index: int) -> str | None:
     s = next((s for s in sinks if s.index == index), None)
     return s.name if s else None
@@ -479,6 +562,16 @@ def _process_tick(pulse: pulsectl.Pulse) -> None:
         return
 
     overrides = load_overrides()
+    overrides, pruned_keys = _prune_dead_overrides(
+        overrides, {s.name for s in sinks})
+    if pruned_keys:
+        log.warning(
+            "Pruned %d routing override(s) pointing at filter-chain nodes that "
+            "are not in the graph and are not ASM's: %s. Devices are never "
+            "pruned — only a chain that is gone.",
+            len(pruned_keys), ", ".join(pruned_keys),
+        )
+        save_overrides(overrides)
     sink_inputs = pulse.sink_input_list()
     sink_map = {s.name: s.index for s in sinks}
     sink_idx_to_name = {s.index: s.name for s in sinks}

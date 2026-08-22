@@ -251,6 +251,69 @@ class TestLoopbackLinkTarget:
         )
         assert loopback_link_target("Arctis_Media_sink_out", data=data) == "effect_input.sonar-media-eq"
 
+    # ── CHA-1, read-only counterpart ───────────────────────────────────────
+    #
+    # loopback_link_target() never mutates the graph, so a duplicate name
+    # can't make it hijack a link the way ensure_loopback_link could. But the
+    # old implementation still picked whichever same-named node's link it
+    # found first while iterating the dump — a confident-looking answer that
+    # could be about the wrong node. It must instead say "I don't know"
+    # (None), loudly, exactly like the write-side siblings do for ambiguity.
+
+    def test_duplicate_playback_name_returns_none_not_a_guess(self, caplog) -> None:
+        """Two nodes named Arctis_Game_sink_out (id 10 real, id 150
+        impostor) exist, each linked to a *different* downstream node.
+        Picking either one's link and reporting it as *the* answer would be
+        a confident wrong answer for one of the two — must refuse instead."""
+        data = _make_loopback_pw_dump(
+            nodes={
+                10: "Arctis_Game_sink_out",
+                20: "effect_input.sonar-game-eq",
+                150: "Arctis_Game_sink_out",   # impostor, same name as id 10
+                160: "some_other_node",
+            },
+            links=[(10, 20), (150, 160)],
+        )
+        with caplog.at_level("ERROR"):
+            result = loopback_link_target("Arctis_Game_sink_out", data=data)
+
+        assert result is None, "an ambiguous playback name must never be answered as if unique"
+        assert any(
+            "Arctis_Game_sink_out" in rec.message and "2" in rec.message
+            for rec in caplog.records if rec.levelname == "ERROR"
+        ), "the ambiguity must be logged loudly, not just silently turned into None"
+
+    def test_duplicate_name_elsewhere_does_not_affect_an_unambiguous_query(self) -> None:
+        """A duplicate name that is neither the playback node being queried
+        nor its current link target must not make this function refuse —
+        only ambiguity in the name actually being resolved matters."""
+        data = _make_loopback_pw_dump(
+            nodes={
+                10: "Arctis_Game_sink_out",
+                20: "effect_input.sonar-game-eq",
+                998: "some_other_node",
+                999: "some_other_node",   # duplicate, but irrelevant here
+            },
+            links=[(10, 20)],
+        )
+        assert loopback_link_target("Arctis_Game_sink_out", data=data) == "effect_input.sonar-game-eq"
+
+    def test_duplicate_target_name_still_reports_the_concrete_linked_node(self) -> None:
+        """The downstream/input side is identified by the concrete node id
+        the link actually points at, not by re-resolving its name — so a
+        duplicate of the *target's* name elsewhere in the graph must not
+        make this function refuse; it already knows exactly which node id
+        it is reporting on."""
+        data = _make_loopback_pw_dump(
+            nodes={
+                10: "Arctis_Game_sink_out",
+                20: "effect_input.sonar-game-eq",
+                264: "effect_input.sonar-game-eq",   # impostor target, unrelated link
+            },
+            links=[(10, 20)],
+        )
+        assert loopback_link_target("Arctis_Game_sink_out", data=data) == "effect_input.sonar-game-eq"
+
 
 # ── ensure_loopback_link (issue #100) ─────────────────────────────────────────
 import types
