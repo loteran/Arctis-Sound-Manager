@@ -15,6 +15,66 @@ DEB_NAME="${PKG}_${VERSION}-1_${ARCH}.deb"
 PKGDIR="build/deb/${PKG}_${VERSION}-1_${ARCH}"
 PYLIB="${PKGDIR}/usr/lib/python3/dist-packages"
 
+# ── DEBIAN/control dependency fields ────────────────────────
+# Read from debian/control (the source of truth check-packaging-drift.py's
+# DEPS_MAP already validates) rather than hand-kept here a second time. The
+# hand-written list drifted: it carried neither python3-pil, python3-babel,
+# pulseaudio-utils nor curl, so the .deb attached to GitHub Releases died
+# with `ModuleNotFoundError: No module named 'PIL'` on first launch and got
+# wrong plural forms in every non-English locale (PKG-1 / PKG-5).
+#
+# Exclusions: this script pip-installs pulsectl straight into dist-packages
+# (see "Bundle dbus-next and pulsectl" below), so python3-pulsectl must not
+# also be a system Depends: here. debhelper substvars (${misc:Depends},
+# ${dbus-next:Depends}) never resolve outside a dh_gencontrol run, so they
+# are dropped too — dbus-next is bundled unconditionally by this script.
+_control_field() {
+    # $1 = control field name (Depends, Recommends, ...). Prints its
+    # comma-joined value with debhelper substvars and this script's bundled
+    # packages stripped out.
+    python3 -c '
+import re
+import sys
+
+field = sys.argv[1]
+text = open("debian/control", encoding="utf-8").read()
+m = re.search(rf"^{field}:[ \t]*(.*?)(?=^\S|\Z)", text, re.M | re.S)
+if not m:
+    sys.exit(f"no {field}: field found in debian/control")
+items = [i.strip() for i in m.group(1).replace("\n", " ").split(",")]
+items = [i for i in items if i and not i.startswith("${")]
+bundled = {"python3-pulsectl"}
+items = [i for i in items if i not in bundled]
+
+# The PPA build resolves PySide6 from the archive of one known series, so
+# debian/control can depend on it flatly. This .deb is downloaded from the
+# releases page onto whatever the user runs, including series that ship no
+# python3-pyside6.* at all (Ubuntu 22.04, Debian 12) — there, a flat
+# dependency makes the package uninstallable. The `| python3-pip`
+# alternative predates the derivation and is kept deliberately: it lets the
+# install proceed and leaves PySide6 to asm-setup.
+items = [f"{i} | python3-pip" if i.startswith("python3-pyside6.") else i
+         for i in items]
+print(", ".join(items))
+' "$1"
+}
+
+DEB_DEPENDS=$(_control_field Depends)
+DEB_RECOMMENDS=$(_control_field Recommends)
+
+if [ -z "${DEB_DEPENDS}" ]; then
+    echo "ERROR: could not derive Depends: from debian/control" >&2
+    exit 1
+fi
+
+# Introspection mode for check-packaging-drift.py and the test suite: print
+# the derived Depends: and exit, without requiring uv/dpkg-deb to be
+# installed. Keep this above the pre-flight checks below.
+if [ "${1:-}" = "--print-depends" ]; then
+    echo "${DEB_DEPENDS}"
+    exit 0
+fi
+
 echo "==> Building ${DEB_NAME} ..."
 
 # ── Pre-flight checks ──────────────────────────────────────
@@ -155,8 +215,8 @@ Package: ${PKG}
 Version: ${VERSION}-1
 Architecture: ${ARCH}
 Maintainer: loteran <axel.valadon@gmail.com>
-Depends: python3 (>= 3.10), python3-pyside6.qtcore | python3-pip, python3-pyside6.qtgui | python3-pip, python3-pyside6.qtwidgets | python3-pip, python3-pyside6.qtsvg | python3-pip, python3-pyside6.qtnetwork | python3-pip, python3-pyudev, python3-usb, python3-ruamel.yaml, pipewire, pipewire-pulse, wireplumber, libusb-1.0-0
-Recommends: noise-suppression-for-voice, swh-plugins
+Depends: ${DEB_DEPENDS}
+Recommends: ${DEB_RECOMMENDS}
 Section: sound
 Priority: optional
 Homepage: https://github.com/loteran/Arctis-Sound-Manager

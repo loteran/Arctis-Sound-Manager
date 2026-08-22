@@ -17,15 +17,35 @@ if TYPE_CHECKING:
     from arctis_sound_manager.core import CoreEngine
 
 from pathlib import Path
-from PIL import Image
 
 from arctis_sound_manager.oled_protocol import OledProtocol
 from arctis_sound_manager.power_status import (HeadsetPower,
                                                normalize_power_value)
-from arctis_sound_manager.oled_renderer import OledRenderer
 from arctis_sound_manager.weather_service import WeatherData, WeatherService
 from arctis_sound_manager.config import parsed_status
 from arctis_sound_manager import profile_manager
+
+# Pillow is an optional runtime dependency: only headsets whose YAML profile
+# declares an OLED screen ever need it. But core.py imports this module
+# unconditionally at module scope regardless of which headset (if any) is
+# connected, and OledRenderer pulls PIL in too — so a plain top-level
+# `from PIL import Image` here used to kill the whole daemon with a bare
+# `ModuleNotFoundError` on any Debian/Ubuntu install missing python3-pil,
+# before system_deps_checker ever got a chance to report it as the
+# DEGRADED, self-healable issue it already models (PKG-1). Guarding both
+# imports lets `import arctis_sound_manager.core` — and therefore the
+# daemon and `--verify-setup` — succeed either way; OledManager.__init__
+# below turns a missing Pillow into a normal exception instead, which
+# CoreEngine already catches and degrades from (OLED disabled, everything
+# else keeps working).
+try:
+    from PIL import Image
+    from arctis_sound_manager.oled_renderer import OledRenderer
+    PIL_AVAILABLE = True
+except ImportError:
+    Image = None  # type: ignore[assignment]
+    OledRenderer = None  # type: ignore[assignment]
+    PIL_AVAILABLE = False
 
 _CFG = Path.home() / ".config" / "arctis_manager"
 
@@ -104,6 +124,23 @@ def _compute_wvalue(report_type: int, report_id: int) -> int:
 
 class OledManager:
     def __init__(self, core: CoreEngine) -> None:
+        if not PIL_AVAILABLE:
+            # Turns the module-import-time crash this class used to cause
+            # (PKG-1) into a normal exception at construction time instead.
+            # CoreEngine's own try/except around `OledManager(self)` already
+            # catches this and logs "OLED display disabled" — the same path
+            # used for a refused USB interface or a missing font — so a
+            # headset that does have a screen simply loses the OLED feature
+            # instead of taking the whole daemon down with it.
+            # system_deps_checker._build_checks() already carries a DEGRADED
+            # "PIL / Pillow (python module)" entry with the per-distro
+            # install command; `asm-daemon --verify-setup` surfaces it now
+            # that this module can actually finish importing without Pillow.
+            raise RuntimeError(
+                "Pillow (PIL) is not installed — OLED display support is "
+                "unavailable. Install your distro's python3-pillow package "
+                "(or `pip install pillow`)."
+            )
         self._core = core
 
         # Resolve per-device OLED transport parameters from the device YAML.

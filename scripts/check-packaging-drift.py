@@ -13,9 +13,13 @@ What this guards:
    committed file. Diff = drift = CI red.
 3. Dependencies — every Python distribution listed in pyproject.toml
    must show up (in any reasonable distro form) in PKGBUILD `depends`,
-   the spec's `Requires:` lines, and debian/control's `Depends:`. A dep
-   may be marked `bundled` in scripts/packaging_deps.yaml when the
-   packager ships it via a wheel or pip install instead.
+   the spec's `Requires:` lines, debian/control's `Depends:`, and the
+   Depends: debian/build-deb.sh derives at build time (`--print-depends`).
+   A dep may be marked `bundled` in DEPS_MAP below when the packager
+   ships it via a wheel or pip install instead — build-deb.sh can mark a
+   dep bundled independently of debian/control (`debian_standalone`)
+   since it pip-installs some packages debian/control expects as system
+   packages (e.g. pulsectl).
 
 Exit codes: 0 = clean, 1 = drift detected.
 
@@ -38,17 +42,24 @@ PKGBUILD = ROOT / "aur" / "PKGBUILD"
 SRCINFO = ROOT / "aur" / ".SRCINFO"
 SPEC = ROOT / "arctis-sound-manager.spec"
 DEB_CONTROL = ROOT / "debian" / "control"
+DEB_BUILD_SCRIPT = ROOT / "debian" / "build-deb.sh"
 METAINFO = ROOT / "src" / "arctis_sound_manager" / "desktop" / "com.github.loteran.arctis-sound-manager.metainfo.xml"
 DEB_CHANGELOG = ROOT / "debian" / "changelog"
 
 # Map pyproject.toml package name → list of acceptable distro/packaging names.
 # A dep is considered satisfied if ANY of the listed names appears in the
 # packager's metadata. `bundled` skips the check (the wheel ships the dep).
+#
+# `debian_standalone` is checked against debian/build-deb.sh's derived Depends:
+# (the .deb attached to GitHub Releases) instead of debian/control (the PPA
+# path). It defaults to the same value as `debian` when absent — only entries
+# where build-deb.sh's build differs (it pip-installs pulsectl itself, unlike
+# the PPA build) need an explicit override.
 DEPS_MAP: dict[str, dict[str, list[str] | str]] = {
     "babel":       {"arch": ["python-babel"],  "fedora": ["python3-babel"], "debian": ["python3-babel"]},
     "dbus-next":   {"arch": "bundled",         "fedora": ["python3-dbus-next"], "debian": "bundled"},  # debian: conditional via debian/rules substvar (can't detect statically)
     "pillow":      {"arch": ["python-pillow"], "fedora": ["python3-pillow"], "debian": ["python3-pil", "python3-pillow"]},
-    "pulsectl":    {"arch": "bundled",         "fedora": ["python3-pulsectl"], "debian": ["python3-pulsectl"]},
+    "pulsectl":    {"arch": "bundled",         "fedora": ["python3-pulsectl"], "debian": ["python3-pulsectl"], "debian_standalone": "bundled"},  # build-deb.sh pip-installs it
     "pyside6":     {"arch": ["pyside6"],       "fedora": ["python3-pyside6"], "debian": ["python3-pyside6.qtwidgets", "python3-pyside6", "pyside6"]},
     "pyudev":      {"arch": ["python-pyudev"], "fedora": ["python3-pyudev"], "debian": ["python3-pyudev"]},
     "pyusb":       {"arch": ["python-pyusb"],  "fedora": ["python3-pyusb"],  "debian": ["python3-usb", "python3-pyusb"]},
@@ -184,25 +195,61 @@ def _haystack(path: Path) -> str:
     return read(path).lower()
 
 
+def _build_deb_depends_haystack() -> str:
+    """The Depends: build-deb.sh would actually write, via its own
+    introspection flag — not a static grep of the script's source, which
+    no longer contains package names literally (it derives them from
+    debian/control at build time). This is what lets this check see PKG-1 /
+    PKG-5-style drift: it exercises the real derivation, so a regression to
+    a hand-written list — or debian/control losing a package build-deb.sh
+    still needs — shows up here."""
+    try:
+        out = _run(["bash", str(DEB_BUILD_SCRIPT), "--print-depends"])
+    except Exception as e:
+        fail(f"debian/build-deb.sh --print-depends crashed: {e!r}")
+        return ""
+    return out.lower()
+
+
+def _entry_for(rule: dict[str, list[str] | str], source: str) -> list[str] | str | None:
+    if source == "debian_standalone":
+        # Falls back to the same expectation as debian/control unless this
+        # dep needs a different treatment for build-deb.sh specifically
+        # (e.g. bundled there but a system package in debian/control).
+        return rule.get("debian_standalone", rule.get("debian"))
+    return rule.get(source)
+
+
 def check_dependencies() -> None:
     pkgbuild = _haystack(PKGBUILD)
     spec = _haystack(SPEC)
     control = _haystack(DEB_CONTROL)
+    build_deb = _build_deb_depends_haystack()
     pyproject_deps = _pyproject_deps()
+
+    sources = (
+        ("arch", "arch (PKGBUILD)", pkgbuild),
+        ("fedora", "fedora (spec)", spec),
+        ("debian", "debian (control)", control),
+        ("debian_standalone", "debian (build-deb.sh)", build_deb),
+    )
 
     for dep in pyproject_deps:
         rule = DEPS_MAP.get(dep)
         if rule is None:
             fail(f"pyproject dep {dep!r} has no entry in DEPS_MAP — add one to scripts/check-packaging-drift.py")
             continue
-        for distro, hay in (("arch", pkgbuild), ("fedora", spec), ("debian", control)):
-            entry = rule[distro]
+        for source, label, hay in sources:
+            entry = _entry_for(rule, source)
             if entry == "bundled":
+                continue
+            if entry is None:
+                fail(f"pyproject dep {dep!r} has no {source!r} entry in DEPS_MAP")
                 continue
             assert isinstance(entry, list)
             if not any(name.lower() in hay for name in entry):
                 fail(
-                    f"dependency drift: pyproject {dep!r} missing from {distro} packaging "
+                    f"dependency drift: pyproject {dep!r} missing from {label} packaging "
                     f"(expected one of: {entry})"
                 )
 
