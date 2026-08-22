@@ -308,25 +308,59 @@ if [ "$SELECTED" = "pip-user" ] && [ "$HAS_PIP_USER" -eq 0 ]; then
     exit 1
 fi
 
-# ── Stop user services first (relevant for both branches) ───────────────────
-step "Stopping ASM user services"
-for svc in arctis-manager.service arctis-gui.service arctis-video-router.service; do
-    if systemctl --user list-unit-files "$svc" 2>/dev/null | grep -q "${svc%.service}"; then
-        systemctl --user stop "$svc" 2>/dev/null || true
-        info "stopped $svc"
-    fi
-done
-# disable so they don't auto-start on next login when the unit file is gone
-for svc in arctis-manager.service arctis-gui.service arctis-video-router.service; do
-    systemctl --user disable "$svc" 2>/dev/null || true
-done
-ok "user services stopped"
+# ── Stop user services, but only once a removal is actually going ahead ─────
+# This used to run unconditionally, right here, before the first confirmation
+# prompt. So anyone who answered "no", or who piped the script in without a
+# terminal to answer on — the documented one-liner — ended up with ASM stopped
+# AND disabled at login, nothing uninstalled, and nothing saying so. That is a
+# working install broken by a command that removed nothing (discussion #190).
+#
+# It is now called from each removal branch, after its confirmation, and is
+# idempotent. If the run ends without having removed anything, the trap below
+# puts the services back.
+_ASM_SERVICES="arctis-manager.service arctis-gui.service arctis-video-router.service"
+SERVICES_STOPPED=0
+REMOVED_SOMETHING=0
+
+stop_services() {
+    [ "$SERVICES_STOPPED" -eq 1 ] && return 0
+    SERVICES_STOPPED=1
+    step "Stopping ASM user services"
+    for svc in $_ASM_SERVICES; do
+        if systemctl --user list-unit-files "$svc" 2>/dev/null | grep -q "${svc%.service}"; then
+            systemctl --user stop "$svc" 2>/dev/null || true
+            info "stopped $svc"
+        fi
+    done
+    # disable so they don't auto-start on next login when the unit file is gone
+    for svc in $_ASM_SERVICES; do
+        systemctl --user disable "$svc" 2>/dev/null || true
+    done
+    ok "user services stopped"
+}
+
+restore_services_if_nothing_removed() {
+    [ "$SERVICES_STOPPED" -eq 1 ] || return 0
+    [ "$REMOVED_SOMETHING" -eq 1 ] && return 0
+    step "Nothing was removed — putting ASM back the way it was"
+    for svc in $_ASM_SERVICES; do
+        if systemctl --user list-unit-files "$svc" 2>/dev/null | grep -q "${svc%.service}"; then
+            systemctl --user enable "$svc" 2>/dev/null || true
+            systemctl --user start "$svc" 2>/dev/null || true
+            info "restarted $svc"
+        fi
+    done
+    ok "ASM is running again"
+}
+trap restore_services_if_nothing_removed EXIT
 
 # ── Uninstall pipx ───────────────────────────────────────────────────────────
 if [ "$SELECTED" = "pipx" ] || [ "$SELECTED" = "all" ]; then
     if [ "$HAS_PIPX" -eq 1 ]; then
         step "Removing pipx install"
         if confirm "Run 'pipx uninstall arctis-sound-manager' ?"; then
+            stop_services
+            REMOVED_SOMETHING=1
             if pipx uninstall arctis-sound-manager; then
                 ok "pipx removed"
             else
@@ -347,6 +381,8 @@ if [ "$SELECTED" = "pip-user" ] || [ "$SELECTED" = "all" ]; then
     if [ "$HAS_PIP_USER" -eq 1 ]; then
         step "Removing pip --user copy"
         if confirm "Remove arctis-sound-manager from ~/.local ?"; then
+            stop_services
+            REMOVED_SOMETHING=1
             if command -v python3 >/dev/null 2>&1; then
                 python3 -m pip uninstall -y arctis-sound-manager >/dev/null 2>&1 \
                     || true   # not pip-installed, or no pip: the rm below is the real work
@@ -389,6 +425,8 @@ if [ "$SELECTED" = "pkg" ] || [ "$SELECTED" = "all" ]; then
             rpm)
                 for rpm_name in "${RPM_PKGS[@]}"; do
                     if confirm "Run 'sudo dnf remove -y $rpm_name' ?"; then
+                        stop_services
+                        REMOVED_SOMETHING=1
                         if sudo dnf remove -y "$rpm_name"; then
                             ok "$rpm_name removed"
                         else
@@ -401,6 +439,8 @@ if [ "$SELECTED" = "pkg" ] || [ "$SELECTED" = "all" ]; then
                 ;;
             apt)
                 if confirm "Run 'sudo apt-get remove -y arctis-sound-manager' ?"; then
+                    stop_services
+                    REMOVED_SOMETHING=1
                     if sudo apt-get remove -y arctis-sound-manager; then
                         ok "apt removed"
                     else
@@ -412,6 +452,8 @@ if [ "$SELECTED" = "pkg" ] || [ "$SELECTED" = "all" ]; then
                 ;;
             pacman)
                 if confirm "Run 'sudo pacman -Rns --noconfirm arctis-sound-manager' ?"; then
+                    stop_services
+                    REMOVED_SOMETHING=1
                     if sudo pacman -Rns --noconfirm arctis-sound-manager; then
                         ok "pacman removed"
                     else
@@ -431,6 +473,8 @@ if [ "$PURGE" -eq 1 ]; then
     info "Audio profiles in ~/.config/arctis_manager/profiles/ and the active"
     info "profile pointer are PRESERVED so a future reinstall picks them back up."
     if confirm "Wipe everything else (settings, PipeWire/HRIR, user systemd units, udev /etc) ?"; then
+        stop_services
+        REMOVED_SOMETHING=1
         # ── Inside ~/.config/arctis_manager: surgical removal that keeps
         #     profiles/ and .active_profile so the user's audio profiles
         #     survive a full uninstall+reinstall cycle.
@@ -479,8 +523,16 @@ fi
 
 # ── Final report ────────────────────────────────────────────────────────────
 step "Done"
-REMAINING=""
-command -v -a asm-daemon 2>/dev/null | while IFS= read -r p; do
-    [ -n "$p" ] && info "still in PATH: $p"
-done
+# `command -v -a` exits non-zero when it finds nothing — which is precisely
+# the successful case here. Under `set -o pipefail` that killed the script on
+# this very line, so a clean uninstall printed "==> Done" and then died before
+# saying it had finished, with a non-zero status for whatever called it. Third
+# instance of the same fault in this file, after curl (exit 23) and printf
+# (exit 141): a pipeline member that legitimately fails, under pipefail.
+REMAINING="$(command -v -a asm-daemon 2>/dev/null || true)"
+if [ -n "$REMAINING" ]; then
+    while IFS= read -r p; do
+        [ -n "$p" ] && info "still in PATH: $p"
+    done <<<"$REMAINING"
+fi
 ok "Uninstall finished. To check what's left: which -a asm-daemon"
