@@ -277,6 +277,24 @@ class CoreEngine:
         If the file is absent or contains anything other than ``"sonar"``,
         simple (non-Sonar) mode is assumed.
         """
+        # Safe mode wins over the stored choice (issue #203). When the
+        # filter-chain crash-loops, _enter_filter_chain_safe_mode() moves the
+        # ASM confs aside, so effect_input.sonar-*-eq no longer exists — but
+        # this function kept answering "sonar", so make_specs() went on
+        # pointing every loopback at a node that was gone. The loopbacks were
+        # then unlinkable and the user got silence, from the very mechanism
+        # whose log line promises "audio will be flat but stable".
+        #
+        # The stored mode is left untouched: this is a live override, and Sonar
+        # comes back on its own when safe mode is cleared.
+        try:
+            from arctis_sound_manager.sonar_to_pipewire import \
+                is_filter_chain_safe_mode_armed
+            if is_filter_chain_safe_mode_armed():
+                return False
+        except Exception:
+            pass
+
         state_file = Path.home() / ".config" / "arctis_manager" / ".eq_mode"
         try:
             return state_file.exists() and state_file.read_text().strip() == "sonar"
