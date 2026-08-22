@@ -135,8 +135,23 @@ class ArctisManagerDbusStatusService(ServiceInterface):
     @method('GetStatus')
     def get_status(self) -> 's': # type: ignore
         status, config = self.core_engine.device_status, self.core_engine.device_config
-        if not config or not config.status:
+        if not config:
             return json.dumps({})
+
+        # A profile with no `status` block at all (gamebuds.yaml: no status
+        # request is known for that family, so battery and connection state
+        # are simply not available) used to return here, empty — jumping over
+        # the sentinel below, which exists for exactly this case and says so.
+        # Every GUI surface then read "No device detected" while the headset
+        # was connected, its settings applied and its audio played (#202).
+        # Fall through instead: with the device initialised, the sentinel
+        # answers "online", which is the whole truth we have about it.
+        if not config.status and not self.core_engine._device_ready:
+            return json.dumps({})
+        if not config.status:
+            return json.dumps(
+                {'headset': {'headset_power_status': {'value': 'online',
+                                                      'type': 'label'}}})
 
         # No status packet has been parsed yet. The sentinel below exists for
         # devices that have no way to report a power state at all — an

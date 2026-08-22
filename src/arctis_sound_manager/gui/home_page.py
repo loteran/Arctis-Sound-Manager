@@ -719,7 +719,11 @@ class _DeviceStatusBar(QWidget):
             pill.apply_theme()
 
     def set_no_device(self):
-        self._conn_pill.set_value("No device detected", "#8D96AA")
+        # Through I18n like every other user-visible string: this one was
+        # hardcoded, so it stayed English in every translation (#202 shows it
+        # in a screenshot). The key already existed.
+        self._conn_pill.set_value(
+            I18n.get_instance().translate('ui', 'no_device_detected'), "#8D96AA")
         self._headset_bat_pill.set_visible(False)
         self._dac_bat_pill.set_visible(False)
 

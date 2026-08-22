@@ -2035,8 +2035,27 @@ class CoreEngine:
             self.setup_loopbacks()
             self._claim_default_source()
 
-            # Configure the device
-            self.init_device()
+            # Configure the device. Never fatal: init_device() retries USB
+            # errors per command and carries on, but anything else it raises —
+            # a profile whose device_init references a setting that is not
+            # there, a readback that throws, a hardware-EQ reconcile failing —
+            # used to escape here, before _device_ready is set at the end of
+            # this method. The daemon then had a working audio path and a
+            # responsive headset while every GUI surface said "No device
+            # detected", because the status sentinel is gated on _device_ready
+            # (#202: GameBuds X, whose profile documents its protocol as
+            # assumed rather than captured). A partly configured headset is
+            # still a present headset, and saying otherwise sends the user
+            # hunting for a connection problem they do not have.
+            try:
+                self.init_device()
+            except Exception as exc:
+                self.logger.error(
+                    "init_device failed for %s: %r — continuing with a "
+                    "partially configured device rather than reporting it "
+                    "absent. Some controls may not have been applied.",
+                    device_config.name, exc,
+                )
 
             if self.oled_manager is not None:
                 self.oled_manager.stop()
