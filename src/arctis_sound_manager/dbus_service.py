@@ -23,6 +23,7 @@ from arctis_sound_manager.constants import (DBUS_BUS_NAME,
                                             DBUS_STATUS_OBJECT_PATH)
 from arctis_sound_manager.core import CoreEngine
 from arctis_sound_manager.pactl import TypedPulseSinkInfo
+from arctis_sound_manager.settings import validate_config_setting_value
 from arctis_sound_manager import device_state
 
 
@@ -429,8 +430,17 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
 
         # Special case: HRIR profile selection (no ConfigSetting — GUI uses its own QComboBox)
         if setting == 'hrir_id':
+            from arctis_sound_manager.hrir_catalog import is_valid_hrir_id
             gs = self.core_engine.general_settings
-            if value is not None and not isinstance(value, str):
+            if value is not None and (not isinstance(value, str) or not is_valid_hrir_id(value)):
+                # CHA-12: hrir_id used to reach package_hrir_path() with only
+                # an isinstance(str) check, so "../../../../tmp/x/sine" (or
+                # any other id not in the bundled catalogue) escaped
+                # hrir_assets/, made an arbitrary file "the HRIR", and left
+                # the convolver unable to load — silencing Spatial Audio for
+                # Game and Media. Only ids the catalogue actually knows are
+                # accepted; the caller falls back to the bundled default.
+                self.logger.error('SetSetting hrir_id: unknown id %r', value)
                 return False
             gs.hrir_id = value
             gs.write_to_file()
@@ -449,8 +459,20 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
                 self.logger.error(f'Unknown general setting configuration: {setting}')
                 return False
             
-            if config.default_value is not None and not isinstance(value, type(config.default_value)):
-                self.logger.error(f'Value type mismatch: {type(config.default_value)} != {type(value)}')
+            if not validate_config_setting_value(config, value):
+                # CHA-2 / CHA-8: this used to be
+                # `not isinstance(value, type(config.default_value))`, which
+                # (a) was skipped entirely for every SELECT setting, whose
+                # default_value is None, and (b) let a bool through an
+                # int-typed check (isinstance(True, int) is True), so
+                # SetSetting pipewire_quantum "true" reached
+                # apply_force_quantum(1) and forced PipeWire's global
+                # quantum system-wide. Validation now comes from the
+                # setting's declared SettingType/domain instead.
+                self.logger.error(
+                    'SetSetting %s: value %r rejected for a %s setting',
+                    setting, value, config.type,
+                )
                 return False
 
             setattr(self.core_engine.general_settings, setting, value)

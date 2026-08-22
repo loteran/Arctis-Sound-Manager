@@ -100,7 +100,38 @@ def list_hrir_options() -> list[dict]:
             for o in list_hrir_options_grouped()]
 
 
+def is_valid_hrir_id(hrir_id: str) -> bool:
+    """True if *hrir_id* is a real entry in the bundled catalogue.
+
+    ``list_hrir_options()`` only ever lists ids matched against an actual
+    ``<id>.wav`` file already sitting in ``_HRIR_DIR``, so this doubles as
+    the boundary check for any hrir_id coming from outside the process — a
+    D-Bus call or a hand-edited/restored settings file (CHA-12).
+    """
+    if not isinstance(hrir_id, str):
+        return False
+    return hrir_id in {o["id"] for o in list_hrir_options()}
+
+
 def package_hrir_path(hrir_id: str) -> Path | None:
-    """Return absolute path to a bundled WAV, or None if not found."""
-    p = _HRIR_DIR / f"{hrir_id}.wav"
+    """Return absolute path to a bundled WAV, or None if not found.
+
+    Only ids present in the catalogue are accepted (see is_valid_hrir_id).
+    Building the path straight from hrir_id used to let a value like
+    "../../../../../../tmp/x/sine" escape _HRIR_DIR entirely (CHA-12): an
+    arbitrary file became "the HRIR", the convolver failed to load, and
+    Spatial Audio went silent for Game and Media — issue #100's failure
+    mode. resolve()/is_relative_to() is kept as a second, independent guard
+    in case the catalogue itself ever grows a bad entry.
+    """
+    if not is_valid_hrir_id(hrir_id):
+        return None
+
+    p = (_HRIR_DIR / f"{hrir_id}.wav").resolve()
+    try:
+        if not p.is_relative_to(_HRIR_DIR.resolve()):
+            return None
+    except OSError:
+        return None
+
     return p if p.exists() else None

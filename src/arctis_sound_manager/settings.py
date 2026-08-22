@@ -14,6 +14,130 @@ from arctis_sound_manager.constants import SETTINGS_FOLDER
 from arctis_sound_manager.utils import JsonSerializable, ObservableDict
 
 
+def validate_config_setting_value(config: ConfigSetting, value: Any) -> bool:
+    """True if *value* is legal for *config*, per its declared ``SettingType``.
+
+    The domain comes from the setting's own declaration, never from
+    ``type(config.default_value))``: every ``SELECT`` setting defaults to
+    ``None`` (so that check used to be skipped entirely — CHA-8), and
+    ``isinstance(True, int)`` is ``True`` (so a bool used to sail through an
+    int-typed check — CHA-2, ``pipewire_quantum "true"`` reaching
+    ``apply_force_quantum``). ``type(value) is int``/``is bool`` is used
+    instead of ``isinstance`` specifically to keep bool and int apart.
+
+    Called both at the D-Bus boundary (``SetSetting``) and when a settings
+    file is read back from disk, so a hand-edited or restored YAML can't
+    poison the daemon either.
+    """
+    if config.type is SettingType.TOGGLE:
+        return type(value) is bool
+
+    if config.type is SettingType.SELECT:
+        # Free-form device identifiers (external_output_device and friends):
+        # any string, or None/unset. The concrete option list is queried live
+        # from PipeWire, so there is no static domain to check membership
+        # against here.
+        return value is None or isinstance(value, str)
+
+    if config.type is SettingType.SLIDER:
+        if type(value) is not int:
+            return False
+        lo = getattr(config, 'min', None)
+        hi = getattr(config, 'max', None)
+        if lo is not None and value < lo:
+            return False
+        if hi is not None and value > hi:
+            return False
+        return True
+
+    if config.type is SettingType.BUTTON_GROUP:
+        if type(value) is not int:
+            return False
+        values_mapping = getattr(config, 'values_mapping', None)
+        if values_mapping:
+            return value in values_mapping
+        return True
+
+    # config.type is None: config.py already rejected an unrecognised
+    # `type:` string and logged a warning, hiding the setting from the UI.
+    # No declared domain to check against, so refuse rather than accept an
+    # unbounded value for a control nobody can even see.
+    return False
+
+
+def _atomic_yaml_dump(data: dict, path: Path) -> None:
+    """Write *data* as YAML to *path* without ever leaving it half-written.
+
+    Serializes to a sibling tempfile, fsyncs, then renames over the target —
+    the rename is atomic on the same filesystem, so a process killed
+    mid-write can only ever leave the *previous* file in place, never a
+    truncated one. Shared by ``GeneralSettings`` and ``DeviceSettings``;
+    ``DeviceSettings`` used to do a bare ``yaml.dump()`` here, which is what
+    produced the truncated files in CHA-5.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    yaml = YAML(typ='safe')
+    tmp = path.with_suffix(path.suffix + '.tmp')
+    try:
+        with tmp.open('w', encoding='utf-8') as fh:
+            yaml.dump(data, fh)
+            fh.flush()
+            try:
+                os.fsync(fh.fileno())
+            except OSError:
+                pass
+        tmp.replace(path)
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+
+
+def _load_yaml_with_backup(path: Path, *, logger: logging.Logger) -> dict | None:
+    """Load a YAML mapping from *path*, never raising.
+
+    Returns ``None`` if the file doesn't exist, can't be parsed (e.g.
+    truncated mid-write), or its top level isn't a mapping (e.g. a bare
+    scalar) — callers fall back to their own defaults in that case. Either
+    corrupt-shape failure renames the offending file to ``<name>.broken``
+    first, so nothing a user configured is silently lost. Shared by
+    ``GeneralSettings`` (where this handling already existed) and
+    ``DeviceSettings`` (which used to call ``yaml.load`` unguarded and abort
+    every device event forever on a truncated file — CHA-5).
+    """
+    if not path.exists():
+        return None
+
+    yaml = YAML(typ='safe')
+    try:
+        data = yaml.load(path)
+    except Exception as e:
+        logger.warning(
+            f"{path.name} is unreadable ({e!r}); backing up and using defaults."
+        )
+        try:
+            path.rename(path.with_suffix(path.suffix + '.broken'))
+        except OSError:
+            pass
+        return None
+
+    if not isinstance(data, dict):
+        logger.warning(
+            f"{path.name} has unexpected shape ({type(data).__name__}); "
+            "backing up and using defaults."
+        )
+        try:
+            path.rename(path.with_suffix(path.suffix + '.broken'))
+        except OSError:
+            pass
+        return None
+
+    return data
+
+
 class DeviceSettings(JsonSerializable):
     vendor_id: int
     product_id: int
@@ -36,21 +160,36 @@ class DeviceSettings(JsonSerializable):
 
     def read_from_file(self):
         settings_file = self._settings_file()
+        logger = logging.getLogger(__name__)
 
-        if not settings_file.exists():
+        raw = _load_yaml_with_backup(settings_file, logger=logger)
+        if raw is None:
             return
-
-        yaml = YAML(typ='safe')
-        raw = yaml.load(settings_file) or {}
 
         for key in raw:
             # Clean old / invalid settings
-            if key in self.settings:
-                self.settings[key] = int(raw[key])
-                # Remember that this one came from the user rather than from a
-                # profile default, so a value read back from the headset can
-                # fill in the blanks without overriding a deliberate choice.
-                self._user_chosen.add(key)
+            if key not in self.settings:
+                continue
+
+            try:
+                value = int(raw[key])
+            except (TypeError, ValueError):
+                # A single corrupted value (e.g. a string or a list where an
+                # int belongs — CHA-5) must not abort the whole load: skip
+                # just this key and keep whatever the rest of the file gave
+                # us, rather than leaving the device permanently
+                # unconfigured because of one bad byte.
+                logger.warning(
+                    f"{settings_file.name}: {key}={raw[key]!r} is not a "
+                    "valid integer; skipping this key."
+                )
+                continue
+
+            self.settings[key] = value
+            # Remember that this one came from the user rather than from a
+            # profile default, so a value read back from the headset can
+            # fill in the blanks without overriding a deliberate choice.
+            self._user_chosen.add(key)
 
     def was_chosen_by_user(self, name: str) -> bool:
         """True if *name* was loaded from the settings file, not defaulted."""
@@ -81,11 +220,11 @@ class DeviceSettings(JsonSerializable):
         self.write_to_file()
 
     def write_to_file(self):
-        settings_file = self._settings_file()
-        settings_file.parent.mkdir(parents=True, exist_ok=True)
-
-        yaml = YAML(typ='safe')
-        yaml.dump(self.settings.to_dict(), settings_file)
+        # Atomic write (CHA-5): a bare yaml.dump() here used to leave a
+        # truncated file behind if the process died mid-write, which then
+        # made every subsequent read_from_file() raise and
+        # configure_virtual_sinks() abort on every device event, forever.
+        _atomic_yaml_dump(self.settings.to_dict(), self._settings_file())
 
     def to_dict(self) -> dict:
         return self.__dict__
@@ -319,60 +458,57 @@ class GeneralSettings(JsonSerializable):
     @staticmethod
     def read_from_file() -> 'GeneralSettings':
         settings_file = SETTINGS_FOLDER / 'general_settings.yaml'
+        logger = logging.getLogger(__name__)
 
-        if not settings_file.exists():
-            return GeneralSettings()
-
-        yaml = YAML(typ='safe')
-
-        try:
-            data = yaml.load(settings_file)
-        except Exception as e:
-            # YAML corrupt / partial write from a previous crash. Backup the
-            # broken file (so the user can recover anything custom) and fall
-            # back to defaults instead of crashing the daemon at startup.
-            logging.getLogger(__name__).warning(
-                f"general_settings.yaml is unreadable ({e!r}); backing up and using defaults."
-            )
-            try:
-                settings_file.rename(settings_file.with_suffix('.yaml.broken'))
-            except OSError:
-                pass
-            return GeneralSettings()
-
-        if not isinstance(data, dict):
-            logging.getLogger(__name__).warning(
-                f"general_settings.yaml has unexpected shape ({type(data).__name__}); using defaults."
-            )
+        data = _load_yaml_with_backup(settings_file, logger=logger)
+        if data is None:
             return GeneralSettings()
 
         if data.get('hrir_id') in _HRIR_ID_MIGRATIONS:
             data['hrir_id'] = _HRIR_ID_MIGRATIONS[data['hrir_id']]
 
+        # Validate every value against its ConfigSetting's declared domain
+        # rather than trust a hand-edited or restored file (CHA-2 / CHA-8):
+        # an out-of-range pipewire_quantum, or a non-string SELECT value,
+        # would otherwise sail straight through __init__'s setattr() and
+        # get re-applied by CoreEngine.start() on every daemon start. A key
+        # that fails validation is dropped so the class default takes over
+        # for that one field, rather than aborting the whole load.
+        all_configs = {
+            c.name: c for c in [*GeneralSettings.settings_config, *GeneralSettings.dac_settings_config]
+        }
+        for key in list(data.keys()):
+            config = all_configs.get(key)
+            if config is None:
+                continue
+            if not validate_config_setting_value(config, data[key]):
+                logger.warning(
+                    f"general_settings.yaml: {key}={data[key]!r} is out of "
+                    "domain; using default."
+                )
+                del data[key]
+
+        # hrir_id carries no ConfigSetting-level domain worth checking above
+        # (SELECT only enforces "a string, or None") — its real domain is the
+        # bundled catalogue, checked here directly (CHA-12: a saved id
+        # escaping hrir_assets/ via "../" made an arbitrary file "the HRIR"
+        # and silenced Spatial Audio).
+        if 'hrir_id' in data and data['hrir_id'] is not None:
+            from arctis_sound_manager.hrir_catalog import is_valid_hrir_id
+            if not is_valid_hrir_id(data['hrir_id']):
+                logger.warning(
+                    f"general_settings.yaml: hrir_id={data['hrir_id']!r} is "
+                    "not in the HRIR catalogue; using default."
+                )
+                del data['hrir_id']
+
         return GeneralSettings(**data)
 
     def write_to_file(self):
         settings_file = SETTINGS_FOLDER / 'general_settings.yaml'
-        settings_file.parent.mkdir(parents=True, exist_ok=True)
 
         # Atomic write: serialize to a sibling tempfile, fsync, then rename.
         # Prevents the on-disk file from ever being half-written if the
         # process is killed mid-flush (which used to make the next start
         # fall back to defaults — now it won't).
-        yaml = YAML(typ='safe')
-        tmp = settings_file.with_suffix('.yaml.tmp')
-        try:
-            with tmp.open('w', encoding='utf-8') as fh:
-                yaml.dump(self.__dict__, fh)
-                fh.flush()
-                try:
-                    os.fsync(fh.fileno())
-                except OSError:
-                    pass
-            tmp.replace(settings_file)
-        finally:
-            if tmp.exists():
-                try:
-                    tmp.unlink()
-                except OSError:
-                    pass
+        _atomic_yaml_dump(self.__dict__, settings_file)
