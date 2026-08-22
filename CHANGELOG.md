@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.5] - 23 August 2026
+
+This release comes out of a deliberate hunt for the failures users hit on hardware and systems the author does not own, plus three reports that arrived while it ran ([#199](https://github.com/loteran/Arctis-Sound-Manager/issues/199), [#202](https://github.com/loteran/Arctis-Sound-Manager/issues/202), [#203](https://github.com/loteran/Arctis-Sound-Manager/issues/203)). The audit that produced most of it is in `RAPPORT-CHAOS-ASM.md`.
+
+### Added
+
+- **Choose which Arctis ASM drives when several are plugged in.** Keeping a GameBuds dongle in a port next to a Nova Pro Wireless base station meant ASM picked whichever one happened to be enumerated first — invisible, unchangeable, and only avoidable by unplugging the other. Settings now lists the Arctis units actually detected and remembers the one to drive. The choice applies immediately, and an unplugged preferred unit falls back to the other headset rather than to nothing. ([#199](https://github.com/loteran/Arctis-Sound-Manager/issues/199))
+- **The Nova Elite answers its own status request.** The profile mapped only the individual asynchronous pushes, so every status row stayed blank from startup until each control had reported once. The combined reply its own vendor specification defines is now decoded.
+- **A bug report says which kernel driver holds the USB interface.** libusb only answers yes or no, so a refused claim never said who was in the way. It matters more from Linux 7.3 on, where an in-kernel `hid-steelseries` driver will bind to the same interface on 25+ models.
+
+### Fixed
+
+- **The `.deb` on the releases page could not start.** It shipped without Pillow, so the daemon died on a bare `ModuleNotFoundError` at first launch — and the dependency checker written to catch exactly that never ran, because the failing import comes first. Debian is built two ways and the two dependency lists had drifted; they are now derived from one source, and the pre-release check reads both. The same list also lacked Babel, which silently gave wrong plural forms in every non-English locale.
+- **Sound on SteamOS through Distrobox.** Three separate faults, all reported with measurements: the filter-chain unit never told PipeWire where ASM stages its LADSPA plugins, so the surround stage failed to load and audio stopped half a second in; ASM overwrote the host's own service file with a path that exists only inside the container, so every reboot left the daemon dead; and a channel whose link PipeWire refuses on permissions is now regenerated as a linkable node instead of retrying forever. ([#203](https://github.com/loteran/Arctis-Sound-Manager/issues/203))
+- **Safe mode delivers the flat path it promises.** When the filter-chain crash-loops, ASM sets the EQ configs aside and says audio will be flat but stable. The channels kept pointing at the equaliser nodes it had just removed, so the fallback meant to guarantee sound produced silence instead.
+- **GameBuds are no longer reported as absent.** A headset whose family has no known status request — battery and connection state genuinely unavailable — was rendered as "No device detected" on every surface while its audio played and its controls worked. ([#202](https://github.com/loteran/Arctis-Sound-Manager/issues/202))
+- **"Redirect audio on disconnect" does something.** The switch and the device it redirects to are two settings, and the device defaults to unset: turning the feature on without also picking one made it return silently. It now falls back to the best other output and says so. ([#48](https://github.com/loteran/Arctis-Sound-Manager/discussions/48))
+- **The uninstaller stops breaking installs it does not uninstall.** It stopped and disabled ASM's services before asking anything, so answering no — or running the documented one-liner, which has no terminal to answer on — left the user with ASM dead and nothing removed. A successful uninstall also ended without its final line and returned an error code. ([#190](https://github.com/loteran/Arctis-Sound-Manager/discussions/190))
+- **Your equaliser survives a repair.** When a channel's configuration was missing or damaged, the repair rebuilt it as a flat bypass — every band, macro and boost gone, under a log line that only said "regenerating". Repairs now rebuild the real curve, back up what they replace, and write atomically so an interrupted write cannot leave a truncated file. The microphone chain is covered too, noise reduction included.
+- **The Output channel finds somewhere to go.** When its device disappeared — a monitor switched off, a Bluetooth speaker walking away — anything routed there played into a dead end for as long as the tray application was not running. It now falls back to the headset without touching your saved choice, and returns on its own.
+- **Another process can no longer take over a channel.** PipeWire does not enforce unique node names: a node created with the name of one of ASM's own made the watchdog tear down the real link, connect the impostor, and report success forever. Names that resolve to more than one node are now refused outright and logged.
+- **Fewer random audio dropouts.** A `pw-dump` slower than its timeout was read as "the whole graph is gone", which had the watchdog rebuild an audio path that was fine. An unreadable graph is now told apart from an empty one.
+- **The stream guard stops cutting the wrong thing.** It destroyed PipeWire objects by an id read moments earlier, and ids are recycled within seconds — on a graph churning because Discord is relinking, which is exactly when it runs.
+- **ASM only kills processes that are really its own.** The orphan cleanup decided what to terminate from a name the target process chooses for itself.
+- **Running `asm-daemon` by hand no longer cuts the running daemon's audio.** It reaped the live daemon's channels before discovering another instance was already there — and the error message invited exactly that.
+- **Settings cannot be poisoned from outside.** Values arriving over D-Bus are checked against what each setting actually declares, not against the type of its default, so a single call can no longer set a system-wide PipeWire value out of range or write arbitrary data into the configuration. A corrupt per-device settings file now falls back to defaults with a backup instead of leaving the headset unconfigured while the daemon reported itself healthy. Custom equaliser values are clamped before they reach headset firmware, and an imported preset can no longer carry non-finite values into the audio graph.
+- **Nova 7 and 7P (first generation): four status values were invented.** The profiles decoded bytes the vendor specification does not define, which also left the microphone auto-switch permanently inert on six product ids while the interface offered it. The setting now shows why it is unavailable instead of pretending.
+- **Battery and mix readings cannot show absurd percentages** — the clamp applied only when a profile asked for rounding.
+- **Distrobox installs can bind the Clips shortcut**, which needs the tray unit name the rest of ASM has used since 1.3.0; the Distrobox generators still wrote the old one. On systemd, the post-upgrade restart also left the tray on pre-upgrade code.
+- **On dinit, "Restart Now" restarts the daemon.** It only ever knew how to talk to systemd, so an upgrade there gave a new interface talking to an old daemon. Safe mode can arm on dinit as well, and setup no longer dies with a traceback when `dinitctl` is missing.
+- **The dependency dialog no longer freezes the window** while an elevation prompt the user may not have seen waits for an answer. ([#200](https://github.com/loteran/Arctis-Sound-Manager/issues/200))
+- **Hotplug keeps working if the udev listener dies** — replug and power-cycle used to stop being noticed, with nothing saying so.
+- **The Clips page stops polling PulseAudio once a second** and stops its timers when it closes.
+- **The equaliser mode switch always releases its button**, instead of freezing on "restarting audio" and leaving playing streams on torn-down nodes.
+- **A fresh Arch install resolves.** A hard dependency failing to build no longer passes as a warning, and the release audit checks it reached the repository.
+- **Filter-chain service updates reach existing installs.** The copy in your home directory took precedence over the packaged one and was never refreshed.
+
 ## [1.4.4] - 21 August 2026
 
 ### Fixed
