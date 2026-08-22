@@ -126,6 +126,44 @@ def _run(cmd: list[str], timeout: float | None, capture: bool) -> bool:
         return False
 
 
+def run_raw(cmd: list[str], timeout: float | None = 10.0) -> subprocess.CompletedProcess | None:
+    """Run a literal init-manager command through this module's exception-safe,
+    posix_spawn-safe plumbing (issue #123), for one-off/migration callers that
+    need the real output or a literal service name — not the logical-name
+    mapping that :func:`restart`/:func:`start`/:func:`stop`/etc. apply.
+
+    Two cases the logical-name helpers cannot serve:
+
+    * The caller needs stdout/stderr (e.g. ``asm-setup`` checking for
+      "started" in ``dinitctl status`` output, or printing a failure reason).
+    * The caller needs a *literal* service name that :data:`_SERVICE_MAP`
+      deliberately maps to ``None`` on this init system (e.g. a stale literal
+      ``arctis-gui`` dinit service left over from before XDG autostart —
+      ``_SERVICE_MAP["arctis-gui"]["dinit"]`` is ``None`` by design, meaning
+      "no such service normally exists here", which is exactly why the
+      one-off migration cleanup for a service that *does* exist needs to
+      bypass it).
+
+    Every other caller should prefer the logical-name helpers above — this
+    exists so those callers don't have to spawn their own raw
+    ``subprocess.run`` (which is how EXT-2 happened: every call in
+    ``asm-setup``'s ``_setup_dinit_services()`` guarded only
+    ``TimeoutExpired``, never ``FileNotFoundError``, so a dinit box missing
+    ``dinitctl`` from PATH died with an uncaught traceback partway through
+    setup instead of a clear message).
+
+    Returns ``None`` — never raises — if the binary is missing, the call
+    times out, or another ``OSError`` occurs. Callers should treat ``None`` as
+    "could not run this, continue best-effort" and print/log accordingly.
+    """
+    try:
+        return subprocess.run([_abs_exe(cmd[0]), *cmd[1:]], capture_output=True, text=True,
+                              timeout=timeout, check=False, close_fds=False)
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired) as exc:
+        logger.warning("service_control: run_raw(%s) failed: %s", " ".join(cmd), exc)
+        return None
+
+
 def _action(verb: str, services: tuple[str, ...], timeout: float | None, capture: bool) -> bool:
     """Run ``verb`` (start/stop/restart) on one or more logical services.
 

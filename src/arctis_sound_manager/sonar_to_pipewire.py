@@ -1005,6 +1005,44 @@ def _poll_filter_chain_stable() -> bool:
     return False
 
 
+def _dinit_crash_loop_settled(service: str, window_s: float = 12.0,
+                               interval_s: float = 1.0) -> bool:
+    """Init-agnostic crash-loop fallback for dinit (SD-2).
+
+    systemd exposes a restart counter (``NRestarts``, see :func:`~.service_control.nrestarts`)
+    that lets :func:`ensure_filter_chain_healthy` catch a service that has been
+    repeatedly crashing even though it happens to be momentarily STARTED at
+    the instant it is checked. dinit has no equivalent: verified against the
+    dinit 0.22.1 control protocol (``control-cmds.h`` defines no restart-count
+    query) and ``dinitctl(8)``, whose ``status`` command only ever reports
+    STOPPED/STARTING/STARTED/STOPPING plus pid/exit-status — there is nothing
+    to poll for a count.
+
+    What dinit does have is its own crash-loop breaker: ``restart-limit-count``
+    / ``restart-limit-interval`` (``dinit-service(5)``), defaulting to 3
+    restarts per 10 s. This repository's ``dinit/pipewire-filter-chain`` unit
+    does not override either, so on an unmodified ASM install a genuine
+    crash-loop exhausts that limit and dinit stops retrying — the service
+    settles into STOPPED for good. Instead of a counter, this watches for that
+    settling: it samples ``sc.is_active(service)`` once a second for
+    ``window_s`` seconds (12 s by default — margin over the 10 s default
+    interval) and reports whether the *last* sample is inactive.
+
+    A service that saw one legitimate, unrelated restart mid-window will have
+    recovered to STARTED by the final sample, so this does not false-positive
+    on an isolated restart — only on dinit itself having given up.
+    """
+    import time
+    from arctis_sound_manager import service_control as sc
+
+    samples = max(1, round(window_s / interval_s))
+    settled_inactive = False
+    for _ in range(samples):
+        time.sleep(interval_s)
+        settled_inactive = not sc.is_active(service)
+    return settled_inactive
+
+
 def _restart_filter_chain() -> None:
     """Restart the filter-chain service with crash-loop detection and fallback.
 
@@ -1059,6 +1097,11 @@ def ensure_filter_chain_healthy() -> bool:
        started service while still catching a genuine crash-loop.
     2. ``NRestarts`` (systemd only) — if >= 3 the service has restarted at
        least 3 times, which strongly indicates a crash-loop.
+    2b. On dinit (where ``NRestarts`` has no equivalent, SD-2), a
+        ``_dinit_crash_loop_settled()`` fallback watches the service live for
+        up to 12 s and treats it settling into STOPPED as dinit's own
+        restart-limit having been hit — see that function's docstring for why
+        this is init-appropriate rather than an invented output format.
 
     If unhealthy → calls ``_enter_filter_chain_safe_mode()`` which moves ASM
     configs aside and restarts filter-chain without them so audio is flat but
@@ -1069,7 +1112,8 @@ def ensure_filter_chain_healthy() -> bool:
     already active.
 
     Callers must not call this in a tight loop — each call may block up to
-    ``3 × 1 s`` for the poll and ``5 s`` for the NRestarts subprocess."""
+    ``3 × 1 s`` for the poll and ``5 s`` for the NRestarts subprocess (or, on
+    dinit, up to 12 s for the ``_dinit_crash_loop_settled()`` fallback)."""
     from arctis_sound_manager import service_control as sc
 
     if _filter_chain_safe_mode:
@@ -1102,11 +1146,24 @@ def ensure_filter_chain_healthy() -> bool:
     # active between systemd's rapid auto-restarts. Goes through service_control
     # so no raw systemctl spawn escapes the posix_spawn path (issue #123).
     n_restarts = sc.nrestarts("filter-chain")
-    if n_restarts is not None and n_restarts >= 3:
+    if n_restarts is not None:
+        if n_restarts >= 3:
+            _log.warning(
+                "ensure_filter_chain_healthy: filter-chain NRestarts=%d "
+                "(crash-loop detected) — entering safe mode",
+                n_restarts,
+            )
+            _enter_filter_chain_safe_mode()
+            return False
+    elif sc.detect_init() == "dinit" and _dinit_crash_loop_settled("filter-chain"):
+        # SD-2: dinit exposes no restart counter (see
+        # _dinit_crash_loop_settled()'s docstring), so a service that looked
+        # active on the primary check above is instead watched live for it
+        # settling into STOPPED — dinit's own restart-limit having fired.
         _log.warning(
-            "ensure_filter_chain_healthy: filter-chain NRestarts=%d "
-            "(crash-loop detected) — entering safe mode",
-            n_restarts,
+            "ensure_filter_chain_healthy: filter-chain settled into an "
+            "inactive state after a live crash-loop observation window "
+            "(dinit restart-limit reached) — entering safe mode"
         )
         _enter_filter_chain_safe_mode()
         return False

@@ -17,6 +17,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from arctis_sound_manager import service_control as sc
 from arctis_sound_manager.init_system import (
     detect_init, HOME_DINIT_SERVICE_FOLDER, filter_chain_conf_path,
     is_dinit_service_enabled, write_xdg_autostart, remove_xdg_autostart,
@@ -114,19 +115,18 @@ def _setup_dinit_services() -> None:
 
     print("  [dinit] service files written to", HOME_DINIT_SERVICE_FOLDER)
 
-    # Remove stale arctis-gui dinit service — replaced by XDG autostart
+    # Remove stale arctis-gui dinit service — replaced by XDG autostart.
+    # Uses sc.run_raw() (a literal-command escape hatch) rather than
+    # sc.stop()/sc.disable() because those map the logical name "arctis-gui"
+    # through _SERVICE_MAP, which resolves to None on dinit by design (no
+    # dinit service normally exists for the GUI) — that would silently no-op
+    # instead of cleaning up this one-off leftover from before XDG autostart.
     old_gui_svc = HOME_DINIT_SERVICE_FOLDER / "arctis-gui"
     if old_gui_svc.exists():
-        try:
-            subprocess.run(["dinitctl", "disable", "arctis-gui"], check=False,
-                           capture_output=True, timeout=10)
-        except subprocess.TimeoutExpired:
-            print("  [!] dinitctl disable arctis-gui timed out — continuing")
-        try:
-            subprocess.run(["dinitctl", "stop", "arctis-gui"], check=False,
-                           capture_output=True, timeout=10)
-        except subprocess.TimeoutExpired:
-            print("  [!] dinitctl stop arctis-gui timed out — continuing")
+        if sc.run_raw(["dinitctl", "disable", "arctis-gui"]) is None:
+            print("  [!] dinitctl disable arctis-gui unavailable — continuing")
+        if sc.run_raw(["dinitctl", "stop", "arctis-gui"]) is None:
+            print("  [!] dinitctl stop arctis-gui unavailable — continuing")
         old_gui_svc.unlink()
         print("  [dinit] removed stale arctis-gui service (replaced by XDG autostart)")
 
@@ -135,70 +135,62 @@ def _setup_dinit_services() -> None:
 
     # Reload stopped service definitions so dinit picks up restart=true from updated files.
     # Running services cannot be reloaded — skip them; they already have the right behaviour.
+    # All dinitctl calls below go through sc.run_raw() (EXT-2): it catches
+    # FileNotFoundError/OSError/TimeoutExpired internally and returns None
+    # instead of raising, so a dinit box missing dinitctl from PATH prints a
+    # clear per-step message and setup finishes instead of dying with an
+    # uncaught traceback partway through.
     for svc in ["arctis-video-router", "arctis-stream-guard", "pipewire-filter-chain"]:
-        try:
-            st = subprocess.run(["dinitctl", "status", svc], capture_output=True, text=True,
-                                timeout=10)
-        except subprocess.TimeoutExpired:
-            print(f"  [!] dinitctl status {svc} timed out — skipping reload")
+        st = sc.run_raw(["dinitctl", "status", svc])
+        if st is None:
+            print(f"  [!] dinitctl status {svc} unavailable — skipping reload")
             continue
         if "started" not in st.stdout.lower():
-            try:
-                subprocess.run(["dinitctl", "reload", svc], check=False, capture_output=True,
-                               timeout=10)
-            except subprocess.TimeoutExpired:
-                print(f"  [!] dinitctl reload {svc} timed out — continuing")
+            if sc.run_raw(["dinitctl", "reload", svc]) is None:
+                print(f"  [!] dinitctl reload {svc} unavailable — continuing")
 
     # Restart PipeWire best-effort (may fail if not a dinit service).
     # Sleep briefly after so the socket is ready before we start dependants.
-    try:
-        pw_restart = subprocess.run(["dinitctl", "restart", "pipewire"], check=False,
-                                    capture_output=True, text=True, timeout=10)
-    except subprocess.TimeoutExpired:
-        print("  [!] dinitctl restart pipewire timed out — continuing")
-        pw_restart = type("_FakeResult", (), {"returncode": 1})()
-    if pw_restart.returncode == 0:
+    pw_restart = sc.run_raw(["dinitctl", "restart", "pipewire"])
+    if pw_restart is None:
+        print("  [!] dinitctl restart pipewire unavailable — continuing")
+    elif pw_restart.returncode == 0:
         time.sleep(0.5)
 
     # Guard: use pgrep against the actual process instead of dinitctl status to avoid a
     # timing race where the boot-sequence auto-start and this setup run overlap.
-    try:
-        am_already_running = subprocess.run(
-            ["pgrep", "-f", "asm-daemon"], capture_output=True, timeout=10
-        ).returncode == 0
-    except subprocess.TimeoutExpired:
-        print("  [!] pgrep asm-daemon timed out — assuming not running")
+    pgrep_result = sc.run_raw(["pgrep", "-f", "asm-daemon"])
+    if pgrep_result is None:
+        print("  [!] pgrep asm-daemon unavailable — assuming not running")
         am_already_running = False
+    else:
+        am_already_running = pgrep_result.returncode == 0
 
     # Enable and start each service (use 'start' not 'restart' — idempotent if not yet running).
     # Guard every service individually to avoid double-launch (issue #25).
     for svc in ["arctis-manager", "arctis-video-router", "arctis-stream-guard",
                 "pipewire-filter-chain"]:
-        try:
-            en = subprocess.run(["dinitctl", "enable", svc], check=False,
-                                capture_output=True, text=True, timeout=10)
-        except subprocess.TimeoutExpired:
-            print(f"  [!] dinitctl enable {svc} timed out — continuing")
-            continue
-        if en.returncode != 0:
+        en = sc.run_raw(["dinitctl", "enable", svc])
+        if en is None:
+            print(f"  [!] dinitctl enable {svc} unavailable — continuing")
+        elif en.returncode != 0:
             print(f"  [dinit] {svc}: enable failed ({en.stderr.strip() or 'unknown error'})")
+
         if svc == "arctis-manager" and am_already_running:
             print("  [dinit] arctis-manager: already running — skipping start")
             continue
-        try:
-            svc_st = subprocess.run(["dinitctl", "status", svc], capture_output=True, text=True,
-                                    timeout=10)
-        except subprocess.TimeoutExpired:
-            print(f"  [!] dinitctl status {svc} timed out — skipping start")
+
+        svc_st = sc.run_raw(["dinitctl", "status", svc])
+        if svc_st is None:
+            print(f"  [!] dinitctl status {svc} unavailable — skipping start")
             continue
         if svc_st.returncode == 0 and "started" in svc_st.stdout.lower():
             print(f"  [dinit] {svc}: already running — skipping start")
             continue
-        try:
-            st = subprocess.run(["dinitctl", "start", svc], check=False,
-                                capture_output=True, text=True, timeout=10)
-        except subprocess.TimeoutExpired:
-            print(f"  [!] dinitctl start {svc} timed out — continuing")
+
+        st = sc.run_raw(["dinitctl", "start", svc])
+        if st is None:
+            print(f"  [!] dinitctl start {svc} unavailable — continuing")
             continue
         status = "ok" if st.returncode == 0 else f"start failed ({st.stderr.strip() or 'unknown error'})"
         print(f"  [dinit] {svc}: {status}")
