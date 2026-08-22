@@ -6,8 +6,9 @@ but its controls have no effect (UI shows up, nothing happens), the opcodes need
 to be captured from **SteelSeries GG**, which is the only software that speaks
 the real protocol — and it is **Windows-only**.
 
-This folder has the two helpers used for that (first applied to the Arctis Nova
-Pro Omni, issue #70).
+This folder has the helpers used for that (first applied to the Arctis Nova
+Pro Omni, issue #70), plus discovery scripts for problems that need no Windows
+step at all — see §3.
 
 ## 1. Capture on Windows — `capture-omni-windows.ps1`
 
@@ -44,3 +45,50 @@ were sent right after each setting change. From that you read off the
 volume, mic, …).
 
 Pass `--report-id XX` if a device uses a different leading report id.
+
+## 3. Find a missing status field without Windows — `gamebuds_battery_probe.py`
+
+Some families have no `status.request` at all — nobody has ever captured what
+they push, so battery and connection state are simply unavailable (the
+GameBuds, issue #202: `devices/gamebuds.yaml` says so at the top). This
+family, and any other in the same position, does not need Windows, Wireshark,
+or an understanding of HID to investigate: on Linux, whatever the device
+sends on its own can be listened to directly, and a byte that only changes
+alongside a real state (in the case vs. out, muted vs. not) tends to stand
+out from the rest once you have it side by side with what you were doing at
+the time.
+
+```bash
+python3 gamebuds_battery_probe.py                       # passive capture only (writes nothing)
+python3 gamebuds_battery_probe.py --send-status-opcodes  # also try opcodes borrowed from other families (writes to the device)
+```
+
+Two phases, and only the first runs unless asked:
+
+1. **Listen.** It walks you through a short scripted sequence — case in, case
+   out, mute the mic, idle — pausing at each step so you can do the thing,
+   and records every frame the buds send with a timestamp and the action that
+   was happening. A byte that stays put while one action holds and lands on a
+   different, still-steady value once you switch actions is worth a second
+   look; that pattern is exactly what a case-state or battery byte produces
+   and what a counter byte does not.
+2. **Ask, opt-in only (`--send-status-opcodes`).** Sends the status-request
+   opcodes already known from other Arctis families and records which ones
+   get a reply. This **writes to the device** — it is not known to be
+   harmless on an unprobed family, only unlikely to be harmful, and the
+   script says so before doing it. A reply proves an opcode works; it proves
+   nothing about what any byte in that reply means. Do not carry a
+   `response_mapping` over from the family the opcode came from — see
+   `nova_7_discrete_battery.yaml`'s comment for what that mistake cost once
+   already.
+
+The ASM daemon holds the same USB interface whenever it runs, so the script
+checks for it first, tells you the one command to stop it, and offers to stop
+and restart it for you — or refuses to run rather than fight it for the
+interface, the same failure mode discussion #203's boot-race analysis is
+about.
+
+Needs only pyusb, and runs from a checkout with ASM not installed — see the
+script's own header for the exact command. Every run is saved to a
+timestamped file in the working directory and ends with a short summary
+meant to be pasted straight into the issue.
