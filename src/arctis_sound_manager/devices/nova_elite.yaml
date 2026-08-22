@@ -141,6 +141,44 @@ device:
       - starts_with: 0x07c3
         wireless_mode: 0x02
 
+      # ── Main 0x01b0 wireless_settings reply ── RAPPORT-CHAOS-ASM.md HW-4.
+      #
+      # Sourced from ~/steelseries-research/decoded-115/base_arctis_nova_elite_tx.device,
+      # `(struct wireless_settings)` (incoming, command 0xB0, `tx_report_id` = 0x01
+      # for this device — i.e. wire bytes 0x01 0xb0, exactly `status.request`
+      # above). The struct is `unaligned`: report_id and command take offsets
+      # 0x00/0x01, then each field below follows in the order the spec declares
+      # it, one byte apiece. This block was entirely missing before — the
+      # profile only had the individual 0x07xx async pushes (one struct field
+      # each), so every row here stayed blank from daemon start until the
+      # matching control had pushed at least once.
+      #
+      # Field names below reuse the ones this profile already uses for the
+      # SAME spec field via its 0x07xx async push (see above) — not names
+      # borrowed from a sibling device. `bt_connection_mode` (spec offset
+      # 0x04: 1=off 2=pairing 4=link) is deliberately NOT mapped: nothing in
+      # this profile has ever named it — the 0x07b5 async push only surfaces
+      # the two neighbouring fields (bt_connection_status at its own offset
+      # 0x03, radio_connection_status at its own offset 0x04 — a different
+      # frame with different offsets, not to be confused with this one) — so
+      # there is no established name to give it and no existing consumer.
+      - starts_with: 0x01b0
+        bluetooth_default: 0x02              # bt_power_default (0/1)
+        bluetooth_auto_mute: 0x03             # bt_call_default (0=nothing 1=-12dB 2=mute)
+        # 0x04 bt_connection_mode: not mapped, see comment above
+        bluetooth_connection: 0x05            # bt_connection_status (1=ready 2=lost 4=busy 8=error)
+        headset_battery_charge: 0x06          # headset_batt_level, 0-100
+        charge_slot_battery_charge: 0x07      # charger_batt_level, 0-100
+        transparent_noise_cancelling_level: 0x08 # transparent, 1-10
+        mic_status: 0x09                      # mic_mute (0=unmuted 1=muted)
+        noise_cancelling: 0x0a                # transparent_anc_mode (0=off 1=transparency 2=on)
+        mic_led_brightness: 0x0b              # muted_mic_brightness, 1-10
+        auto_off_time_minutes: 0x0c           # inactivity_timer (0-6, mapped)
+        wireless_mode: 0x0d                   # 0=speed 1=range
+        headset_power_status: 0x0e            # radio_connection_status (1/2/4/8, see 0x07b5)
+        headset_charging_status: 0x0f         # charging_status (1/2/4/8, see 0x07b7)
+        noise_cancelling_level: 0x10          # active_noise_cancellation, 1-3
+
     representation:
       headset:
         - headset_power_status
@@ -185,12 +223,43 @@ device:
     status_variable: headset_power_status
     online_value: online
 
-  # OLED parameters — same GameDAC Gen 2 hardware as Nova Pro Wireless.
-  # Tentative: needs USB capture from a Nova Elite user to confirm interface/wvalue.
-  # If the screen doesn't respond, remove this section and open a GitHub issue.
+  # OLED parameters. RAPPORT-CHAOS-ASM.md INT-3.
+  #
+  # These used to be a guess ("same GameDAC Gen 2 hardware as Nova Pro
+  # Wireless" — interface 4, report_id 0x06). They are now sourced from a
+  # real owner: JerwuQu/ggoled#26 (github.com/JerwuQu/ggoled/issues/26),
+  # comment by @macrooli, 2026-07-19, and the diff in the PR they opened for
+  # it, JerwuQu/ggoled#35 (merged 2026-07-19, tested against real hardware:
+  # clear/fill/text/img/brightness/return + the ggoled_app tray daemon, all
+  # confirmed working). Quote: "The base station (PID 0x2244) exposes its
+  # OLED/info HID collections on interface 3, not interface 4 like the Nova
+  # Pro. Interface 4 here is an unrelated consumer-control/media-key
+  # interface... The Nova Elite declares report ID 1 for the OLED collection
+  # (Col01) and report ID 7 for the info collection (Col02) — sending report
+  # ID 6 fails with HidD_SetFeature: The parameter is incorrect on Windows."
+  #
+  # `wvalue` is unaffected: oled_manager.py only reads its HIGH byte (report
+  # type, 0x03 = Feature) — the low byte is recomputed per packet from
+  # `report_id` at send time, so 0x0300 is still correct.
+  #
+  # This is display OUTPUT only (frame drawing). macrooli's own PR flags a
+  # known gap on the READ side: ggoled's battery/volume event parsing still
+  # assumes report ID 6 in several match arms and was not updated for this
+  # device, so those specific readouts are "likely still incorrect" there —
+  # ASM does not use that path (battery/status come from the 0x01b0/0x07xx
+  # frames above, a different HID collection), but it is a live warning that
+  # this device multiplexes more than one thing onto interface 3 and only
+  # the frame-drawing direction has been confirmed.
+  #
+  # Verified for PID 0x2244 only. 0x2246/0x2270 are the same physical base
+  # station enumerating under a different port path / colorway, not a
+  # different design, so this should carry over — but that is this agent's
+  # inference, not something macrooli tested. 0x2249 (ASM's own secondary-HID
+  # addition, not in the ggoled report at all) is unconfirmed either way.
+  # See docs/HARDWARE-QUESTIONS.md.
   oled:
-    interface: 4
-    report_id: 0x06
+    interface: 3
+    report_id: 0x01
     wvalue: 0x0300
     width: 128
     height: 64

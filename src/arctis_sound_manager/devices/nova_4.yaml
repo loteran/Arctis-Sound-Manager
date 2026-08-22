@@ -13,6 +13,15 @@
 # effect on real hardware, this is the line to revisit — see the Nova Pro Omni
 # (#70), where exactly this was wrong for two months.
 #
+# Checked (RAPPORT-CHAOS-ASM.md HW-3): grepped every one of the 127 files
+# under ~/steelseries-research/decoded-115/ (all product lines, not just this
+# one) for "interface"/"bInterfaceNumber"/"usb interface"/"interfaceIndex" —
+# zero hits anywhere outside an unrelated comment ("Sync Interface events").
+# The GG device-spec format itself carries no USB descriptor layout for any
+# headset in the corpus; this is not a gap specific to the Nova 4/4X, and no
+# other file in the set can settle it either. This is a hardware question,
+# not a research gap — see docs/HARDWARE-QUESTIONS.md.
+#
 # The Nova 4 has no Bluetooth and no 3.5 mm jack: the dongle is the only path,
 # so there are no Bluetooth settings here unlike the Nova 7 family.
 # ──────────────────────────────────────────────────────────────────────────────
