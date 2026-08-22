@@ -709,6 +709,12 @@ class CoreEngine:
         # Audio toggle), so it must NOT trigger a recreate that would itself
         # churn the graph and silence the channel.
         _ORPHAN_GRACE_TICKS: int = 3
+        # Consecutive permission refusals before a channel's EQ node is
+        # degraded to a pickable Audio/Sink (#203). Deliberately longer than
+        # the orphan grace: grant_link_permissions() retries on its own
+        # schedule, and the class change is visible to the user, so it must be
+        # the answer to a settled state and not to one bad tick.
+        _PERM_FALLBACK_TICKS: int = 6
 
         # ── Anti-flapping constants ───────────────────────────────────────────
         # Threshold: how many interventions (restart OR recreate) within the
@@ -735,6 +741,7 @@ class CoreEngine:
         # which the explanation has already been logged. Without this the line
         # would repeat every tick for as long as the condition lasts.
         _perm_denied_logged: set[str] = set()
+        _perm_denied_ticks: dict[str, int] = {}
         # Timestamps of recent interventions per channel (monotonic clock).
         _flap_history: dict[str, list[float]] = {}
         # Monotonic timestamp past which the channel is in cooldown.
@@ -1037,7 +1044,23 @@ class CoreEngine:
                                     link_outcome.get("denied"),
                                     link_outcome.get("total"), channel,
                                 )
+                            # After the permission repair has had its chances and
+                            # the link is still refused, degrade the channel's EQ
+                            # node from Audio/Sink/Internal to a plain Audio/Sink
+                            # (issue #203): PipeWire allows the identical
+                            # cross-client link into a non-Internal node on the
+                            # sessions that refuse it into an Internal one. Done
+                            # per channel, only after repeated refusals, and
+                            # remembered — a session that links fine (the normal
+                            # case, measured) never reaches this and keeps its
+                            # plumbing out of the output pickers.
+                            count = _perm_denied_ticks.get(channel, 0) + 1
+                            _perm_denied_ticks[channel] = count
+                            if count >= _PERM_FALLBACK_TICKS:
+                                _perm_denied_ticks.pop(channel, None)
+                                await self._degrade_channel_media_class(channel)
                             continue
+                        _perm_denied_ticks.pop(channel, None)
                         _perm_denied_logged.discard(channel)
 
                         # Could not link: the loopback node is not in the graph yet,
@@ -1228,6 +1251,35 @@ class CoreEngine:
         if isinstance(result, dict):
             return all(result.values())
         return bool(result)
+
+    async def _degrade_channel_media_class(self, channel: str) -> None:
+        """Regenerate *channel*'s EQ conf as a pickable Audio/Sink (#203).
+
+        Last resort for a session that refuses the cross-client link into an
+        Internal node: the channel carries no audio at all until this happens.
+        The cost is that ASM's plumbing becomes visible in output pickers for
+        that channel, which is why it takes repeated refusals to get here.
+        """
+        loop = asyncio.get_running_loop()
+        try:
+            from arctis_sound_manager import service_control as sc
+            from arctis_sound_manager import sonar_to_pipewire as stp
+            newly = await loop.run_in_executor(
+                None, stp.mark_link_permission_fallback, channel)
+            if not newly:
+                return  # already degraded; the conf on disk is current
+            await loop.run_in_executor(None, stp.ensure_sonar_eq_configs)
+            await loop.run_in_executor(
+                None, lambda: sc.restart("filter-chain", timeout=20))
+            self.logger.warning(
+                "_loopback_watchdog: '%s' regenerated as a pickable sink after "
+                "repeated permission refusals — it will appear in output "
+                "pickers, which is the price of it carrying audio at all.",
+                channel,
+            )
+        except Exception as exc:
+            self.logger.error(
+                "_loopback_watchdog: could not degrade '%s': %r", channel, exc)
 
     async def _enforce_link_hop(
         self, hop: str, fn, lead_args: tuple, data,
