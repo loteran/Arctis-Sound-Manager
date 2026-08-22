@@ -6,13 +6,18 @@
 configure_virtual_sinks() calls init_device() and then, at the very end, sets
 _device_ready. init_device() handles USB errors per command and carries on, but
 anything else it raises escaped — and _device_ready gates the status sentinel
-that tells the GUI "connected" for profiles with no status block at all
-(gamebuds.yaml is exactly that: `status` is None, so GetStatus is empty by
-design).
+that tells the GUI "connected" for profiles with no status block at all.
 
-The result on the reporter's GameBuds X — a PID whose profile documents its
-protocol as assumed rather than captured — was audio working, settings
-applying, and every GUI surface saying "No device detected".
+gamebuds.yaml used to be exactly that (no status.request was known for the
+family at all), which is how this was first found: on the reporter's
+GameBuds X, audio worked, settings applied, and every GUI surface said "No
+device detected" anyway. The GameBuds profile has since gained a real
+status block (issue #202 follow-up — see test_gamebuds_status.py and
+test_status_offsets_vs_spec.py), so this file now exercises the sentinel
+against a synthetic minimal profile instead of a real device file: the
+behaviour it protects — "no status block at all" — must keep working for
+whichever profile is in that situation next, not just for the one that
+happened to be in it when the bug was found.
 """
 from __future__ import annotations
 
@@ -33,10 +38,30 @@ def _gamebuds() -> DeviceConfiguration:
     return DeviceConfiguration(raw)
 
 
+def _device_with_no_status_block() -> DeviceConfiguration:
+    """A minimal, otherwise-valid profile that declares no `status` and no
+    `online_status` at all — the case the sentinel in dbus_service.py exists
+    for. Built inline rather than pointed at a real device YAML: which real
+    profile (if any) currently lacks a status block is incidental, and this
+    test must not silently stop testing anything just because the next
+    profile to gain one is whichever file used to serve as the example.
+    """
+    return DeviceConfiguration({
+        'device': {
+            'name': 'Test headset with no status protocol',
+            'vendor_id': 0x1038,
+            'product_ids': [0x9999],
+            'command_interface_index': [0, 0],
+            'listen_interface_indexes': [0],
+            'command_padding': {'length': 64, 'position': 'end', 'filler': 0x00},
+        }
+    })
+
+
 def test_the_profile_really_has_no_status_block():
     """The premise: without this, GetStatus has nothing to report and the
     sentinel is the only thing standing between the user and "no device"."""
-    cfg = _gamebuds()
+    cfg = _device_with_no_status_block()
     assert cfg.status is None
     assert cfg.online_status is None
 
@@ -48,7 +73,7 @@ def test_the_status_sentinel_reports_online_for_such_a_device():
     service.core_engine = MagicMock()
     service.core_engine._device_ready = True
     service.core_engine.device_status = {}
-    service.core_engine.device_config = _gamebuds()
+    service.core_engine.device_config = _device_with_no_status_block()
 
     import json
     # dbus_next's @method wraps the function; call the real one.

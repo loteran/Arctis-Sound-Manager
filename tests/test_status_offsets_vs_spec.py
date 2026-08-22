@@ -27,6 +27,13 @@ complains, and the value it produces looks like an answer:
 The specs are not redistributable and live outside this repo, so these tests
 lock the conclusions rather than re-deriving them — see the profiles' own
 comments for the reasoning and the spec file and struct each rests on.
+
+Also covers the opposite check for a profile that had NO status.request at
+all until issue #202: that adding one doesn't repeat mistake #3 above by
+reading into `button_maps` or any other field past what
+`base_arctis_gamebuds_dongle.device` actually defines. See
+test_gamebuds_status.py for the synthetic-frame parse of the new mapping and
+the product decisions (single battery reading, online_status) it feeds.
 """
 from __future__ import annotations
 
@@ -203,3 +210,83 @@ def test_gen_1_nova_7_has_no_empty_mic_or_bluetooth_section_left(profile):
 
     assert "mic" not in config.status.representation
     assert "bluetooth" not in config.status.representation
+
+
+# ── Arctis GameBuds (issue #202) ─────────────────────────────────────────────
+#
+# `base_arctis_gamebuds_dongle.device`, `(struct headset_settings)`, command
+# 0xB0. Neither `arctis_gamebuds_dongle.device` (0x230a) nor
+# `arctis_gamebuds_x_dongle.device` (0x2317) overrides the struct — both only
+# `(include "base_arctis_gamebuds_dongle")` and redefine product ids /
+# firmware-version strings — so one offset table covers every PID in the
+# profile.
+#
+# Offsets are the spec's field position minus two (report_id is absent from
+# ASM's buffers, and the command echo itself sits at ASM offset 0x00 — see
+# gamebuds.yaml's own comment for the cross-check against
+# base_arctis_nova_7_gen2_tx.device / nova_7_perc_battery.yaml).
+GAMEBUDS_OFFSETS = {
+    "bt_left_connect_status": 0x01,
+    "bt_right_connect_status": 0x02,
+    "left_connect_status": 0x03,
+    "right_connect_status": 0x04,
+    "left_battery_level": 0x05,
+    "right_battery_level": 0x06,
+}
+
+# wear_sense_status (spec field 15) is the last field before button_maps
+# starts at spec field 16 / ASM offset 0x0e. The struct's own
+# `api-on-read-success` zero-guard reads `(extract-bytes payload 15 6)` with
+# `payload` 0-indexed *including* report_id — byte 15 there is ASM offset
+# 0x0e, the same boundary computed from the field-position rule above.
+GAMEBUDS_LAST_DEFINED_OFFSET = 0x0d
+
+
+def test_gamebuds_offsets_match_the_spec():
+    config = _config("gamebuds.yaml")
+    mapping = _mapping(config, 0xB0)
+
+    for name, offset in GAMEBUDS_OFFSETS.items():
+        assert getattr(mapping, name) == offset, (
+            f"gamebuds.yaml reads {name!r} from {getattr(mapping, name):#04x}, "
+            f"expected {offset:#04x} per base_arctis_gamebuds_dongle.device"
+        )
+
+
+def test_gamebuds_reads_nothing_past_wear_sense_status():
+    """transparency_level / anc_level / transparency_anc_mode /
+    mute_led_brightness / inactivity_timer / wear_sense_config /
+    wear_sense_status (offsets 0x07-0x0d) are real spec fields but are
+    settings, not status — mapping them here without a settings UI for them
+    would be dead data. button_maps and beyond (0x0e+) is a hard ceiling:
+    reading past it is exactly the HW-1 mistake this file exists to catch.
+    """
+    config = _config("gamebuds.yaml")
+    mapping = _mapping(config, 0xB0)
+
+    plain_offsets = {v: k for k, v in mapping.__dict__.items()
+                      if isinstance(v, int) and k != "starts_with"}
+    out_of_range = {off: name for off, name in plain_offsets.items()
+                     if off > GAMEBUDS_LAST_DEFINED_OFFSET}
+    assert not out_of_range, (
+        f"gamebuds.yaml reads {out_of_range} beyond offset "
+        f"{GAMEBUDS_LAST_DEFINED_OFFSET:#04x}"
+    )
+
+    # The two derived (dict-valued) fields only ever combine offsets that are
+    # themselves within range.
+    for combinator in (v for v in mapping.__dict__.values() if isinstance(v, dict)):
+        for offsets in combinator.values():
+            assert all(o <= GAMEBUDS_LAST_DEFINED_OFFSET for o in offsets)
+
+
+def test_gamebuds_both_pids_share_the_offset_table():
+    """0x230a and 0x2317 both include base_arctis_gamebuds_dongle unmodified,
+    so a single response_mapping is correct for both — there is no per-PID
+    branch to keep in sync."""
+    config = _config("gamebuds.yaml")
+
+    assert 0x230A in config.product_ids
+    assert 0x2317 in config.product_ids
+    # Exactly one 0xB0 mapping serves every PID above.
+    assert len([m for m in config.status.response_mapping if m.starts_with == 0xB0]) == 1

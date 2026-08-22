@@ -13,10 +13,122 @@ device:
   command_interface_index: [3, 0]
   listen_interface_indexes: [3]
 
-  # Pas de status.request connu — la batterie et l'état de connexion ne sont pas disponibles.
-  # Le device sera toujours considéré comme connecté (online_status absent => toujours online).
-  # Protocol inverse-engineeré depuis capture USB (HeadsetControl issue #388, janvier 2025).
-  # Commandes non identifiées : 0xb8 (3 valeurs : 0x01/0x02/0x03 — ANC force ou BT auto-mute ?)
+  # Status protocol (issue #202): `(struct headset_settings)` in
+  # base_arctis_gamebuds_dongle.device, command 0xB0. Neither
+  # arctis_gamebuds_dongle.device (0x230a) nor arctis_gamebuds_x_dongle.device
+  # (0x2317, this reporter's model) overrides that struct — both merely
+  # `(include "base_arctis_gamebuds_dongle")` and redefine product ids /
+  # firmware-version strings, so the base layout applies to every PID below.
+  #
+  # Offsets are the spec's field position minus two: `report_id` is not in
+  # ASM's buffers, and by GG's own convention the `command` echo occupies ASM
+  # offset 0x00 (checked against a second family: base_arctis_nova_7_gen2_tx
+  # .device numbers `connection_status` as its 3rd incoming field —
+  # report_id, command, connection_status — and nova_7_perc_battery.yaml
+  # reads it at 0x01, i.e. field position 3 minus 2). Applied here:
+  #
+  #   field                        spec pos   ASM offset
+  #   report_id                    1          (absent)
+  #   command (0xB0 echo)          2          0x00 (== starts_with)
+  #   bt_left_connect_status       3          0x01
+  #   bt_right_connect_status      4          0x02
+  #   left_connect_status          5          0x03
+  #   right_connect_status         6          0x04
+  #   left_battery_level           7          0x05
+  #   right_battery_level          8          0x06
+  #   transparency_level           9          0x07  (not mapped, see below)
+  #   anc_level                    10         0x08  (not mapped)
+  #   transparency_anc_mode        11         0x09  (not mapped)
+  #   mute_led_brightness          12         0x0a  (not mapped)
+  #   inactivity_timer             13         0x0b  (not mapped)
+  #   wear_sense_config            14         0x0c  (not mapped)
+  #   wear_sense_status            15         0x0d  (not mapped)
+  #   button_maps (6 maps + 2)     16-35      0x0e-0x21 (not mapped)
+  #
+  # Confirmed independently: the struct's own `api-on-read-success` checks
+  # `(extract-bytes payload 15 6)` for the button-map zero-guard, where
+  # `payload` is 0-indexed and DOES include report_id — byte 15 there is
+  # ASM offset 0x0e, exactly where button_maps starts above.
+  #
+  # Only left/right connect-status and left/right battery are mapped: they
+  # are what issue #202 needs, and everything from transparency_level on is
+  # a *setting* (ANC/transparency level, LED brightness, wear-sense, button
+  # mapping…), not a status reading — mapping it here without a settings UI
+  # for it would be dead data. bt_left/right_connect_status ARE mapped
+  # because they're free (same frame, adjacent bytes) but are not used by
+  # any status_parse/representation/online_status below: the struct's
+  # documented 4-state comment (NOT PAIRED.../PAIRED CONNECTED) sits between
+  # bt_right_connect_status and left_connect_status, and SteelSeries' own
+  # get-wireless-device-connection-status() and connection_status_summary()
+  # both consume left/right_connect_status exclusively, never the bt_ pair —
+  # so only the former are wired into ASM's status.
+  #
+  # Two batteries, one reading: the tray shows a single percentage, so
+  # headset_battery_charge is the MIN of the two buds — the one that dies
+  # first ends a stereo session, so it is the number worth warning on rather
+  # than an average that hides it.
+  #
+  # Two connect-status bytes, one online flag: SteelSeries' own firmware
+  # (get-wireless-device-connection-status) computes exactly
+  # `(left_connect_status == 3) or (right_connect_status == 3)` — "either
+  # earbud paired and connected" counts as online. ASM's online_status is a
+  # single status_variable/online_value pair (see OnlineStatusConfig), so
+  # that OR is folded into one derived field here via a `max` combinator
+  # (3 is the top of the 0-3 range, so max == logical OR on "== 3"), then run
+  # through the same on_off parser every other Arctis family uses for its
+  # single connection_status byte. Picking either side alone would go
+  # offline whenever the user wears just the other bud — precisely the "ASM
+  # thinks a working headset is offline" failure this task warns against.
+  #
+  # The case (base_arctis_gamebuds_case.device, command 0xB7,
+  # left/right/case_battery_percent) is UNREACHABLE from this profile: it is
+  # a separate USB product (0x230C / 0x231A for the X variant) with its own
+  # device() block and its own vendor interface, not a sub-frame the dongle
+  # relays. ASM has no concept of "a second USB device backing one profile" —
+  # every YAML here talks to exactly one product id at a time — so reading
+  # the case would need a new profile/device entry of its own (and even then
+  # only while the case is connected over USB, which is not how a charging
+  # case is normally used). Left unmapped; the case's own PIDs are not added
+  # to product_ids above.
+  #
+  # Still unidentified, unrelated to status: 0xb8 (seen taking 3 values —
+  # 0x01/0x02/0x03 — in USB capture; ANC force mode or BT auto-mute is a
+  # guess, not confirmed against the spec). Reverse-engineered originally via
+  # HeadsetControl issue #388 (January 2025), before the vendor spec used
+  # above was available.
+  status:
+    request: 0xb0
+    response_mapping:
+      - starts_with: 0xb0
+        bt_left_connect_status: 0x01
+        bt_right_connect_status: 0x02
+        left_connect_status: 0x03
+        right_connect_status: 0x04
+        left_battery_level: 0x05
+        right_battery_level: 0x06
+        headset_power_status:
+          max: [0x03, 0x04]
+        headset_battery_charge:
+          min: [0x05, 0x06]
+
+    representation:
+      headset:
+        - headset_power_status
+        - headset_battery_charge
+
+  status_parse:
+    headset_power_status:
+      type: on_off
+      off: 0x02
+      on: 0x03
+    headset_battery_charge:
+      type: percentage
+      perc_min: 0
+      perc_max: 100
+
+  online_status:
+    status_variable: headset_power_status
+    online_value: online
 
   device_init:
     - [0x37, 'settings.mic_volume']
@@ -27,6 +139,7 @@ device:
     - [0xc5, 'settings.volume_limiter']
     - [0x27, 'settings.wear_sense']
     - [0x09]
+    - ['status.request']
 
   # On-device parametric EQ (parametric_eq, opcode 0x19). Same shape as the
   # Nova 5: no connection byte in the band frame, no commit frame, and a

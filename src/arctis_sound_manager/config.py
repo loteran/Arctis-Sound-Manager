@@ -87,7 +87,39 @@ class ConfigStatusResponseMapping:
             setattr(self, key, value)
 
     def get_status_values(self, raw_response: list[int]) -> dict[str, int]:
-        response = { k: raw_response[v] for k, v in self.__dict__.items() if k != 'starts_with' and v in range(len(raw_response)) }
+        response: dict[str, int] = {}
+        for k, v in self.__dict__.items():
+            if k == 'starts_with':
+                continue
+            if isinstance(v, bool):
+                continue  # bool is an int subclass; a mapping never means this
+            if isinstance(v, int):
+                if v in range(len(raw_response)):
+                    response[k] = raw_response[v]
+            elif isinstance(v, dict):
+                # A field derived from other offsets in the SAME frame, e.g.
+                # {'max': [0x03, 0x04]}. Added for the Arctis GameBuds: two
+                # earbuds each carry their own connect-status/battery byte,
+                # and ASM's status_variable / online_status machinery is
+                # single-key (see OnlineStatusConfig), so there is nowhere
+                # else to fold "either earbud" into one reading. This mirrors
+                # SteelSeries' own firmware exactly: GameBuds'
+                # get-wireless-device-connection-status is
+                # `(left == 3) or (right == 3)`, i.e. a max over the two
+                # connect-status bytes with the "connected" value on top.
+                # Runs once here, before status_parse ever sees the result,
+                # so a derived key behaves like any other mapped field
+                # downstream (on_off / percentage / representation).
+                for op, offsets in v.items():
+                    values = [raw_response[o] for o in offsets if o in range(len(raw_response))]
+                    if not values:
+                        continue
+                    if op == 'max':
+                        response[k] = max(values)
+                    elif op == 'min':
+                        response[k] = min(values)
+                    else:
+                        raise ValueError(f"Unknown response_mapping combinator: {op!r}")
 
         return response
 

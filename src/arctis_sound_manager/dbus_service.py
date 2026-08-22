@@ -139,10 +139,11 @@ class ArctisManagerDbusStatusService(ServiceInterface):
         if not config:
             return json.dumps({})
 
-        # A profile with no `status` block at all (gamebuds.yaml: no status
-        # request is known for that family, so battery and connection state
-        # are simply not available) used to return here, empty — jumping over
-        # the sentinel below, which exists for exactly this case and says so.
+        # A profile with no `status` block at all (no status.request is known
+        # for the family, so battery and connection state are simply not
+        # available — gamebuds.yaml was exactly this until issue #202 got it
+        # a real status block) used to return here, empty — jumping over the
+        # sentinel below, which exists for exactly this case and says so.
         # Every GUI surface then read "No device detected" while the headset
         # was connected, its settings applied and its audio played (#202).
         # Fall through instead: with the device initialised, the sentinel
