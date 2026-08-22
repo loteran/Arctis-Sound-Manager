@@ -43,6 +43,12 @@ def _stub_settings(monkeypatch):
     # lossless-rebuild path instead of the flat-bypass one it expects.
     import arctis_sound_manager.sonar_to_pipewire as _stp
     monkeypatch.setattr(_stp, "_save_eq_state", lambda *a, **kw: None)
+    # Same leak for the micro channel's own snapshot (CHA-7, micro):
+    # generate_sonar_micro_conf() now calls _save_micro_state() the same
+    # way, and this file's micro test runs through _ApplyWorker.run() with
+    # output_path=None (the real path), so it would otherwise leave a real
+    # sonar_micro_state.json behind too.
+    monkeypatch.setattr(_stp, "_save_micro_state", lambda *a, **kw: None)
 
 
 def test_apply_worker_gain_only_change_skips_restart(monkeypatch, tmp_path):

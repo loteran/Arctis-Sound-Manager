@@ -2996,6 +2996,260 @@ def test_write_conf_is_all_or_nothing_on_success(tmp_path, monkeypatch):
     assert not (tmp_path / "sonar-game-eq.conf.tmp").exists()
 
 
+# ── CHA-7 (micro) — the mic channel gets the same lossless rebuild ─────────
+#
+# The EQ channels (game/chat/media/output) already have the CHA-7 fix; the
+# mic channel was left calling _bypass_micro_conf() on every repair trigger,
+# discarding bands, macros, boost AND the noise-cancelling / noise-reduction
+# settings that have no equivalent anywhere in the EQ state. These tests
+# cover generate_sonar_micro_conf()'s own snapshot (_save_micro_state) and
+# _regenerate_micro_conf()'s rebuild/fallback/fail-closed behaviour.
+
+def test_micro_conf_written_to_real_path_saves_state(tmp_path, monkeypatch):
+    """generate_sonar_micro_conf() must snapshot the state that produced the
+    conf when writing to the real (live) path — output_path=None — the same
+    way generate_sonar_eq_conf() does for the other four channels. Written
+    from here (the producer), not the GUI's Apply worker, so an install that
+    upgrades and never reopens the Micro tab still gets a snapshot the first
+    time anything regenerates this conf."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+
+    conf_dir = tmp_path / "filter-chain.conf.d"
+    conf_dir.mkdir(parents=True)
+    home = tmp_path / "home"
+
+    monkeypatch.setattr(stp, "_CONF_DIR", conf_dir)
+    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setattr(stp, "_get_physical_in", lambda: "alsa_input.test-headset")
+    monkeypatch.setattr(stp, "_device_attached", lambda: True)
+
+    bands = [EqBand(freq=250, gain=-4.0, q=0.7, type="peakingEQ", enabled=True)]
+    nc = {"enabled": True, "value": 0.6, "engine": "rnnoise"}
+    nr = {
+        "bgReduction": {"enabled": True, "value": 0.4},
+        "compressor": {"enabled": True, "value": 0.2},
+    }
+    stp.generate_sonar_micro_conf(
+        bands, 0.0, 3.0, 0.0, boost_db=2.0,
+        noise_canceling=nc, noise_reduction=nr,
+    )
+
+    state_path = home / ".config" / "arctis_manager" / "sonar_micro_state.json"
+    assert state_path.exists()
+
+    loaded = stp._load_micro_state()
+    assert loaded is not None
+    assert loaded["bands"][0].freq == 250.0
+    assert loaded["bands"][0].gain == -4.0
+    assert loaded["voix_db"] == 3.0
+    assert loaded["boost_db"] == 2.0
+    assert loaded["noise_canceling"] == {"enabled": True, "value": 0.6, "engine": "rnnoise"}
+    assert loaded["noise_reduction"]["bgReduction"] == {"enabled": True, "value": 0.4}
+    assert loaded["noise_reduction"]["compressor"] == {"enabled": True, "value": 0.2}
+    # Sub-processors never set default to disabled, not omitted.
+    assert loaded["noise_reduction"]["impactReduction"] == {"enabled": False, "value": 0.0}
+    assert loaded["noise_reduction"]["noiseGate"] == {"enabled": False, "value": -40.0}
+
+
+def test_micro_conf_written_to_explicit_path_does_not_save_state(tmp_path, monkeypatch):
+    """The flip side of the guard above: a caller passing an explicit
+    output_path (diffing/testing) must not overwrite the real snapshot —
+    exactly the same rule generate_sonar_eq_conf() already follows."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    bands = [EqBand(freq=250, gain=-4.0, q=0.7, type="peakingEQ", enabled=True)]
+    stp.generate_sonar_micro_conf(
+        bands, 0.0, 0.0, 0.0, output_path=tmp_path / "sonar-micro-eq.conf",
+    )
+
+    state_path = home / ".config" / "arctis_manager" / "sonar_micro_state.json"
+    assert not state_path.exists()
+
+
+def test_corrupt_micro_conf_regenerates_from_saved_state_not_a_bypass(tmp_path, monkeypatch):
+    """CHA-7 (micro) reproduction: a micro conf using the old
+    Audio/Source/Virtual media.class is a regeneration trigger in
+    check_and_fix_stale_configs(). The repair must rebuild the real mic EQ —
+    bands, macros, boost AND noise-reduction/noise-cancelling — from the
+    last saved micro state instead of the old flat bypass, and must leave a
+    backup of the stale file."""
+    import json
+    import arctis_sound_manager.sonar_to_pipewire as stp
+
+    conf_dir = tmp_path / "conf" / "filter-chain.conf.d"
+    conf_dir.mkdir(parents=True)
+    home = tmp_path / "home"
+    state_dir = home / ".config" / "arctis_manager"
+    state_dir.mkdir(parents=True)
+
+    saved_state = {
+        "bands": [
+            {"freq": 250.0, "gain": -4.5, "q": 0.9, "type": "peakingEQ", "enabled": True},
+        ],
+        "basses_db": 1.0, "voix_db": -1.0, "aigus_db": 0.5, "boost_db": 3.0,
+        "noise_canceling": {"enabled": True, "value": 0.7, "engine": "rnnoise"},
+        "noise_reduction": {
+            "bgReduction": {"enabled": True, "value": 0.5},
+            "impactReduction": {"enabled": True, "value": 0.25},
+            "noiseGate": {"enabled": True, "value": -30.0},
+            "compressor": {"enabled": True, "value": 0.6},
+        },
+    }
+    (state_dir / "sonar_micro_state.json").write_text(json.dumps(saved_state))
+
+    stale = (
+        'context.modules = [\n'
+        '  { name = libpipewire-module-filter-chain\n'
+        '    args = { playback.props = { media.class = Audio/Source/Virtual } } }\n'
+        ']\n'
+    )
+    micro_conf = conf_dir / "sonar-micro-eq.conf"
+    micro_conf.write_text(stale)
+
+    monkeypatch.setattr(stp, "_CONF_DIR", conf_dir)
+    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setattr(stp, "_get_physical_in", lambda: "alsa_input.test-headset")
+
+    fixed, _needs_pw_restart = check_and_fix_stale_configs()
+    assert fixed is True
+
+    repaired = micro_conf.read_text()
+    assert "Freq = 250.0" in repaired
+    assert "Gain = -4.5" in repaired
+    assert "Q = 0.9" in repaired
+    assert "Gain = 1.0" in repaired    # basses macro
+    assert "Gain = -1.0" in repaired   # voix macro
+    assert "Gain = 0.5" in repaired    # aigus macro
+    assert "Gain = 3.0" in repaired    # boost
+    assert "rnnoise" in repaired, "noise cancelling engine survived"
+    assert "nr_bg" in repaired, "background noise reduction survived"
+    assert "nr_impact" in repaired, "impact noise reduction survived"
+    assert "ngate" in repaired, "noise gate survived"
+    assert "comp" in repaired, "compressor survived"
+    assert "micro passthrough" not in repaired, "must not have fallen back to a flat bypass"
+
+    backup = conf_dir / "sonar-micro-eq.conf.bak"
+    assert backup.exists()
+    assert backup.read_text() == stale
+
+
+def test_missing_micro_saved_state_still_falls_back_to_a_bypass(tmp_path, monkeypatch):
+    """The flip side: a mic channel that was never Applied has no saved
+    state to rebuild from, so the repair must still fall back to the flat
+    bypass — the fallback path stays intact for a first-ever install."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+
+    conf_dir = tmp_path / "conf" / "filter-chain.conf.d"
+    conf_dir.mkdir(parents=True)
+    home = tmp_path / "home"
+    (home / ".config" / "arctis_manager").mkdir(parents=True)  # no state file inside
+
+    stale = (
+        'context.modules = [\n'
+        '  { name = libpipewire-module-filter-chain\n'
+        '    args = { playback.props = { media.class = Audio/Source/Virtual } } }\n'
+        ']\n'
+    )
+    micro_conf = conf_dir / "sonar-micro-eq.conf"
+    micro_conf.write_text(stale)
+
+    monkeypatch.setattr(stp, "_CONF_DIR", conf_dir)
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    fixed, _needs_pw_restart = check_and_fix_stale_configs()
+    assert fixed is True
+
+    repaired = micro_conf.read_text()
+    assert "micro passthrough" in repaired
+    assert (conf_dir / "sonar-micro-eq.conf.bak").exists()
+
+
+def test_malformed_micro_state_snapshot_falls_back_to_bypass_without_raising(tmp_path, monkeypatch):
+    """A mangled sonar_micro_state.json (wrong type on a nested field) must
+    not crash the repair — _load_micro_state() fails closed and the repair
+    falls back to the bypass, exactly like a missing snapshot."""
+    import json
+    import arctis_sound_manager.sonar_to_pipewire as stp
+
+    conf_dir = tmp_path / "conf" / "filter-chain.conf.d"
+    conf_dir.mkdir(parents=True)
+    home = tmp_path / "home"
+    state_dir = home / ".config" / "arctis_manager"
+    state_dir.mkdir(parents=True)
+
+    # "value" inside a noise-reduction sub-processor is a non-numeric string —
+    # generate_sonar_micro_conf() would crash deep inside its arithmetic
+    # (max(0.0, min(1.0, ...))) if this reached it unvalidated.
+    malformed = {
+        "bands": [],
+        "basses_db": 0.0, "voix_db": 0.0, "aigus_db": 0.0, "boost_db": 0.0,
+        "noise_canceling": {"enabled": True, "value": 0.5, "engine": "rnnoise"},
+        "noise_reduction": {"bgReduction": {"enabled": True, "value": "not-a-number"}},
+    }
+    (state_dir / "sonar_micro_state.json").write_text(json.dumps(malformed))
+
+    stale = (
+        'context.modules = [\n'
+        '  { name = libpipewire-module-filter-chain\n'
+        '    args = { playback.props = { media.class = Audio/Source/Virtual } } }\n'
+        ']\n'
+    )
+    micro_conf = conf_dir / "sonar-micro-eq.conf"
+    micro_conf.write_text(stale)
+
+    monkeypatch.setattr(stp, "_CONF_DIR", conf_dir)
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    fixed, _needs_pw_restart = check_and_fix_stale_configs()  # must not raise
+    assert fixed is True
+
+    repaired = micro_conf.read_text()
+    assert "micro passthrough" in repaired, "malformed snapshot must fall back to bypass"
+
+
+def test_interrupted_micro_state_write_leaves_previous_snapshot_readable(tmp_path, monkeypatch):
+    """CHA-7: _save_micro_state must never leave a half-written or missing
+    snapshot on disk. If the final atomic rename fails partway through, the
+    previous snapshot must still be exactly what it was."""
+    import json
+    import arctis_sound_manager.sonar_to_pipewire as stp
+
+    home = tmp_path / "home"
+    state_dir = home / ".config" / "arctis_manager"
+    state_dir.mkdir(parents=True)
+    state_path = state_dir / "sonar_micro_state.json"
+
+    original = {
+        "bands": [{"freq": 100.0, "gain": 1.0, "q": 0.7, "type": "peakingEQ", "enabled": True}],
+        "basses_db": 0.0, "voix_db": 0.0, "aigus_db": 0.0, "boost_db": 0.0,
+        "noise_canceling": {}, "noise_reduction": {},
+    }
+    state_path.write_text(json.dumps(original))
+
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    def _boom(self, target):
+        raise OSError("simulated interruption during rename")
+
+    monkeypatch.setattr(Path, "replace", _boom)
+
+    # _save_micro_state must never raise even though the rename fails.
+    stp._save_micro_state(
+        [EqBand(freq=999, gain=9.0, q=0.7, type="peakingEQ", enabled=True)],
+        0.0, 0.0, 0.0, 0.0, {}, {},
+    )
+
+    assert json.loads(state_path.read_text()) == original, (
+        "the previous snapshot must survive an interrupted write"
+    )
+    assert not (state_dir / "sonar_micro_state.json.tmp").exists(), (
+        "no stray tempfile left behind"
+    )
+
+
 # ── CHA-10 — inf/nan/1e400 from a preset must never reach the conf ──────────
 
 def test_clamp_finite_rejects_non_finite_values():
@@ -3203,3 +3457,28 @@ def test_output_hop_stays_quiet_with_no_headset_to_fall_back_to(monkeypatch):
 
     assert calls == []
     assert "output" not in result
+
+
+def test_a_failed_snapshot_write_does_not_take_the_conf_down_with_it(tmp_path, monkeypatch):
+    """The snapshot is a convenience; the conf is the product. A full disk or
+    a read-only $HOME must cost the snapshot, not the conf — and the handler
+    that says so must itself run: it referenced a `logger` name this module
+    does not define, so it raised NameError from inside the except clause."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+
+    conf_dir = tmp_path / "conf" / "filter-chain.conf.d"
+    conf_dir.mkdir(parents=True)
+    home = tmp_path / "home"
+
+    monkeypatch.setattr(stp, "_CONF_DIR", conf_dir)
+    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setattr(stp, "_get_physical_out_chat", lambda: "alsa_output.test-headset")
+    monkeypatch.setattr(stp, "_resolve_external_output",
+                        lambda *a, **kw: ("alsa_output.test-ext", 2, "FL FR"))
+
+
+    bands = [stp.EqBand(freq=440.0, gain=3.0, q=1.0, type="peakingEQ", enabled=True)]
+    text = stp.generate_sonar_eq_conf("media", bands, 0.0, 0.0, 0.0)
+
+    assert "Freq = 440.0" in text
+    assert (conf_dir / "sonar-media-eq.conf").exists()

@@ -180,14 +180,15 @@ def _conf_has_bare_ladspa(content: str) -> bool:
 # only a *regeneration trigger* for the HeSuVi surround conf. That one is
 # rebuilt losslessly from sonar_spatial_audio.json, so regenerating it costs
 # the user nothing. The Sonar EQ and micro confs are different: their repair
-# path in check_and_fix_stale_configs()/ensure_sonar_eq_configs() can only
-# write a *bypass* (flat) conf, because nothing in this module can read back
-# the user's bands, macros, boost and smart-volume settings — only
-# gui/sonar_page.py knows how to rebuild those, and the daemon has no access
-# to it. Triggering regeneration on a version bump there would silently
-# flatten every user's EQ on the first launch after an upgrade. Extend the
-# trigger to those confs only once their repair path can restore the real
-# settings instead of a bypass.
+# path in check_and_fix_stale_configs()/ensure_sonar_eq_configs() now prefers
+# a lossless rebuild too (CHA-7) — from the last-applied state this module
+# snapshots itself (_save_eq_state/_load_eq_state for game/chat/media/output,
+# _save_micro_state/_load_micro_state for micro, both written the moment a
+# conf is actually generated, not by the GUI) — but it can still fall back to
+# a flat *bypass* conf when no such snapshot exists yet, e.g. a channel that
+# was never Applied. A version bump alone is not a reason to force that risk
+# on every existing conf on every upgrade, so it stays out of the trigger set
+# for these confs even now that the common case rebuilds losslessly.
 #
 # History:
 #   1 — baseline. Introduced after v1.2.5 added a LADSPA limiter node to the
@@ -1652,6 +1653,10 @@ def generate_sonar_micro_conf(
     as a documentary hint only; :func:`ensure_micro_capture_link` is what
     actually (re)establishes and enforces the link.
     """
+    # Only a conf written to the real path represents the live mic EQ;
+    # callers passing an explicit output_path are diffing or testing, and
+    # must not overwrite the state snapshot (CHA-7, micro).
+    writes_live_conf = output_path is None
     if output_path is None:
         output_path = _CONF_DIR / "sonar-micro-eq.conf"
 
@@ -1716,6 +1721,8 @@ def generate_sonar_micro_conf(
     if is_flat:
         text = _bypass_micro_conf()
         _write_conf(output_path, text)
+        if writes_live_conf:
+            _save_micro_state(bands, basses_db, voix_db, aigus_db, boost_db, nc, nr)
         return text
 
     node_lines: list[str] = []
@@ -1935,6 +1942,8 @@ context.modules = [
 ]
 """
     _write_conf(output_path, text)
+    if writes_live_conf:
+        _save_micro_state(bands, basses_db, voix_db, aigus_db, boost_db, nc, nr)
     return text
 
 
@@ -2235,7 +2244,7 @@ def _save_eq_state(channel: str, bands: list[EqBand],
             os.fsync(f.fileno())
         tmp.replace(path)
     except OSError as e:
-        logger.warning("Could not save EQ state for channel=%s: %s", channel, e)
+        _log.warning("Could not save EQ state for channel=%s: %s", channel, e)
         try:
             tmp.unlink(missing_ok=True)
         except OSError:
@@ -2339,6 +2348,212 @@ def _regenerate_eq_conf(
         )
         if channel == "output":
             _sync_output_setting_snapshot()
+
+
+# ── Lossless micro-conf rebuild (CHA-7, the debt left for the mic channel) ────
+#
+# The four EQ channels above got a lossless rebuild; the mic channel kept
+# calling _bypass_micro_conf() on every repair trigger — a missing file, the
+# old Audio/Source/Virtual media.class, `label = gain` — discarding the
+# user's bands, macros, boost AND their noise-cancelling / noise-reduction
+# settings (background rumble cut, impact softening, gate, compressor),
+# which have no equivalent in the EQ-channel state at all.
+#
+# generate_sonar_micro_conf() now snapshots the state that actually produced
+# its conf (_save_micro_state), the same way generate_sonar_eq_conf() does
+# for _save_eq_state — written from the one function every producer goes
+# through (the GUI's _ApplyWorker AND _ApplyAllWorker both funnel through
+# it), not from the GUI layer itself, so an install that upgrades and never
+# reopens the Sonar page's Micro tab still gets a snapshot from the first
+# time anything regenerates this conf onwards.
+
+def _micro_state_path() -> Path:
+    return Path.home() / ".config" / "arctis_manager" / "sonar_micro_state.json"
+
+
+def _save_micro_state(bands: list[EqBand],
+                      basses_db: float, voix_db: float, aigus_db: float,
+                      boost_db: float,
+                      noise_canceling: dict, noise_reduction: dict) -> None:
+    """Snapshot the state that just produced the micro conf (CHA-7, micro).
+
+    *noise_canceling* and *noise_reduction* are stored verbatim as the two
+    dicts generate_sonar_micro_conf() itself already reads defensively
+    (``.get(key, default)`` throughout, for both the sub-dict and its
+    fields) — no separate schema is invented for them; a rebuild replays
+    exactly what was last applied.
+
+    Atomic (tmp+fsync+rename), for the same reason the conf write is: a
+    truncated snapshot is a snapshot that fails to load, and a snapshot
+    that fails to load is a bypass. Never raises.
+    """
+    path = _micro_state_path()
+    data = {
+        "bands": [
+            {"freq": b.freq, "gain": b.gain, "q": b.q,
+             "type": b.type, "enabled": b.enabled}
+            for b in bands
+        ],
+        "basses_db": basses_db,
+        "voix_db": voix_db,
+        "aigus_db": aigus_db,
+        "boost_db": boost_db,
+        "noise_canceling": noise_canceling or {},
+        "noise_reduction": noise_reduction or {},
+    }
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        tmp.replace(path)
+    except OSError as e:
+        _log.warning("Could not save micro EQ state: %s", e)
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _sanitize_nr_subproc(raw: object, value_default: float) -> dict | None:
+    """Validate one noise_reduction sub-processor dict (bgReduction,
+    impactReduction, noiseGate or compressor). ``None``/absent coerces to a
+    disabled default; any other non-dict shape is malformed. Never raises —
+    a coercion failure on "value" returns None like the rest of this module's
+    fail-closed loaders."""
+    if raw is None:
+        return {"enabled": False, "value": value_default}
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return {
+            "enabled": bool(raw.get("enabled", False)),
+            "value": float(raw.get("value", value_default)),
+        }
+    except (TypeError, ValueError):
+        return None
+
+
+def _load_micro_state() -> dict | None:
+    """Read back the last-applied micro state, or ``None``.
+
+    Fails closed on anything malformed — missing file, non-JSON, wrong
+    shape, a value that won't coerce to float — so a corrupt state file can
+    never crash a repair; the caller falls back to the flat bypass exactly
+    as it always has. Unlike generate_sonar_micro_conf()'s own ``.get(...,
+    default)`` reads, this validates the *type* of every nested field too:
+    generate_sonar_micro_conf() would otherwise raise deep inside its
+    noise-reduction block (e.g. comparing a non-numeric "value" against
+    0.0/1.0) on a snapshot that was merely mangled, not absent.
+    """
+    try:
+        raw = json.loads(_micro_state_path().read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+    bands_raw = raw.get("bands")
+    if not isinstance(bands_raw, list):
+        return None
+    bands: list[EqBand] = []
+    try:
+        for b in bands_raw:
+            if not isinstance(b, dict):
+                return None
+            bands.append(EqBand(
+                freq=float(b.get("freq", 1000.0)),
+                gain=float(b.get("gain", 0.0)),
+                q=float(b.get("q", 0.7071)),
+                type=str(b.get("type", "peakingEQ")),
+                enabled=bool(b.get("enabled", True)),
+            ))
+        basses_db = float(raw.get("basses_db", 0.0))
+        voix_db = float(raw.get("voix_db", 0.0))
+        aigus_db = float(raw.get("aigus_db", 0.0))
+        boost_db = float(raw.get("boost_db", 0.0))
+    except (TypeError, ValueError):
+        return None
+
+    nc_raw = raw.get("noise_canceling")
+    if nc_raw is None:
+        noise_canceling: dict = {}
+    elif not isinstance(nc_raw, dict):
+        return None
+    else:
+        try:
+            noise_canceling = {
+                "enabled": bool(nc_raw.get("enabled", False)),
+                "value": float(nc_raw.get("value", 0.9)),
+                "engine": str(nc_raw.get("engine", "rnnoise")),
+            }
+        except (TypeError, ValueError):
+            return None
+
+    nr_raw = raw.get("noise_reduction")
+    if nr_raw is None:
+        nr_raw = {}
+    elif not isinstance(nr_raw, dict):
+        return None
+    noise_reduction: dict = {}
+    for key, default_value in (
+        ("bgReduction", 0.0), ("impactReduction", 0.0),
+        ("noiseGate", -40.0), ("compressor", 0.0),
+    ):
+        sub = _sanitize_nr_subproc(nr_raw.get(key), default_value)
+        if sub is None:
+            return None
+        noise_reduction[key] = sub
+
+    return {
+        "bands": bands,
+        "basses_db": basses_db,
+        "voix_db": voix_db,
+        "aigus_db": aigus_db,
+        "boost_db": boost_db,
+        "noise_canceling": noise_canceling,
+        "noise_reduction": noise_reduction,
+    }
+
+
+def _regenerate_micro_conf(conf_path: Path, log, reason: str) -> None:
+    """Repair *conf_path*, preferring a lossless rebuild over a bypass
+    (CHA-7, micro).
+
+    Mirrors _regenerate_eq_conf for the micro channel: always backs up
+    whatever is on disk first, then tries the last-applied micro state
+    (bands, macros, boost, noise cancelling and the four noise-reduction
+    sub-processors); only when no such snapshot exists does it fall back to
+    the flat bypass this function replaces.
+    """
+    backup = _backup_conf(conf_path)
+    if backup is not None:
+        log.info("%s backed up to %s before regenerating (%s)",
+                  conf_path.name, backup.name, reason)
+
+    state = _load_micro_state()
+    if state is not None:
+        generate_sonar_micro_conf(
+            state["bands"], state["basses_db"], state["voix_db"], state["aigus_db"],
+            output_path=conf_path,
+            boost_db=state["boost_db"],
+            noise_canceling=state["noise_canceling"],
+            noise_reduction=state["noise_reduction"],
+        )
+        log.warning(
+            "%s regenerated (%s) — rebuilt from the last saved micro state, "
+            "bands/macros/boost/noise-reduction preserved",
+            conf_path.name, reason,
+        )
+    else:
+        _write_conf(conf_path, _bypass_micro_conf())
+        log.warning(
+            "%s regenerated (%s) as a flat bypass — no saved micro state "
+            "was found, so any bands/macros/boost/noise-reduction on this "
+            "channel were reset to flat",
+            conf_path.name, reason,
+        )
 
 
 _WRITTEN_TARGET_RE = re.compile(
@@ -2570,6 +2785,11 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
        micro EQ tab ``effect_output.sonar-micro-eq`` simply never existed —
        yet the daemon makes it the default source at startup. This is the
        only guarantor that file has, and it runs whatever ``.eq_mode`` says.
+       Repaired via :func:`_regenerate_micro_conf`, which — like
+       :func:`_regenerate_eq_conf` for the other four channels (CHA-7) —
+       prefers rebuilding from the last saved micro state (bands, macros,
+       boost, noise cancelling and the four noise-reduction sub-processors)
+       and only falls back to a flat bypass when nothing was ever saved.
     10. Output chain confs written without ``node.passive`` (issue #180). Any
        node that is not passive drives its chain continuously, so the physical
        sink never idles and the headset's auto-off timer never starts. Repaired
@@ -2692,27 +2912,28 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
         # selectable inputs and micro_input_source / micro_autoswitch /
         # ensure_micro_capture_link() all become inert.
         #
-        # A bypass is only written when the file is ABSENT — writing it over an
-        # existing conf would flatten the user's mic processing, the same
-        # reasoning that keeps _conf_is_outdated() out of the repair below.
-        log.warning(
-            "sonar-micro-eq.conf missing — generating bypass so "
-            "effect_output.sonar-micro-eq exists"
-        )
-        _write_conf(micro_path, _bypass_micro_conf())
+        # CHA-7 (micro): _regenerate_micro_conf() prefers rebuilding from the
+        # last saved micro state (bands/macros/boost/noise-reduction) over a
+        # flat bypass — a bypass is now only what it falls back to when no
+        # such state was ever saved, the same as the EQ channels above.
+        _regenerate_micro_conf(micro_path, log, reason="conf missing")
         fixed = True
     else:
         content = micro_path.read_text()
         # As with the EQ confs above, an outdated ASM-CONF-VERSION is NOT a
-        # trigger here: the regen writes a bypass (flat) micro conf, which
-        # would drop the user's mic processing on every version bump.
+        # trigger here: the regen falls back to a bypass (flat) micro conf
+        # only when nothing was ever saved, so triggering it does not
+        # usually flatten the user's mic processing — but the fallback
+        # still can, and a bump alone still isn't a reason to force it.
         if (
             "Audio/Source/Virtual" in content
             or "Audio/Sink" in content
             or "label = gain" in content
         ):
-            log.warning("Stale micro config (wrong media.class or label=gain), regenerating")
-            _write_conf(micro_path, _bypass_micro_conf())
+            _regenerate_micro_conf(
+                micro_path, log,
+                reason="wrong media.class or label=gain",
+            )
             fixed = True
         elif 'target.object  = ""' in content:
             physical_in = _get_physical_in()
