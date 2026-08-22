@@ -26,7 +26,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QProcess, Signal
+from PySide6.QtCore import Qt, QProcess, QThread, Signal
 from PySide6.QtGui import QClipboard, QGuiApplication
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -127,6 +127,40 @@ def should_show_dialog() -> bool:
         return False
     results = run_all_checks()
     return len(failing(results, min_severity=Severity.DEGRADED)) > 0
+
+
+class _UserCmdsWorker(QThread):
+    """Runs the "must stay un-elevated" commands (asm-setup, asm-cli,
+    ``systemctl --user``, ``paru``, ``pip install --user``) off the GUI
+    thread.
+
+    These look like plain user subprocess calls, but at least one of them —
+    ``asm-cli udev write-rules`` — can escalate *itself* internally via
+    ``sudo_it()`` (``scripts/cli.py``), which tries kdesu/pkexec with no
+    timeout of its own. Running that synchronously on the Qt main thread
+    freezes the whole window for as long as a nested prompt the user may
+    never even see is left unanswered (issue #200).
+
+    ``done`` always fires — even if a command raises, times out, or the
+    nested elevation prompt is cancelled/ignored/fails — so the dialog can
+    always recover its buttons instead of being left looking hung.
+    """
+
+    done = Signal()
+
+    def __init__(self, commands: list[list[str]]):
+        super().__init__()
+        self._commands = commands
+
+    def run(self) -> None:
+        for argv in self._commands:
+            try:
+                subprocess.run(argv, check=False, timeout=120)
+            except Exception as exc:  # noqa: BLE001 - a failed/cancelled/
+                # timed-out nested elevation prompt must not take the whole
+                # dialog down with it; log and move on to the next command.
+                log.warning("user command %r failed: %r", argv, exc)
+        self.done.emit()
 
 
 class _DepRow(QFrame):
@@ -234,6 +268,7 @@ class SystemDepsDialog(QDialog):
         self._results: list[CheckResult] = []
         self._row_widgets: list[_DepRow] = []
         self._running_processes: list[QProcess] = []
+        self._active_worker: _UserCmdsWorker | None = None
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(28, 24, 28, 20)
@@ -457,28 +492,30 @@ class SystemDepsDialog(QDialog):
             else:
                 elevated.append(argv)
 
-        def _shell_quote(args: list[str]) -> str:
-            return " ".join(f"'{a}'" if " " in a else a for a in args)
-
-        def _run_user_cmds() -> None:
-            for argv in user_local:
-                try:
-                    subprocess.run(argv, check=False, timeout=120)
-                except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-                    log.warning("user command %r failed: %r", argv, exc)
-            # Refresh the dialog after EVERYTHING is done
-            self._set_busy(False)
-            self._refresh()
-
         if not elevated:
-            _run_user_cmds()
+            # Nothing needs pkexec at all (e.g. a lone `asm-cli` command) —
+            # hand it straight to the worker thread instead of blocking here
+            # (issue #200).
+            self._start_user_cmds(user_local)
             return
 
-        chained = " && ".join(_shell_quote(a) for a in elevated)
         proc = QProcess(self)
         proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         proc.setProgram("pkexec")
-        proc.setArguments(["sh", "-c", chained])
+        if len(elevated) == 1:
+            # The common case: exactly one command to elevate. Pass its argv
+            # straight through pkexec — no shell in the privileged path at
+            # all, so there is nothing left to quote or get wrong (EXT-3).
+            proc.setArguments(elevated[0])
+        else:
+            # Multiple commands: they still need chaining into one shell so
+            # only a single pkexec prompt covers the whole batch (that's the
+            # point of grouping in _install_all). shlex.join is real shell
+            # quoting — it escapes embedded quotes, `$(...)`, `;`, and a
+            # leading `-`, unlike the old ad-hoc "quote only if it contains a
+            # space" check (EXT-3).
+            chained = " && ".join(shlex.join(a) for a in elevated)
+            proc.setArguments(["sh", "-c", chained])
 
         uses_pacman = any(a[0] == "pacman" for a in elevated)
 
@@ -514,11 +551,43 @@ class SystemDepsDialog(QDialog):
                 # Even on failure, re-check so partial progress is reflected.
                 self._refresh()
             else:
-                _run_user_cmds()
+                if user_local:
+                    self._start_user_cmds(user_local)
+                else:
+                    self._set_busy(False)
+                    self._refresh()
 
         proc.finished.connect(_on_finished)
         self._running_processes.append(proc)
         proc.start()
+
+    def _start_user_cmds(self, commands: list[list[str]]) -> None:
+        """Hand *commands* to a worker thread instead of running them
+        inline on the GUI thread (issue #200)."""
+        worker = _UserCmdsWorker(commands)
+        self._active_worker = worker
+        worker.done.connect(self._on_user_cmds_result)
+        # Drop the reference only once the OS thread has actually stopped.
+        # Doing it from the `done` handler above instead — which fires from
+        # inside run(), before the thread has fully returned — risks
+        # "QThread: Destroyed while thread is still running" the moment this
+        # object is garbage-collected (see _ApplyWorker in sonar_page.py,
+        # issue #63).
+        worker.finished.connect(self._on_user_cmds_finished)
+        worker.start()
+
+    def _on_user_cmds_result(self) -> None:
+        # Refresh the dialog after EVERYTHING is done — no matter whether
+        # every command succeeded, one raised, one timed out, or a nested
+        # elevation prompt was cancelled: _UserCmdsWorker.done always fires.
+        self._set_busy(False)
+        self._refresh()
+
+    def _on_user_cmds_finished(self) -> None:
+        worker = self._active_worker
+        self._active_worker = None
+        if worker is not None:
+            worker.deleteLater()
 
     def _set_busy(self, busy: bool) -> None:
         self._install_all_btn.setEnabled(not busy)
