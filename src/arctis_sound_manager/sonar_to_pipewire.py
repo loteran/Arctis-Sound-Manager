@@ -209,6 +209,9 @@ def _deepfilter_plugin_ref() -> str | None:
     return _ladspa_plugin_ref("libdeep_filter_ladspa*.so", resolved=_find_best_deepfilter_ladspa())
 
 
+_PLUGIN_REF_RE = re.compile(r"plugin\s*=\s*(\S+)")
+
+
 def _conf_has_bare_ladspa(content: str) -> bool:
     """True if a generated filter-chain config references a LADSPA plugin by
     bare name (no path separator) rather than an absolute path.
@@ -217,11 +220,22 @@ def _conf_has_bare_ladspa(content: str) -> bool:
     fallback wrote; it fails to dlopen on a host that lacks the plugin and takes
     the whole module — HeSuVi — down. Detecting it lets the config repair pass
     regenerate the conf so it picks up the staged ~/.ladspa absolute path.
+
+    Every ``plugin =`` in a generated conf belongs to a ladspa node — builtin
+    nodes carry a ``label`` and no plugin — so the value alone is the test.
+    Requiring ``type = ladspa`` on the *same line* used to miss the nodes this
+    module writes across two lines (``dfn`` and ``rnnoise``, see
+    generate_sonar_micro_conf), which meant a micro chain referencing them by
+    bare name was never seen as stale and never regenerated: exactly the #100
+    failure this function exists to catch, still open for the one channel whose
+    nodes happen to be formatted differently.
     """
     for line in content.splitlines():
-        if "type = ladspa" in line and "plugin =" in line:
-            after = line.split("plugin =", 1)[1].strip()
-            token = after.split()[0] if after else ""
+        if line.lstrip().startswith("#"):
+            continue  # the header comments mention plugins by name on purpose
+        match = _PLUGIN_REF_RE.search(line)
+        if match:
+            token = match.group(1).strip()
             if token and not token.startswith("/"):
                 return True
     return False
