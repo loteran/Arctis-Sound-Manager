@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Verify that a release version has actually been delivered to every
 distribution channel (signed pacman repo, COPR, Launchpad PPA, PyPI — plus the
-AUR, informational).
+AUR and Terra's Nobara spec, both informational).
 
 Each channel is queried through its public API and classified as:
   - delivered : the version is published/available
@@ -33,12 +33,20 @@ What the audit gates on for Arch is the signed binary pacman repository
 (pacman-repo.yaml): the channel `pacman -Syu` actually reads, the one the
 Distrobox installers register, and the only one a PackageKit software centre
 can see at all.
+
+Terra is SOFT for a different reason than the AUR: it is a third-party
+downstream (terrapkg/packages) this project does not maintain, build for, or
+have any way to push a fix to — Nobara ships it enabled by default through
+Terra's own spec. Gating the release on Terra catching up would fail this
+project's releases over someone else's backlog, so it can only ever be
+reported (PKG-4), never fatal.
 """
 from __future__ import annotations
 
 import argparse
 import io
 import json
+import re
 import sys
 import tarfile
 import time
@@ -69,6 +77,26 @@ UNKNOWN = "unknown"
 PACMAN_DB_URL = (
     f"https://github.com/{OWNER}/Arctis-Sound-Manager/releases/download"
     f"/pacman-repo/{PROJECT}.db.tar.gz"
+)
+
+# AUR-only packages pacman-repo.yaml rebuilds and ships alongside the main
+# package because pacman cannot resolve them from the official repositories
+# at all (see that workflow's module comment). A fresh install is
+# unresolvable without these, even when arctis-sound-manager itself is
+# present in the database — the #178 pattern, applied to the package ASM
+# cannot run without (PKG-2).
+AUR_ONLY_HARD_DEPS = ("python-pulsectl",)
+
+# Nobara ships ASM enabled by default through a Terra-maintained spec this
+# project does not control and cannot push to. Terra has no package-search
+# API (no Copr-style JSON endpoint, no documented repodata mirror); the
+# closest honest, queryable signal is the Version: field of the spec file
+# Terra maintains in its own monorepo (terrapkg/packages), read straight off
+# GitHub. "frawhide" is that repo's actual default branch name (confirmed via
+# `gh repo view terrapkg/packages`), not a typo.
+TERRA_SPEC_URL = (
+    "https://raw.githubusercontent.com/terrapkg/packages/frawhide/anda/apps/"
+    "Arctis-Sound-Manager/Arctis-Sound-Manager.spec"
 )
 
 
@@ -142,20 +170,38 @@ def check_pacman(v: str):
     that is the exact file `pacman -Sy` downloads, so a package uploaded but
     missing from the database (repo-add never ran, a partial upload) reads as
     missing here too, which is what the user would experience.
+
+    Beyond the main package, also check every name in AUR_ONLY_HARD_DEPS: a
+    fresh `pacman -S arctis-sound-manager` is only actually resolvable if
+    those are in the database too (PKG-2) — pacman-repo.yaml is meant to fail
+    its job when one fails to build (see that workflow), but this is the
+    audit's own, independent check that the artifact it is meant to verify
+    really is complete, not just a claim that the upstream job behaved.
     """
     raw = _get_bytes(PACMAN_DB_URL)
     with tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz") as tf:
         # repo-add lays the database out as one <pkgname>-<pkgver>-<pkgrel>/
         # directory per package, each holding a `desc` file.
         entries = {n.split("/", 1)[0] for n in tf.getnames() if "/" in n}
-    found = ""
+    by_name = {}
     for entry in entries:
         parts = entry.rsplit("-", 2)
-        if len(parts) == 3 and parts[0] == PROJECT:
-            if parts[1] == v:
-                return DELIVERED, f"{parts[1]}-{parts[2]} in the signed repo database"
-            found = f"{parts[1]}-{parts[2]}"
-    return MISSING, f"repo database has {found or 'no ' + PROJECT + ' entry'}"
+        if len(parts) == 3:
+            by_name.setdefault(parts[0], f"{parts[1]}-{parts[2]}")
+
+    project_entry = by_name.get(PROJECT)
+    if not project_entry or not project_entry.startswith(f"{v}-"):
+        found = project_entry or f"no {PROJECT} entry"
+        return MISSING, f"repo database has {found}"
+
+    missing_deps = [dep for dep in AUR_ONLY_HARD_DEPS if dep not in by_name]
+    if missing_deps:
+        return MISSING, (
+            f"{project_entry} in the signed repo database, but a fresh "
+            f"install is unresolvable — missing hard dependency: "
+            f"{', '.join(missing_deps)}"
+        )
+    return DELIVERED, f"{project_entry} in the signed repo database"
 
 
 def check_copr(v: str):
@@ -199,6 +245,38 @@ def check_ppa(v: str):
     return MISSING, f"only {entries[0].get('status')}"
 
 
+def check_terra(v: str):
+    """Nobara ships ASM through a Terra-maintained spec (terrapkg/packages)
+    this project does not control and cannot push to — PKG-4. There is no
+    package-search API for Terra to poll the way COPR or the PPA offer one;
+    the closest honest, queryable signal is the Version: field of the spec
+    file Terra maintains, read straight off GitHub (TERRA_SPEC_URL).
+
+    That only says what Terra's spec currently targets, not whether a build
+    from it actually succeeded — Terra's own build pipeline is not something
+    this project can query. But a spec still pinned to an old version is
+    exactly what leaves a hard-dependency promotion (e.g. ladspa-swh-plugins
+    Recommends -> Requires) unreachable on Nobara until Terra catches up, so
+    it is the thing worth surfacing.
+
+    Purely informational (see CHANNELS: always soft). Any failure to reach
+    GitHub, or a spec whose Version: field cannot be found, propagates as an
+    exception and is turned into UNKNOWN by run_once() — same as every other
+    channel — so a network hiccup here never claims a release is undelivered.
+    """
+    text = _fetch(TERRA_SPEC_URL, timeout=30).decode("utf-8", errors="replace")
+    m = re.search(r"^Version:\s*(\S+)", text, re.MULTILINE)
+    if not m:
+        raise RuntimeError("Version: field not found in Terra's spec")
+    terra_v = _base(m.group(1))
+    if terra_v == v:
+        return DELIVERED, f"spec pinned to {terra_v}, matches this release"
+    return PENDING, (
+        f"spec pinned to {terra_v}, this release is {v} — "
+        "Terra has not caught up yet"
+    )
+
+
 # name -> (function, hard?)
 CHANNELS = {
     "Pacman": (check_pacman, True),  # the real Arch channel (see module docstring)
@@ -206,6 +284,7 @@ CHANNELS = {
     "COPR": (check_copr, True),
     "PPA": (check_ppa, True),
     "PyPI": (check_pypi, True),  # live since 1.1.51 (Trusted Publisher configured)
+    "Terra": (check_terra, False),  # Nobara's downstream spec — informational only, see check_terra
 }
 
 ICON = {DELIVERED: "✅", PENDING: "⏳", MISSING: "❌", UNKNOWN: "❓"}

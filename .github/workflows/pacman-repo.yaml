@@ -83,10 +83,15 @@ jobs:
           cp ./*.pkg.tar.zst /repo/
 
       - name: Build AUR-only dependencies
-        # Not fatal: where the distribution ships its own copy, a missing one
-        # costs nothing. Only a plain Arch install would notice, and a broken
-        # upstream build must not hold back the release of ASM itself.
-        continue-on-error: true
+        # NOT step-level continue-on-error: python-pulsectl is a hard
+        # dependency (ASM cannot run without it — see the module comment
+        # above), so its build failing must fail this job, or a fresh Arch
+        # install becomes silently unresolvable (the #178 pattern, applied to
+        # the package ASM cannot run without). noise-suppression-for-voice
+        # stays soft: it is an optdepend the install no longer needs, and a
+        # broken upstream build for it must not hold back the release of ASM
+        # itself. The script below only exits non-zero when a HARD dependency
+        # fails, so soft failures keep behaving exactly as before.
         run: |
           set -uo pipefail
 
@@ -107,14 +112,29 @@ jobs:
           printf 'CXXFLAGS+=" -include cstdint"\n' > /home/builder/.makepkg.conf
           chown builder:builder /home/builder/.makepkg.conf
 
-          failed=""
           # python-pulsectl is a hard dependency (ASM can't run without it) so
-          # it MUST be here. noise-suppression-for-voice is an optdepend — the
-          # install no longer needs it, but shipping it lets users add the
-          # ClearCast mic noise-cancel with one `pacman -S` from this same repo.
+          # it MUST be here — its build failing fails this job (see below).
+          # noise-suppression-for-voice is an optdepend — the install no
+          # longer needs it, but shipping it lets users add the ClearCast mic
+          # noise-cancel with one `pacman -S` from this same repo, so its
+          # build failing only warns.
+          HARD_DEPS="python-pulsectl"
+
+          failed=""
+          hard_failed=""
           for pkg in python-pulsectl noise-suppression-for-voice; do
-            sudo -u builder git clone --depth 1 \
-              "https://aur.archlinux.org/${pkg}.git" "/tmp/${pkg}" || { failed="$failed $pkg"; continue; }
+            is_hard=0
+            for h in $HARD_DEPS; do [ "$h" = "$pkg" ] && is_hard=1; done
+
+            if ! sudo -u builder git clone --depth 1 \
+                "https://aur.archlinux.org/${pkg}.git" "/tmp/${pkg}"; then
+              failed="$failed $pkg"
+              if [ "$is_hard" -eq 1 ]; then
+                hard_failed="$hard_failed $pkg"
+                echo "::error::Could not clone hard dependency $pkg — a fresh install would be unresolvable."
+              fi
+              continue
+            fi
             # An epoch puts a colon in the package filename, and GitHub rewrites
             # colons in release asset names — pacman would then request a file
             # that does not exist under that name and fail with 404. Dropping it
@@ -126,10 +146,19 @@ jobs:
               cp "/tmp/${pkg}"/*.pkg.tar.zst /repo/
             else
               failed="$failed $pkg"
-              echo "::warning::Could not build $pkg — the repository will ship without it."
+              if [ "$is_hard" -eq 1 ]; then
+                hard_failed="$hard_failed $pkg"
+                echo "::error::Could not build hard dependency $pkg — a fresh install would be unresolvable."
+              else
+                echo "::warning::Could not build $pkg — the repository will ship without it."
+              fi
             fi
           done
           [ -z "$failed" ] || echo "AUR dependencies not built:$failed" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$hard_failed" ]; then
+            echo "::error::Hard AUR dependency build(s) failed:$hard_failed — a fresh install would be unresolvable. Failing this job."
+            exit 1
+          fi
 
       - name: Import signing key
         env:
