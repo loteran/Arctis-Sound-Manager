@@ -619,6 +619,7 @@ class ClipsPage(QWidget):
         # buffer read-out.
         self._auto_started = False
         self._game_gone_since: float | None = None
+        self._last_detected_game: str | None = None
         self._game_timer = QTimer(self)
         self._game_timer.setInterval(_GAME_POLL_MS)
         self._game_timer.timeout.connect(self._poll_game)
@@ -880,7 +881,7 @@ class ClipsPage(QWidget):
         Only the capture this started is stopped. Someone who pressed Start
         themselves gets to decide when it ends.
         """
-        if self._closing or not self._autostart.isChecked():
+        if self._closing:
             return
 
         try:
@@ -888,6 +889,16 @@ class ClipsPage(QWidget):
             game = detect_game()
         except Exception:  # noqa: BLE001 — a probe failure is not worth the page
             logger.debug("could not look for a game", exc_info=True)
+            return
+
+        # Remembered for _update_status(), which used to call detect_game()
+        # itself on the one-second timer — a PulseAudio round trip per second,
+        # for a label that changes when a game starts (GUI-1). The detection
+        # runs here, on the slow timer that exists for exactly this, whether or
+        # not autostart is on: the label is shown either way.
+        self._last_detected_game = game
+
+        if not self._autostart.isChecked():
             return
 
         if game:
@@ -1307,13 +1318,12 @@ class ClipsPage(QWidget):
             return
 
         ready = self._capture.ready_s
+        # Never probe from here: this runs once a second (GUI-1). The label is
+        # the capture's own when it has one, and otherwise whatever the slow
+        # game poll last saw.
         game = getattr(self._capture, "_game_label", None)
         if game is None:
-            try:
-                from arctis_sound_manager.clip_capture import detect_game
-                game = detect_game()
-            except Exception:
-                game = None
+            game = self._last_detected_game
 
         parts = [_tr("clips_buffered", "Buffered:") + f" {ready:.0f}s"]
 
@@ -1380,6 +1390,9 @@ class ClipsPage(QWidget):
         window otherwise, and a second run then contends for the same node."""
         self._closing = True
         self._timer.stop()
+        # The game poll outlived the page: it is a PulseAudio round trip every
+        # five seconds, for a widget nobody is looking at any more (GUI-1).
+        self._game_timer.stop()
         # Drop what has not started and give a running ffmpeg a moment to end.
         # Without this a thread can come back to a deleted widget as the window
         # closes, which is a crash on the way out rather than a slow exit.
