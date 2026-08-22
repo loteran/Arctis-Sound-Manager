@@ -113,6 +113,51 @@ def resolve_mic_autoswitch_target(
     return None
 
 
+# ASM's slider scale, shared by every family: ten integer steps of half a
+# decibel, 20 being 0 dB. Families differ only in what they call 0 dB
+# (hardware_eq_zero), which send_eq_command shifts onto afterwards.
+EQ_BAND_MIN = 0
+EQ_BAND_MAX = 40
+EQ_BAND_COUNT = 10
+
+
+def sanitise_eq_bands(bands, logger) -> list[int] | None:
+    """Ten in-domain integers, or None when the input cannot be trusted.
+
+    The D-Bus surface checked that the payload was a list of ten items and
+    nothing else, then persisted it and sent it on: an out-of-domain value was
+    shifted by hardware_eq_zero and written to real headset firmware, and
+    eq_bands.json replayed it at every daemon start (CHA-13). Both the D-Bus
+    entry point and send_eq_command go through here, so a hand-edited or
+    restored eq_bands.json is covered by the same check as a live call.
+    """
+    if not isinstance(bands, (list, tuple)) or len(bands) != EQ_BAND_COUNT:
+        logger.warning("custom EQ: expected %d bands, got %r — not sending",
+                       EQ_BAND_COUNT, bands)
+        return None
+
+    cleaned: list[int] = []
+    clamped = False
+    for band in bands:
+        # bool is an int in Python; a True here would silently mean 1.
+        if isinstance(band, bool) or not isinstance(band, (int, float)):
+            logger.warning("custom EQ: band value %r is not a number — not sending",
+                           band)
+            return None
+        value = int(round(band))
+        if value < EQ_BAND_MIN or value > EQ_BAND_MAX:
+            clamped = True
+            value = max(EQ_BAND_MIN, min(EQ_BAND_MAX, value))
+        cleaned.append(value)
+
+    if clamped:
+        logger.warning(
+            "custom EQ: band values outside %d-%d were clamped before reaching "
+            "the headset (got %r)", EQ_BAND_MIN, EQ_BAND_MAX, list(bands),
+        )
+    return cleaned
+
+
 class CoreEngine:
     logger: logging.Logger
     device_configurations: list[DeviceConfiguration]
@@ -2078,6 +2123,10 @@ class CoreEngine:
         is worse than not sending it: it makes a dead control look alive.
         """
         if self.device_config is None:
+            return False
+
+        bands = sanitise_eq_bands(bands, self.logger)
+        if bands is None:
             return False
 
         endpoint = self.get_command_endpoint_address()

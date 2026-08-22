@@ -332,6 +332,14 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
             bands = json.loads(bands_json)
             if not isinstance(bands, list) or len(bands) != 10:
                 return False
+            # Validate BEFORE persisting (CHA-13). The old order wrote the
+            # array to eq_bands.json and only then handed it to the engine, so
+            # an out-of-domain curve was replayed by _apply_stored_eq() at
+            # every daemon start — the file outlived the call that produced it.
+            from arctis_sound_manager.core import sanitise_eq_bands
+            bands = sanitise_eq_bands(bands, self.logger)
+            if bands is None:
+                return False
             eq_file = Path.home() / '.config' / 'arctis_manager' / 'eq_bands.json'
             eq_file.parent.mkdir(parents=True, exist_ok=True)
             eq_file.write_text(json.dumps(bands))
