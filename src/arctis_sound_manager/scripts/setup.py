@@ -221,6 +221,17 @@ Requires=pipewire.service
 
 [Service]
 Type=simple
+# A systemd user unit inherits none of the shell's environment, so PipeWire
+# searches only its built-in LADSPA directories. ASM stages plugins the host
+# may not have into ~/.ladspa (issue #100) and writes their absolute path into
+# the generated conf. PipeWire 1.6.8 loads an absolute path directly, but a
+# reporter on PipeWire 1.6.4 (issue #203) had it resolved as a *name* against
+# the built-in directories instead — the plugin was never found, the
+# filter-chain module carries `nofail`, and HeSuVi silently never appeared:
+# the channels then pointed node.target at a node that did not exist, which is
+# audio that stops half a second in. Naming the directory here makes both
+# lookups succeed, on every version.
+Environment=LADSPA_PATH=%h/.ladspa:/usr/lib64/ladspa:/usr/lib/ladspa:/usr/lib
 ExecStart=/usr/bin/pipewire -c filter-chain.conf
 Restart=on-failure
 
@@ -233,7 +244,7 @@ WantedBy=pipewire-session-manager.service
 # filter-chain confs' "# ASM-CONF-VERSION" header, for the same reason: without
 # it, the copy in $HOME wins for ever and no revision ever reaches an existing
 # install (PKG-3).
-_UNIT_VERSION = 1
+_UNIT_VERSION = 2
 _UNIT_VERSION_MARKER = f"# ASM-UNIT-VERSION: {_UNIT_VERSION}"
 _UNIT_VERSION_RE = re.compile(r"^\s*#\s*ASM-UNIT-VERSION:\s*(\d+)\s*$", re.MULTILINE)
 

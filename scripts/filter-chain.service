@@ -6,6 +6,16 @@ Requires=pipewire.service
 
 [Service]
 Type=simple
+# A systemd user unit inherits none of the shell's environment, so PipeWire
+# searches only its built-in LADSPA directories. ASM stages plugins the host
+# may not have into ~/.ladspa (issue #100) and writes their absolute path into
+# the generated conf. PipeWire 1.6.8 loads an absolute path directly, but on
+# 1.6.4 it was resolved as a *name* against the built-in directories instead
+# (issue #203) — the plugin was never found, the filter-chain module carries
+# `nofail`, and HeSuVi silently never appeared. Naming the directory here makes
+# both lookups succeed, on every version.
+# Keep in sync with scripts/setup.py's _FILTER_CHAIN_SERVICE.
+Environment=LADSPA_PATH=%h/.ladspa:/usr/lib64/ladspa:/usr/lib/ladspa:/usr/lib
 ExecStart=/usr/bin/pipewire -c filter-chain.conf
 Restart=on-failure
 
