@@ -20,6 +20,7 @@ except Exception as e:  # ImportError, OSError on libudev missing
 
 _POLL_INTERVAL_SECONDS = 2.0
 _STEELSERIES_VENDOR_ID = 0x1038
+_WATCHDOG_INTERVAL_SECONDS = 5.0
 
 
 class USBDevicesMonitor:
@@ -52,6 +53,7 @@ class USBDevicesMonitor:
         self.monitor = None
         self._poll_thread: threading.Thread | None = None
         self._observer: 'pyudev.MonitorObserver | None' = None
+        self._watchdog_thread: threading.Thread | None = None
         self._known_devices: set[tuple[int, int]] = set()
 
         if _PYUDEV_AVAILABLE:
@@ -90,13 +92,61 @@ class USBDevicesMonitor:
                 name='usb-monitor',
             )
             self._observer.start()
-        elif self._backend == 'polling':
-            self._poll_thread = threading.Thread(
-                target=self._poll_loop, name='usb-poll-monitor', daemon=True,
+            # SD-3: the pyudev observer is a thread; if it dies (udevd restart
+            # in a sandboxed session, a container namespace change, netlink
+            # never working in a Distrobox setup) nothing noticed and hotplug
+            # silently stopped. Watch the thread and fall back to the polling
+            # loop, which already exists in this file for exactly this case.
+            self._watchdog_thread = threading.Thread(
+                target=self._watchdog_loop, name='usb-monitor-watchdog', daemon=True,
             )
-            self._poll_thread.start()
+            self._watchdog_thread.start()
+        elif self._backend == 'polling':
+            self._start_polling()
         else:
             self.logger.error("USB devices monitor has no working backend — hotplug disabled.")
+
+    def _start_polling(self):
+        self._poll_thread = threading.Thread(
+            target=self._poll_loop, name='usb-poll-monitor', daemon=True,
+        )
+        self._poll_thread.start()
+
+    def _watchdog_loop(self):
+        """Watch the pyudev MonitorObserver thread while it is our active
+        backend, and switch to the polling fallback if it dies.
+
+        What this catches: the observer thread crashing or exiting
+        (Thread.is_alive() going False) — e.g. an unhandled exception in the
+        netlink read loop.
+
+        What this does NOT catch: a netlink socket that silently stops
+        delivering events while the observer thread is still alive and
+        blocked waiting on it (e.g. a udevd restart the socket doesn't
+        surface as an error). That failure mode has no cheap, reliable signal
+        from the thread object alone and is not detected here.
+
+        Switching backend here is exclusive: once the observer thread has
+        died it cannot deliver any more events, so handing off to polling
+        cannot double-fire a callback for the same device transition.
+        """
+        while not self._stopping:
+            time.sleep(_WATCHDOG_INTERVAL_SECONDS)
+            if self._stopping:
+                return
+            observer = self._observer
+            if observer is None:
+                return
+            if not observer.is_alive():
+                self.logger.error(
+                    "pyudev USB monitor observer thread has died — hotplug "
+                    "events were no longer being delivered. Switching to the "
+                    "polling fallback."
+                )
+                self._backend = 'polling'
+                self._observer = None
+                self._start_polling()
+                return
 
     async def wait_for_stop(self):
         while not self._stopping:
