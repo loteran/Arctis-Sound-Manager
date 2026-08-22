@@ -4,6 +4,7 @@
 
 import argparse
 import asyncio
+import fcntl
 import logging
 import os
 import signal
@@ -154,6 +155,53 @@ def _ensure_media_router_running(logger) -> None:
             logger.warning('could not check/start the %s: %r', label, exc)
 
 
+def _single_instance_lock(logger):
+    """Take an exclusive runtime lock, or exit before touching anything.
+
+    The D-Bus name is what really arbitrates between two daemons, but it is
+    claimed at the very end of main_async(), and CoreEngine() does damage long
+    before that (CHA-4): CoreEngine.start() is a plain synchronous method, so
+    `asyncio.create_task(core_engine.start())` runs usb_devices_monitor.start()
+    and apply_force_quantum() while the argument is being evaluated. The USB
+    monitor drives configure_virtual_sinks() -> setup_loopbacks() ->
+    LoopbackManager.start(), whose orphan sweep excludes only this process's own
+    handles — empty in a fresh process. So a second daemon started by hand
+    SIGTERMs the *running* daemon's healthy Arctis_Game/Chat/Media loopbacks and
+    rewrites clock.force-quantum, and only then discovers the bus name is taken
+    and dies. The daemon's own error message invites exactly that.
+
+    flock is used rather than a pid file: the kernel releases it when the
+    process dies, however it dies, so there is no stale lock to reap.
+    """
+    runtime_dir = os.environ.get('XDG_RUNTIME_DIR') or f'/tmp/arctis-{os.getuid()}'
+    try:
+        os.makedirs(runtime_dir, exist_ok=True)
+        handle = open(os.path.join(runtime_dir, 'arctis-manager.lock'), 'w')
+    except OSError as exc:
+        # No lock is worse than a lock, but refusing to start at all over an
+        # unwritable runtime dir is worse still.
+        logger.warning('could not open the single-instance lock: %r', exc)
+        return None
+
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        from arctis_sound_manager.init_system import detect_init
+        stop_cmd = ('dinitctl stop arctis-manager' if detect_init() == 'dinit'
+                    else 'systemctl --user stop arctis-manager.service')
+        logger.error(
+            'Another asm-daemon already holds the runtime lock in %s — refusing '
+            'to start, so this process does not tear down the running daemon\'s '
+            'audio channels. Stop it with `%s` or `pkill -f asm-daemon` and retry.',
+            runtime_dir, stop_cmd,
+        )
+        sys.exit(1)
+
+    # Kept open for the process's lifetime: closing the file drops the lock.
+    return handle
+
+
 async def main_async():
     from arctis_sound_manager.log_setup import configure_logging
     configure_logging(default=logging.INFO,
@@ -164,6 +212,10 @@ async def main_async():
     logger.info('- Arctis Sound Manager is starting. -')
     logger.info(f'-{"v " + project_version():>27}  -')
     logger.info('-------------------------------')
+
+    # Before anything that touches the audio graph, the USB device or the
+    # session's PipeWire metadata (CHA-4).
+    _instance_lock = _single_instance_lock(logger)  # noqa: F841 — held by scope
 
     # Repair installs whose device profiles are pinned to an old release before
     # anything reads them. asm-setup used to copy every packaged profile into
