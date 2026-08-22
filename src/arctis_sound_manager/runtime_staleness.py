@@ -24,10 +24,9 @@ from __future__ import annotations
 import importlib
 import logging
 import os
-import shutil
-import subprocess
 import sys
 
+from arctis_sound_manager import service_control as sc
 from arctis_sound_manager.utils import project_version
 
 log = logging.getLogger(__name__)
@@ -38,10 +37,17 @@ RUNNING_VERSION: str = project_version()
 
 _UNKNOWN = ("", "dev")
 
+# Logical names, resolved per init system by service_control (systemd or
+# dinit — see service_control._SERVICE_MAP). Restarting user services used to
+# be hand-rolled here with a bare `shutil.which("systemctl")` check, which
+# meant dinit boxes (Artix, Arch+dinit) got no restart at all: the "Restart
+# Now" banner relaunched the GUI while the daemon kept running the old code
+# forever. service_control is the one module allowed to shell out to
+# systemctl/dinitctl; route through it like every other call site does.
 _USER_SERVICES = (
-    "arctis-manager.service",
-    "arctis-video-router.service",
-    "arctis-stream-guard.service",
+    "arctis-manager",
+    "arctis-video-router",
+    "arctis-stream-guard",
 )
 
 
@@ -70,19 +76,25 @@ def upgraded_under_us() -> str | None:
 
 
 def restart_user_services() -> None:
-    """Restart ASM's own systemd user services, if they are running.
+    """Restart ASM's own user services, if they are running — systemd or dinit.
 
-    try-restart, not restart: a service someone deliberately stopped stays
-    stopped. Needs no privileges — these are the user's own units.
+    Only services already active are restarted (the try-restart behaviour):
+    someone who stopped ASM on purpose must not get it back from an upgrade.
+    Needs no privileges — these are the user's own units. Delegates entirely
+    to service_control, the one module allowed to shell out to
+    systemctl/dinitctl, so this works the same whether the active init is
+    systemd or dinit; it used to check only for `systemctl` and silently do
+    nothing on dinit boxes.
     """
-    systemctl = shutil.which("systemctl")
-    if not systemctl:
+    if not sc.manager_available():
+        log.warning("Could not restart user services: no usable init manager "
+                    "(neither systemctl nor dinitctl found)")
         return
-    try:
-        subprocess.run([systemctl, "--user", "try-restart", *_USER_SERVICES],
-                       capture_output=True, timeout=30)
-    except (subprocess.SubprocessError, OSError) as exc:
-        log.warning("Could not restart user services: %s", exc)
+    running = [name for name in _USER_SERVICES if sc.is_active(name)]
+    if not running:
+        return
+    if not sc.restart(*running, timeout=30):
+        log.warning("Could not restart user services: %s", ", ".join(running))
 
 
 def restart_gui() -> None:

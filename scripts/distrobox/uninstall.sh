@@ -43,7 +43,7 @@ done
 do_uninstall() {
     log_step "Uninstalling ASM Distrobox setup..."
 
-    local services=(arctis-gui.service arctis-video-router.service arctis-manager.service)
+    local services=(app-ArctisManager.service arctis-video-router.service arctis-manager.service)
     for svc in "${services[@]}"; do
         if systemctl --user is-enabled "$svc" &>/dev/null; then
             log_info "Disabling $svc..."

@@ -265,7 +265,7 @@ RestartSec=5
 WantedBy=graphical-session.target
 EOF
 
-    cat > "$_SYSTEMD_USER_DIR/arctis-gui.service" <<EOF
+    cat > "$_SYSTEMD_USER_DIR/app-ArctisManager.service" <<EOF
 [Unit]
 Description=Arctis Sound Manager — System Tray (Distrobox)
 After=graphical-session.target arctis-manager.service
@@ -350,7 +350,7 @@ verify_pipewire() {
 enable_services() {
     log_step "Enabling ASM systemd user services..."
     systemctl --user daemon-reload
-    for svc in arctis-manager.service arctis-video-router.service arctis-gui.service; do
+    for svc in arctis-manager.service arctis-video-router.service app-ArctisManager.service; do
         systemctl --user enable --now "$svc" 2>>"$_LOG" \
             && log_ok "Enabled: $svc" \
             || log_warn "Could not enable $svc (may need a desktop session restart)"
@@ -383,7 +383,7 @@ print_summary() {
     echo "Log file  : $_LOG"
     echo ""
     echo "Services:"
-    for svc in arctis-manager arctis-video-router arctis-gui; do
+    for svc in arctis-manager arctis-video-router app-ArctisManager; do
         printf "  %-35s %s\n" "${svc}.service" \
             "$(systemctl --user is-active "${svc}.service" 2>/dev/null || echo inactive)"
     done

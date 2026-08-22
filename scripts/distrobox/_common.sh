@@ -334,7 +334,7 @@ WantedBy=${wanted_by}
 EOF
     log_ok "Written: $ASM_SYSTEMD_USER_DIR/arctis-manager.service"
 
-    cat > "$ASM_SYSTEMD_USER_DIR/arctis-gui.service" <<EOF
+    cat > "$ASM_SYSTEMD_USER_DIR/app-ArctisManager.service" <<EOF
 [Unit]
 Description=Arctis Sound Manager — System Tray (Distrobox)
 After=graphical-session.target arctis-manager.service
@@ -349,7 +349,7 @@ RestartSec=5
 [Install]
 WantedBy=${wanted_by}
 EOF
-    log_ok "Written: $ASM_SYSTEMD_USER_DIR/arctis-gui.service"
+    log_ok "Written: $ASM_SYSTEMD_USER_DIR/app-ArctisManager.service"
 
     cat > "$ASM_SYSTEMD_USER_DIR/arctis-video-router.service" <<EOF
 [Unit]
@@ -454,7 +454,7 @@ asm_enable_services() {
     log_step "Enabling ASM systemd user services..."
     systemctl --user daemon-reload
 
-    local services=(arctis-manager.service arctis-video-router.service arctis-gui.service)
+    local services=(arctis-manager.service arctis-video-router.service app-ArctisManager.service)
     for svc in "${services[@]}"; do
         if systemctl --user enable --now "$svc" 2>>"$ASM_LOG_FILE"; then
             log_ok "Enabled and started: $svc"
@@ -492,7 +492,7 @@ asm_print_summary() {
     echo "Log file  : $ASM_LOG_FILE"
     echo ""
     echo "Services running:"
-    for svc in arctis-manager arctis-video-router arctis-gui; do
+    for svc in arctis-manager arctis-video-router app-ArctisManager; do
         local status
         status=$(systemctl --user is-active "${svc}.service" 2>/dev/null || echo "inactive")
         printf "  %-35s %s\n" "${svc}.service" "$status"
