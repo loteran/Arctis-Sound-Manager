@@ -648,7 +648,7 @@ class CoreEngine:
         handler).  Errors are always caught and logged — this coroutine must
         never crash the daemon.
         """
-        from arctis_sound_manager.pw_utils import _pw_dump, ensure_loopback_link
+        from arctis_sound_manager.pw_utils import ensure_loopback_link, pw_dump_or_none
 
         _WATCHDOG_INTERVAL: float = 5.0
         # Number of consecutive ticks a loopback may be None-linked before we
@@ -922,8 +922,21 @@ class CoreEngine:
                 link_data = None  # guards the spatial-link pass below if pw-dump itself raises
                 try:
                     link_data = await asyncio.get_running_loop().run_in_executor(
-                        None, _pw_dump,
+                        None, pw_dump_or_none,
                     )
+                    if link_data is None:
+                        # Could not read the graph — not "the graph is empty"
+                        # (CHA-11). Every channel would look unlinkable, the
+                        # orphan counters would run up and the watchdog would
+                        # recreate loopbacks and restart the filter-chain over
+                        # an audio path that is fine. Skip the tick instead:
+                        # the counters keep their state and the next tick, five
+                        # seconds later, decides on real information.
+                        self.logger.warning(
+                            "_loopback_watchdog: pw-dump unreadable this tick — "
+                            "skipping, rather than treating the graph as empty",
+                        )
+                        continue
                     for channel, spec in self.loopback_manager.specs().items():
                         if channel in cooled_channels:
                             # In anti-flap cooldown — do not intervene this tick.
@@ -1196,8 +1209,12 @@ class CoreEngine:
                 fail_ticks.pop(hop, None)
                 return
 
-            from arctis_sound_manager.pw_utils import _pw_dump
-            fresh = await loop.run_in_executor(None, _pw_dump)
+            from arctis_sound_manager.pw_utils import pw_dump_or_none
+            fresh = await loop.run_in_executor(None, pw_dump_or_none)
+            if fresh is None:
+                # Unreadable graph: the retry proves nothing, so do not let it
+                # count towards the escalation that restarts the chain (CHA-11).
+                return
             result = await loop.run_in_executor(None, fn, *lead_args, fresh)
             if self._hop_result_ok(result):
                 self.logger.info(

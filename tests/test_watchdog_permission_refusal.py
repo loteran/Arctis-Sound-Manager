@@ -121,7 +121,7 @@ def _drive(link_result: bool, outcome_fill: dict, max_ticks: int = 8):
     # either — if a name moves, this test must break loudly rather than pass by
     # patching something that is not called.
     with patch.object(pw_utils, "ensure_loopback_link", fake_link), \
-         patch.object(pw_utils, "_pw_dump", lambda *a, **k: []), \
+         patch.object(pw_utils, "pw_dump_or_none", lambda *a, **k: []), \
          patch.object(pw_utils, "pw_node_exists", lambda *a, **k: True), \
          patch.object(core_mod.device_state, "is_device_set", lambda: True):
         asyncio.run(_drive_until_stopped(fake_self, max_ticks))

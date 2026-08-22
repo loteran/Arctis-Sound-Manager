@@ -513,7 +513,26 @@ def _parse_pw_dump_output(text: str) -> list | None:
     return best
 
 
-def _pw_dump() -> list:
+def pw_dump_or_none() -> list | None:
+    """Read the PipeWire graph, or ``None`` when it could not be read.
+
+    "The graph is empty" and "I could not read the graph" are different
+    facts, and conflating them is expensive (CHA-11). A pw-dump slower than
+    the timeout — heavy load, a stalled session manager, a very large graph
+    — used to come back as ``[]``, which the loopback watchdog reads as
+    "every loopback and EQ target is gone" and answers by recreating the
+    loopbacks and restarting the filter-chain: it tears down the audio path
+    that was actually fine. That churn is the mechanism behind ASM's random
+    audio dropouts, and one producer of an empty dump (concatenated JSON
+    documents) was already fixed for exactly this reason — the timeout, the
+    non-zero exit and a pw-dump missing from PATH were not.
+
+    Callers that decide whether to intervene must use this function and treat
+    ``None`` as "no information, do nothing this tick", the way
+    ``get_xrun_counts`` already does. :func:`_pw_dump` keeps the old
+    empty-list contract for read-only lookups, where a missing node is
+    indistinguishable from an unreadable graph anyway.
+    """
     try:
         r = _pw_run(["pw-dump"], capture_output=True, text=True, timeout=3)
         try:
@@ -531,7 +550,13 @@ def _pw_dump() -> list:
             raise
     except Exception as e:
         logger.warning("pw-dump failed: %s", e)
-        return []
+        return None
+
+
+def _pw_dump() -> list:
+    """:func:`pw_dump_or_none` with an unreadable graph flattened to ``[]``."""
+    data = pw_dump_or_none()
+    return data if data is not None else []
 
 
 def quiesce_filter_chain() -> int:

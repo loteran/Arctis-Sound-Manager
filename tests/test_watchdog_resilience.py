@@ -52,7 +52,7 @@ def test_hop_retried_once_with_a_fresh_dump_when_the_shared_one_is_stale():
         return data == ["fresh"]
 
     fails: dict[str, int] = {}
-    with patch("arctis_sound_manager.pw_utils._pw_dump", return_value=["fresh"]):
+    with patch("arctis_sound_manager.pw_utils.pw_dump_or_none", return_value=["fresh"]):
         asyncio.run(engine._enforce_link_hop(
             "test hop", _pass, (), ["stale"], fails, 6,
         ))
@@ -66,7 +66,7 @@ def test_successful_hop_never_pays_for_a_second_dump():
     engine = _engine()
     fails: dict[str, int] = {}
 
-    with patch("arctis_sound_manager.pw_utils._pw_dump") as mock_dump:
+    with patch("arctis_sound_manager.pw_utils.pw_dump_or_none") as mock_dump:
         asyncio.run(engine._enforce_link_hop(
             "test hop", lambda data: True, (), ["shared"], fails, 6,
         ))
@@ -82,7 +82,7 @@ def test_empty_dict_result_is_success_not_failure():
     engine = _engine()
     fails: dict[str, int] = {}
 
-    with patch("arctis_sound_manager.pw_utils._pw_dump") as mock_dump:
+    with patch("arctis_sound_manager.pw_utils.pw_dump_or_none") as mock_dump:
         asyncio.run(engine._enforce_link_hop(
             "test hop", lambda data: {}, (), ["shared"], fails, 6,
         ))
@@ -96,7 +96,7 @@ def test_partial_dict_failure_counts_as_failure():
     engine = _engine()
     fails: dict[str, int] = {}
 
-    with patch("arctis_sound_manager.pw_utils._pw_dump", return_value=["fresh"]):
+    with patch("arctis_sound_manager.pw_utils.pw_dump_or_none", return_value=["fresh"]):
         asyncio.run(engine._enforce_link_hop(
             "test hop", lambda data: {"chat": True, "hesuvi": False},
             (), ["shared"], fails, 6,
@@ -114,7 +114,7 @@ def test_escalates_only_after_the_configured_number_of_failed_ticks():
     fails: dict[str, int] = {}
     healthy = MagicMock()
 
-    with patch("arctis_sound_manager.pw_utils._pw_dump", return_value=["fresh"]), \
+    with patch("arctis_sound_manager.pw_utils.pw_dump_or_none", return_value=["fresh"]), \
             patch("arctis_sound_manager.sonar_to_pipewire.ensure_filter_chain_healthy", healthy):
         for tick in range(1, 4):
             asyncio.run(engine._enforce_link_hop(
@@ -136,7 +136,7 @@ def test_recovery_resets_the_failure_counter():
     engine = _engine()
     fails = {"test hop": 3}
 
-    with patch("arctis_sound_manager.pw_utils._pw_dump", return_value=["fresh"]):
+    with patch("arctis_sound_manager.pw_utils.pw_dump_or_none", return_value=["fresh"]):
         asyncio.run(engine._enforce_link_hop(
             "test hop", lambda data: True, (), ["shared"], fails, 6,
         ))
@@ -221,3 +221,34 @@ def test_setup_loopbacks_survives_a_failing_reapply():
         engine.setup_loopbacks()  # must not raise
 
     engine._link_loopbacks.assert_called_once()
+
+
+# ── CHA-11: an unreadable graph is not an empty graph ────────────────────────
+
+
+def test_unreadable_dump_does_not_count_towards_escalation():
+    """A pw-dump slower than its timeout used to come back as [], which reads
+    as "every target is gone" and escalates to restarting the filter-chain —
+    tearing down an audio path that was fine. That churn is the mechanism
+    behind ASM's random dropouts. An unreadable graph must leave the failure
+    counters exactly as they were."""
+    engine = _engine()
+    fails: dict[str, int] = {"test hop": 2}
+    healthy = MagicMock()
+
+    with patch("arctis_sound_manager.pw_utils.pw_dump_or_none", return_value=None), \
+            patch("arctis_sound_manager.sonar_to_pipewire.ensure_filter_chain_healthy", healthy):
+        asyncio.run(engine._enforce_link_hop(
+            "test hop", lambda data: False, (), ["shared"], fails, 3,
+        ))
+
+    assert fails == {"test hop": 2}, "an unreadable dump must not count as a failed tick"
+    assert healthy.call_count == 0, "must never escalate on no information"
+
+
+def test_pw_dump_or_none_separates_empty_from_unreadable():
+    from arctis_sound_manager import pw_utils
+
+    with patch.object(pw_utils, "_pw_run", side_effect=TimeoutError("pw-dump hung")):
+        assert pw_utils.pw_dump_or_none() is None
+        assert pw_utils._pw_dump() == [], "the legacy read-only contract is unchanged"
