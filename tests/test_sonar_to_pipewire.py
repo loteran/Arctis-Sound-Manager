@@ -3134,3 +3134,72 @@ def test_generating_to_an_explicit_path_leaves_the_snapshot_alone(tmp_path, monk
                                output_path=tmp_path / "scratch.conf")
 
     assert json.loads(snapshot.read_text())["basses_db"] == 9.0
+
+
+# ── SD-1: the Output channel's device can disappear ─────────────────────────
+
+
+def _output_hop_setup(monkeypatch, configured, graph_nodes):
+    """Only the Output hop active: no chat/game physical targets."""
+    monkeypatch.setattr(_s2p_p3, "_get_physical_out_chat", lambda: "")
+    monkeypatch.setattr(_s2p_p3, "_get_physical_out_game", lambda: "alsa_output.headset")
+    monkeypatch.setattr(_s2p_p3, "channel_destination", lambda ch, data=None: "")
+    monkeypatch.setattr(_s2p_p3, "_get_configured_external_output", lambda: configured)
+    monkeypatch.setattr(_s2p_p3, "_node_in_graph",
+                        lambda data, name: name in graph_nodes)
+    monkeypatch.setattr(_s2p_p3, "_output_fallback_active", None, raising=False)
+    calls = []
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.ensure_loopback_link",
+        lambda playback, target, data=None: calls.append((playback, target)) or True,
+    )
+    return calls
+
+
+def test_output_channel_falls_back_to_the_headset_when_its_device_is_gone(monkeypatch):
+    """SD-1: the monitor is switched off / the Bluetooth speaker walks away.
+    Skipping the hop left everything routed to Output playing into a dead end,
+    silently and for ever, whenever the tray GUI was not running to fall back
+    itself. Game/Chat/Media never had that gap."""
+    calls = _output_hop_setup(monkeypatch, "alsa_output.hdmi-tv",
+                              {"alsa_output.headset"})
+
+    result = _s2p_p3.ensure_physical_output_links()
+
+    assert calls == [("effect_output.sonar-output-eq", "alsa_output.headset")]
+    assert result == {"output": True}
+
+
+def test_output_fallback_does_not_rewrite_the_users_choice(monkeypatch):
+    """The fallback is a link, not a decision: the setting stays put so the
+    channel returns to the external sink on its own when it comes back."""
+    written = []
+    monkeypatch.setattr(_s2p_p3, "_sync_output_setting_snapshot",
+                        lambda *a, **kw: written.append(a), raising=False)
+    _output_hop_setup(monkeypatch, "alsa_output.hdmi-tv", {"alsa_output.headset"})
+
+    _s2p_p3.ensure_physical_output_links()
+
+    assert written == [], "the fallback must not touch external_output_device"
+
+
+def test_output_hop_prefers_the_configured_sink_when_it_is_present(monkeypatch):
+    calls = _output_hop_setup(monkeypatch, "alsa_output.hdmi-tv",
+                              {"alsa_output.headset", "alsa_output.hdmi-tv"})
+
+    _s2p_p3.ensure_physical_output_links()
+
+    assert calls == [("effect_output.sonar-output-eq", "alsa_output.hdmi-tv")]
+
+
+def test_output_hop_stays_quiet_with_no_headset_to_fall_back_to(monkeypatch):
+    """Configured sink gone and no headset either: nothing to link, and no
+    link attempt to log in a loop."""
+    monkeypatch.setattr(_s2p_p3, "_get_physical_out_game", lambda: "")
+    calls = _output_hop_setup(monkeypatch, "alsa_output.hdmi-tv", set())
+    monkeypatch.setattr(_s2p_p3, "_get_physical_out_game", lambda: "")
+
+    result = _s2p_p3.ensure_physical_output_links()
+
+    assert calls == []
+    assert "output" not in result

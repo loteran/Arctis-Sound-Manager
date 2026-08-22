@@ -3196,6 +3196,31 @@ def _get_configured_external_output() -> str:
     return resolved_target
 
 
+_output_fallback_active: str | None = None
+
+
+def _note_output_fallback(absent_target: str | None) -> None:
+    """Log the Output channel's fallback once per transition, not per tick.
+
+    The watchdog runs every 5 s; an unplugged monitor would otherwise fill the
+    journal with the same line for as long as it stays off, which is how a real
+    fault becomes invisible.
+    """
+    global _output_fallback_active
+    if absent_target == _output_fallback_active:
+        return
+    _output_fallback_active = absent_target
+    if absent_target:
+        _log.warning(
+            "Output channel: configured sink '%s' is not in the graph — "
+            "sending it to the headset meanwhile; the setting is unchanged and "
+            "the channel returns there as soon as it comes back",
+            absent_target,
+        )
+    else:
+        _log.info("Output channel: configured sink is back — routing restored")
+
+
 def ensure_physical_output_links(data: list | None = None) -> dict[str, bool]:
     """Ensure the LAST hop into the physical Arctis output(s) is linked.
 
@@ -3290,9 +3315,28 @@ def ensure_physical_output_links(data: list | None = None) -> dict[str, bool]:
         # TV or monitor that is switched off: reporting it as a failure would
         # have the watchdog retry with a fresh pw-dump every tick and escalate
         # on a situation that is not a fault at all.
+        _note_output_fallback(None)
         results["output"] = ensure_loopback_link(
             _OUTPUT_EQ_OUTPUT_NAME, output_target, data=data
         )
+    elif output_target:
+        # The configured sink is gone — the monitor is off, the Bluetooth
+        # speaker walked away, the dock was unplugged. Skipping the hop left
+        # everything routed to the Output channel playing into a dead end,
+        # silently and indefinitely, whenever the tray GUI was not running to
+        # do the fallback itself (SD-1). Game/Chat/Media never had that gap:
+        # channel_destination() falls back to the headset the moment the saved
+        # device is absent, re-evaluated on every tick.
+        #
+        # The setting is deliberately NOT rewritten: the user's choice stays
+        # the user's, so the channel returns to the external sink on its own as
+        # soon as it comes back. This is a link-level fallback, not a decision.
+        fallback = _get_physical_out_game()
+        if fallback and _node_in_graph(data, fallback):
+            _note_output_fallback(output_target)
+            results["output"] = ensure_loopback_link(
+                _OUTPUT_EQ_OUTPUT_NAME, fallback, data=data
+            )
 
     return results
 
