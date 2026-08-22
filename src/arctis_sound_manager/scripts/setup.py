@@ -11,6 +11,7 @@ files can't be written to $HOME during package().
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -235,6 +236,15 @@ Restart=on-failure
 WantedBy=pipewire-session-manager.service
 """
 
+# Bump when _FILTER_CHAIN_SERVICE (or the packaged /usr/share copy) changes in
+# a way existing installs must pick up. Same mechanism as the generated
+# filter-chain confs' "# ASM-CONF-VERSION" header, for the same reason: without
+# it, the copy in $HOME wins for ever and no revision ever reaches an existing
+# install (PKG-3).
+_UNIT_VERSION = 1
+_UNIT_VERSION_MARKER = f"# ASM-UNIT-VERSION: {_UNIT_VERSION}"
+_UNIT_VERSION_RE = re.compile(r"^\s*#\s*ASM-UNIT-VERSION:\s*(\d+)\s*$", re.MULTILINE)
+
 
 def _has_systemctl() -> bool:
     return shutil.which("systemctl") is not None
@@ -269,28 +279,91 @@ def _ensure_filter_chain_service() -> str:
         print("  [skip] systemctl not found — skipping filter-chain service detection (non-systemd init)")
         return "filter-chain.service"
 
+    dest = Path.home() / ".config" / "systemd" / "user" / "filter-chain.service"
+
     for name in ("filter-chain.service", "pipewire-filter-chain.service"):
         result = subprocess.run(
             ["systemctl", "--user", "list-unit-files", name],
             capture_output=True, text=True,
         )
         if name.split(".")[0] in result.stdout:
+            # The unit exists — but if it is the copy ASM itself put in $HOME,
+            # this branch used to return here and never look at it again, so a
+            # revision of the packaged unit could not reach an existing install
+            # (PKG-3). That is the "local copy wins, never migrated" shape that
+            # cost months on device profiles. Units owned by the distribution
+            # (/usr/lib/systemd/user) are not ours and are left alone.
+            if name == "filter-chain.service":
+                _migrate_home_filter_chain_unit(dest)
             return name
 
     # Not found on this distro — install our bundled copy
-    dest = Path.home() / ".config" / "systemd" / "user" / "filter-chain.service"
-    dest.parent.mkdir(parents=True, exist_ok=True)
-
-    # Prefer the copy shipped in /usr/share (AUR/COPR/DEB packages install it there)
-    bundled = _SHARE_DIR / "filter-chain.service"
-    if bundled.exists():
-        shutil.copy2(bundled, dest)
-    else:
-        dest.write_text(_FILTER_CHAIN_SERVICE)
-
+    _write_filter_chain_unit(dest)
     print(f"  [ok] filter-chain.service installed → {dest}")
     _run_systemctl(["daemon-reload"])
     return "filter-chain.service"
+
+
+def _packaged_filter_chain_unit() -> str:
+    """The unit ASM ships: the /usr/share copy when packaged, else the builtin."""
+    bundled = _SHARE_DIR / "filter-chain.service"
+    if bundled.exists():
+        try:
+            return bundled.read_text()
+        except OSError:
+            pass
+    return _FILTER_CHAIN_SERVICE
+
+
+def _stamped(text: str) -> str:
+    """Tag *text* with the version marker, the way generated confs are."""
+    if _UNIT_VERSION_RE.search(text):
+        return text
+    return f"{_UNIT_VERSION_MARKER}\n{text}"
+
+
+def _write_filter_chain_unit(dest: Path) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(_stamped(_packaged_filter_chain_unit()))
+
+
+def _migrate_home_filter_chain_unit(dest: Path) -> None:
+    """Refresh ASM's own copy of the unit in $HOME when the packaged one moved.
+
+    Nothing else does: the unit is written once, at first setup, and every
+    later run only checks that *a* unit by that name exists. A file with no
+    version marker predates this check — it was written by ASM too, since this
+    file has never been meant for hand-editing — so it is refreshed once and
+    backed up first, which keeps a customised copy recoverable.
+    """
+    if not dest.exists():
+        return
+
+    try:
+        current = dest.read_text()
+    except OSError as exc:
+        print(f"  [!] could not read {dest}: {exc}")
+        return
+
+    wanted = _stamped(_packaged_filter_chain_unit())
+    if current == wanted:
+        return
+
+    match = _UNIT_VERSION_RE.search(current)
+    if match and int(match.group(1)) == _UNIT_VERSION:
+        # Same version, different content: someone edited it on purpose.
+        return
+
+    try:
+        backup = dest.with_suffix(".service.bak")
+        shutil.copy2(dest, backup)
+        dest.write_text(wanted)
+    except OSError as exc:
+        print(f"  [!] could not refresh {dest}: {exc}")
+        return
+
+    print(f"  [ok] filter-chain.service refreshed → {dest} (old copy: {backup})")
+    _run_systemctl(["daemon-reload"])
 
 
 def _refuse_root() -> None:
