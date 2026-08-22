@@ -17,6 +17,32 @@ def test_percentage():
     assert fn(0, 100, 100) == 100
     assert fn(-123, 123, 123) == 100
 
+def test_percentage_clamps_out_of_range_values_regardless_of_round_to():
+    """RAPPORT-CHAOS-ASM.md HW-2: the clamp used to live inside
+    `if round_to > 1:`, so any profile calling percentage() without round_to —
+    media_mix, chat_mix, station_volume, most headset_battery_charge entries —
+    was unclamped. A value outside [perc_min, perc_max], e.g. a battery byte
+    read against the wrong sibling profile's scale, produced an absurd
+    percentage instead of being capped at 0-100.
+    """
+    fn = percentage
+
+    # The exact reproduction from the report: a real 76% on a 0-4 scale
+    # misfiled as 0-100 used to render as 1900%.
+    assert fn(perc_min=0, perc_max=4, value=76) == 100
+    assert fn(perc_min=0, perc_max=4, value=76, round_to=10) == 100
+
+    # Below-range values must not go negative either, with or without
+    # round_to.
+    assert fn(perc_min=10, perc_max=20, value=0) == 0
+    assert fn(perc_min=10, perc_max=20, value=0, round_to=10) == 0
+
+    # In-range values are untouched by the clamp, with or without round_to —
+    # the fix must be behaviour-neutral for every currently-correct profile.
+    assert fn(0, 100, 75) == 75
+    assert fn(0, 8, 5, round_to=10) == 60
+
+
 def test_on_off():
     fn = on_off
     assert getattr(fn, '_status_type') == 'on_off'

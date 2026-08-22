@@ -39,7 +39,13 @@ def percentage(perc_min: int, perc_max: int, value: int, round_to: int = 0) -> i
     if round_to > 1:
         # Half-up, and never round a real 0 or 100 away from the rails.
         result = ((result + round_to // 2) // round_to) * round_to
-        result = max(0, min(100, result))
+
+    # Unconditional: a value outside [perc_min, perc_max] — a misfiled PID
+    # reading a battery scale that isn't its own, for instance — must not
+    # produce an absurd percentage just because the caller didn't ask for
+    # round_to. See RAPPORT-CHAOS-ASM.md HW-2: percentage(0, 4, 76) returned
+    # 1900 before this clamp existed unconditionally.
+    result = max(0, min(100, result))
 
     return result
 

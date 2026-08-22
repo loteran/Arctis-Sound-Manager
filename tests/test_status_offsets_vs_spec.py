@@ -4,7 +4,7 @@
 """
 Findings from an audit of the device profiles against SteelSeries' own specs.
 
-Two classes of defect, both invisible from inside the app — the headset never
+Three classes of defect, all invisible from inside the app — the headset never
 complains, and the value it produces looks like an answer:
 
   1. A status variable pointing at a byte the spec declares `unused`. It shows
@@ -13,6 +13,16 @@ complains, and the value it produces looks like an answer:
   2. A PID filed under the wrong protocol family, so every byte is read one
      scale off. 0x22ab was read as a 0-4 battery when its own spec makes it a
      0-100 one.
+  3. A status variable pointing past the end of the frame entirely — not even
+     padding, just nothing the spec declares. `base_arctis_nova_7_tx.device`
+     (shared by the Gen 1 Nova 7 and 7P, RAPPORT-CHAOS-ASM.md HW-1) defines
+     seven `headset_status` fields ending at ASM offset 0x05:
+     `report_id, command, connection_status, battery_status, charging_status,
+     game_chatmix_level, chat_chatmix_level`. Offsets 0x06-0x09 were read
+     anyway, as `bluetooth_connection` / `bluetooth_power_status` /
+     `bluetooth_auto_mute` / `mic_status` — four fabricated values across six
+     PIDs, one of which (`mic_status`) drove the live `micro_autoswitch`
+     feature.
 
 The specs are not redistributable and live outside this repo, so these tests
 lock the conclusions rather than re-deriving them — see the profiles' own
@@ -122,3 +132,74 @@ def test_the_two_nova_7_families_disagree_on_the_battery_scale():
 
     assert gen1.status_parse["headset_battery_charge"].init_kwargs["perc_max"] == 4
     assert gen2.status_parse["headset_battery_charge"].init_kwargs["perc_max"] == 100
+
+
+# base_arctis_nova_7_tx.device, `(struct headset_status)` (incoming): seven
+# fields — report_id, command, connection_status, battery_status,
+# charging_status, game_chatmix_level, chat_chatmix_level — ending at ASM
+# offset 0x05 (spec field index minus one, no report id in these buffers).
+# There is no field beyond that: no offset 0x06 through 0x09, not even
+# padding. arctis_nova_7p_tx.device:8 includes this same base struct, so the
+# 7P shares the ceiling. RAPPORT-CHAOS-ASM.md HW-1.
+GEN1_NOVA7_LAST_DEFINED_OFFSET = {
+    "nova_7_discrete_battery.yaml": 0x05,
+    "nova_7p_discrete_battery.yaml": 0x05,
+}
+
+# The four keys HW-1 found reading past the end of the frame. Kept as an
+# explicit list (rather than "whatever the mapping now contains") so the test
+# names exactly what regressing looks like.
+GEN1_NOVA7_FABRICATED_KEYS = (
+    "bluetooth_connection", "bluetooth_power_status",
+    "bluetooth_auto_mute", "mic_status",
+)
+
+
+@pytest.mark.parametrize("profile,last_offset",
+                          sorted(GEN1_NOVA7_LAST_DEFINED_OFFSET.items()))
+def test_no_status_variable_reads_past_the_gen_1_nova_7_frame(profile, last_offset):
+    """Nothing may be read from an offset the spec doesn't define at all — not
+    even as padding. A future profile mapping offset 0x06+ here, or filing a
+    new PID under one of these two profiles, must fail this test rather than
+    reintroduce HW-1.
+    """
+    config = _config(profile)
+    mapping = _mapping(config, 0xB0)
+
+    offsets = {v: k for k, v in mapping.__dict__.items()
+               if isinstance(v, int) and k != "starts_with"}
+
+    out_of_range = {off: name for off, name in offsets.items() if off > last_offset}
+    assert not out_of_range, (
+        f"{profile} reads {out_of_range} beyond offset {last_offset:#04x}, "
+        "which is the last field base_arctis_nova_7_tx.device's "
+        "headset_status struct defines"
+    )
+
+
+@pytest.mark.parametrize("profile", sorted(GEN1_NOVA7_LAST_DEFINED_OFFSET))
+def test_gen_1_nova_7_fabricated_keys_are_gone_entirely(profile):
+    """A leftover status_parse entry or representation row would outlive the
+    mapping and show up as an empty row rather than nothing at all — the same
+    shape of regression the Gen 2 test above guards against."""
+    config = _config(profile)
+    mapping = _mapping(config, 0xB0)
+
+    mapped_names = {k for k, v in mapping.__dict__.items()
+                     if isinstance(v, int) and k != "starts_with"}
+
+    for key in GEN1_NOVA7_FABRICATED_KEYS:
+        assert key not in mapped_names
+        assert key not in config.status_parse
+        for section in config.status.representation.values():
+            assert key not in section
+
+
+@pytest.mark.parametrize("profile", sorted(GEN1_NOVA7_LAST_DEFINED_OFFSET))
+def test_gen_1_nova_7_has_no_empty_mic_or_bluetooth_section_left(profile):
+    """Both profiles' `mic` and `bluetooth` representation sections held only
+    fabricated variables — the sections go with them, not just their rows."""
+    config = _config(profile)
+
+    assert "mic" not in config.status.representation
+    assert "bluetooth" not in config.status.representation

@@ -39,16 +39,24 @@ device:
         media_mix: 0x01
         chat_mix: 0x02
 
+      # base_arctis_nova_7_tx.device, `(struct headset_status)` (incoming):
+      # report_id, command, connection_status, battery_status, charging_status,
+      # game_chatmix_level, chat_chatmix_level — seven fields, none of them
+      # padding, ending at ASM offset 0x05 (spec field index minus one, since
+      # these buffers carry no report id). There is no field 6, 7, 8 or 9 —
+      # not even declared unused. bluetooth_connection / bluetooth_power_status
+      # / bluetooth_auto_mute / mic_status used to be read from those
+      # nonexistent offsets and always returned a plausible-looking value from
+      # whatever the buffer happened to hold (zero-filled in practice). This
+      # family's `bluetooth_startup` (0xB2) and `bt_call_default` (0xB3) are
+      # api-write-only in the same spec, so there is nothing to read back —
+      # the corresponding settings below stay write-only, with no live status.
       - starts_with: 0xb0
         headset_power_status: 0x01
         headset_battery_charge: 0x02
         cable_charging: 0x03
         media_mix: 0x04
         chat_mix: 0x05
-        bluetooth_connection: 0x06
-        bluetooth_power_status: 0x07
-        bluetooth_auto_mute: 0x08
-        mic_status: 0x09
 
     representation:
       headset:
@@ -57,12 +65,6 @@ device:
         - chat_mix
         - media_mix
         - cable_charging
-      mic:
-        - mic_status
-      bluetooth:
-        - bluetooth_power_status
-        - bluetooth_auto_mute
-        - bluetooth_connection
 
   # On-device 10-band EQ (eq, opcode 0x33): one gain byte per band. GG derives
   # it as 2 * (10 + gain_dB), which is exactly ASM's 0-40 slider scale.
@@ -177,24 +179,3 @@ device:
       type: percentage
       perc_min: 0
       perc_max: 100
-    bluetooth_connection:
-      type: int_str_mapping
-      values:
-        0x00: off
-        0x02: connected
-        0x03: disconnected
-    bluetooth_power_status:
-      type: on_off
-      off: 0x01
-      on: 0x00
-    bluetooth_auto_mute:
-      type: int_str_mapping
-      values:
-        0x00: off
-        0x01: -12db
-        0x02: on
-    mic_status:
-      type: int_str_mapping
-      values:
-        0x01: muted
-        0x00: unmuted
