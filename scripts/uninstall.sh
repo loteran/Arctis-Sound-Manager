@@ -88,7 +88,13 @@ while [ $# -gt 0 ]; do
                     err "Could not fetch the usage text from $SELF_URL"
                     exit 1
                 }
-                printf '%s\n' "$_usage" | sed -n '2,${/^#/!q; s/^# \?//; p}'
+                # Fed to sed WITHOUT a pipe. Fixing the curl side above left
+                # the pipe itself in place, so `q` simply moved the corpse:
+                # printf is now the one writing into a closed pipe, dies of
+                # SIGPIPE, and pipefail exits the whole script 141 before the
+                # `exit 0` below is ever reached. A here-string has no second
+                # process to kill.
+                sed -n '2,${/^#/!q; s/^# \?//; p}' <<<"$_usage"
             fi
             exit 0 ;;
         *) err "Unknown argument: $1"; exit 2 ;;
