@@ -356,6 +356,71 @@ class TestEnsureLoopbackLink:
         assert ok is False
         assert calls == []
 
+    # ── CHA-1: a duplicate node.name must never be linked to ──────────────
+    #
+    # PipeWire does not enforce uniqueness of node.name. The pre-fix code
+    # built a plain dict keyed by name — last-writer-wins — so a second node
+    # sharing the real EQ's name (a bug, or an impostor started by an
+    # unrelated/hostile process) would silently win the lookup, get linked
+    # to, and be reported as success. Reproduced live against
+    # effect_input.sonar-media-eq — see RAPPORT-CHAOS-ASM.md CHA-1.
+
+    def test_refuses_to_link_when_target_name_is_duplicated(self, monkeypatch, caplog):
+        """Two nodes named effect_input.sonar-media-eq exist (id 200 real,
+        id 264 impostor) — must refuse outright, not silently pick either."""
+        calls = _patch_pwlink(monkeypatch)
+        data = _stereo_graph()
+        # Impostor: same node.name as the real target, different id/ports.
+        data.append(_node(264, "effect_input.sonar-media-eq"))
+        data.append(_port(2641, 264, "in", "FL"))
+        data.append(_port(2642, 264, "in", "FR"))
+
+        with caplog.at_level("ERROR"):
+            ok = pw_utils.ensure_loopback_link(
+                "Arctis_Media_sink_out", "effect_input.sonar-media-eq", data=data,
+            )
+
+        assert ok is False
+        assert calls == [], "a duplicate name must not be linked to at all, not even the real one"
+        assert any(
+            "effect_input.sonar-media-eq" in rec.message and "2" in rec.message
+            for rec in caplog.records if rec.levelname == "ERROR"
+        ), "the ambiguity must be logged loudly, not just silently refused"
+
+    def test_refuses_to_link_when_playback_name_is_duplicated(self, monkeypatch, caplog):
+        """Same hazard on the playback side: two nodes named
+        Arctis_Media_sink_out — refuse rather than guess which is real."""
+        calls = _patch_pwlink(monkeypatch)
+        data = _stereo_graph()
+        data.append(_node(150, "Arctis_Media_sink_out"))
+        data.append(_port(1501, 150, "out", "FL"))
+        data.append(_port(1502, 150, "out", "FR"))
+
+        with caplog.at_level("ERROR"):
+            ok = pw_utils.ensure_loopback_link(
+                "Arctis_Media_sink_out", "effect_input.sonar-media-eq", data=data,
+            )
+
+        assert ok is False
+        assert calls == []
+        assert any(rec.levelname == "ERROR" for rec in caplog.records)
+
+    def test_unrelated_duplicate_name_does_not_block_an_unrelated_link(self, monkeypatch):
+        """A duplicate name elsewhere in the graph, that is neither the
+        playback nor the target of this call, must not affect it — the
+        refusal is specific to the ambiguous name(s) actually being resolved."""
+        calls = _patch_pwlink(monkeypatch)
+        data = _stereo_graph()
+        data.append(_node(999, "some_other_node"))
+        data.append(_node(998, "some_other_node"))  # duplicate, but irrelevant here
+
+        ok = pw_utils.ensure_loopback_link(
+            "Arctis_Media_sink_out", "effect_input.sonar-media-eq", data=data,
+        )
+        assert ok is True
+        created = {(c[1], c[2]) for c in calls if "-d" not in c}
+        assert created == {("101", "201"), ("102", "202")}
+
 
 # ── ensure_capture_link (issue #127) ──────────────────────────────────────────
 #
@@ -442,6 +507,34 @@ class TestEnsureCaptureLink:
         ok = pw_utils.ensure_capture_link(self._SOURCE, self._CAPTURE, data=data)
         assert ok is False
         assert calls == []
+
+    # ── CHA-1, input-side counterpart ──────────────────────────────────────
+
+    def test_refuses_to_link_when_capture_name_is_duplicated(self, monkeypatch, caplog):
+        calls = _patch_pwlink(monkeypatch)
+        data = _mono_capture_graph()
+        data.append(_node(264, self._CAPTURE))
+        data.append(_port(2641, 264, "in", "MONO"))
+
+        with caplog.at_level("ERROR"):
+            ok = pw_utils.ensure_capture_link(self._SOURCE, self._CAPTURE, data=data)
+
+        assert ok is False
+        assert calls == []
+        assert any(rec.levelname == "ERROR" for rec in caplog.records)
+
+    def test_refuses_to_link_when_source_name_is_duplicated(self, monkeypatch, caplog):
+        calls = _patch_pwlink(monkeypatch)
+        data = _mono_capture_graph()
+        data.append(_node(350, self._SOURCE))
+        data.append(_port(3501, 350, "out", "MONO"))
+
+        with caplog.at_level("ERROR"):
+            ok = pw_utils.ensure_capture_link(self._SOURCE, self._CAPTURE, data=data)
+
+        assert ok is False
+        assert calls == []
+        assert any(rec.levelname == "ERROR" for rec in caplog.records)
 
 
 # ── set_filter_gain (Phase 2, issue #100/#88) ─────────────────────────────────
@@ -561,3 +654,23 @@ class TestParsePwDumpOutput:
         result = pw_utils._pw_dump()
 
         assert result == []
+
+
+def test_relink_refuses_a_duplicated_target_name(monkeypatch):
+    """CHA-1, third site: relink_loopback_playback writes target.object *by
+    name* into WirePlumber metadata, so an impostor picked here outlives the
+    tick — it survives filter-chain restarts and reboots. Ambiguity must
+    refuse, not pick the last one seen in the dump."""
+    dump = [
+        _node(10, "Arctis_Game_sink_out"),
+        _node(20, "effect_input.sonar-game-eq"),
+        _node(21, "effect_input.sonar-game-eq"),   # impostor, same name
+    ]
+    calls = []
+    monkeypatch.setattr(pw_utils, "_pw_run", lambda cmd, **kw: calls.append(cmd))
+
+    ok = pw_utils.relink_loopback_playback(
+        "Arctis_Game_sink_out", "effect_input.sonar-game-eq", data=dump)
+
+    assert ok is False
+    assert calls == [], "no metadata may be written while the target is ambiguous"

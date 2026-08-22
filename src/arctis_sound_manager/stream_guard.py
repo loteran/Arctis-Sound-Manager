@@ -184,6 +184,46 @@ def links_to_cut(
     return doomed
 
 
+def link_ports(dump: list, link_ids: list[int]) -> list[tuple[int, int]]:
+    """Map each id in *link_ids* to its ``(output-port, input-port)`` pair.
+
+    This is the hand-off point for a safe destroy (issue CHA-3). A link's
+    PipeWire object id is not a safe handle to carry from this ``pw-dump``
+    snapshot to a later, separate destroy call: PipeWire recycles global ids
+    within seconds on a churning graph — exactly the situation here, since
+    Discord relinks continuously while a share is up — so by the time a
+    caller acts on a link id it can name a completely different object, of
+    any type, not necessarily even a link any more. Destroying it via
+    ``pw-cli destroy <id>`` then destroys whatever now holds that id
+    (reproduced live: a stale id landed on ``Arctis_Game`` and took the
+    whole sink down, scattering every pinned stream).
+
+    A ``(output-port, input-port)`` pair is content-addressed instead:
+    ``pw-link -d <out> <in>`` only ever destroys the link presently
+    connecting those two exact ports, and fails harmlessly if that link (or
+    either port) is already gone — which is the ordinary, expected case
+    here, since Discord may have torn the link down itself in the meantime.
+
+    Ids absent from *dump*, or whose Link object lacks usable port props,
+    are silently skipped: nothing to destroy either way. The result
+    preserves the order of *link_ids* and may be shorter than it.
+    """
+    wanted = set(link_ids)
+    pairs: dict[int, tuple[int, int]] = {}
+    for obj in dump:
+        if obj.get("type") != _LINK_TYPE:
+            continue
+        link_id = obj.get("id")
+        if link_id not in wanted:
+            continue
+        props = (obj.get("info") or {}).get("props", {})
+        out_port = props.get("link.output.port")
+        in_port = props.get("link.input.port")
+        if isinstance(out_port, int) and isinstance(in_port, int):
+            pairs[link_id] = (out_port, in_port)
+    return [pairs[lid] for lid in link_ids if lid in pairs]
+
+
 def describe_cut(dump: list, link_ids: list[int]) -> list[str]:
     """Human-readable ``source -> capture`` labels for *link_ids*, for logging."""
     node_names = _index_nodes(dump)

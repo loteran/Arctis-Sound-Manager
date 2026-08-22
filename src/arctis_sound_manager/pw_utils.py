@@ -829,18 +829,16 @@ def relink_loopback_playback(playback_name: str, target_name: str, data: list | 
         if data is None:
             data = _pw_dump()
 
-        playback_id: int | None = None
-        target_id: int | None = None
-
-        for obj in data:
-            if not obj.get("type", "").endswith("Node"):
-                continue
-            props = obj.get("info", {}).get("props", {})
-            name = props.get("node.name", "")
-            if name == playback_name:
-                playback_id = obj["id"]
-            elif name == target_name:
-                target_id = obj["id"]
+        # Resolve both names through the ambiguity-refusing lookup (CHA-1).
+        # A duplicate name matters more here than anywhere else: the second
+        # pw-metadata write below stores target.object *by name*, so a node
+        # impersonating the target would keep the hijack across
+        # filter-chain restarts and reboots, not just for this tick.
+        nodes_by_name = _index_nodes_by_name(data)
+        playback_id = _resolve_unique_node_id(
+            nodes_by_name, playback_name, "relink_loopback_playback")
+        target_id = _resolve_unique_node_id(
+            nodes_by_name, target_name, "relink_loopback_playback target")
 
         if playback_id is None:
             logger.warning("relink_loopback_playback: '%s' not found in pw-dump", playback_name)
@@ -981,6 +979,56 @@ def retarget_output(target_name: str, data: list | None = None) -> bool:
     return ensure_loopback_link(SONAR_OUTPUT_NODE, target_name, data=data)
 
 
+def _index_nodes_by_name(data: list) -> dict[str, list[int]]:
+    """Group every Node's id by its ``node.name``.
+
+    PipeWire does not enforce uniqueness of ``node.name`` — nothing stops an
+    unrelated (or actively hostile) process from creating a node that shares
+    the name of one ASM owns (issue CHA-1, reproduced live: a
+    ``pw-loopback`` started with
+    ``node.name=effect_input.sonar-media-eq`` hijacked the real Sonar Media
+    EQ's link). A plain ``dict[str, int]`` built by iterating the dump is
+    last-writer-wins — whichever node happens to appear last silently
+    becomes "the" node of that name. Returning every id per name instead
+    lets the caller (:func:`_resolve_unique_node_id`) detect and refuse the
+    ambiguous case rather than guess.
+    """
+    index: dict[str, list[int]] = {}
+    for obj in data:
+        if not obj.get("type", "").endswith("Node"):
+            continue
+        props = obj.get("info", {}).get("props", {})
+        name = props.get("node.name", "")
+        if name:
+            index.setdefault(name, []).append(obj["id"])
+    return index
+
+
+def _resolve_unique_node_id(
+    nodes_by_name: dict[str, list[int]], name: str, caller: str,
+) -> int | None:
+    """Resolve *name* to exactly one node id, refusing ambiguity outright.
+
+    Returns ``None`` both when *name* is absent (the ordinary "not up yet"
+    case, left to the caller to log at debug level) and when it is
+    ambiguous. The ambiguous case is logged here, loudly, because it is
+    never a benign race the way a missing node is: a duplicate ASM node
+    name in the graph is always a fault — either a bug spawning the same
+    node twice, or another process impersonating one of ours — and picking
+    either candidate would silently link the wrong one.
+    """
+    ids = nodes_by_name.get(name, [])
+    if len(ids) > 1:
+        logger.error(
+            "%s: refusing to link '%s' — %d nodes share this name in the "
+            "graph (ids=%s); a duplicate node.name is always a fault, "
+            "never a legitimate race — investigate what created it",
+            caller, name, len(ids), sorted(ids),
+        )
+        return None
+    return ids[0] if ids else None
+
+
 def ensure_loopback_link(
     playback_name: str, target_name: str, data: list | None = None,
     outcome: dict | None = None,
@@ -1026,22 +1074,20 @@ def ensure_loopback_link(
         if data is None:
             data = _pw_dump()
 
-        node_ids: dict[str, int] = {}
-        for obj in data:
-            if not obj.get("type", "").endswith("Node"):
-                continue
-            props = obj.get("info", {}).get("props", {})
-            name = props.get("node.name", "")
-            if name:
-                node_ids[name] = obj["id"]
-
-        playback_id = node_ids.get(playback_name)
-        target_id = node_ids.get(target_name)
+        nodes_by_name = _index_nodes_by_name(data)
+        playback_id = _resolve_unique_node_id(nodes_by_name, playback_name, "ensure_loopback_link")
+        target_id = _resolve_unique_node_id(nodes_by_name, target_name, "ensure_loopback_link")
         if playback_id is None:
-            logger.debug("ensure_loopback_link: playback '%s' not in graph", playback_name)
+            logger.debug(
+                "ensure_loopback_link: playback '%s' not in graph (or "
+                "ambiguous — see any error above)", playback_name,
+            )
             return False
         if target_id is None:
-            logger.debug("ensure_loopback_link: target '%s' not in graph", target_name)
+            logger.debug(
+                "ensure_loopback_link: target '%s' not in graph (or "
+                "ambiguous — see any error above)", target_name,
+            )
             return False
 
         out_ports = _node_ports(data, playback_id, "out")
@@ -1205,21 +1251,14 @@ def ensure_capture_link(
         if data is None:
             data = _pw_dump()
 
-        node_ids: dict[str, int] = {}
-        node_classes: dict[str, str] = {}
-        for obj in data:
-            if not obj.get("type", "").endswith("Node"):
-                continue
-            props = obj.get("info", {}).get("props", {})
-            name = props.get("node.name", "")
-            if name:
-                node_ids[name] = obj["id"]
-                node_classes[name] = props.get("media.class", "")
-
-        source_id = node_ids.get(source_name)
-        capture_id = node_ids.get(capture_name)
+        nodes_by_name = _index_nodes_by_name(data)
+        source_id = _resolve_unique_node_id(nodes_by_name, source_name, "ensure_capture_link")
+        capture_id = _resolve_unique_node_id(nodes_by_name, capture_name, "ensure_capture_link")
         if source_id is None:
-            logger.debug("ensure_capture_link: source '%s' not in graph", source_name)
+            logger.debug(
+                "ensure_capture_link: source '%s' not in graph (or ambiguous "
+                "— see any error above)", source_name,
+            )
             return False
 
         # A sink's "output" ports are its monitor: linking one here does not
@@ -1228,14 +1267,26 @@ def ensure_capture_link(
         # mic then transmits their desktop audio. Refused outright rather than
         # trusted to the callers — this is the one mistake on the input side
         # that is inaudible to the person making it.
-        if node_classes.get(source_name, "") == "Audio/Sink":
+        #
+        # Looked up by the already-resolved source_id, not by name: a second
+        # name→media.class dict would carry the exact same last-writer-wins
+        # hazard _resolve_unique_node_id exists to close (issue CHA-1).
+        source_class = ""
+        for obj in data:
+            if obj.get("type", "").endswith("Node") and obj.get("id") == source_id:
+                source_class = obj.get("info", {}).get("props", {}).get("media.class", "")
+                break
+        if source_class == "Audio/Sink":
             logger.error(
                 "ensure_capture_link: refusing to feed '%s' from '%s' — that is "
                 "an output, and its monitor would be transmitted as the "
                 "microphone", capture_name, source_name)
             return False
         if capture_id is None:
-            logger.debug("ensure_capture_link: capture '%s' not in graph", capture_name)
+            logger.debug(
+                "ensure_capture_link: capture '%s' not in graph (or ambiguous "
+                "— see any error above)", capture_name,
+            )
             return False
 
         out_ports = _node_ports(data, source_id, "out")

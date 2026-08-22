@@ -34,7 +34,8 @@ from arctis_sound_manager.pw_utils import _abs_exe, _pw_run, _parse_pw_dump_outp
 from arctis_sound_manager.stream_guard import (CONFIG_FILE,
                                                DEFAULT_CAPTURE_NODES,
                                                GuardConfig, describe_cut,
-                                               links_to_cut, load_config)
+                                               link_ports, links_to_cut,
+                                               load_config)
 
 configure_logging(default=logging.INFO, fmt="[%(levelname)s] %(message)s")
 log = logging.getLogger("stream_guard")
@@ -102,23 +103,36 @@ def _pw_dump() -> list:
         return []
 
 
-def _destroy_links(link_ids: list[int]) -> int:
-    """Destroy each link by id; returns how many calls succeeded.
+def _destroy_links(dump: list, link_ids: list[int]) -> int:
+    """Destroy each doomed link, identified by its ports rather than its id.
 
-    Failures are expected and benign: Discord may have already torn the link
-    down between our dump and this call, in which case the id is simply gone.
+    Returns how many destroy calls succeeded. Failures are expected and
+    benign: Discord may have already torn the link down between our dump and
+    this call, in which case the port pair simply names nothing any more.
+
+    Destroying by id (``pw-cli destroy <id>``) used to be a use-after-free on
+    the graph: PipeWire recycles global ids within seconds, especially on a
+    graph Discord keeps churning by relinking continuously, so an id captured
+    in *dump* can name a different object — of any type, not only another
+    link — by the time this runs (issue CHA-3, reproduced live: a stale id
+    landed on ``Arctis_Game`` and killed the sink outright). ``link_ports``
+    converts each id to its ``(output-port, input-port)`` pair from this same
+    *dump* first, and destruction goes through ``pw-link -d out in``, which
+    is content-addressed: it only ever removes the link presently connecting
+    those two exact ports.
     """
     destroyed = 0
-    for lid in link_ids:
+    for out_port, in_port in link_ports(dump, link_ids):
         try:
-            r = _pw_run(["pw-cli", "destroy", str(lid)],
+            r = _pw_run(["pw-link", "-d", str(out_port), str(in_port)],
                         capture_output=True, text=True, timeout=3)
             if r.returncode == 0:
                 destroyed += 1
             else:
-                log.debug("destroy %d failed: %s", lid, (r.stderr or "").strip())
+                log.debug("destroy %d->%d failed: %s", out_port, in_port,
+                          (r.stderr or "").strip())
         except Exception as exc:
-            log.debug("destroy %d raised: %s", lid, exc)
+            log.debug("destroy %d->%d raised: %s", out_port, in_port, exc)
     return destroyed
 
 
@@ -152,7 +166,7 @@ def process_tick() -> tuple[int, bool]:
         return 0, active
     for label in describe_cut(dump, doomed):
         log.info("Cutting from stream: %s", label)
-    return _destroy_links(doomed), active
+    return _destroy_links(dump, doomed), active
 
 
 # ── singleton ──────────────────────────────────────────────────────────────

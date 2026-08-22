@@ -403,6 +403,50 @@ def _capture_node_name(argv: list[str]) -> str | None:
     return None
 
 
+def _real_exe_matches(proc_root: str, pid: int, expected_exe: str) -> bool:
+    """True when ``/proc/<pid>/exe`` resolves to the same binary as *expected_exe*.
+
+    ``argv[0]`` (what :func:`_find_orphan_pw_loopback_pids` used to trust
+    exclusively) is chosen by the process itself: ``execve()`` lets any
+    program claim to be ``pw-loopback`` while being anything else (reproduced
+    live: a Python process exec'd with
+    ``argv[0] = "/opt/vendor/bin/pw-loopback"`` and a matching
+    ``--capture-props`` was selected for SIGTERM/SIGKILL). ``/proc/<pid>/exe``
+    is a kernel-maintained symlink to the file that was actually executed and
+    cannot be spoofed by the process — this is the real identity check,
+    ``argv[0]`` is only used afterwards to read *which* channel a confirmed
+    pw-loopback claims to be capturing.
+
+    *expected_exe* should already be resolved (e.g. from
+    :func:`_pw_loopback_exe`). Both sides go through ``os.path.realpath`` so
+    a symlink farm on either side (or on neither, in tests) does not cause a
+    false mismatch.
+    """
+    try:
+        real = os.readlink(os.path.join(proc_root, str(pid), "exe"))
+    except (FileNotFoundError, PermissionError, OSError):
+        return False
+    try:
+        return os.path.realpath(real) == os.path.realpath(expected_exe)
+    except OSError:
+        return False
+
+
+def _proc_uid_matches_ours(proc_root: str, pid: int) -> bool:
+    """True when *pid* is owned by the same uid this process runs as.
+
+    A second, cheap check alongside :func:`_real_exe_matches`: even a
+    genuine ``pw-loopback`` binary running as a different user is not one of
+    ASM's own children (this daemon never spawns loopbacks as anyone else),
+    so it should not be reaped either.
+    """
+    try:
+        st = os.stat(os.path.join(proc_root, str(pid)))
+    except (FileNotFoundError, PermissionError, OSError):
+        return False
+    return st.st_uid == os.getuid()
+
+
 def _find_orphan_pw_loopback_pids(
     capture_name: str, exclude_pids: "set[int]"
 ) -> list[tuple[int, str]]:
@@ -446,6 +490,24 @@ def _find_orphan_pw_loopback_pids(
             continue
         exe = argv[0]
         if not (exe == "pw-loopback" or exe.endswith("/pw-loopback")):
+            continue
+        # argv[0] is self-declared and proves nothing (issue CHA-9) — confirm
+        # against the kernel's own record of what was execve()'d, and that it
+        # runs as us, before treating this pid as an ASM-owned loopback.
+        if not _real_exe_matches(_PROC_ROOT, pid, _pw_loopback_exe()):
+            _log.warning(
+                "pid=%d declares argv[0]=%r but /proc/%d/exe does not "
+                "resolve to the real pw-loopback binary — refusing to "
+                "treat it as ours",
+                pid, exe, pid,
+            )
+            continue
+        if not _proc_uid_matches_ours(_PROC_ROOT, pid):
+            _log.warning(
+                "pid=%d is a real pw-loopback but not owned by our uid — "
+                "refusing to treat it as ours",
+                pid,
+            )
             continue
         name = _capture_node_name(argv)
         if name == capture_name:
@@ -495,9 +557,14 @@ def _terminate_orphan_pid(pid: int, node_name: str) -> None:
     # cmdline closes that window — the scan's own kill path has no equivalent
     # exposure because it signals immediately after reading.
     argv = _read_proc_cmdline(_PROC_ROOT, pid)
-    if not argv or _capture_node_name(argv) != node_name:
+    if (
+        not argv
+        or _capture_node_name(argv) != node_name
+        or not _real_exe_matches(_PROC_ROOT, pid, _pw_loopback_exe())
+    ):
         _log.debug(
-            "Orphan loopback pid=%d is no longer node.name=%s — not escalating to SIGKILL",
+            "Orphan loopback pid=%d is no longer node.name=%s (or no longer "
+            "a real pw-loopback) — not escalating to SIGKILL",
             pid, node_name,
         )
         return

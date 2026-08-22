@@ -27,6 +27,13 @@ from arctis_sound_manager.loopback_manager import (
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
+# Stand-in for "the real pw-loopback binary" throughout this module — see
+# _isolated_proc_root and _write_fake_proc. Deliberately not a path that is
+# likely to exist for real, so a test forgetting to symlink it fails loudly
+# (FileNotFoundError from os.readlink, not an accidental real-world match).
+_FAKE_PW_LOOPBACK_EXE = "/opt/test-fixtures/bin/pw-loopback"
+
+
 @pytest.fixture(autouse=True)
 def _isolated_proc_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Prevent every test in this module from touching the real ``/proc``.
@@ -44,6 +51,13 @@ def _isolated_proc_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path
     root = tmp_path / "proc"
     root.mkdir()
     monkeypatch.setattr(loopback_manager_module, "_PROC_ROOT", str(root))
+    # Pin what "the real pw-loopback binary" means for this test run, so the
+    # /proc/<pid>/exe identity check (issue CHA-9) has something stable to
+    # compare against regardless of what is actually installed on the
+    # machine running the suite. _write_fake_proc's default `exe=` matches
+    # this, so every existing orphan in this module is a genuine match
+    # unless a test deliberately writes a different one.
+    monkeypatch.setattr(loopback_manager_module, "_PW_LOOPBACK_EXE", _FAKE_PW_LOOPBACK_EXE)
     return root
 
 
@@ -86,16 +100,28 @@ def all_sonar_specs(game_spec, chat_spec, media_spec) -> list[LoopbackSpec]:
     return [game_spec, chat_spec, media_spec]
 
 
-def _write_fake_proc(root: Path, pid: int, argv: list[str]) -> None:
-    """Create a fake ``/proc/<pid>/cmdline`` entry with the given argv.
+def _write_fake_proc(
+    root: Path, pid: int, argv: list[str], exe: str | None = _FAKE_PW_LOOPBACK_EXE,
+) -> None:
+    """Create a fake ``/proc/<pid>/cmdline`` (and, by default, ``exe``) entry.
 
-    Mirrors the real procfs format: argv elements joined by NUL bytes, with
-    a trailing NUL after the last element.
+    ``cmdline`` mirrors the real procfs format: argv elements joined by NUL
+    bytes, with a trailing NUL after the last element.
+
+    ``exe`` is a symlink standing in for the kernel-maintained
+    ``/proc/<pid>/exe`` — the identity check added for CHA-9. It defaults to
+    :data:`_FAKE_PW_LOOPBACK_EXE`, matching what ``_isolated_proc_root``
+    pins ``_PW_LOOPBACK_EXE`` to, so every existing orphan built by this
+    helper is (unless a test overrides ``argv[0]``'s claim on purpose) a
+    genuine pw-loopback. Pass a different value, or ``None`` to omit the
+    symlink entirely, to exercise the mismatch/missing cases.
     """
     pid_dir = root / str(pid)
     pid_dir.mkdir()
     data = b"\x00".join(arg.encode() for arg in argv) + b"\x00"
     (pid_dir / "cmdline").write_bytes(data)
+    if exe is not None:
+        (pid_dir / "exe").symlink_to(exe)
 
 
 def _mock_proc(returncode: int | None = None) -> MagicMock:
@@ -1031,6 +1057,110 @@ class TestOrphanReaping:
 
         mock_popen.assert_called_once()
         assert mgr.is_running("game")
+
+    def test_argv0_claiming_pw_loopback_but_exe_says_otherwise_is_not_killed(
+        self, game_spec: LoopbackSpec, _isolated_proc_root: Path
+    ) -> None:
+        """CHA-9: argv[0] is chosen by the process itself and proves nothing.
+        A process exec'd with argv[0]="/opt/vendor/bin/pw-loopback" (and a
+        matching --capture-props) but whose real /proc/<pid>/exe points at a
+        different binary must never be reaped."""
+        impostor_pid = 40011
+        _write_fake_proc(
+            _isolated_proc_root, impostor_pid,
+            [
+                "/opt/vendor/bin/pw-loopback",
+                "--capture-props=node.name=Arctis_Game media.class=Audio/Sink",
+            ],
+            exe="/usr/bin/python3.14",  # the kernel's actual answer
+        )
+
+        with patch("os.kill") as mock_kill, \
+                patch("subprocess.Popen", return_value=_mock_proc()):
+            mgr = LoopbackManager()
+            mgr.start(game_spec)
+
+        killed_pids = {c.args[0] for c in mock_kill.call_args_list}
+        assert impostor_pid not in killed_pids
+
+    def test_missing_exe_symlink_is_not_treated_as_ours(
+        self, game_spec: LoopbackSpec, _isolated_proc_root: Path
+    ) -> None:
+        """No readable /proc/<pid>/exe (permission denied, or the entry is
+        already gone) must fail closed — never reaped on argv[0] alone."""
+        unreadable_pid = 40012
+        _write_fake_proc(
+            _isolated_proc_root, unreadable_pid,
+            ["/usr/bin/pw-loopback",
+             "--capture-props=node.name=Arctis_Game media.class=Audio/Sink"],
+            exe=None,
+        )
+
+        with patch("os.kill") as mock_kill, \
+                patch("subprocess.Popen", return_value=_mock_proc()):
+            mgr = LoopbackManager()
+            mgr.start(game_spec)
+
+        killed_pids = {c.args[0] for c in mock_kill.call_args_list}
+        assert unreadable_pid not in killed_pids
+
+    def test_uid_mismatch_helper_rejects_different_owner(
+        self, _isolated_proc_root: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Unit-level check of the second, cheap guard: a real pw-loopback
+        owned by a different uid than this process is still not ours."""
+        pid = 40013
+        _write_fake_proc(_isolated_proc_root, pid, ["/usr/bin/pw-loopback"])
+        assert loopback_manager_module._proc_uid_matches_ours(str(_isolated_proc_root), pid) is True
+
+        monkeypatch.setattr(os, "getuid", lambda: -1)
+        assert loopback_manager_module._proc_uid_matches_ours(str(_isolated_proc_root), pid) is False
+
+    def test_sigkill_is_not_sent_when_recycled_pid_fakes_the_same_capture_name(
+        self, game_spec: LoopbackSpec, _isolated_proc_root: Path
+    ) -> None:
+        """Same hazard as test_sigkill_is_not_sent_to_a_recycled_pid, but the
+        process that inherits the pid after SIGTERM also mimics
+        node.name=Arctis_Game — which alone would pass the pre-existing
+        re-identify check. Only the /proc/<pid>/exe check added for CHA-9
+        tells the impostor apart from the real orphan."""
+        orphan_pid = 40014
+        _write_fake_proc(_isolated_proc_root, orphan_pid, [
+            "/usr/bin/pw-loopback",
+            "--capture-props=node.name=Arctis_Game media.class=Audio/Sink",
+        ])
+
+        def _kill_recycled_with_impostor(pid: int, sig: int) -> None:
+            if sig == signal.SIGTERM:
+                # Orphan dies; an unrelated process inherits the pid and
+                # deliberately mimics both argv[0] and node.name, but is a
+                # different binary under the hood.
+                (_isolated_proc_root / str(orphan_pid) / "cmdline").write_bytes(
+                    b"/usr/bin/pw-loopback\x00"
+                    b"--capture-props=node.name=Arctis_Game media.class=Audio/Sink\x00"
+                )
+                (_isolated_proc_root / str(orphan_pid) / "exe").unlink()
+                (_isolated_proc_root / str(orphan_pid) / "exe").symlink_to("/usr/bin/python3.14")
+            return None
+
+        def _fake_monotonic(values=iter([0.0, 0.0, 99.0, 99.0])):
+            try:
+                return next(values)
+            except StopIteration:
+                return 99.0
+
+        with patch("os.kill", side_effect=_kill_recycled_with_impostor) as mock_kill, \
+                patch("time.monotonic", side_effect=_fake_monotonic), \
+                patch("time.sleep"), \
+                patch("subprocess.Popen", return_value=_mock_proc()):
+            mgr = LoopbackManager()
+            mgr.start(game_spec)
+
+        signals_sent = {(c.args[0], c.args[1]) for c in mock_kill.call_args_list}
+        assert (orphan_pid, signal.SIGTERM) in signals_sent
+        assert (orphan_pid, signal.SIGKILL) not in signals_sent, (
+            "SIGKILL must never land on a recycled pid just because it mimics node.name too"
+        )
 
     def test_restart_dead_also_reaps_orphans(
         self, media_spec: LoopbackSpec, _isolated_proc_root: Path
