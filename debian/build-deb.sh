@@ -4,17 +4,6 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-PKG="arctis-sound-manager"
-VERSION=$(python3 -c "
-import tomllib
-with open('pyproject.toml', 'rb') as f:
-    print(tomllib.load(f)['project']['version'])
-")
-ARCH="all"
-DEB_NAME="${PKG}_${VERSION}-1_${ARCH}.deb"
-PKGDIR="build/deb/${PKG}_${VERSION}-1_${ARCH}"
-PYLIB="${PKGDIR}/usr/lib/python3/dist-packages"
-
 # ── DEBIAN/control dependency fields ────────────────────────
 # Read from debian/control (the source of truth check-packaging-drift.py's
 # DEPS_MAP already validates) rather than hand-kept here a second time. The
@@ -68,12 +57,26 @@ if [ -z "${DEB_DEPENDS}" ]; then
 fi
 
 # Introspection mode for check-packaging-drift.py and the test suite: print
-# the derived Depends: and exit, without requiring uv/dpkg-deb to be
-# installed. Keep this above the pre-flight checks below.
+# the derived Depends: and exit. Deliberately the FIRST thing this script does
+# after the cd, because everything below it needs something the caller may not
+# have: VERSION is read with tomllib, which only exists from Python 3.11, so on
+# a runner still on 3.10 this exited 1 before printing anything and took three
+# tests with it. Introspection must not depend on being able to build.
 if [ "${1:-}" = "--print-depends" ]; then
     echo "${DEB_DEPENDS}"
     exit 0
 fi
+
+PKG="arctis-sound-manager"
+VERSION=$(python3 -c "
+import tomllib
+with open('pyproject.toml', 'rb') as f:
+    print(tomllib.load(f)['project']['version'])
+")
+ARCH="all"
+DEB_NAME="${PKG}_${VERSION}-1_${ARCH}.deb"
+PKGDIR="build/deb/${PKG}_${VERSION}-1_${ARCH}"
+PYLIB="${PKGDIR}/usr/lib/python3/dist-packages"
 
 echo "==> Building ${DEB_NAME} ..."
 

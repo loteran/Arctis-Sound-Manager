@@ -3112,6 +3112,13 @@ def test_corrupt_micro_conf_regenerates_from_saved_state_not_a_bypass(tmp_path, 
     monkeypatch.setattr(stp, "_CONF_DIR", conf_dir)
     monkeypatch.setattr(Path, "home", lambda: home)
     monkeypatch.setattr(stp, "_get_physical_in", lambda: "alsa_input.test-headset")
+    # The noise-reduction nodes are LADSPA, so on a machine without
+    # swh-plugins and noise-suppression-for-voice — every CI runner — the
+    # generator legitimately skips them and this test failed for a reason that
+    # has nothing to do with what it checks. Pin the lookup instead of
+    # depending on what happens to be installed.
+    monkeypatch.setattr(stp, "_ladspa_plugin_ref",
+                        lambda name, resolved=None: f"/fake/ladspa/{name}.so")
 
     fixed, _needs_pw_restart = check_and_fix_stale_configs()
     assert fixed is True
