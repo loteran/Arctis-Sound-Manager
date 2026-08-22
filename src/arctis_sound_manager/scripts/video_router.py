@@ -118,12 +118,52 @@ def get_headset_power(force: bool = False) -> HeadsetPower:
     return power
 
 
+# The virtual sink each channel's applications sit on. Defined here because
+# the internal-node remap below is derived from it rather than hand-listed.
+_CHANNEL_SINKS = {"game": "Arctis_Game", "chat": "Arctis_Chat",
+                  "media": "Arctis_Media"}
+
+
 # effect_input sinks are internal filter-chain nodes — apps should never
-# target them directly.  Remap to the corresponding Arctis virtual sink.
-_EFFECT_REMAP = {
-    "effect_input.sonar-game-eq": "Arctis_Game",
-    "effect_input.sonar-chat-eq": "Arctis_Chat",
+# target them directly. When one is seen as a manual move, save the channel
+# the user actually meant, not the internal node.
+#
+# Derived rather than listed: the hand-written table only ever covered game
+# and chat, so a manual move onto Media's EQ, Media's HeSuVi stage, the Output
+# EQ or the micro EQ was saved verbatim — which is how effect_input.* values
+# got into routing_overrides.json in the first place, the entries the prune
+# below then has to clean up. The comment said "never save effect_input
+# sinks"; the table only made that true for two of them.
+_INTERNAL_SINK_REMAP = {
+    **{f"effect_input.sonar-{channel}-eq": sink
+       for channel, sink in _CHANNEL_SINKS.items()},
+    # Each channel's HeSuVi stage sits downstream of its own channel sink.
+    "effect_input.virtual-surround-7.1-hesuvi": "Arctis_Game",
+    "effect_input.virtual-surround-7.1-hesuvi-media": "Arctis_Media",
 }
+
+# Internal nodes with no application-facing equivalent: the Output channel
+# feeds an external device rather than a channel apps sit on, and the micro EQ
+# is a capture node, not a sink. There is no honest override to save for
+# either, so a manual move onto one is not recorded at all — better than
+# inventing a target the user never chose.
+_INTERNAL_SINKS_NOT_SAVEABLE = frozenset({
+    "effect_input.sonar-output-eq",
+    "effect_input.sonar-micro-eq",
+})
+
+
+def _override_target(sink_name: str) -> str | None:
+    """The value to save for a manual move onto *sink_name*, or None.
+
+    None means "do not record this move". A foreign ``effect_input.*`` — a
+    filter-chain the user runs themselves — is returned unchanged: it is a
+    legitimate destination, and the prune above keeps it for as long as it is
+    in the graph.
+    """
+    if sink_name in _INTERNAL_SINKS_NOT_SAVEABLE:
+        return None
+    return _INTERNAL_SINK_REMAP.get(sink_name, sink_name)
 
 # Auto-routing: binaries that indicate a game (wine/proton/gamescope)
 _GAME_BINARIES = {"wine64-preloader", "wine-preloader", "wine", "wine64",
@@ -359,11 +399,6 @@ def _sink_name(sinks, index: int) -> str | None:
 
 CHANNEL_OUTPUTS_FILE = (Path.home() / ".config" / "arctis_manager"
                         / "channel_output_devices.json")
-
-# The virtual sink each channel's applications sit on.
-_CHANNEL_SINKS = {"game": "Arctis_Game", "chat": "Arctis_Chat",
-                  "media": "Arctis_Media"}
-
 
 def live_channel_sinks(present_sinks: set[str]) -> set[str]:
     """The channel sinks that still reach a device while the headset is off.
@@ -646,9 +681,14 @@ def _process_tick(pulse: pulsectl.Pulse) -> None:
         if key in _pa_placed and si.sink != _pa_placed[key]:
             current_name = _sink_name(sinks, si.sink)
             if current_name:
-                # Never save effect_input sinks as overrides
-                save_name = _EFFECT_REMAP.get(current_name, current_name)
-                if _confirm_manual_move(key, app, save_name, overrides, now=pa_now):
+                # Never save an internal filter-chain node as an override
+                save_name = _override_target(current_name)
+                if save_name is None:
+                    # Nothing meaningful to remember (Output EQ, micro EQ):
+                    # accept the placement so it stops being re-checked, but
+                    # write no override.
+                    _pa_placed[key] = si.sink
+                elif _confirm_manual_move(key, app, save_name, overrides, now=pa_now):
                     _pa_placed[key] = si.sink
                 # else: still an unconfirmed candidate (issue #102) —
                 # leave the tracked placement stale so the next tick
@@ -754,9 +794,11 @@ def _process_tick(pulse: pulsectl.Pulse) -> None:
             placed = _native_placed[key]
             current = s["sink_name"]
             if current and current != placed:
-                # Never save effect_input sinks as overrides
-                save_name = _EFFECT_REMAP.get(current, current)
-                if _confirm_manual_move(key, app, save_name, overrides, now=now):
+                # Never save an internal filter-chain node as an override
+                save_name = _override_target(current)
+                if save_name is None:
+                    _native_placed[key] = current
+                elif _confirm_manual_move(key, app, save_name, overrides, now=now):
                     _native_placed[key] = current
                 # else: still an unconfirmed candidate (issue #102) —
                 # leave the tracked placement stale so the next check

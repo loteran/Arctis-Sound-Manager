@@ -219,3 +219,50 @@ class TestUserOwnedFilterChainIsNotPruned:
         pruned, dropped = video_router._prune_dead_overrides(overrides, set())
         assert dropped == []
         assert pruned == overrides
+
+
+class TestInternalNodesAreNeverSavedAsOverrides:
+    """The prune above cleans up effect_input.* entries; this is what stops
+    them being written in the first place. The old table said "never save
+    effect_input sinks as overrides" but listed only game and chat, so a
+    manual move onto Media's EQ, either HeSuVi stage, the Output EQ or the
+    micro EQ was saved verbatim."""
+
+    def test_every_channel_eq_maps_to_its_own_channel(self):
+        assert video_router._override_target(
+            "effect_input.sonar-game-eq") == "Arctis_Game"
+        assert video_router._override_target(
+            "effect_input.sonar-chat-eq") == "Arctis_Chat"
+        assert video_router._override_target(
+            "effect_input.sonar-media-eq") == "Arctis_Media"
+
+    def test_each_hesuvi_stage_maps_to_its_own_channel(self):
+        """Media got its own HeSuVi stage in #169; mapping both to Game would
+        drag Media along, which is the bug that issue was about."""
+        assert video_router._override_target(
+            "effect_input.virtual-surround-7.1-hesuvi") == "Arctis_Game"
+        assert video_router._override_target(
+            "effect_input.virtual-surround-7.1-hesuvi-media") == "Arctis_Media"
+
+    def test_nodes_with_no_application_equivalent_are_not_saved(self):
+        """The Output EQ feeds an external device, not a channel apps sit on,
+        and the micro EQ is a capture node. Inventing a target here would
+        record a choice the user never made."""
+        assert video_router._override_target("effect_input.sonar-output-eq") is None
+        assert video_router._override_target("effect_input.sonar-micro-eq") is None
+
+    def test_a_users_own_filter_chain_is_saved_unchanged(self):
+        assert video_router._override_target(
+            "effect_input.my-own-eq") == "effect_input.my-own-eq"
+
+    def test_devices_pass_through_untouched(self):
+        for name in ("Arctis_Game", "bluez_output.AA_BB_CC.1",
+                     "alsa_output.pci-0000_09_00.1.hdmi-stereo"):
+            assert video_router._override_target(name) == name
+
+    def test_the_remap_covers_every_channel_eq_node_that_exists(self):
+        """Derived from _CHANNEL_SINKS, so adding a channel cannot leave a
+        node behind the way the hand-written table did."""
+        for channel, sink in video_router._CHANNEL_SINKS.items():
+            assert video_router._override_target(
+                f"effect_input.sonar-{channel}-eq") == sink
