@@ -259,6 +259,19 @@ class GeneralSettings(JsonSerializable):
     # External output device (HDMI, sound card, etc.) shown on home page
     external_output_device: str|None = None
 
+    # Which physical Arctis unit the daemon should drive when more than one is
+    # plugged in (issue #199): a GameBuds dongle left permanently in a port
+    # "wins" over a Nova Pro Wireless base station purely by USB enumeration
+    # order, with nothing the user can see or change short of unplugging one
+    # of them. None (default) keeps that exact behaviour — first match in
+    # profile load order. A non-None value is one of CoreEngine's
+    # replug-stable device ids (vendor:product, plus a USB bus/port suffix
+    # when available — see core.py's _device_identity) and is re-resolved
+    # against whatever is actually connected on every scan, so a preferred
+    # unit that gets unplugged falls back to the default order instead of
+    # leaving the daemon without a headset.
+    preferred_device: str|None = None
+
     # Run ASM without SteelSeries hardware (#189).
     #
     # The audio half of ASM — the four channels, the Sonar EQ, HeSuVi, the
@@ -427,6 +440,7 @@ class GeneralSettings(JsonSerializable):
         ConfigSetting('redirect_audio_on_disconnect', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }, inert_without='redirect_audio_on_disconnect_device'),
         ConfigSetting('redirect_audio_on_disconnect_device', SettingType.SELECT, None, options_source='pulse_audio_devices', options_mapping={ 'value': 'id', 'label': 'description' }),
         ConfigSetting('external_output_device', SettingType.SELECT, None, options_source='external_audio_devices', options_mapping={ 'value': 'id', 'label': 'description' }),
+        ConfigSetting('preferred_device', SettingType.SELECT, None, options_source='connected_arctis_devices', options_mapping={ 'value': 'id', 'label': 'name' }),
         ConfigSetting('generic_device_mode', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('generic_output_device', SettingType.SELECT, None, options_source='external_audio_devices', options_mapping={ 'value': 'id', 'label': 'description' }),
         ConfigSetting('generic_input_device', SettingType.SELECT, None, options_source='pulse_audio_sources', options_mapping={ 'value': 'id', 'label': 'description' }),

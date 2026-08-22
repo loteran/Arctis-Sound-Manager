@@ -21,7 +21,12 @@ from arctis_sound_manager.i18n import I18n
 # (dbus_service.get_list_options) recomputes these fresh on every call, so
 # re-requesting them each time the panel becomes visible is enough to pick
 # up devices attached after the initial load (#106).
-_REFRESHABLE_OPTION_SOURCES = frozenset({'external_audio_devices', 'pulse_audio_devices', 'pulse_audio_sources'})
+_REFRESHABLE_OPTION_SOURCES = frozenset({
+    'external_audio_devices', 'pulse_audio_devices', 'pulse_audio_sources',
+    # Which Arctis units are plugged in changes while the app runs — a dongle
+    # can be plugged or unplugged at any time (issue #199).
+    'connected_arctis_devices',
+})
 
 
 def _option_label(option: dict) -> str:

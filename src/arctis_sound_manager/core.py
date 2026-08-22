@@ -44,6 +44,40 @@ class TypedDevice(Device):
     idProduct: int
 
 
+def _device_identity(dev: 'Device') -> str:
+    """A replug-stable id for one physical Arctis unit (issue #199).
+
+    ``vendor:product`` alone identifies the *model* — enough to pick a Nova
+    Pro Wireless base station over a GameBuds dongle, the case the issue was
+    filed for. Where pyusb also exposes the device's USB bus/port path — read
+    straight from enumeration, no control transfer needed, the same source
+    ``_interface_kernel_driver`` already uses for its diagnostic — it is
+    appended too, so two identical dongles plugged into different ports don't
+    collide.
+
+    ``iSerialNumber`` would be a better secondary key (it survives a move to
+    another port, the port path does not), but reading a string descriptor
+    needs an actual control transfer to the device, and nothing guarantees a
+    SteelSeries dongle exposes one. Not worth the extra USB round-trip on a
+    path that runs on every device scan; the port-path suffix is a cheaper,
+    read-only way to cover the "two identical dongles" case, at the cost of
+    the id changing if the unit is moved to a different port (in which case
+    the preferred-device match simply falls back, same as an unplugged one).
+    """
+    try:
+        base = f"{dev.idVendor:04x}:{dev.idProduct:04x}"
+    except Exception:
+        return "unknown"
+    try:
+        bus = dev.bus
+        ports = getattr(dev, 'port_numbers', None)
+    except Exception:
+        bus, ports = None, None
+    if bus is not None and ports:
+        return f"{base}@{bus}-" + ".".join(str(p) for p in ports)
+    return base
+
+
 # Backoff before re-attempting a USB acquisition that failed with EACCES, in
 # seconds. Covers the boot-time race between udev applying the access rights
 # and the daemon claiming the device, without making a genuinely missing rules
@@ -1860,11 +1894,30 @@ class CoreEngine:
         with self._detect_lock:
             usb_device: Device | Any | None = None
             device_config: DeviceConfiguration | None = None
+            used_preferred_device = False
 
-            for device_config in self.device_configurations:
-                usb_device = self._find_hid_device(device_config.vendor_id, device_config.product_ids)
+            # preferred_device (issue #199): try the unit the user picked in
+            # Settings before falling back to the plain first-match scan. The
+            # settings object may be absent (bare test stubs) or its attribute
+            # may not be a real string (a MagicMock stub without the field
+            # set), so the isinstance check also doubles as "no opinion".
+            preferred_id = getattr(getattr(self, 'general_settings', None), 'preferred_device', None)
+            if isinstance(preferred_id, str) and preferred_id:
+                device_config, usb_device = self._find_preferred_device(preferred_id)
                 if usb_device is not None:
-                    break
+                    used_preferred_device = True
+                else:
+                    self.logger.info(
+                        "Preferred device %r is not currently connected — "
+                        "falling back to the default detection order.",
+                        preferred_id,
+                    )
+
+            if usb_device is None:
+                for device_config in self.device_configurations:
+                    usb_device = self._find_hid_device(device_config.vendor_id, device_config.product_ids)
+                    if usb_device is not None:
+                        break
 
             if not device_config or not usb_device:
                 # No Arctis — but the audio half of ASM does not need one. The
@@ -1924,7 +1977,17 @@ class CoreEngine:
             self._update_active_dial_interfaces()
 
             if self.usb_device is not None:
-                self.logger.info(f"Found device {self.usb_device.idProduct:04x}:{self.usb_device.idVendor:04x} ({self.device_config.name})")
+                # Says *why* this unit was picked (issue #199) at a level any
+                # bug report will show — the whole complaint was that this
+                # choice used to be invisible.
+                selection_reason = (
+                    "matches the preferred_device setting" if used_preferred_device
+                    else "default detection order (first match)"
+                )
+                self.logger.info(
+                    f"Found device {self.usb_device.idProduct:04x}:{self.usb_device.idVendor:04x} "
+                    f"({self.device_config.name}) — {selection_reason}"
+                )
                 if not self.kernel_detach(self.usb_device, self.device_config):
                     # USB permission error — message already logged with remediation
                     # steps. Bail out so the daemon stays alive instead of crashing,
@@ -2825,6 +2888,81 @@ class CoreEngine:
                 except Exception:
                     continue
         return None
+
+    def _find_all_hid_devices(self, vendor_id: int, product_ids: list[int]) -> list['TypedDevice']:
+        """Every currently-connected device matching vendor_id/product_ids that
+        exposes an HID interface — unlike _find_hid_device, which stops at the
+        first one.
+
+        Used only by the preferred_device machinery (issue #199): building the
+        option list needs every unit, and resolving a preference needs to
+        search past whichever device _find_hid_device would have stopped at.
+        The ordinary detection path (_find_hid_device, including the liveness
+        re-check on disconnect) is left untouched on purpose so its behaviour
+        never changes.
+        """
+        USB_CLASS_HID = 3
+        result: list['TypedDevice'] = []
+        for product_id in product_ids:
+            device = usb.core.find(idVendor=vendor_id, idProduct=product_id, find_all=True)
+            if device is None:
+                continue
+            devices = [device] if isinstance(device, Device) else list(device)
+            for dev in devices:
+                try:
+                    for cfg in dev:
+                        for intf in cfg:
+                            if intf.bInterfaceClass == USB_CLASS_HID:
+                                result.append(cast(TypedDevice, dev))
+                                break
+                        else:
+                            continue
+                        break
+                except Exception:
+                    continue
+        return result
+
+    def _find_preferred_device(
+        self, preferred_id: str,
+    ) -> 'tuple[DeviceConfiguration | None, TypedDevice | None]':
+        """Look for the exact physical unit named by the preferred_device setting.
+
+        Searches every loaded profile, not just the first one that matches —
+        the whole point of issue #199 is to stop profile load order from
+        deciding this. Returns (None, None) when nothing currently connected
+        matches the stored id (that unit was unplugged, or moved to a
+        different USB port — see _device_identity); the caller falls back to
+        the ordinary first-match scan in that case rather than leaving the
+        daemon without a headset.
+        """
+        for device_config in self.device_configurations:
+            if getattr(device_config, 'generic', False):
+                continue
+            for dev in self._find_all_hid_devices(device_config.vendor_id, device_config.product_ids):
+                if _device_identity(dev) == preferred_id:
+                    return device_config, dev
+        return None, None
+
+    def list_connected_devices(self) -> list[dict[str, str]]:
+        """Every Arctis unit plugged in right now, for the preferred_device picker.
+
+        One entry per physical device (not per profile), so a headset family
+        nobody owns never shows up. The label is always the matched profile's
+        own ``name`` — the YAML profile is the single authority on device
+        names, never a hardcoded string here.
+        """
+        result: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for device_config in self.device_configurations:
+            if getattr(device_config, 'generic', False):
+                continue
+            for dev in self._find_all_hid_devices(device_config.vendor_id, device_config.product_ids):
+                dev_id = _device_identity(dev)
+                if dev_id in seen:
+                    continue
+                seen.add(dev_id)
+                result.append({'id': dev_id, 'name': device_config.name})
+        return result
 
     def _all_used_interfaces(self, config: DeviceConfiguration) -> list[int]:
         """Returns all USB interfaces that may be used: command, status listeners, and all dial candidates."""

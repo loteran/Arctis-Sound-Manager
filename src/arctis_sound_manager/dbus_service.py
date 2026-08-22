@@ -6,6 +6,7 @@ import asyncio
 import itertools
 import json
 import logging
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -505,6 +506,21 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
                 from arctis_sound_manager.pw_utils import apply_force_quantum
                 apply_force_quantum(int(value))
 
+            if setting == 'preferred_device':
+                # Apply the new preference right away instead of waiting for the
+                # next daemon start (issue #199, part 3). configure_virtual_sinks()
+                # does blocking USB/PipeWire work and serialises on
+                # CoreEngine._detect_lock, so it runs off a background thread
+                # rather than on the D-Bus event loop — the same reasoning that
+                # already has ReloadConfigs go through run_in_executor.
+                self.logger.info(
+                    "preferred_device set to %r — reconfiguring virtual sinks", value)
+                threading.Thread(
+                    target=self.core_engine.configure_virtual_sinks,
+                    name='asm-preferred-device-switch',
+                    daemon=True,
+                ).start()
+
             _oled = self.core_engine.oled_manager
             if _oled is not None:
                 if setting == 'oled_brightness':
@@ -596,6 +612,10 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
             result = list_hrir_options()
         elif list_name == 'pulse_audio_sources':
             result = self._get_pulse_audio_sources_options()
+        elif list_name == 'connected_arctis_devices':
+            # Issue #199: only devices actually detected right now, never the
+            # full profile catalogue — a headset nobody owns must not appear.
+            result = self.core_engine.list_connected_devices()
 
         return json.dumps(result)
 
