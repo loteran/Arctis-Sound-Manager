@@ -16,10 +16,34 @@ def is_systemd_unit_enabled() -> bool:
     # real systemd unit and runs `systemctl --user is-enabled`.
     return sc.is_enabled("arctis-manager")
 
+def _running_in_container() -> bool:
+    try:
+        from arctis_sound_manager.bug_reporter import _detect_container_env
+        return _detect_container_env() != 'native'
+    except Exception:
+        return False
+
+
 def ensure_systemd_unit(enable: bool = False) -> None:
     from arctis_sound_manager.init_system import detect_init
     if detect_init() != "systemd" and not shutil.which("systemctl"):
         return
+
+    # Never write this unit from inside a container (issue #203). $HOME is
+    # shared with the host, and ~/.config/systemd/user takes precedence over
+    # the packaged unit — so the file written here is the one the HOST's
+    # systemd runs. which('asm-daemon') resolves to /usr/bin/asm-daemon, which
+    # exists only in the container: every restart, including every boot, fails
+    # with 203/EXEC until StartLimitBurst locks the unit out. It fails quietly
+    # because a freshly installed ASM keeps running — the process predates the
+    # file — so nothing looks wrong until the next reboot.
+    #
+    # The Distrobox installers already write the correct host units
+    # (`distrobox enter <container> -- /usr/bin/asm-daemon`, see
+    # scripts/distrobox/_common.sh). Overwriting those is strictly destructive.
+    if _running_in_container():
+        return
+
     path = HOME_SYSTEMD_SERVICE_FOLDER / SYSTEMD_SERVICE_NAME
     path.parent.mkdir(parents=True, exist_ok=True)
     write_systemd_service(path)
