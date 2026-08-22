@@ -73,6 +73,29 @@ asm_list_hidraw_flags() {
 }
 
 # ---------------------------------------------------------------------------
+# No :z/:Z SELinux relabel option on any of the three volume-flag functions
+# below, deliberately. `distrobox create` itself unconditionally passes
+# `--security-opt label=disable --security-opt apparmor=unconfined` to
+# podman/docker for every container it creates (verified against distrobox's
+# own source, both the current Go rewrite and the legacy shell script,
+# unchanged back to at least v1.7.2.1:
+# pkg/containermanager/providers/podman.go and docker.go). A Distrobox
+# container is therefore never SELinux-confined to begin with, so :z/:Z on a
+# bind mount here would be a no-op at best. It would also be actively risky:
+# :Z ("private") on /dev/bus/usb would recursively relabel real host device
+# nodes that other host processes and other containers also read, and :z/:Z
+# on the PipeWire sockets would touch a live resource the host's own
+# pipewire/wireplumber and other apps use concurrently. If a host policy or a
+# distrobox fork ever stops disabling SELinux confinement, the fix for
+# arbitrary device passthrough is `sudo setsebool -P container_use_devices
+# on` (chcon must not be used on device nodes, and Z on a shared socket the
+# host also uses can break the host) — not a blind :z/:Z here. See
+# asm_verify_mount_access() for the diagnostic that actually catches this
+# failure class instead of letting install/health-check report success
+# either way.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
 # asm_hidraw_volume_flag  (P0-B: stable hot-plug hidraw via udev symlink dir)
 # Outputs a bare --volume=... flag (no --additional-flags= prefix).
 # ---------------------------------------------------------------------------
@@ -166,6 +189,48 @@ asm_verify_container_health() {
         fi
     done
     log_ok "Container healthy (${elapsed}s)"
+}
+
+# ---------------------------------------------------------------------------
+# asm_verify_mount_access  (diagnostic for the no-:z/:Z decision above)
+# ---------------------------------------------------------------------------
+# asm_verify_container_health only proves the container *responds*; it says
+# nothing about whether the paths bind-mounted by asm_create_container() are
+# readable once inside. If a host denies access to one of them (an SELinux
+# policy that overrides distrobox's label=disable, or anything else), install
+# and the health check above both report success while asm-daemon silently
+# sees no hidraw device, no USB bus, or no PipeWire socket — "appears
+# installed and does nothing", with nothing above to catch it. This does.
+# ---------------------------------------------------------------------------
+asm_verify_mount_access() {
+    log_step "Verifying bind-mounted paths are usable inside the container..."
+    local rt problems
+    rt="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    problems="$(distrobox enter "$ASM_CONTAINER_NAME" -- bash -lc '
+        fail=0
+        [[ -r "'"$ASM_HIDRAW_RUN_DIR"'" ]] || { echo "  - '"$ASM_HIDRAW_RUN_DIR"' is not readable in the container"; fail=1; }
+        if [[ -d /dev/bus/usb ]]; then
+            [[ -r /dev/bus/usb ]] || { echo "  - /dev/bus/usb is not readable in the container"; fail=1; }
+        fi
+        if [[ -S "'"$rt"'/pipewire-0" ]]; then
+            [[ -r "'"$rt"'/pipewire-0" ]] || { echo "  - '"$rt"'/pipewire-0 is not readable in the container"; fail=1; }
+        fi
+        exit "$fail"
+    ' 2>&1)"
+    if [[ -n "$problems" ]]; then
+        log_warn "Bind-mounted paths exist on the host but are not usable inside the container:"
+        echo "$problems" | tee -a "$ASM_LOG_FILE" >&2
+        local enforce="n/a"
+        command -v getenforce &>/dev/null && enforce="$(getenforce 2>/dev/null || echo unknown)"
+        log_warn "Host SELinux mode: $enforce"
+        log_warn "asm-daemon will look installed and running while doing nothing."
+        log_warn "To confirm whether this is SELinux and not something else, run on the host:"
+        log_warn "  getenforce"
+        log_warn "  sudo ausearch -m avc -ts recent | grep -i asm"
+        log_warn "and attach that output to a bug report."
+    else
+        log_ok "Bind-mounted paths are usable inside the container"
+    fi
 }
 
 # ---------------------------------------------------------------------------

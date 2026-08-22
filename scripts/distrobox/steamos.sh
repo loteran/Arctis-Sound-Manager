@@ -100,6 +100,29 @@ create_container() {
     local cmd=(distrobox create --name "$_CONTAINER" --image "$_IMAGE" --home "$HOME" --pull --yes)
 
     ensure_hidraw_dir
+
+    # No :z/:Z SELinux relabel option on these --volume mounts, deliberately.
+    # `distrobox create` itself unconditionally passes `--security-opt
+    # label=disable --security-opt apparmor=unconfined` to podman/docker for
+    # every container it creates (verified against distrobox's own source,
+    # both the current Go rewrite and the legacy shell script, unchanged back
+    # to at least v1.7.2.1: pkg/containermanager/providers/podman.go and
+    # docker.go). A Distrobox container is therefore never SELinux-confined
+    # to begin with, so :z/:Z on a bind mount here would be a no-op at best.
+    # It would also be actively risky: :Z ("private") on /dev/bus/usb would
+    # recursively relabel real host device nodes that other host processes
+    # and other containers also read, and :z/:Z on the PipeWire sockets below
+    # would touch a live resource the host's own pipewire/wireplumber and
+    # other apps use concurrently. If a host policy or a distrobox fork ever
+    # stops disabling SELinux confinement, the fix for arbitrary device
+    # passthrough is `sudo setsebool -P container_use_devices on` (chcon must
+    # not be used on device nodes, and Z on a shared socket the host also
+    # uses can break the host) — not a blind :z/:Z here. verify_mount_access
+    # below is the diagnostic that actually catches this failure class
+    # instead of letting install/health-check report success either way.
+    # (SteamOS itself does not run SELinux — this whole comment is about the
+    # Silverblue/Fedora-derived Distrobox path — but the mount options must
+    # stay identical across all three generators, see test_distrobox_*.py.)
     cmd+=("--volume" "$_HIDRAW_RUN_DIR:$_HIDRAW_RUN_DIR:rslave")
     [[ -d /dev/bus/usb ]] && cmd+=("--volume" "/dev/bus/usb:/dev/bus/usb:rslave")
 
@@ -125,6 +148,46 @@ verify_container_health() {
         fi
     done
     log_ok "Container healthy (${elapsed}s)"
+}
+
+# ---------------------------------------------------------------------------
+# Verify the bind-mounted paths are actually usable from inside the container
+# ---------------------------------------------------------------------------
+# verify_container_health only proves the container *responds*; it says
+# nothing about whether the paths bind-mounted in create_container() are
+# readable once inside. SteamOS is not SELinux-enforcing, so this mostly
+# catches other causes here (a stale mount, a socket that moved), but the
+# check is kept identical to bazzite.sh/silverblue.sh on purpose — see the
+# comment above create_container()'s --volume lines.
+verify_mount_access() {
+    log_step "Verifying bind-mounted paths are usable inside the container..."
+    local rt problems
+    rt="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    problems="$(distrobox enter "$_CONTAINER" -- bash -lc '
+        fail=0
+        [[ -r "'"$_HIDRAW_RUN_DIR"'" ]] || { echo "  - '"$_HIDRAW_RUN_DIR"' is not readable in the container"; fail=1; }
+        if [[ -d /dev/bus/usb ]]; then
+            [[ -r /dev/bus/usb ]] || { echo "  - /dev/bus/usb is not readable in the container"; fail=1; }
+        fi
+        if [[ -S "'"$rt"'/pipewire-0" ]]; then
+            [[ -r "'"$rt"'/pipewire-0" ]] || { echo "  - '"$rt"'/pipewire-0 is not readable in the container"; fail=1; }
+        fi
+        exit "$fail"
+    ' 2>&1)"
+    if [[ -n "$problems" ]]; then
+        log_warn "Bind-mounted paths exist on the host but are not usable inside the container:"
+        echo "$problems" | tee -a "$_LOG" >&2
+        local enforce="n/a"
+        command -v getenforce &>/dev/null && enforce="$(getenforce 2>/dev/null || echo unknown)"
+        log_warn "Host SELinux mode: $enforce"
+        log_warn "asm-daemon will look installed and running while doing nothing."
+        log_warn "To confirm whether this is SELinux and not something else, run on the host:"
+        log_warn "  getenforce"
+        log_warn "  sudo ausearch -m avc -ts recent | grep -i asm"
+        log_warn "and attach that output to a bug report."
+    else
+        log_ok "Bind-mounted paths are usable inside the container"
+    fi
 }
 
 # ---------------------------------------------------------------------------
@@ -449,6 +512,7 @@ else
 fi
 
 verify_container_health || exit 1
+verify_mount_access
 install_asm
 export_binaries
 write_systemd_units
