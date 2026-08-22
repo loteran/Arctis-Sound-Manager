@@ -236,10 +236,8 @@ class _ToggleWorker(QThread):
 
             # Set default sink
             sink_json = _json.dumps({"name": primary_sink})
-            subprocess.run(["pw-metadata", "0", "default.configured.audio.sink", sink_json],
-                           check=False, timeout=5)
-            subprocess.run(["pw-metadata", "0", "default.audio.sink", sink_json],
-                           check=False, timeout=5)
+            self._pw_metadata("default.configured.audio.sink", sink_json, log)
+            self._pw_metadata("default.audio.sink", sink_json, log)
 
             # Move saved sink-inputs to primary sink
             if saved_si:
@@ -252,10 +250,8 @@ class _ToggleWorker(QThread):
             primary_source = expected_sources[0]
             if self._wait_for_node(primary_source):
                 source_json = _json.dumps({"name": primary_source})
-                subprocess.run(["pw-metadata", "0", "default.configured.audio.source",
-                                source_json], check=False, timeout=5)
-                subprocess.run(["pw-metadata", "0", "default.audio.source",
-                                source_json], check=False, timeout=5)
+                self._pw_metadata("default.configured.audio.source", source_json, log)
+                self._pw_metadata("default.audio.source", source_json, log)
 
                 if saved_so:
                     idx = self._find_pactl_index(primary_source, "source", log)
@@ -264,11 +260,51 @@ class _ToggleWorker(QThread):
             else:
                 log.warning("Source node %s did not appear after toggle", primary_source)
 
+    @staticmethod
+    def _pw_metadata(key: str, value: str, log) -> None:
+        """Write one PipeWire metadata key, tolerating a missing binary.
+
+        The four call sites here were the only pw-metadata calls in the code
+        base with neither a which() guard nor a try (EXT-1); every other one
+        has both — see pw_utils.apply_force_quantum and pactl.py. A
+        FileNotFoundError raised mid-restore aborts the whole toggle.
+        """
+        import shutil
+        if shutil.which("pw-metadata") is None:
+            log.warning("pw-metadata is not installed — cannot set %s", key)
+            return
+        try:
+            subprocess.run(["pw-metadata", "0", key, value],
+                           check=False, timeout=5)
+        except (OSError, subprocess.SubprocessError) as exc:
+            log.warning("could not set %s: %r", key, exc)
+
     # ── main ───────────────────────────────────────────────────────────────
 
     def run(self):
+        """Never leave the UI mid-toggle, whatever happens below (EXT-1).
+
+        ``done`` used to be emitted only on the success path and on the two
+        early returns. The button is disabled before the worker starts and
+        re-enabled only by ``_on_toggle_done``, so any exception in between —
+        and everything from _apply_yaml() to _restore_streams() ran unguarded —
+        froze the button on "restarting_audio" for ever AND left every stream
+        that was playing parked on nodes the filter-chain restart had just torn
+        down: silent audio loss, on the user's own click. The near-identical
+        _ApplyWorker in sonar_page.py has wrapped its whole body from the start;
+        this one was the outlier.
+        """
         import logging
         log = logging.getLogger(__name__)
+        try:
+            self._run_guarded(log)
+        except Exception as exc:
+            log.exception("EQ mode toggle failed: %r", exc)
+            # Report the mode the UI should show. self._old_mode is the honest
+            # answer: what we last knew to be applied.
+            self.done.emit(False, self._old_mode)
+
+    def _run_guarded(self, log):
 
         if not _apply_yaml(self._new_mode):
             self.done.emit(False, self._old_mode)
