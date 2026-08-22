@@ -103,11 +103,36 @@ def test_disconnect_skips_when_setting_disabled():
     pa.redirect_audio.assert_not_called()
 
 
-def test_disconnect_skips_when_no_target_device_configured():
+def test_disconnect_falls_back_when_no_target_device_configured():
+    """This used to assert the opposite — that an unconfigured device meant
+    "do nothing". The toggle and the device are two separate settings and the
+    device defaults to unset, so switching the feature on and picking nothing
+    produced silence with no log line: indistinguishable from a broken
+    feature, which is what discussion #48 reported. "Send my audio elsewhere
+    when the headset goes" is unambiguous even when the elsewhere was never
+    picked, so the daemon now falls back to the best non-Arctis sink and says
+    it did.
+    """
     engine, pa = _make_engine('Arctis_Game')
+    engine.logger = MagicMock()
     engine.general_settings.redirect_audio_on_disconnect_device = None
+    pa.sink_list_wrapper.return_value = [_make_sink('alsa_output.hdmi-tv', 7)]
+
     engine.redirect_audio_on_disconnect()
+
+    pa.redirect_audio.assert_called_once_with('alsa_output.hdmi-tv')
+
+
+def test_disconnect_stays_put_when_there_is_nowhere_to_go():
+    engine, pa = _make_engine('Arctis_Game')
+    engine.logger = MagicMock()
+    engine.general_settings.redirect_audio_on_disconnect_device = None
+    pa.sink_list_wrapper.return_value = [_make_sink('Arctis_Game', 20)]
+
+    engine.redirect_audio_on_disconnect()
+
     pa.redirect_audio.assert_not_called()
+    assert engine.logger.warning.called
 
 
 def test_disconnect_redirects_when_no_default_sink_at_all():

@@ -420,7 +420,11 @@ class GeneralSettings(JsonSerializable):
 
     settings_config: list[ConfigSetting] = [
         ConfigSetting('redirect_audio_on_connect', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
-        ConfigSetting('redirect_audio_on_disconnect', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
+        # inert_without: this toggle acts only through the companion setting
+        # named here. On its own it makes CoreEngine.redirect_audio_on_disconnect
+        # return without doing anything, which is indistinguishable from a
+        # broken feature — the report in discussion #48 is exactly that.
+        ConfigSetting('redirect_audio_on_disconnect', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }, inert_without='redirect_audio_on_disconnect_device'),
         ConfigSetting('redirect_audio_on_disconnect_device', SettingType.SELECT, None, options_source='pulse_audio_devices', options_mapping={ 'value': 'id', 'label': 'description' }),
         ConfigSetting('external_output_device', SettingType.SELECT, None, options_source='external_audio_devices', options_mapping={ 'value': 'id', 'label': 'description' }),
         ConfigSetting('generic_device_mode', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),

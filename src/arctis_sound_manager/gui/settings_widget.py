@@ -175,6 +175,39 @@ class QSettingsWidget(QWidget):
             )
             widget.setVisible(visible)
 
+        self._apply_inert_warnings()
+
+    def _apply_inert_warnings(self):
+        """Mark a setting that is switched on but cannot do anything yet.
+
+        Some toggles only act through a companion setting: turning
+        `redirect_audio_on_disconnect` on while
+        `redirect_audio_on_disconnect_device` is unset makes the daemon return
+        without redirecting anything, silently — which reads as "the feature
+        is broken" (discussion #48). `inert_without` names the companion; when
+        it has no value the row says so instead of looking armed.
+        """
+        for name, widget in self._settings_widgets.items():
+            config = self.settings_config.get(name)
+            if config is None:
+                continue
+            companion = getattr(config, 'inert_without', None)
+            if companion is None:
+                continue
+
+            enabled = bool(self.settings.get(name))
+            companion_value = self.settings.get(companion)
+            inert = enabled and not companion_value
+
+            label = widget.findChild(QLabel, 'setting_inert_note')
+            if label is None:
+                continue
+            label.setText(
+                I18n.get_instance().translate('settings_values', 'setting_inert_without')
+                if inert else ''
+            )
+            label.setVisible(inert)
+
     def refresh_panel(self):
         with self.refresh_lock:
             # Clear all the previous settings
@@ -383,7 +416,19 @@ class QSettingsWidget(QWidget):
             main_layout.addWidget(label)
             if config.type == SettingType.TOGGLE:
                 main_layout.addWidget(widget)
-                main_layout.addStretch(1)
+                if getattr(config, 'inert_without', None):
+                    # Filled in by _apply_inert_warnings() whenever the toggle
+                    # is on and its companion setting is still unset: the
+                    # daemon would silently do nothing, and the row must say
+                    # so rather than look armed (discussion #48).
+                    note = QLabel('')
+                    note.setObjectName('setting_inert_note')
+                    note.setWordWrap(True)
+                    note.setStyleSheet(f"color: {_theme.c('ACCENT')};")
+                    note.setVisible(False)
+                    main_layout.addWidget(note, 1)
+                else:
+                    main_layout.addStretch(1)
             else:
                 main_layout.addWidget(widget, 1)
 

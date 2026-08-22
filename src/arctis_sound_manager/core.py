@@ -2428,7 +2428,26 @@ class CoreEngine:
             return
         redirect_device = self.general_settings.redirect_audio_on_disconnect_device
         if not redirect_device:
-            return
+            # The toggle is a separate setting from the device it redirects to,
+            # and that device defaults to unset. Returning here was silent: the
+            # user switched the feature on, nothing ever happened, and no log
+            # line said why — which reads as "the feature is broken"
+            # (discussion #48). Fall back to the best non-Arctis sink instead,
+            # since "send my audio somewhere else when the headset goes" is
+            # unambiguous even when the somewhere was never picked.
+            redirect_device = self._fallback_disconnect_sink()
+            if not redirect_device:
+                self.logger.warning(
+                    "redirect on disconnect is enabled but no device is "
+                    "configured, and no other output is available — audio "
+                    "stays where it is. Pick a device in Settings."
+                )
+                return
+            self.logger.info(
+                "redirect on disconnect is enabled with no device configured "
+                "— falling back to '%s'. Pick one in Settings to choose.",
+                redirect_device,
+            )
 
         current_default_device = self.pa_audio_manager.get_default_device()
         if current_default_device is None:
@@ -2446,6 +2465,41 @@ class CoreEngine:
 
         if is_steelseries_alsa or is_arctis_owned:
             self.pa_audio_manager.redirect_audio(redirect_device)
+
+    def _fallback_disconnect_sink(self) -> str | None:
+        """Best sink to fall back to when no redirect device was configured.
+
+        Anything that is not one of ASM's own channels and not the headset
+        itself — redirecting to those would either be a no-op or send the
+        audio straight back where it cannot be heard. Ordered by PulseAudio's
+        own idea of priority so the answer matches what the desktop would
+        have picked on its own.
+        """
+        try:
+            sinks = self.pa_audio_manager.sink_list_wrapper()
+        except Exception as exc:
+            self.logger.warning("could not list sinks for the disconnect fallback: %r", exc)
+            return None
+
+        candidates = []
+        for sink in sinks:
+            name = getattr(sink, 'name', '') or ''
+            if not name:
+                continue
+            if any(frag in name for frag in self._ARCTIS_OWNED_SINK_FRAGMENTS):
+                continue
+            props = getattr(sink, 'proplist', {}) or {}
+            try:
+                vendor = int(props.get('device.vendor.id', '0') or '0', 16)
+            except (TypeError, ValueError):
+                vendor = 0
+            if name.startswith('alsa_output') and vendor == STEELSERIES_VENDOR_ID:
+                continue
+            candidates.append((int(props.get('device.priority', 0) or 0), name))
+
+        if not candidates:
+            return None
+        return max(candidates)[1]
 
     def reconcile_audio_routing_for_power_state(self) -> None:
         """Re-assert audio routing to match the headset's current power state.
