@@ -152,8 +152,18 @@ notes other spec/reality gaps.
 
 ## INT-1 — In-kernel `hid-steelseries` driver: what changes for ASM
 
-**Files (read, not edited — out of scope for this task; described here
-instead):** `src/arctis_sound_manager/core.py:2686` (`kernel_detach`),
+**This session's headline (2026-08-22): partially implemented, one prior
+recommendation withdrawn.** The diagnostic capability (point 3 below) is now
+real code, not a "worth having once it ships" note — see "What this session
+implemented" below. The udev hardening the previous session proposed as
+"the real fix direction" turned out to be **impossible as described**:
+`driver_override` does not exist for USB HID interfaces or for the `hid`
+bus, on this kernel or on any kernel — see the correction below before
+anyone acts on the old wording. This also corrects the
+`.remove()`/ALSA-teardown claim from "inferred" to "read from the patch."
+
+**Files (read, not edited unless noted — see "What this session
+implemented"):** `src/arctis_sound_manager/core.py:2686` (`kernel_detach`),
 `core.py:2997` (`kernel_attach`), `core.py:1397-1502`
 (`listen_endpoint_loop`, including the EIO recovery path at `:1477-1495`).
 
@@ -180,13 +190,37 @@ not just watching.**
 `kernel_detach()` operates at the **USB interface** level via
 `usb_device.detach_kernel_driver(interface)` / `usb.util.claim_interface(...)`
 — this is libusb's `USBDEVFS_DISCONNECT`/`USBDEVFS_CLAIMINTERFACE`, which
-detaches whatever is bound to the *interface* (today: `usbhid.ko`, which is
-what tears down the higher-level `hid-generic` binding on top of it). Because
-`hid-steelseries.ko` will bind on the same layer `usbhid.ko` occupies today
-(a specific-driver match in `hid_have_special_driver`, not a separate USB
-class driver), `kernel_detach()` should mechanically still work against it —
-the same ioctl detaches whichever driver is bound, by design, without caring
-about its name. **This is not the part that changes.**
+detaches whatever is bound to the *interface*.
+
+**Correction (2026-08-22, this session, verified against this machine's live
+sysfs on kernel 7.2.0-1-cachyos and against `torvalds/linux` source):** the
+previous session's framing of the layering was backwards, though its
+conclusion survives for a different reason. `hid-steelseries.ko` will
+**not** bind at the same layer as `usbhid.ko` — it binds one layer *above*
+it. `usbhid` is the generic USB-class transport driver for every
+`bInterfaceClass == 3` (HID) interface; it is what shows up at
+`/sys/bus/usb/devices/<bus>-<port>:<cfg>.<intf>/driver` and it binds there
+regardless of which higher-level driver ultimately wins — confirmed live on
+this machine: every HID-class interface on this bus (the Arctis's own
+vendor interface included) shows `driver -> .../drivers/usbhid`, while the
+mouse's actual driver (`hid-generic` for one interface, `logitech-hidpp-device`
+for another) only appears one level down, as a **child device on the `hid`
+bus** that `usbhid` creates *inside* the USB interface's own sysfs
+directory (id format `<bus type>:<vid>:<pid>.<instance>`, e.g.
+`0003:1038:12E0.0005`). `hid_have_special_driver`'s match (hid-generic vs.
+a vendor driver vs., from 7.3, hid-steelseries) happens on *that* device,
+never on the USB interface itself.
+
+This doesn't change the practical conclusion — `USBDEVFS_DISCONNECT` forces
+the USB core to unbind whatever is bound to the interface (`usbhid`,
+unconditionally), and unbinding a parent device tears down its children too,
+so the `hid`-bus child (whichever driver is on it) goes with it. `kernel_detach()`
+should still work mechanically against a `hid-steelseries`-bound interface.
+**This is still not the part that changes.** But it does mean: reading
+`<interface>/driver` for diagnostics (point 3 below) would have told a bug
+report nothing — it always says "usbhid," on this kernel and on 7.3 alike.
+The capability implemented this session reads the child device's driver
+instead, precisely because of this correction.
 
 What genuinely changes, and is not covered by the existing code:
 
@@ -206,50 +240,207 @@ What genuinely changes, and is not covered by the existing code:
    minimum) and, per the report, sysfs attributes. While the kernel driver
    holds the interface (i.e., before ASM's daemon starts, or any time
    `kernel_detach()` fails and is not retried — see `_note_status_poll_error`,
-   `core.py:3165` area, which already logs but does not escalate to a
-   user-facing fix), a user can change sidetone via `alsamixer` and have it
-   actually work. The moment ASM successfully claims the interface,
-   `hid-steelseries.ko`'s `.remove()` should tear its ALSA controls down
-   (normal kernel driver lifecycle) — so this is not a silent-double-write
-   race so much as a **surprise**: a control a user was just using
-   disappears, and `device_init`'s `settings.*` replay (e.g.
+   `core.py:3213` area, which now names the driver holding the interface but
+   still does not escalate to a user-facing fix), a user can change sidetone
+   via `alsamixer` and have it actually work. The moment ASM successfully
+   claims the interface, `hid-steelseries.ko`'s `.remove()` tears its ALSA
+   controls down — **confirmed this session, not inferred**: patch 06/18
+   ("HID: steelseries: Add ALSA sound card infrastructure", fetched via
+   patchew.org, `20260227235042.410062-7-srimanachanta@gmail.com`) creates
+   the card with a plain `snd_card_new(&hdev->dev, -1, "SteelSeries",
+   THIS_MODULE, 0, &sd->card)` (no devres/managed variant) and pairs it with
+   an explicit `steelseries_snd_unregister()` — `if (sd->card)
+   snd_card_free(sd->card);` — called from the driver's `.remove()` path.
+   `snd_card_free()` is ALSA's synchronous, blocking teardown: by the time
+   `.remove()` returns (and by the time `kernel_detach()`'s
+   `USBDEVFS_DISCONNECT` call, which is what triggers that `.remove()`, itself
+   returns), the mixer controls are gone. Also confirmed: card
+   registration failure is logged (`hid_warn`) and treated as non-fatal to
+   probe, so a card that fails to register does not block the rest of the
+   driver either. *Caveat on the sourcing:* fetched through an AI-summarizing
+   web-fetch tool against patchew's rendering of the patch, not a
+   byte-verified raw diff (`lore.kernel.org`'s raw endpoint 403's automated
+   fetches from this environment) — corroborated by patchew independently
+   listing all 18 patch titles matching the previous session's own citations
+   (10/18 "settings poll infrastructure", 11/18 "sidetone ALSA mixer
+   control"), which is good agreement but still short of reading the literal
+   diff bytes. So: this is not a silent-double-write race, it is a
+   **surprise** — a control a user was just using disappears the instant ASM
+   claims the interface, and `device_init`'s `settings.*` replay (e.g.
    `nova_elite.yaml:29` `[0x01, 0x8d, 'settings.sonar_enabled']`-style
-   entries) then pushes ASM's own remembered value over whatever
-   `alsamixer` had just set, with nothing telling the user why.
-3. **`is_kernel_driver_active()` cannot name the driver.** libusb's
-   `kernel_driver_active` call (what `core.py:2704` uses) returns a bool,
-   not a driver name — there is no portable libusb API for "which driver".
-   Distinguishing "usbhid got there first" from "hid-steelseries got there
-   first" (which changes what remediation makes sense to tell a user) would
-   need a Linux-specific read of
-   `/sys/bus/usb/devices/.../<interface>/driver` — a capability `core.py`
-   does not have today. Worth having once the driver actually ships, not
-   before: it is dead code against a driver nobody can install yet.
+   entries) then pushes ASM's own remembered value over whatever `alsamixer`
+   had just set, with nothing telling the user why. Still open, still out of
+   this session's scope (no GUI/notification work was in the file list).
+3. **`is_kernel_driver_active()` cannot name the driver — implemented this
+   session.** libusb's `kernel_driver_active` call (what `core.py:2704` uses)
+   returns a bool, not a driver name — there is no portable libusb API for
+   "which driver". `bug_reporter.kernel_driver_for_interface()` /
+   `find_interface_sysfs_dir()` now read it from sysfs instead (see "What
+   this session implemented"), correctly walking past the interface's own
+   always-`usbhid` driver symlink to the `hid`-bus child device underneath
+   it — see the layering correction above. `core.py`'s
+   `CoreEngine._interface_kernel_driver()` wraps them for use from
+   `kernel_detach()`'s EACCES/warning paths, the EIO-recovery log, and
+   `_note_status_poll_error()`'s EBUSY hint. No longer dead code against a
+   driver nobody can install: it already distinguishes `usbhid`/`hid-generic`
+   from ASM's own `usbfs` claim on this machine today (verified live,
+   read-only, against the real Nova Pro Wireless attached this session), and
+   will name `hid-steelseries` the same way once that driver exists, with no
+   further code change required.
 
-**The real fix direction (for whoever owns `core.py` when this lands):**
-close the boot-race window with a udev rule, not a runtime detach-after-
-claim. The standard mechanism other Linux userspace HID tools use for this
-exact problem (a kernel driver they don't want auto-claiming a vendor
-interface) is `driver_override` on the `hid` bus, written by udev at `add`
-time — before any driver has probed — rather than detach-after-bind in
-userspace. ASM already ships and manages a udev rules file
-(`udev_checker.get_udev_rules_status()`, per the "what held" section of the
-report); this is the natural place to add a rule keyed on ASM's known vendor
-PIDs once `hid-steelseries`'s ID table is public (patches 02/18, 03/18
-already list it). This needs `core.py`/`scripts/` changes and is out of this
-task's file scope — described here as the concrete next step, not
-implemented.
+**"The real fix direction" — corrected, 2026-08-22, this session: it does
+not exist as described, and no rule was shipped.**
+
+The previous session proposed closing the boot-race window with a udev rule
+setting `driver_override` on the `hid` bus at `add` time. This was checked
+by trying to implement it, and the premise does not hold:
+
+- **`driver_override` is not a real attribute for either bus involved.**
+  Checked three independent ways: (1) live, on this machine's kernel
+  7.2.0-1-cachyos — neither the Arctis's own USB interface
+  (`/sys/bus/usb/devices/1-6:1.3/`) nor its `hid`-bus child
+  (`0003:1038:12E0.0005/`) has a `driver_override` file, confirmed via
+  `os.path.exists` and a raw directory listing, not a tool that could be
+  lying (this repo's own `reference_rtk_unreliable_output` lesson taken
+  seriously here — cross-checked with plain Python, not just `ls`); (2)
+  `drivers/usb/core/sysfs.c` and `drivers/usb/core/driver.c`, fetched
+  directly from `torvalds/linux` master — zero occurrences of
+  `driver_override` in either file, for *either* the whole-device or the
+  per-interface attribute group; (3) `drivers/hid/hid-core.c` and
+  `include/linux/hid.h` — same, zero occurrences, and `hid_bus_match()`
+  (the function that actually decides which driver binds a HID device) is
+  three lines calling only `hid_match_device()` — it never calls the kernel's
+  own generic `device_match_driver_override()` helper. `driver_override` is
+  a real per-`struct device` field the kernel *core* provides
+  (`include/linux/device.h`), but it is opt-in per bus — PCI and a handful
+  of others wire it up with their own sysfs file and their own check in
+  their match function; USB and HID never have. This is not a gap
+  `hid-steelseries` or Linux 7.3 will close — it would need a separate,
+  unrelated patch to `drivers/usb/core/` and/or `drivers/hid/hid-core.c`
+  that nobody in the `hid-steelseries` series proposed, reviewed, or has any
+  reason to write. **A udev rule cannot write to a file that does not
+  exist**, so the rule as specified could not be authored at all, let alone
+  shipped.
+
+- **An alternative that *does* exist was found and considered, then
+  rejected.** USB interfaces have a real, live, currently-existing
+  per-interface `authorized` attribute (confirmed both live on this machine
+  — `/sys/bus/usb/devices/1-6:1.3/authorized`, world-readable, root-writable
+  — and in `drivers/usb/core/sysfs.c`/`message.c`: writing `0` calls
+  `usb_deauthorize_interface()` → `usb_forced_unbind_intf()`, which
+  forcibly evicts *whatever* is currently bound, not just future probes —
+  strictly stronger than `driver_override`, which only affects matching
+  going forward. A udev rule setting `ATTR{authorized}="0"` on `add`, keyed
+  by `ATTR{bInterfaceNumber}` (real, populated from the descriptor
+  immediately at enumeration, before any driver probes — reliably matchable
+  at `add` time), would close the boot-race window completely: nothing,
+  not even `usbhid`, could bind until something re-authorizes it. This was
+  not shipped either, for one concrete, architectural reason:
+  `usb_driver_claim_interface()` — the function behind libusb's
+  `USBDEVFS_CLAIMINTERFACE`, i.e. what ASM's own `claim_interface()` call
+  uses — explicitly rejects a claim on a deauthorized interface
+  (`drivers/usb/core/driver.c`: `if (!iface->authorized) return -ENODEV;`).
+  ASM's daemon runs unprivileged (the whole point of the existing
+  `MODE="0666"`/`TAG+="uaccess"` udev rule is that it never needs to be
+  root), and `authorized`'s sysfs permission bits are `S_IRUGO|S_IWUSR` —
+  root-writable only. A rule that deauthorizes the interface at `add` time
+  would therefore also block ASM's *own* unprivileged claim, permanently,
+  unless the daemon (or the udev rule itself, via an imperative `RUN+=`
+  chmod/setfacl step) is also given a way to write that specific file back
+  to `1` before claiming — a materially larger architecture change (either
+  running part of the daemon as root, or teaching the udev-rule generator an
+  imperative permission grant it has never needed before) than "add a
+  declarative line to the existing generator," and one this task's file
+  scope did not extend to core claim-path surgery on a live desktop. Given
+  the explicit instruction to not ship a rule that cannot be proven correct,
+  and the risk of silently breaking `kernel_detach()`'s own claim path on
+  every currently-working install if the re-authorization step were gotten
+  wrong, this was documented instead of shipped. It remains the concrete,
+  real, available next step for whoever does take on that larger change —
+  unlike `driver_override`, it needs no kernel changes and no waiting for
+  7.3.
+
+- **The interface-number mapping needed for either mechanism is already
+  known, and is per-family, not global.** Any rule keyed on
+  `bInterfaceNumber` needs to know, per device, which interfaces are safe to
+  touch — and the device YAMLs already encode exactly this via
+  `command_interface_index`, `listen_interface_indexes`,
+  `dial_interface_index`/`dial_interface_candidates` (unioned by
+  `core.py:_all_used_interfaces()`). Critically, **the numbering is not
+  consistent across families**: on the Nova Pro Wireless,
+  `listen_interface_indexes: [4]` — interface 4 is the OLED, and ASM already
+  claims it (confirmed live: `1-6:1.4` shows `driver -> usbfs`, i.e. ASM's
+  own daemon, right now, on this machine). On the Nova Pro Omni and the Nova
+  Elite, by contrast, interface 4 is explicitly documented in their own
+  YAML comments as "an unrelated consumer-control/media-key interface" that
+  ASM must *never* claim, or every user of that headset loses their
+  hardware volume keys. A rule hardcoded to "interface 3" or "interface 4"
+  across the whole vendor ID would be wrong for some family in the lineup no
+  matter which number is picked; any future rule has to be generated
+  per-YAML from `_all_used_interfaces()`'s own logic (or its udev-side
+  equivalent), the same way `udev_rules.py` already unions PIDs per
+  `(vendor_id, name)` rather than assuming one shape fits every device. This
+  part of the constraint — "does a udev rule cannot distinguish them
+  reliably" — turned out **not** to be the blocker (interface number *is*
+  reliably matchable at `add` time, per-family); the blocker was the missing
+  kernel attribute and the privilege mismatch above.
+
+What this session implemented instead needed none of the above and carries
+no risk to today's behaviour — it only changes what gets logged, never what
+ASM does:
+
+**What this session implemented (code, not just research):**
+
+- `src/arctis_sound_manager/bug_reporter.py`: `kernel_driver_for_interface()`
+  (reads a USB interface's real driver by walking into its `hid`-bus child,
+  falling back to the interface's own driver when no child exists, `None`
+  when nothing has bound yet), `find_interface_sysfs_dir()` (locates an
+  interface's sysfs directory by device name + interface number, config
+  number wildcarded), `interface_driver_name()` (the two composed). Wired
+  into `_usb_access()` — the section a filed GitHub bug report actually
+  contains (`generate_report()`'s `usb_access` field) — so every SteelSeries
+  interface a report finds in sysfs now also says which driver holds it,
+  reported unconditionally (even when the `/dev` node itself is missing,
+  which is exactly the permission-bug case this section exists for).
+- `src/arctis_sound_manager/core.py`: `CoreEngine._interface_kernel_driver()`
+  wraps the above for live use, resolving a `usb.core.Device`'s
+  bus/`port_numbers` into the same sysfs path. Used from `kernel_detach()`'s
+  EACCES branch and its generic detach-failure warning (both now name the
+  driver instead of saying "the kernel driver"), the EIO-storm warning in
+  `listen_endpoint_loop` (`errno 5`, throttled log), and
+  `_note_status_poll_error()`'s `errno == 16` (EBUSY) hint. Every call site
+  degrades to `"unknown"` rather than raising — a diagnostic must never be
+  why a real error stops being logged.
+- `tests/test_kernel_driver_diagnostics.py` (new): the sysfs-walking logic
+  in isolation (including telling interface 3 apart from interface 13, and
+  the interface-vs-child-device layering itself), the `_usb_access`
+  integration (including a simulated future `hid-steelseries` fixture, since
+  no installable kernel has that driver as of 2026-08-22), `CoreEngine`
+  wiring (single-hop and multi-hop-behind-a-hub port chains), and a
+  behaviour-preservation test proving `kernel_detach()`'s return value and
+  `permission_error` bookkeeping are byte-for-byte unchanged by the new
+  logging — only the message gained a driver name. Also manually verified
+  (read-only, not part of the automated suite) against the real Nova Pro
+  Wireless attached to this machine: interfaces 0–2 correctly report
+  `snd-usb-audio`, interface 3 correctly reports `hid-generic` (not the
+  always-`usbhid` value the interface's own driver symlink would have given),
+  and interface 4 correctly reports `usbfs` — ASM's own daemon, which holds
+  that interface directly via libusb right now on this machine, exactly
+  matching the profile's own `listen_interface_indexes: [4]`.
+- No udev rules file was touched, generated, or reloaded — nothing on this
+  live machine changed. `pytest tests/ -q` passes in full (2280 passed, 5
+  skipped, 0 failed) after these changes, including every pre-existing
+  `kernel_detach`/EIO/status-poll test.
 
 **Who to watch:** `linux-input`/`hid.git` for-next (merge status),
-`torvalds/linux` `drivers/hid/hid-steelseries.c` (once merged, for the
-device-ID table and whether `.remove()` genuinely tears down ALSA controls
-cleanly — that's the assumption point 2 above rests on and it has not been
-read from the actual driver source, only inferred from normal kernel driver
-conventions).
+`torvalds/linux` `drivers/hid/hid-steelseries.c` (once merged, to confirm
+the device-ID table and to re-verify the ALSA teardown claim above against
+the final merged source rather than a pre-merge patch series, which can
+still change on review).
 
-**Exact thing to do once it lands (no ASM commit needed to check this,
-no headset needed either — a spare Arctis dongle plugged into a VM is
-enough, or even just the module loaded with no device):**
+**Exact thing to do once `hid-steelseries` lands (no ASM commit needed to
+check this, no headset needed either — a spare Arctis dongle plugged into a
+VM is enough, or even just the module loaded with no device):**
 
 ```bash
 # once a kernel with hid-steelseries is available
@@ -258,18 +449,25 @@ lsmod | grep hid_steelseries
 dmesg | grep -i steelseries
 # with asm-daemon running against a real or spare device:
 udevadm info -a -p $(udevadm info -q path -n /dev/bus/usb/BBB/DDD) | grep DRIVER
+# or, using what this session added, from within a Python shell / asm-cli:
+#   from arctis_sound_manager.bug_reporter import interface_driver_name
+#   interface_driver_name(Path('/sys/bus/usb/devices'), '<bus>-<port(s)>', <interface>)
+# should print "hid-steelseries" with no code change.
 ```
 
 **What would settle it:** `DRIVER=="hid-steelseries"` visible right after
 plug-in, followed by `asm-daemon` starting and `kernel_detach()` succeeding
 (check the daemon log for "Detaching kernel driver" without a following
-EACCES), with no EIO storm afterward — confirms the existing mechanism holds
-and only the udev-rule hardening above is worth doing proactively, not
-urgently. Repeated EIO after detach, or `hid-steelseries` reappearing in
-`lsmod`'s bind list for that device without ASM restarting, means the driver
-re-probes on its own timer and the boot-race concern is a running problem,
-not just a boot-time one — escalates the udev-rule fix from "worth doing" to
-"blocking".
+EACCES — the log line now also names the driver it found), with no EIO
+storm afterward — confirms the existing mechanism holds and the boot-race
+window is real but tolerable without the `authorized`-based hardening
+documented above. Repeated EIO after detach, or `hid-steelseries`
+reappearing in `lsmod`'s bind list for that device without ASM restarting
+(now directly visible in the daemon's own EIO-storm log line, no separate
+`udevadm` call needed), means the driver re-probes on its own timer and the
+boot-race concern is a running problem, not just a boot-time one —
+escalates the `authorized`-attribute approach from "documented, not shipped"
+to "worth the architecture change."
 
 ---
 

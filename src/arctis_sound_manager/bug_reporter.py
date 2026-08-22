@@ -404,6 +404,84 @@ def _arctis_pw_nodes(objects: list | None = None) -> str:
 #: SteelSeries. Matched as a string because that is how sysfs stores it.
 _STEELSERIES_VID = '1038'
 
+# A HID-bus device id, e.g. "0003:1038:12E0.0005" (bus type : vendor : product
+# . instance). usbhid creates one of these *inside* a USB interface's own
+# sysfs directory once it binds — see kernel_driver_for_interface below.
+_HID_CHILD_RE = re.compile(
+    r'^[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}$'
+)
+
+
+def kernel_driver_for_interface(interface_dir: Path) -> str | None:
+    """Name of the driver actually bound to a USB interface, or None.
+
+    Background (INT-1 in docs/HARDWARE-QUESTIONS.md): a USB interface that
+    exposes a HID collection is always transported by usbhid.ko — that is
+    the generic USB-class driver for interface class 3, and it is what
+    ``<interface>/driver`` points to whether the interface ends up driven by
+    hid-generic, a vendor driver (hid-playstation, hid-logitech-hidpp, and
+    from Linux 7.3 hid-steelseries), or nothing at all. Reading that symlink
+    therefore never distinguishes anything ASM would want to tell a user
+    apart — it always says "usbhid".
+
+    The decision that matters happens one layer up, on the *hid* bus: usbhid
+    creates a child device inside the interface's own sysfs directory (id
+    format "<bus>:<vid>:<pid>.<instance>", e.g. "0003:1038:12E0.0005"), and
+    *that* device's ``driver`` symlink names hid-generic / hid-steelseries /
+    whichever vendor driver actually claimed it. This walks down to that
+    child and reads its driver, falling back to the interface's own driver
+    (or None) when no such child exists yet — e.g. mid-boot-race, or a non-
+    HID interface such as the Nova-family audio-class interfaces.
+
+    Pure filesystem read: needs no USB permissions ASM might not have, which
+    is what makes it useful from exactly the failure paths (EACCES on
+    detach, an EIO storm) where pyusb itself cannot be trusted to answer.
+    """
+    if not interface_dir.is_dir():
+        return None
+    hid_child: Path | None = None
+    try:
+        children = sorted(interface_dir.iterdir())
+    except OSError:
+        return None
+    for child in children:
+        if _HID_CHILD_RE.match(child.name):
+            hid_child = child
+            break
+    target = hid_child or interface_dir
+    try:
+        return Path(os.readlink(target / 'driver')).name
+    except OSError:
+        return None
+
+
+def find_interface_sysfs_dir(
+    sys_root: Path, device_dir_name: str, interface_number: int,
+) -> Path | None:
+    """Locate a USB interface's sysfs directory among *sys_root*'s entries.
+
+    Interface directories are named "<device_dir_name>:<config>.<interface>"
+    (e.g. "1-6:1.3" for interface 3 of device "1-6") — the config number is
+    not something callers of this function are expected to know or care
+    about, so it is wildcarded rather than assumed to be 1.
+    """
+    try:
+        matches = sorted(sys_root.glob(f'{device_dir_name}:*.{interface_number}'))
+    except OSError:
+        return None
+    return matches[0] if matches else None
+
+
+def interface_driver_name(
+    sys_root: Path, device_dir_name: str, interface_number: int,
+) -> str | None:
+    """Convenience: locate *interface_number* under *device_dir_name* and
+    report whatever driver currently holds it. See kernel_driver_for_interface."""
+    iface_dir = find_interface_sysfs_dir(sys_root, device_dir_name, interface_number)
+    if iface_dir is None:
+        return None
+    return kernel_driver_for_interface(iface_dir)
+
 
 def _usb_access(
     rules_paths: list[str] | None = None,
@@ -472,6 +550,26 @@ def _usb_access(
         busnum, devnum = _read('busnum'), _read('devnum')
         out.append('')
         out.append(f'{dev.name}: {vid}:{pid} {product}')
+
+        # Which driver holds each of this device's USB interfaces. Not just
+        # "is a kernel driver active" (pyusb's is_kernel_driver_active() can
+        # only answer that as a bool) but *which one* — the difference
+        # between the usbhid/hid-generic pairing ASM has always raced against
+        # and, from Linux 7.3, hid-steelseries actively polling the same
+        # interface (INT-1 in docs/HARDWARE-QUESTIONS.md). Pure sysfs reads,
+        # so this is reported even when the /dev node below is gone or
+        # unreadable — exactly the case a permission bug needs it most.
+        interfaces = sorted(sys_root.glob(f'{dev.name}:*'))
+        if interfaces:
+            out.append('  interfaces:')
+            for iface_dir in interfaces:
+                try:
+                    num = (iface_dir / 'bInterfaceNumber').read_text().strip()
+                except OSError:
+                    num = '?'
+                drv = kernel_driver_for_interface(iface_dir)
+                out.append(f'    {iface_dir.name} (bInterfaceNumber {num}): '
+                          f'driver={drv or "(none — unclaimed)"}')
 
         if not (busnum.isdigit() and devnum.isdigit()):
             out.append('  (no bus/dev number: cannot locate the device node)')

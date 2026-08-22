@@ -14,6 +14,8 @@ import usb
 from usb.core import Device
 
 from arctis_sound_manager import device_state
+from arctis_sound_manager.bug_reporter import (find_interface_sysfs_dir,
+                                               kernel_driver_for_interface)
 from arctis_sound_manager.config import (CommandTransport,
                                          DeviceConfiguration,
                                          load_device_configurations,
@@ -1477,8 +1479,15 @@ class CoreEngine:
             elif e.errno == 5:  # EIO — interface got rebound by the kernel driver (usbhid)
                 self._eio_count = getattr(self, '_eio_count', 0) + 1
                 if self._eio_count == 1 or self._eio_count % 20 == 0:
-                    self.logger.warning('USB I/O error (errno 5 ×%d), interface may have been '
-                                        're-claimed by the kernel driver: %s', self._eio_count, e)
+                    # Naming the driver, not just "the kernel driver": once
+                    # hid-steelseries exists (Linux 7.3+) this line is what
+                    # tells "usbhid/hid-generic won the race again" apart
+                    # from "hid-steelseries is now actively polling this
+                    # interface" — see INT-1 in docs/HARDWARE-QUESTIONS.md.
+                    self.logger.warning(
+                        'USB I/O error (errno 5 ×%d) on interface %d, currently held '
+                        'by driver=%s: %s', self._eio_count, interface_id,
+                        self._interface_kernel_driver(usb_device, interface_id), e)
                 await asyncio.sleep(0.5)
                 if self._eio_count == 10:
                     # ~5 s of consecutive EIO: try to reclaim the interface(s)
@@ -2683,6 +2692,43 @@ class CoreEngine:
             *config.dial_interface_candidates,
         ]))
 
+    def _interface_kernel_driver(
+        self, usb_device: TypedDevice, interface: int,
+        sys_root: Path = Path('/sys/bus/usb/devices'),
+    ) -> str:
+        """Best-effort name of whatever kernel driver currently holds *interface*.
+
+        Diagnostic only — this never decides ASM's behaviour, only what gets
+        logged. `usb_device.is_kernel_driver_active()` (libusb) can only say
+        yes/no; it cannot say *which* driver, which is exactly the question
+        that matters once hid-steelseries exists (Linux 7.3+): "usbhid /
+        hid-generic got there first" and "hid-steelseries got there first"
+        call for different remediation, and today's EACCES/EIO log lines
+        cannot tell a bug reporter which one they are looking at. See INT-1
+        in docs/HARDWARE-QUESTIONS.md.
+
+        A plain sysfs read, so it works even when the USB permission problem
+        being diagnosed would make any pyusb call unreliable. Returns
+        "unknown" rather than raising — this must never be why a detach or
+        EIO-recovery log line goes missing. *sys_root* exists so tests can
+        point this at a fixture tree; nothing else should pass it.
+        """
+        try:
+            bus = usb_device.bus
+            ports = getattr(usb_device, 'port_numbers', None)
+        except Exception:
+            return "unknown"
+        if not bus or not ports:
+            return "unknown"
+        device_dir_name = f"{bus}-" + ".".join(str(p) for p in ports)
+        try:
+            iface_dir = find_interface_sysfs_dir(sys_root, device_dir_name, interface)
+            if iface_dir is None:
+                return "unknown"
+            return kernel_driver_for_interface(iface_dir) or "none (unclaimed)"
+        except Exception:
+            return "unknown"
+
     def kernel_detach(self, usb_device: TypedDevice, config: DeviceConfiguration) -> bool:
         """Detach the kernel driver from every interface ASM uses, then claim it.
 
@@ -2713,7 +2759,8 @@ class CoreEngine:
                     had_eacces = True
                     self.logger.error(
                         "USB access denied while detaching the kernel driver for %s "
-                        "(0x%04x:0x%04x) on interface %d. udev rules are missing or "
+                        "(0x%04x:0x%04x) on interface %d (currently held by driver=%s). "
+                        "udev rules are missing or "
                         "have not been applied to the currently-attached device. "
                         "Try one of: 1) replug the dongle, "
                         "2) `sudo asm-cli udev reload-rules`, "
@@ -2721,12 +2768,14 @@ class CoreEngine:
                         "to /etc/udev/rules.d/. The GUI will offer a one-click fix "
                         "if it's open. The daemon will keep running.",
                         config.name, usb_device.idVendor, usb_device.idProduct, interface,
+                        self._interface_kernel_driver(usb_device, interface),
                     )
                     continue
                 else:
                     self.logger.warning(
-                        f"Could not detach kernel driver on interface {interface}: {e!r}. "
-                        "Continuing with remaining interfaces."
+                        f"Could not detach kernel driver on interface {interface} "
+                        f"(currently held by driver={self._interface_kernel_driver(usb_device, interface)}): "
+                        f"{e!r}. Continuing with remaining interfaces."
                     )
 
             # Claim the interface for this process regardless of whether the
@@ -3177,7 +3226,17 @@ class CoreEngine:
                 hint = (" — the device is not answering status requests, so no "
                         "battery or mode will be shown")
             elif errno_val == 16:
-                hint = " — something else is holding the interface"
+                # "Something" used to be unnamed. A bug report can now say
+                # which driver is holding it — see INT-1 in
+                # docs/HARDWARE-QUESTIONS.md for why that distinction will
+                # start to matter once hid-steelseries exists (Linux 7.3+).
+                driver = "unknown"
+                usb_device = getattr(self, 'usb_device', None)
+                device_config = getattr(self, 'device_config', None)
+                if usb_device is not None and device_config is not None:
+                    driver = self._interface_kernel_driver(
+                        usb_device, device_config.command_interface_index[0])
+                hint = f" — something else is holding the interface (driver={driver})"
             self.logger.warning(
                 "Status poll USB error (x%d): %r%s", streak, exc, hint)
 
