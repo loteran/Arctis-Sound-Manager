@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import logging
 import json
+import math
+import os
 import re
 from pathlib import Path
 
@@ -467,6 +469,60 @@ def _read_external_output_setting() -> str:
     return value if isinstance(value, str) else ""
 
 
+# ── CHA-6: the setting is authoritative for the Output channel's target ──────
+#
+# The Output channel had two readers of "where does it go": the daemon's
+# every-5s watchdog (ensure_physical_output_links → _get_configured_external_
+# output, cheap — reads the target baked into sonar-output-eq.conf) and the
+# repair path (ensure_sonar_eq_configs → _resolve_external_output, expensive —
+# resolves the general_settings.yaml `external_output_device` setting against
+# the live PipeWire graph). Nothing rewrote the conf when the setting changed
+# through SetSetting over D-Bus, a hand-edit, a config restore, a settings
+# sync or a package upgrade, so the two could sit diverged indefinitely — the
+# watchdog kept enforcing a link to whatever the conf said, not what the
+# setting said, until some unrelated escalation happened to call
+# ensure_sonar_eq_configs() and silently "fixed" it with no user action.
+#
+# Fix: the setting is the single owner. This snapshot records which raw
+# setting value produced the conf currently on disk, written every time
+# generate_sonar_eq_conf("output", ...) actually resolves one. Comparing the
+# CURRENT setting against the snapshot is a cheap YAML read — no pulsectl —
+# so _get_configured_external_output() can do it on every watchdog tick
+# without paying the round-trip _resolve_external_output() itself warns
+# about. Only on an actual mismatch does it pay that cost once, to reconcile
+# and refresh the snapshot; every following tick is cheap again.
+def _output_setting_snapshot_path() -> Path:
+    # Resolved at call time, not import time (like _read_external_output_setting
+    # itself), so tests that redirect Path.home() see it move too.
+    return Path.home() / ".config" / "arctis_manager" / ".sonar_output_setting_snapshot"
+
+
+def _read_output_setting_snapshot() -> str:
+    """Raw ``external_output_device`` value the on-disk conf was last built
+    for, or ``""`` if never recorded — the same "unset" sentinel
+    :func:`_read_external_output_setting` itself returns, so an install that
+    has never set an explicit output device never reports a spurious
+    mismatch (both sides read as "").
+    """
+    try:
+        return _output_setting_snapshot_path().read_text().strip()
+    except OSError:
+        return ""
+
+
+def _sync_output_setting_snapshot() -> None:
+    """Record the current ``external_output_device`` setting as the one the
+    output conf was just (re)built for. Best-effort: a failure here only
+    means the next tick pays one extra reconciliation pass, never a crash.
+    """
+    try:
+        path = _output_setting_snapshot_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(_read_external_output_setting())
+    except OSError as exc:
+        _log.warning("Could not record external-output setting snapshot: %s", exc)
+
+
 def _resolve_external_output(target_override: str | None = None) -> tuple[str, int, str]:
     """Detect the external output sink (HDMI / DisplayPort / aux) at runtime.
 
@@ -548,7 +604,38 @@ _SMART_PRESETS: dict[str, dict] = {
 
 # ── Low-level helpers ─────────────────────────────────────────────────────────
 
+# Real domains a band literal can take, matching what the UI itself already
+# clamps to (gui/eq_curve_widget.py: _FREQ_RANGE, _GAIN_RANGE, and the Q
+# spinbox clamp at :420/:617) — not invented here, read off the one place a
+# user can actually move these numbers.
+_BAND_FREQ_RANGE = (20.0, 20000.0)
+_BAND_Q_RANGE = (0.1, 10.0)
+_BAND_GAIN_RANGE = (-12.0, 12.0)
+
+
+def _clamp_finite(value: float, lo: float, hi: float, default: float) -> float:
+    """Clamp *value* into ``[lo, hi]``; fall back to *default* when not finite.
+
+    CHA-10: presets are shared third-party content (the import dialog, the
+    asm-presets feature), and Python's ``json`` module happily parses
+    ``Infinity``/``NaN`` literals and turns ``1e400`` into ``inf``. Nothing
+    downstream validated a band's numbers before they were formatted with a
+    bare ``str()`` into the filter-chain conf, so PipeWire would get
+    ``Freq = inf`` / ``Gain = nan`` with no diagnostic at all. This is the
+    single point every band literal passes through on the way into the conf
+    text (:func:`_node_block`), so it catches every producer — GUI curve
+    edits, macro sliders, imported presets, hardware EQ import — regardless
+    of which one let a non-finite or out-of-range value through.
+    """
+    if not math.isfinite(value):
+        return default
+    return max(lo, min(hi, value))
+
+
 def _node_block(name: str, label: str, freq: float, q: float, gain: float) -> str:
+    freq = _clamp_finite(freq, *_BAND_FREQ_RANGE, 1000.0)
+    q = _clamp_finite(q, *_BAND_Q_RANGE, 0.7071)
+    gain = _clamp_finite(gain, *_BAND_GAIN_RANGE, 0.0)
     return (
         f"                    {{ type = builtin  name = {name}  label = {label}\n"
         f"                      control = {{ Freq = {freq}  Q = {q}  Gain = {gain} }} }}"
@@ -1152,6 +1239,10 @@ def generate_sonar_eq_conf(
     owns_link = channel in ("game", "media")
     sink_name = f"effect_input.sonar-{channel}-eq"
 
+    # Only a conf written to the channel's real path represents the live EQ;
+    # callers passing an explicit output_path are diffing or testing, and must
+    # not overwrite the state snapshot (CHA-7).
+    writes_live_conf = output_path is None
     if output_path is None:
         output_path = _CONF_DIR / f"sonar-{channel}-eq.conf"
 
@@ -1168,6 +1259,11 @@ def generate_sonar_eq_conf(
         position = _CHANNEL_POSITION[channel]
     elif channel == "output":
         target, channels, position = _resolve_external_output(target_override)
+        # CHA-6: record which raw external_output_device setting produced
+        # this target, so a later read can tell — cheaply, without a
+        # pulsectl round-trip — whether the setting has since moved on
+        # without this conf being rewritten to match.
+        _sync_output_setting_snapshot()
     else:
         # game / media: always 8ch, always (nominally) targets HeSuVi.
         target = target_override or _CHANNEL_TARGET.get(channel, "")
@@ -1214,6 +1310,9 @@ def generate_sonar_eq_conf(
         text = _bypass_conf(sink_name, target, channels, position, channel=channel,
                              owns_link=owns_link)
         _write_conf(output_path, text)
+        if writes_live_conf:
+            _save_eq_state(channel, bands, basses_db, voix_db, aigus_db,
+                           boost_db, smart_volume)
         return text
 
     if channels != 2 or channel == "output":
@@ -1227,6 +1326,9 @@ def generate_sonar_eq_conf(
                                 boost_db, smart_volume)
 
     _write_conf(output_path, text)
+    if writes_live_conf:
+        _save_eq_state(channel, bands, basses_db, voix_db, aigus_db,
+                       boost_db, smart_volume)
     return text
 
 
@@ -1955,8 +2057,231 @@ def generate_virtual_sinks_conf(sonar: bool) -> str:
 # ── File I/O ──────────────────────────────────────────────────────────────────
 
 def _write_conf(path: Path, text: str) -> None:
+    """Write *text* to *path* atomically (CHA-7).
+
+    A bare ``write_text()`` here used to leave a truncated conf on disk if
+    the process died mid-write — the reproduction was a filter-chain
+    restart landing between the truncation and the next write, at which
+    point PipeWire loaded a fragment instead of the full chain. Serializes
+    to a sibling tempfile, fsyncs, then renames over the target — the same
+    tmp+fsync+rename pattern already used by
+    ``GeneralSettings.write_to_file`` (settings.py) and
+    ``stream_guard.save_config``, kept local to this module rather than
+    factored into a shared helper (settings.py's own atomic-write work is
+    happening in parallel).
+
+    ``/dev/null`` is special-cased: callers (mainly tests) pass it as a
+    throwaway ``output_path`` to get the generated text back without
+    touching disk. There is nothing to make atomic there, and a sibling
+    tempfile under ``/dev`` would need root — so just write straight
+    through, exactly like the pre-CHA-7 behaviour.
+    """
+    if str(path) == os.devnull:
+        path.write_text(text)
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    try:
+        with tmp.open("w", encoding="utf-8") as fh:
+            fh.write(text)
+            fh.flush()
+            try:
+                os.fsync(fh.fileno())
+            except OSError:
+                pass
+        tmp.replace(path)
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+
+
+def _backup_conf(path: Path) -> Path | None:
+    """Copy *path* to a ``.bak`` sibling before a repair overwrites it (CHA-7).
+
+    Best-effort and never blocks the repair: a failure to back up leaves the
+    caller no worse off than before this existed. The conf being backed up
+    may itself already be truncated or corrupt — that's fine, a partial copy
+    is still worth keeping for support/diagnosis, and this is a forensic
+    copy, not something anything reads back automatically.
+    """
+    if not path.exists():
+        return None
+    backup = path.with_suffix(path.suffix + ".bak")
+    try:
+        backup.write_text(path.read_text())
+        return backup
+    except OSError as exc:
+        _log.warning("Could not back up %s before regenerating: %s", path, exc)
+        return None
+
+
+# ── Lossless EQ-conf rebuild (CHA-7) ──────────────────────────────────────────
+#
+# ensure_sonar_eq_configs()/check_and_fix_stale_configs() used to have exactly
+# one regeneration primitive for a missing/corrupt/stale sonar-<channel>-eq.conf:
+# _bypass_conf(), a flat passthrough. That is correct the first time a channel
+# is ever configured (nothing to lose), but every trigger below it — a missing
+# file, a truncated one, a wrong channel count, a wrong target — fires on the
+# exact same path even when the conf on disk carried a real, user-tuned EQ
+# curve, silently discarding every band, macro and boost node.
+#
+# gui/sonar_page.py's _ApplyWorker now leaves a JSON snapshot of the EQ state
+# that actually produced a channel's conf (_save_eq_state) every time Apply
+# reaches the filter-chain. _load_eq_state() below reads it back so a repair
+# can rebuild the real conf through generate_sonar_eq_conf() instead of
+# flattening it — a bypass is now the fallback for "nothing was ever applied
+# yet", not the only option.
+
+def _eq_state_path(channel: str) -> Path:
+    return Path.home() / ".config" / "arctis_manager" / f"sonar_eq_state_{channel}.json"
+
+
+def _save_eq_state(channel: str, bands: list[EqBand],
+                   basses_db: float, voix_db: float, aigus_db: float,
+                   boost_db: float, smart_volume: dict | None) -> None:
+    """Snapshot the EQ state that just produced *channel*'s conf.
+
+    Written here, from the one function every conf producer goes through,
+    rather than from the GUI's Apply worker: an install that upgrades and
+    never reopens the Sonar page would otherwise have no snapshot at all,
+    and the first repair would still flatten its EQ (CHA-7). The daemon
+    regenerates confs on its own, so the snapshot exists from the first
+    watchdog tick onwards.
+
+    Atomic (tmp+fsync+rename), for the same reason the conf write is: a
+    truncated snapshot is a snapshot that fails to load, and a snapshot that
+    fails to load is a bypass. Never raises — losing the snapshot must not
+    take the conf write down with it.
+    """
+    path = _eq_state_path(channel)
+    data = {
+        "bands": [
+            {"freq": b.freq, "gain": b.gain, "q": b.q,
+             "type": b.type, "enabled": b.enabled}
+            for b in bands
+        ],
+        "basses_db": basses_db,
+        "voix_db": voix_db,
+        "aigus_db": aigus_db,
+        "boost_db": boost_db,
+        "smart_volume": smart_volume,
+    }
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        tmp.replace(path)
+    except OSError as e:
+        logger.warning("Could not save EQ state for channel=%s: %s", channel, e)
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _load_eq_state(channel: str) -> dict | None:
+    """Read back the last-applied EQ state for *channel*, or ``None``.
+
+    Fails closed on anything malformed — missing file, non-JSON, wrong
+    shape, a band that won't coerce to float — so a corrupt state file can
+    never crash a repair; the caller falls back to the flat bypass exactly
+    as it always has. Non-finite band values are not rejected here: they are
+    clamped later, in :func:`_node_block`, the single choke point every
+    producer's band literals already pass through (CHA-10).
+    """
+    try:
+        raw = json.loads(_eq_state_path(channel).read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+    bands_raw = raw.get("bands")
+    if not isinstance(bands_raw, list):
+        return None
+    bands: list[EqBand] = []
+    try:
+        for b in bands_raw:
+            if not isinstance(b, dict):
+                return None
+            bands.append(EqBand(
+                freq=float(b.get("freq", 1000.0)),
+                gain=float(b.get("gain", 0.0)),
+                q=float(b.get("q", 0.7071)),
+                type=str(b.get("type", "peakingEQ")),
+                enabled=bool(b.get("enabled", True)),
+            ))
+        basses_db = float(raw.get("basses_db", 0.0))
+        voix_db = float(raw.get("voix_db", 0.0))
+        aigus_db = float(raw.get("aigus_db", 0.0))
+        boost_db = float(raw.get("boost_db", 0.0))
+    except (TypeError, ValueError):
+        return None
+    smart_volume = raw.get("smart_volume")
+    if smart_volume is not None and not isinstance(smart_volume, dict):
+        smart_volume = None
+    return {
+        "bands": bands,
+        "basses_db": basses_db,
+        "voix_db": voix_db,
+        "aigus_db": aigus_db,
+        "boost_db": boost_db,
+        "smart_volume": smart_volume,
+    }
+
+
+def _regenerate_eq_conf(
+    channel: str, conf_path: Path, sink_name: str, target: str,
+    channels: int, position: str, owns_link: bool, log, reason: str,
+) -> None:
+    """Repair *conf_path*, preferring a lossless rebuild over a bypass (CHA-7).
+
+    Always backs up whatever is currently on disk first (even if it is the
+    very truncation/corruption that triggered the repair — still worth
+    keeping). Then tries the last-applied EQ state saved by the GUI; only
+    when that is unavailable does it fall back to the flat bypass this
+    function replaces, and the log line says so explicitly — "regenerating"
+    alone used to give no indication the EQ was actually being discarded.
+    """
+    backup = _backup_conf(conf_path)
+    if backup is not None:
+        log.info("%s backed up to %s before regenerating (%s)",
+                  conf_path.name, backup.name, reason)
+
+    state = _load_eq_state(channel)
+    if state is not None:
+        generate_sonar_eq_conf(
+            channel, state["bands"],
+            state["basses_db"], state["voix_db"], state["aigus_db"],
+            output_path=conf_path,
+            boost_db=state["boost_db"],
+            smart_volume=state["smart_volume"],
+            target_override=target,
+        )
+        log.warning(
+            "%s regenerated (%s) — rebuilt from the last saved EQ state, "
+            "bands/macros/boost preserved",
+            conf_path.name, reason,
+        )
+    else:
+        _write_conf(
+            conf_path,
+            _bypass_conf(sink_name, target, channels, position,
+                         channel=channel, owns_link=owns_link),
+        )
+        log.warning(
+            "%s regenerated (%s) as a flat bypass — no saved EQ state was "
+            "found, so any bands/macros/boost on this channel were reset "
+            "to flat",
+            conf_path.name, reason,
+        )
+        if channel == "output":
+            _sync_output_setting_snapshot()
 
 
 _WRITTEN_TARGET_RE = re.compile(
@@ -2251,11 +2576,11 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
         path = _CONF_DIR / name
         if path.exists():
             content = path.read_text()
-            needs_regen = False
+            regen_reason: str | None = None
 
             if "label = gain" in content:
                 log.warning("Stale config (%s uses 'label = gain'), regenerating", name)
-                needs_regen = True
+                regen_reason = "'label = gain'"
 
             # Phase 3 (issue #100/#88): game and media are now ALWAYS 8ch,
             # independent of the Spatial Audio toggle (the live routing
@@ -2263,15 +2588,16 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
             # count). A 2ch game/media conf is therefore always stale.
             if name in ("sonar-game-eq.conf", "sonar-media-eq.conf") and "audio.channels = 2" in content:
                 log.warning("Stale config (%s uses 2ch, should be 8ch), regenerating", name)
-                needs_regen = True
+                regen_reason = "2ch, should be 8ch"
 
             # NOTE: _conf_is_outdated() is deliberately NOT a regeneration
             # trigger here — see the "Scope" note on _CONF_VERSION. The regen
-            # path below writes a *bypass* (flat) conf because nothing in this
-            # module can read back the user's bands/macros/boost, so triggering
-            # it on a version bump would silently flatten every user's EQ on
-            # the first launch after an upgrade.
-            if needs_regen:
+            # below now prefers rebuilding from the last saved EQ state
+            # (CHA-7); it only falls back to a flat bypass when no such
+            # state exists, so triggering it here does not usually flatten
+            # a user's EQ, but the bypass fallback still can — and a bump
+            # alone still isn't a reason to force it on every existing conf.
+            if regen_reason is not None:
                 channel = name.replace("sonar-", "").replace("-eq.conf", "")
                 sink_name = f"effect_input.sonar-{channel}-eq"
                 target = {
@@ -2282,8 +2608,11 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
                 }.get(channel, _get_physical_out_game())
                 channels = _CHANNEL_CHANNELS.get(channel, 2)
                 position = _CHANNEL_POSITION.get(channel, "FL FR")
-                _write_conf(path, _bypass_conf(sink_name, target, channels, position, channel=channel,
-                                                owns_link=channel in ("game", "media")))
+                _regenerate_eq_conf(
+                    channel, path, sink_name, target, channels, position,
+                    owns_link=channel in ("game", "media"), log=log,
+                    reason=regen_reason,
+                )
                 fixed = True
 
     # Micro EQ: remove stale copies from pipewire.conf.d
@@ -2601,14 +2930,14 @@ def ensure_sonar_eq_configs() -> bool:
         conf_path = _CONF_DIR / f"sonar-{channel}-eq.conf"
         sink_name = f"effect_input.sonar-{channel}-eq"
         exp = expected[channel]
-        needs_regen = False
+        regen_reason: str | None = None
 
         if not conf_path.exists():
             log.warning(
-                "sonar-%s-eq.conf missing — generating bypass so %s node exists",
+                "sonar-%s-eq.conf missing — regenerating so %s node exists",
                 channel, sink_name,
             )
-            needs_regen = True
+            regen_reason = "conf missing"
         else:
             content = conf_path.read_text()
             ch_str  = f"audio.channels = {exp['channels']}"
@@ -2618,7 +2947,7 @@ def ensure_sonar_eq_configs() -> bool:
                     "sonar-%s-eq.conf has wrong channel count (expected %d) — regenerating",
                     channel, exp["channels"],
                 )
-                needs_regen = True
+                regen_reason = "wrong channel count"
             elif exp["target"] and tgt_str not in content:
                 # A conf with NO target at all is repairable without touching
                 # anything else, and that is worth doing: regenerating writes
@@ -2632,28 +2961,32 @@ def ensure_sonar_eq_configs() -> bool:
                         "keeping the EQ", channel, exp["target"],
                     )
                     _write_conf(conf_path, patched)
+                    if channel == "output":
+                        _sync_output_setting_snapshot()
                     generated = True
                     continue
                 log.warning(
                     "sonar-%s-eq.conf has wrong target (expected %r) — regenerating",
                     channel, exp["target"],
                 )
-                needs_regen = True
+                regen_reason = "wrong target"
 
         # No ASM-CONF-VERSION check here either — same reason as in
-        # check_and_fix_stale_configs(): the regen below writes a bypass conf.
-        if needs_regen:
-            _write_conf(
-                conf_path,
-                # channel= is not optional: _bypass_conf derives media.class
-                # and priority.session from it. Omitting it wrote the Output
-                # conf as Audio/Sink/Internal priority 1000 instead of
-                # Audio/Sink priority 1, so the Output channel disappeared
-                # from the selectable outputs — while
-                # check_and_fix_stale_configs()'s regen of the same file wrote
-                # it correctly. Two writers, one file, one of them wrong.
-                _bypass_conf(sink_name, exp["target"], exp["channels"], exp["position"],
-                             channel=channel, owns_link=channel in ("game", "media")),
+        # check_and_fix_stale_configs(): the regen below can only fall back
+        # to a bypass conf when there is no saved EQ state to rebuild from.
+        if regen_reason is not None:
+            # channel= is not optional: _bypass_conf/_regenerate_eq_conf
+            # derive media.class and priority.session from it. Omitting it
+            # wrote the Output conf as Audio/Sink/Internal priority 1000
+            # instead of Audio/Sink priority 1, so the Output channel
+            # disappeared from the selectable outputs — while
+            # check_and_fix_stale_configs()'s regen of the same file wrote
+            # it correctly. Two writers, one file, one of them wrong.
+            _regenerate_eq_conf(
+                channel, conf_path, sink_name, exp["target"],
+                exp["channels"], exp["position"],
+                owns_link=channel in ("game", "media"), log=log,
+                reason=regen_reason,
             )
             generated = True
 
@@ -2807,25 +3140,60 @@ def _node_in_graph(data: list | None, node_name: str) -> bool:
 
 
 def _get_configured_external_output() -> str:
-    """Return the external sink the Output channel's conf currently targets.
+    """Return the external sink the Output channel should currently target.
 
-    The Output channel (HDMI / TV / speakers) resolves its target through
-    :func:`_resolve_external_output`, which opens a pulsectl connection. That
-    is fine when writing the conf, but this value is needed on every watchdog
-    tick, so it is read back from the generated conf instead — the conf is
-    rewritten whenever the user changes the external output, so it stays the
-    single source of truth without paying for a PulseAudio round-trip a few
-    times a minute.
+    CHA-6: this used to just read the target baked into ``sonar-output-eq.conf``
+    — cheap, and correct only as long as something rewrites that conf every
+    time the ``external_output_device`` setting changes. Nothing does: not a
+    ``SetSetting`` over D-Bus, a hand-edit, a config restore, a settings sync
+    nor a package upgrade. The two had already diverged once on real use (the
+    setting said the headset, the conf said the TV) with no user action and
+    no message — the conf just quietly won until an unrelated repair pass
+    regenerated it.
 
-    Returns an empty string when the conf is missing or carries no target
-    (no external sink configured), which callers treat as "skip this hop".
+    The setting is now the single owner. :func:`_read_output_setting_snapshot`
+    records which raw setting value the on-disk conf was actually built for,
+    so comparing it against the CURRENT setting is a cheap YAML read — no
+    pulsectl — and catches every write path at once, including the ones this
+    module cannot intercept directly (a D-Bus ``SetSetting`` call lands in
+    ``settings.py``, outside this module). Only on a genuine mismatch does
+    this pay for the one pulsectl round-trip needed to resolve the setting
+    and reconcile the conf; the log line names both sides so the jump is
+    never silent again. Every following tick is back to the cheap path once
+    the snapshot is refreshed.
+
+    Returns an empty string when there is nothing to target (no external
+    sink configured), which callers treat as "skip this hop".
     """
+    conf_path = _CONF_DIR / "sonar-output-eq.conf"
     try:
-        content = (_CONF_DIR / "sonar-output-eq.conf").read_text()
+        content = conf_path.read_text()
     except OSError:
-        return ""
-    match = _CONF_TARGET_RE.search(content)
-    return match.group(1) if match else ""
+        content = None
+
+    conf_target = ""
+    if content is not None:
+        match = _CONF_TARGET_RE.search(content)
+        conf_target = match.group(1) if match else ""
+
+    current_setting = _read_external_output_setting()
+    snapshot = _read_output_setting_snapshot()
+    if current_setting == snapshot:
+        return conf_target
+
+    _log.warning(
+        "external_output_device setting (%r) has diverged from the "
+        "external output baked into sonar-output-eq.conf (%r, recorded for "
+        "setting %r) — reconciling toward the setting (CHA-6)",
+        current_setting, conf_target, snapshot,
+    )
+    resolved_target, channels, position = _resolve_external_output()
+    _regenerate_eq_conf(
+        "output", conf_path, "effect_input.sonar-output-eq",
+        resolved_target, channels, position, owns_link=False, log=_log,
+        reason="external_output_device setting changed",
+    )
+    return resolved_target
 
 
 def ensure_physical_output_links(data: list | None = None) -> dict[str, bool]:

@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from arctis_sound_manager import sonar_to_pipewire as _s2p
 from arctis_sound_manager.eq_types import EqBand
 from arctis_sound_manager.sonar_to_pipewire import (
@@ -2755,3 +2757,380 @@ def test_missing_version_marker_never_regenerates_eq_confs(tmp_path, monkeypatch
             f"{name} was rewritten — a missing version marker must never flatten "
             "a user's EQ (see the Scope note on _CONF_VERSION)"
         )
+
+
+# ── CHA-6 — the Output channel's setting and conf must not diverge silently ──
+
+def test_output_target_reconciles_toward_the_setting_when_conf_diverges(tmp_path, monkeypatch, caplog):
+    """CHA-6 reproduction: general_settings.yaml says the headset, the conf
+    on disk still says the TV (a SetSetting over D-Bus, a hand-edit, a
+    config restore or an upgrade never rewrote it). The setting is now the
+    single owner: the next read must reconcile the live target — and the
+    conf on disk — toward the setting, log the jump, and leave a backup of
+    what was there before.
+    """
+    import logging
+    import arctis_sound_manager.sonar_to_pipewire as _s2p_mod
+
+    conf_dir = tmp_path / "filter-chain.conf.d"
+    conf_dir.mkdir(parents=True)
+    settings_dir = tmp_path / ".config" / "arctis_manager" / "settings"
+    settings_dir.mkdir(parents=True)
+
+    tv = "alsa_output.pci-0000_09_00.1.hdmi-stereo"
+    headset = "alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.analog-stereo"
+
+    (settings_dir / "general_settings.yaml").write_text(
+        f"external_output_device: {headset}\n"
+    )
+    conf_path = conf_dir / "sonar-output-eq.conf"
+    conf_path.write_text(
+        'context.modules = [\n'
+        '  { name = libpipewire-module-filter-chain\n'
+        '    args = { filter.graph = { nodes = [ { type = builtin  name = copy  label = copy } ] }\n'
+        '      playback.props = {\n'
+        f'        node.target         = "{tv}"\n'
+        f'        target.object       = "{tv}"\n'
+        '      } } }\n'
+        ']\n'
+    )
+    # No snapshot recorded — this conf predates the reconciliation mechanism
+    # (or the setting moved past it without anything rewriting it), exactly
+    # the state a pre-existing install is in the first time it sees this fix.
+
+    monkeypatch.setattr(_s2p_mod, "_CONF_DIR", conf_dir)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(_s2p_mod, "_resolve_external_output",
+                        lambda *a, **kw: (headset, 2, "FL FR"))
+
+    with caplog.at_level(logging.WARNING):
+        resolved = _s2p_mod._get_configured_external_output()
+
+    assert resolved == headset, "must reconcile toward the setting, not the stale conf"
+    assert f'node.target         = "{headset}"' in conf_path.read_text()
+    assert (conf_dir / "sonar-output-eq.conf.bak").exists(), "no backup taken before rewriting"
+    assert tv in (conf_dir / "sonar-output-eq.conf.bak").read_text()
+    assert any("diverged" in r.message and headset in r.message for r in caplog.records), (
+        "the reconciliation must be logged, not silent"
+    )
+
+    # The snapshot is now in sync with the setting, so a second read is the
+    # cheap path (conf unchanged) and does not flip anything again.
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        second = _s2p_mod._get_configured_external_output()
+    assert second == headset
+    assert not any("diverged" in r.message for r in caplog.records), (
+        "once reconciled, a following read must not re-trigger the expensive path"
+    )
+
+
+def test_output_target_stays_on_fast_path_when_setting_unchanged(tmp_path, monkeypatch):
+    """The common case — nothing changed — must never pay for a pulsectl
+    round-trip: _resolve_external_output() must not be called at all."""
+    import arctis_sound_manager.sonar_to_pipewire as _s2p_mod
+
+    conf_dir = tmp_path / "filter-chain.conf.d"
+    conf_dir.mkdir(parents=True)
+    settings_dir = tmp_path / ".config" / "arctis_manager" / "settings"
+    settings_dir.mkdir(parents=True)
+    snapshot_dir = tmp_path / ".config" / "arctis_manager"
+
+    headset = "alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.analog-stereo"
+    (settings_dir / "general_settings.yaml").write_text(
+        f"external_output_device: {headset}\n"
+    )
+    (snapshot_dir / ".sonar_output_setting_snapshot").write_text(headset)
+
+    conf_path = conf_dir / "sonar-output-eq.conf"
+    conf_path.write_text(f'node.target         = "{headset}"\n')
+
+    monkeypatch.setattr(_s2p_mod, "_CONF_DIR", conf_dir)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    calls = []
+    monkeypatch.setattr(_s2p_mod, "_resolve_external_output",
+                        lambda *a, **kw: calls.append(1) or (headset, 2, "FL FR"))
+
+    resolved = _s2p_mod._get_configured_external_output()
+    assert resolved == headset
+    assert calls == [], "setting matches the snapshot — must not resolve via pulsectl"
+
+
+# ── CHA-7 — a corrupt/missing conf must regenerate with the bands intact ────
+
+def test_corrupt_conf_regenerates_from_saved_eq_state_not_a_bypass(tmp_path, monkeypatch):
+    """CHA-7 reproduction: sonar-media-eq.conf truncated to the point its
+    channel count no longer matches (the same trigger as the real
+    truncation — wrong channel count fires the identical regeneration
+    path as a missing file or a wrong target). The repair must rebuild the
+    real EQ from the last saved state (bands/macros/boost intact) instead
+    of the old flat bypass, and must leave a backup of the corrupt file.
+    """
+    import json
+    import arctis_sound_manager.sonar_to_pipewire as stp
+
+    conf_dir = tmp_path / "conf" / "filter-chain.conf.d"
+    conf_dir.mkdir(parents=True)
+    home = tmp_path / "home"
+    state_dir = home / ".config" / "arctis_manager"
+    state_dir.mkdir(parents=True)
+
+    # What generate_sonar_eq_conf() snapshots every time it writes the
+    # Media channel's live conf.
+    saved_state = {
+        "bands": [
+            {"freq": 250.0, "gain": 4.5, "q": 0.9, "type": "peakingEQ", "enabled": True},
+        ],
+        "basses_db": 1.0, "voix_db": -1.0, "aigus_db": 0.5,
+        "boost_db": 2.0, "smart_volume": None,
+    }
+    (state_dir / "sonar_eq_state_media.json").write_text(json.dumps(saved_state))
+
+    # Truncated conf: wrong channel count is exactly the trigger the report
+    # reproduced (14 filters -> 1, channel count no longer matches).
+    corrupt = (
+        'context.modules = [\n'
+        '  { name = libpipewire-module-filter-chain\n'
+        '    args = { capture.props = { audio.channels = 2 } } }\n'
+        ']\n'
+    )
+    media_conf = conf_dir / "sonar-media-eq.conf"
+    media_conf.write_text(corrupt)
+
+    monkeypatch.setattr(stp, "_CONF_DIR", conf_dir)
+    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setattr(stp, "_filter_chain_safe_mode", False)
+    monkeypatch.setattr(stp, "_SAFE_MODE_MARKER", conf_dir / "no-such-marker.json")
+    monkeypatch.setattr(stp, "_get_physical_out_chat", lambda: "alsa_output.test-headset")
+    monkeypatch.setattr(stp, "_resolve_external_output",
+                        lambda *a, **kw: ("alsa_output.test-ext", 2, "FL FR"))
+
+    assert stp.ensure_sonar_eq_configs() is True
+
+    repaired = media_conf.read_text()
+    # The band survived — this is what a flat bypass would have destroyed.
+    assert "Freq = 250.0" in repaired
+    assert "Gain = 4.5" in repaired
+    assert "Q = 0.9" in repaired
+    # Macros and boost survived too.
+    assert "Gain = 1.0" in repaired    # basses macro
+    assert "Gain = -1.0" in repaired   # voix macro
+    assert "Gain = 0.5" in repaired    # aigus macro
+    assert "Gain = 2.0" in repaired    # boost
+    assert "label = copy" not in repaired, "must not have fallen back to a flat bypass"
+    assert "audio.channels = 8" in repaired
+
+    # The corrupt file was preserved for diagnosis before being overwritten.
+    backup = conf_dir / "sonar-media-eq.conf.bak"
+    assert backup.exists()
+    assert backup.read_text() == corrupt
+
+
+def test_missing_saved_state_still_falls_back_to_a_bypass(tmp_path, monkeypatch):
+    """The flip side: a channel that was never Applied has no saved state to
+    rebuild from, so the repair must still fall back to the flat bypass —
+    the fallback path stays intact for a first-ever install."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+
+    conf_dir = tmp_path / "conf" / "filter-chain.conf.d"
+    conf_dir.mkdir(parents=True)
+    home = tmp_path / "home"
+    (home / ".config" / "arctis_manager").mkdir(parents=True)  # no state file inside
+
+    corrupt = (
+        'context.modules = [\n'
+        '  { name = libpipewire-module-filter-chain\n'
+        '    args = { capture.props = { audio.channels = 2 } } }\n'
+        ']\n'
+    )
+    media_conf = conf_dir / "sonar-media-eq.conf"
+    media_conf.write_text(corrupt)
+
+    monkeypatch.setattr(stp, "_CONF_DIR", conf_dir)
+    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setattr(stp, "_filter_chain_safe_mode", False)
+    monkeypatch.setattr(stp, "_SAFE_MODE_MARKER", conf_dir / "no-such-marker.json")
+    monkeypatch.setattr(stp, "_get_physical_out_chat", lambda: "alsa_output.test-headset")
+    monkeypatch.setattr(stp, "_resolve_external_output",
+                        lambda *a, **kw: ("alsa_output.test-ext", 2, "FL FR"))
+
+    assert stp.ensure_sonar_eq_configs() is True
+
+    repaired = media_conf.read_text()
+    assert "label = copy" in repaired
+    assert (conf_dir / "sonar-media-eq.conf.bak").exists()
+
+
+def test_write_conf_failed_rename_leaves_original_conf_untouched(tmp_path, monkeypatch):
+    """CHA-7: _write_conf must never leave a half-written conf on disk. If
+    the final atomic rename fails partway through, the previous file must
+    be exactly what it was — never truncated or partially overwritten —
+    and no stray .tmp file is left behind."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+
+    path = tmp_path / "sonar-media-eq.conf"
+    original = "ORIGINAL CONF — 14 filters, byte for byte"
+    path.write_text(original)
+
+    def _boom(self, target):
+        raise OSError("simulated interruption during rename")
+
+    monkeypatch.setattr(Path, "replace", _boom)
+
+    with pytest.raises(OSError):
+        stp._write_conf(path, "TRUNCATED-CONTENT-THAT-MUST-NEVER-LAND")
+
+    assert path.read_text() == original, "the original conf must survive an interrupted write"
+    assert not (tmp_path / "sonar-media-eq.conf.tmp").exists(), "no stray tempfile left behind"
+
+
+def test_write_conf_is_all_or_nothing_on_success(tmp_path, monkeypatch):
+    """The successful path: no .tmp file left behind, and the target holds
+    exactly the new content — the write is atomic, not incremental."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+
+    path = tmp_path / "sonar-game-eq.conf"
+    stp._write_conf(path, "NEW CONTENT")
+    assert path.read_text() == "NEW CONTENT"
+    assert not (tmp_path / "sonar-game-eq.conf.tmp").exists()
+
+
+# ── CHA-10 — inf/nan/1e400 from a preset must never reach the conf ──────────
+
+def test_clamp_finite_rejects_non_finite_values():
+    import arctis_sound_manager.sonar_to_pipewire as stp
+
+    assert stp._clamp_finite(float("inf"), 20.0, 20000.0, 1000.0) == 1000.0
+    assert stp._clamp_finite(float("-inf"), 20.0, 20000.0, 1000.0) == 1000.0
+    assert stp._clamp_finite(float("nan"), -12.0, 12.0, 0.0) == 0.0
+    # Finite but out of range still clamps, same as boost_db already does.
+    assert stp._clamp_finite(999999.0, 20.0, 20000.0, 1000.0) == 20000.0
+    assert stp._clamp_finite(-5.0, 0.1, 10.0, 0.7071) == 0.1
+    # Finite and in range passes through unchanged.
+    assert stp._clamp_finite(440.0, 20.0, 20000.0, 1000.0) == 440.0
+
+
+def test_node_block_never_emits_non_finite_control_values():
+    """CHA-10 reproduction: a band carrying inf/nan (e.g. from a shared
+    preset with 1e400/NaN literals) must never reach the generated conf as
+    'Freq = inf' / 'Gain = nan' — PipeWire creates that node with no
+    diagnostic at all. This is the single choke point every producer's band
+    literals pass through, so it must catch this regardless of where the
+    non-finite value came from."""
+    bands = [EqBand(freq=float("inf"), gain=float("nan"), q=float("-inf"),
+                    type="peakingEQ", enabled=True)]
+    text = generate_sonar_eq_conf("media", bands, 0.0, 0.0, 0.0,
+                                  output_path=Path("/dev/null"))
+    assert "= inf" not in text
+    assert "= -inf" not in text
+    assert "= nan" not in text
+
+
+def test_parse_preset_data_rejects_non_finite_values():
+    """gui/sonar_page.py._parse_preset_data — the earliest boundary a shared
+    preset crosses. A band carrying inf/nan must come out finite and within
+    the same domain the interactive EQ curve itself clamps to."""
+    import math
+    from arctis_sound_manager.gui import sonar_page as sp
+
+    data = {
+        "parametricEQ": {
+            "filter1": {
+                "frequency": 1e400, "gain": float("nan"), "qFactor": float("inf"),
+                "type": "peakingEQ", "enabled": True,
+            },
+        }
+    }
+    bands = sp._parse_preset_data(data)
+    assert len(bands) == 1
+    b = bands[0]
+    assert math.isfinite(b.freq) and math.isfinite(b.gain) and math.isfinite(b.q)
+    assert 20.0 <= b.freq <= 20000.0
+    assert -12.0 <= b.gain <= 12.0
+    assert 0.1 <= b.q <= 10.0
+
+
+def test_parse_preset_rejects_json_infinity_and_nan_literals(tmp_path):
+    """End-to-end CHA-10 reproduction: Python's json module accepts
+    Infinity/NaN literals by default, and 1e400 overflows straight to inf.
+    A preset file carrying exactly those tokens must still parse into a
+    finite, in-range band."""
+    import math
+    from arctis_sound_manager.gui import sonar_page as sp
+
+    preset_path = tmp_path / "chaos [Game].json"
+    preset_path.write_text(
+        '{"parametricEQ": {"filter1": '
+        '{"frequency": 1e400, "gain": NaN, "qFactor": Infinity, '
+        '"type": "peakingEQ", "enabled": true}}}'
+    )
+    bands = sp._parse_preset(preset_path)
+    assert len(bands) == 1
+    b = bands[0]
+    assert math.isfinite(b.freq) and math.isfinite(b.gain) and math.isfinite(b.q)
+
+
+def test_generating_a_conf_snapshots_the_state_that_produced_it(tmp_path, monkeypatch):
+    """CHA-7, second half: the lossless rebuild is only worth anything if a
+    snapshot exists. Writing it from the GUI's Apply worker would leave
+    every install that upgrades and never reopens the Sonar page with no
+    snapshot at all — and the first repair would still flatten its EQ. The
+    snapshot is therefore written by generate_sonar_eq_conf() itself, which
+    every producer (GUI apply, global apply, the daemon's own repair) goes
+    through.
+    """
+    import json
+    import arctis_sound_manager.sonar_to_pipewire as stp
+
+    conf_dir = tmp_path / "conf" / "filter-chain.conf.d"
+    conf_dir.mkdir(parents=True)
+    home = tmp_path / "home"
+
+    monkeypatch.setattr(stp, "_CONF_DIR", conf_dir)
+    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setattr(stp, "_get_physical_out_chat", lambda: "alsa_output.test-headset")
+    monkeypatch.setattr(stp, "_resolve_external_output",
+                        lambda *a, **kw: ("alsa_output.test-ext", 2, "FL FR"))
+
+    bands = [stp.EqBand(freq=440.0, gain=3.5, q=1.2, type="peakingEQ", enabled=True)]
+    stp.generate_sonar_eq_conf("media", bands, 1.0, 0.0, -2.0, boost_db=1.5)
+
+    state = json.loads((home / ".config" / "arctis_manager"
+                        / "sonar_eq_state_media.json").read_text())
+    assert state["bands"] == [
+        {"freq": 440.0, "gain": 3.5, "q": 1.2, "type": "peakingEQ", "enabled": True}
+    ]
+    assert state["basses_db"] == 1.0
+    assert state["aigus_db"] == -2.0
+    assert state["boost_db"] == 1.5
+
+
+def test_generating_to_an_explicit_path_leaves_the_snapshot_alone(tmp_path, monkeypatch):
+    """A caller passing output_path is diffing or testing, not applying.
+    Letting it overwrite the snapshot would let a dry-run become the state
+    the next repair rebuilds from."""
+    import json
+    import arctis_sound_manager.sonar_to_pipewire as stp
+
+    conf_dir = tmp_path / "conf" / "filter-chain.conf.d"
+    conf_dir.mkdir(parents=True)
+    home = tmp_path / "home"
+    state_dir = home / ".config" / "arctis_manager"
+    state_dir.mkdir(parents=True)
+    snapshot = state_dir / "sonar_eq_state_media.json"
+    snapshot.write_text(json.dumps({"bands": [], "basses_db": 9.0, "voix_db": 0.0,
+                                    "aigus_db": 0.0, "boost_db": 0.0,
+                                    "smart_volume": None}))
+
+    monkeypatch.setattr(stp, "_CONF_DIR", conf_dir)
+    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setattr(stp, "_get_physical_out_chat", lambda: "alsa_output.test-headset")
+    monkeypatch.setattr(stp, "_resolve_external_output",
+                        lambda *a, **kw: ("alsa_output.test-ext", 2, "FL FR"))
+
+    bands = [stp.EqBand(freq=100.0, gain=1.0, q=1.0, type="peakingEQ", enabled=True)]
+    stp.generate_sonar_eq_conf("media", bands, 0.0, 0.0, 0.0,
+                               output_path=tmp_path / "scratch.conf")
+
+    assert json.loads(snapshot.read_text())["basses_db"] == 9.0

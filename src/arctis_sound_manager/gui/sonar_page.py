@@ -115,6 +115,31 @@ _BAND_APPLY_DELAY = 120
 
 # ── Preset I/O ────────────────────────────────────────────────────────────────
 
+# Real domains a band value can take, matching what the interactive EQ curve
+# itself clamps to (eq_curve_widget.py: _FREQ_RANGE, _GAIN_RANGE, and the Q
+# spinbox clamp at :420/:617) rather than an invented range.
+_PRESET_FREQ_RANGE = (20.0, 20000.0)
+_PRESET_Q_RANGE = (0.1, 10.0)
+_PRESET_GAIN_RANGE = (-12.0, 12.0)
+
+
+def _clamp_preset_value(value: float, lo: float, hi: float, default: float) -> float:
+    """Clamp a value parsed from preset JSON into ``[lo, hi]``; *default* when
+    it is not finite (CHA-10).
+
+    Presets are shared, third-party content — the import dialog and the
+    asm-presets feature both feed arbitrary JSON here — and Python's ``json``
+    module accepts ``Infinity``/``NaN`` literals by default and turns
+    ``1e400`` into ``inf``. Nothing downstream of this parse validated a
+    band's numbers before they reached the filter-chain conf, so reject
+    non-finite values at this boundary, once, before an ``EqBand`` is even
+    constructed.
+    """
+    if not math.isfinite(value):
+        return default
+    return max(lo, min(hi, value))
+
+
 def _parse_preset_data(data: dict) -> list[EqBand]:
     payload = data.get("data", data)  # GG 113+ wraps settings in a "data" key
     eq = payload.get("parametricEQ", {})
@@ -125,10 +150,22 @@ def _parse_preset_data(data: dict) -> list[EqBand]:
     )
     bands: list[EqBand] = []
     for _, f in indexed:
+        try:
+            freq = float(f.get("frequency", 1000))
+        except (TypeError, ValueError):
+            freq = 1000.0
+        try:
+            gain = float(f.get("gain", 0))
+        except (TypeError, ValueError):
+            gain = 0.0
+        try:
+            q = float(f.get("qFactor", 0.707))
+        except (TypeError, ValueError):
+            q = 0.707
         bands.append(EqBand(
-            freq=float(f.get("frequency", 1000)),
-            gain=float(f.get("gain", 0)),
-            q=float(f.get("qFactor", 0.707)),
+            freq=_clamp_preset_value(freq, *_PRESET_FREQ_RANGE, 1000.0),
+            gain=_clamp_preset_value(gain, *_PRESET_GAIN_RANGE, 0.0),
+            q=_clamp_preset_value(q, *_PRESET_Q_RANGE, 0.707),
             type=f.get("type", "peakingEQ"),
             enabled=bool(f.get("enabled", True)),
         ))
@@ -470,6 +507,7 @@ class _ApplyWorker(QThread):
                     smart_volume=smart_state,
                     target_override=self._target_override,
                 )
+
 
             # ── HeSuVi (Spatial Audio) is owned by the DAEMON, not here (#169) ──
             # generate_hesuvi_conf() can only write in a process where a device

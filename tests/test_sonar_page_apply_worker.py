@@ -35,6 +35,14 @@ def _stub_settings(monkeypatch):
         sp, "_load_smart_volume",
         lambda: {"enabled": False, "level": 0.0, "loudness": "balanced"},
     )
+    # CHA-7: generate_sonar_eq_conf() snapshots the EQ state it just wrote a
+    # conf for, under the suite's session-wide fake $HOME (see conftest.py).
+    # Stubbed out here so these tests never leave a real
+    # sonar_eq_state_<channel>.json behind that a later, unrelated test
+    # (e.g. in test_sonar_to_pipewire.py) could pick up and take the
+    # lossless-rebuild path instead of the flat-bypass one it expects.
+    import arctis_sound_manager.sonar_to_pipewire as _stp
+    monkeypatch.setattr(_stp, "_save_eq_state", lambda *a, **kw: None)
 
 
 def test_apply_worker_gain_only_change_skips_restart(monkeypatch, tmp_path):
