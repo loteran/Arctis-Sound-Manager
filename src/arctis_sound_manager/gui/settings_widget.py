@@ -83,6 +83,14 @@ class QSettingsWidget(QWidget):
         self.settings = {}
         self._settings_widgets: dict[str, QWidget] = {}
         self._option_lists: dict[str, list[dict[str, str]]] = {}
+        # Live status keys the *active device profile* actually reports (fed by
+        # DevicePage.update_status via set_available_status_keys). Used to grey
+        # out a BUTTON_GROUP option whose ConfigSetting declares
+        # `option_requires_status` for a status key the profile doesn't map —
+        # see get_widget(). Empty until the first status push, which is fine:
+        # every option is simply treated as available (no dead-looking control
+        # before we know better) until proven otherwise.
+        self._available_status_keys: frozenset[str] = frozenset()
 
         self.sig_list_received.connect(self.on_options_list_received)
 
@@ -116,6 +124,43 @@ class QSettingsWidget(QWidget):
         
         self.refresh_panel()
     
+    def set_available_status_keys(self, keys) -> None:
+        """Record which live status keys the active device profile reports.
+
+        A no-op — no rebuild — when the set hasn't changed, since this is fed
+        from every status poll (roughly once a second) and a full
+        refresh_panel() tears down and recreates every settings row; only a
+        genuine device change (or the very first status after connect)
+        actually needs one.
+        """
+        new_keys = frozenset(keys)
+        if new_keys == self._available_status_keys:
+            return
+        self._available_status_keys = new_keys
+        if getattr(self, 'settings_config', None):
+            self.refresh_panel()
+
+    def _option_available(self, config: ConfigSetting, option_value: int) -> bool:
+        """Whether a BUTTON_GROUP option can have any effect right now.
+
+        Reads `option_requires_status` off the ConfigSetting: a mapping of
+        option value -> one or more live status keys, at least one of which
+        must be in `self._available_status_keys` for that option to do
+        anything (see settings.py's `micro_autoswitch` for the motivating
+        case — HW-1). No entry for a given value, or no attribute at all,
+        means "always available" — this only ever narrows a control the
+        profile would otherwise offer unconditionally.
+        """
+        requirements = getattr(config, 'option_requires_status', None)
+        if not requirements:
+            return True
+        # JSON round-trips int dict keys as strings; accept either.
+        required = requirements.get(option_value, requirements.get(str(option_value)))
+        if not required:
+            return True
+        names = [required] if isinstance(required, str) else required
+        return any(name in self._available_status_keys for name in names)
+
     def _apply_conditional_visibility(self):
         for name, widget in self._settings_widgets.items():
             config = self.settings_config.get(name)
@@ -259,6 +304,11 @@ class QSettingsWidget(QWidget):
                     background-color: {_theme.c('ACCENT')};
                     opacity: 0.85;
                 }}
+                QPushButton:disabled {{
+                    background-color: {_theme.c('BG_BUTTON')};
+                    color: {_theme.c('TEXT_SECONDARY')};
+                    border: 1px dashed {_theme.c('BORDER')};
+                }}
             """
 
             values_mapping: dict = getattr(config, 'values_mapping', {})
@@ -275,6 +325,16 @@ class QSettingsWidget(QWidget):
                 btn = QPushButton(label)
                 btn.setProperty('active', btn_value == current_value)
                 btn.setStyleSheet(btn_qss)
+                # Grey out (never hide) an option the active device profile can
+                # never make do anything — e.g. micro_autoswitch's "mute"
+                # trigger on a headset whose profile doesn't map mic_status
+                # (HW-1). Kept selectable-looking (shown as active) if it's
+                # already the stored value, so a setting made on a different
+                # headset isn't hidden away or silently overwritten; it just
+                # can't be (re)selected from here while this device is active.
+                if not self._option_available(config, btn_value):
+                    btn.setEnabled(False)
+                    btn.setToolTip(I18n.get_instance().translate('settings_values', 'option_unavailable_status'))
                 widget_layout.addWidget(btn)
                 btn_entries.append((btn_value, btn))
 

@@ -308,6 +308,17 @@ class GeneralSettings(JsonSerializable):
     # headset that doesn't report the matching status — a headset that never
     # reports mute makes mode 3 behave like mode 1. Manual switching via
     # micro_input_source still works everywhere.
+    #
+    # This is a global setting (no device profile backs it directly), but
+    # mode 2 is dead weight on any family whose profile doesn't map
+    # `mic_status` — the GUI must not offer a button that can never fire
+    # (HW-1: nova_7_discrete_battery.yaml / nova_7p_discrete_battery.yaml
+    # dropped it because the vendor spec never defines those bytes). See
+    # `option_requires_status` on the ConfigSetting below: the settings
+    # widget disables (not hides) any button-group option whose declared
+    # status key the active profile doesn't report, so mode 3 — which still
+    # does something useful via the connection half — stays enabled and
+    # simply degrades, exactly as documented above.
     micro_autoswitch: int = 0
     # Clips is the one feature whose dependencies are not already on a desktop:
     # PyGObject, four GStreamer plugin sets and ffmpeg, none of which the mixer
@@ -418,7 +429,14 @@ class GeneralSettings(JsonSerializable):
         ConfigSetting('hrir_id', SettingType.SELECT, None, options_source='hrir_files', options_mapping={ 'value': 'id', 'label': 'name' }),
         ConfigSetting('micro_input_source', SettingType.SELECT, "__auto__", options_source='pulse_audio_sources', options_mapping={ 'value': 'id', 'label': 'name' }),
         ConfigSetting('micro_alt_source', SettingType.SELECT, "", options_source='pulse_audio_sources', options_mapping={ 'value': 'id', 'label': 'name' }),
-        ConfigSetting('micro_autoswitch', SettingType.BUTTON_GROUP, 0, values_mapping={0: 'micro_autoswitch_off', 1: 'micro_autoswitch_connection', 2: 'micro_autoswitch_mute', 3: 'micro_autoswitch_both'}),
+        # option_requires_status: value -> live status key(s) the active device
+        # profile must report for that button to have any effect (generic
+        # mechanism, read by gui/settings_widget.py — not specific to this
+        # setting). Only mode 2 ("mute") is fully inert without `mic_status`;
+        # mode 3 keeps working through its connection half and is left
+        # unconstrained on purpose (see the comment on `micro_autoswitch`
+        # above).
+        ConfigSetting('micro_autoswitch', SettingType.BUTTON_GROUP, 0, values_mapping={0: 'micro_autoswitch_off', 1: 'micro_autoswitch_connection', 2: 'micro_autoswitch_mute', 3: 'micro_autoswitch_both'}, option_requires_status={2: 'mic_status'}),
         ConfigSetting('pipewire_quantum', SettingType.BUTTON_GROUP, 0, values_mapping={0: 'pipewire_quantum_auto', 1024: 'pipewire_quantum_1024', 2048: 'pipewire_quantum_2048'}),
         ConfigSetting('systray_show_battery', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('systray_icon_color', SettingType.BUTTON_GROUP, 0, values_mapping={0: 'systray_icon_color_auto', 1: 'systray_icon_color_white', 2: 'systray_icon_color_black'}),

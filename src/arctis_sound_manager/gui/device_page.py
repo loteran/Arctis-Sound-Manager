@@ -578,6 +578,29 @@ class DevicePage(QWidget):
     @Slot(object)
     def update_status(self, status: dict):
         self._anc_widget.update_status(status)
+        self._forward_available_status_keys(status)
+
+    def _forward_available_status_keys(self, status: dict) -> None:
+        """Tell the settings widgets which live status keys the connected
+        device is actually reporting (GetStatus's ``{category: {key: {...}}}``
+        shape, flattened to just the key names).
+
+        This is how a global BUTTON_GROUP setting like ``micro_autoswitch``
+        (settings.py) knows whether an option backed by e.g. ``mic_status``
+        can do anything on the currently active device profile — see
+        ``option_requires_status`` there and
+        ``QSettingsWidget._option_available``. An empty/malformed payload
+        (no device yet, or a status shape from an old daemon) yields an empty
+        key set, which — per set_available_status_keys — only ever narrows
+        what's offered, never breaks it further.
+        """
+        keys: set[str] = set()
+        if isinstance(status, dict):
+            for category in status.values():
+                if isinstance(category, dict):
+                    keys.update(category.keys())
+        self._general_widget.set_available_status_keys(keys)
+        self._device_widget.set_available_status_keys(keys)
 
     @Slot(object)
     def update_settings(self, settings: dict):
