@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.6] - 23 August 2026
+
+A crash reported hours after 1.4.5, and the Arctis GameBuds finally reporting their battery.
+
+### Added
+
+- **The Arctis GameBuds report battery and connection state.** The profile said no status request was known for the family, so the tray never showed a percentage and every status row stayed blank. That was out of date rather than true: SteelSeries' own device specification describes the frame in full, for the GameBuds and the Xbox variant alike. Each earbud reports its own 0-100 level; the tray shows the lower of the two, since the bud that dies first is the one that ends the session, and you count as connected when either bud is — which is what the vendor's own firmware does, so wearing a single bud no longer reads as offline. The charging case keeps its percentage to itself: it answers on its own USB product rather than through the dongle. ([#202](https://github.com/loteran/Arctis-Sound-Manager/issues/202))
+- **Two diagnostics for problems that need someone else's hardware.** `scripts/diagnose-sonar-eq.py` answers "where does the EQ chain break?" in five read-only checks ordered so the first failure is the answer — safe mode, the filter-chain unit's LADSPA path, a plugin that fails to load, an EQ node missing or unlinked, a config carrying no filters at all. `scripts/reverse-engineering/gamebuds_battery_probe.py` finds out whether a headset reports a battery at all, by listening while you put a bud in its case rather than by asking you to capture USB traffic on Windows. ([#181](https://github.com/loteran/Arctis-Sound-Manager/issues/181))
+
+### Fixed
+
+- **A clips folder on a disconnected drive no longer stops the window opening.** With clips on removable media, pulling the drive leaves the mount point behind: it still looks like it exists and answers an I/O error on the first read. That error escaped out of the Clips page while the main window was being built, so the whole window failed — no mixer, no Sonar, no settings, because a disk was not there. The folder is now read defensively, entry by entry, since on failing media some reads succeed and others do not. ([#204](https://github.com/loteran/Arctis-Sound-Manager/issues/204))
+- **Clip capture stops relaunching itself when it cannot start.** The same missing drive made every automatic start fail, and nothing remembered that: with a game running, ASM asked the desktop portal for a new screen capture every five seconds, for as long as the game lasted. A failed automatic start is now left alone until something changes — a different game, or you pressing the button yourself — and the reason is written to the log instead of being repeated in silence. ([#204](https://github.com/loteran/Arctis-Sound-Manager/issues/204))
+- **A microphone chain referencing a plugin by name is repaired again.** The check that spots it required the plugin and the node type to sit on the same line, and the noise-reduction nodes are written across two — so a config that could not load was never regenerated, which is the failure that check exists to prevent, left open for the one channel formatted differently.
+- **Two tests that only passed on the author's machine.** One needed a Python new enough for `tomllib`, the other needed LADSPA plugins to be installed; both went green locally and red everywhere else, which proves nothing about anybody's machine.
+
 ## [1.4.5] - 23 August 2026
 
 This release comes out of a deliberate hunt for the failures users hit on hardware and systems the author does not own, plus three reports that arrived while it ran ([#199](https://github.com/loteran/Arctis-Sound-Manager/issues/199), [#202](https://github.com/loteran/Arctis-Sound-Manager/issues/202), [#203](https://github.com/loteran/Arctis-Sound-Manager/issues/203)). The audit that produced most of it is in `RAPPORT-CHAOS-ASM.md`.
