@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.8] - 24 August 2026
+
+New Sonar presets from SteelSeries GG 117, and a library that finally says where each preset came from.
+
+### Added
+
+- **Seven Sonar presets from GG 117.0.0.** Assassin's Creed Black Flag Resynced, Backrooms: Escape Together, Digimon Story Time Stranger, Halo: Campaign Evolved, Heave Ho 2, Moonlight Peaks and The Binding of Isaac: Rebirth. They are taken from SteelSeries' own catalogue, in the same shape ASM already stores, and they reach you without waiting for a release — the app checks for new ones at every launch.
+- **ASM tells you when presets arrive.** New presets used to appear silently, which left people wondering whether the list had grown or they had misremembered it. A dialog at launch now names what was added and which SteelSeries GG release it came from. It only appears when something actually arrived.
+
+### Changed
+
+- **Presets say where they come from, in colour.** Anything that was not shipped inside the package landed in one folder, and the Sonar page treats that folder as your own work: sorted first, tinted, with a rename and a delete offered. So a SteelSeries preset pulled from the catalogue looked hand-made, and offered to delete a file that comes straight back on the next check — while presets imported from the community site were indistinguishable from either. There are three origins now: SteelSeries' keep the default text colour, yours stay in the accent colour, and community imports wear the teal of the site they were shared on. Presets already downloaded are moved into place on the next check, and one you made yourself cannot be caught by that — the name would have to match a published preset exactly.
+- **A preset of yours is never shadowed by a downloaded one.** If you have a preset under a name that later gets published, yours is the one that loads: a sync adds choices, it does not overwrite them. Rename and delete now also cover community imports, since those are files you chose to have; they stay off SteelSeries' presets, which return on the next check.
+
 ## [1.4.7] - 23 August 2026
 
 ### Changed
