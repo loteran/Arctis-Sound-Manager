@@ -1268,6 +1268,18 @@ class CoreEngine:
                 # applies (or after any out-of-band filter-chain restart) is
                 # never repaired on its own. Reuses link_data from the pass
                 # above when available; best-effort otherwise.
+                # Before enforcing it: the mic's ALSA node is discovered once,
+                # at connect time, with a fixed budget (8 x 0.5 s). PipeWire can
+                # take longer than that to enumerate it — the USB churn from
+                # pushing on-device EQ right after connect makes that likelier —
+                # and the empty result was then cached for the whole session.
+                # resolve_micro_input_source() returned "", so
+                # ensure_micro_capture_link() short-circuited before ever asking
+                # for a link, and the watchdog retried a link that could never
+                # be attempted, for ever. Nothing re-ran the discovery, so only
+                # a reconnect could fix it — racing the same window again (#206).
+                await self._rediscover_physical_input_if_missing()
+
                 from arctis_sound_manager.sonar_to_pipewire import ensure_micro_capture_link
                 await _enforce_hop("micro capture", ensure_micro_capture_link)
 
@@ -1303,6 +1315,47 @@ class CoreEngine:
         if isinstance(result, dict):
             return all(result.values())
         return bool(result)
+
+    async def _rediscover_physical_input_if_missing(self) -> None:
+        """Re-resolve the device's ALSA capture node if the cached one is empty.
+
+        Cheap and idempotent: it does nothing at all once the name is known,
+        which is the normal case from the first tick onwards. It only costs a
+        lookup while the value is missing — precisely the state that otherwise
+        lasted until the next reconnect.
+        """
+        with self._device_lock:
+            have_device = self.usb_device is not None and self.device_config is not None
+            vendor_id = self.device_config.vendor_id if self.device_config else None
+            product_id = self.usb_device.idProduct if self.usb_device is not None else None
+        if not have_device or vendor_id is None:
+            return
+        if device_state.get_physical_in():
+            return  # already known — nothing to do
+
+        loop = asyncio.get_running_loop()
+        try:
+            _, _, source = await loop.run_in_executor(
+                None, lambda: self._discover_physical_nodes(
+                    vendor_id, product_id, attempts=1, delay=0.0),
+            )
+        except Exception as exc:
+            self.logger.debug("mic node re-discovery failed: %r", exc)
+            return
+        if not source:
+            return
+
+        device_state.set_current_device(
+            physical_out_game=device_state.get_physical_out_game(),
+            physical_out_chat=device_state.get_physical_out_chat(),
+            physical_in=source,
+            spatial_engine=device_state.get_spatial_engine(),
+            device_name=device_state.get_device_name(),
+        )
+        self.logger.info(
+            "Microphone node '%s' appeared after the initial discovery window — "
+            "the capture link can be established now.", source,
+        )
 
     async def _degrade_channel_media_class(self, channel: str) -> None:
         """Regenerate *channel*'s EQ conf as a pickable Audio/Sink (#203).

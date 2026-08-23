@@ -60,10 +60,16 @@ def test_a_correct_host_unit_is_left_alone(home, monkeypatch):
     assert home.read_text() == correct
 
 
-def test_a_native_install_still_gets_its_unit(home, monkeypatch):
+def test_a_native_install_without_a_packaged_unit_gets_its_own(home, monkeypatch):
+    """A source or pip install has no packaged unit — writing one is the whole
+    point of this function. Where the distribution DOES ship one, nothing is
+    written and the packaged unit applies (see
+    test_systemd_unit_no_shadowing.py): a copy here replaces it rather than
+    extending it, and drifts (#206)."""
     for var in ("container", "DISTROBOX_ENTER_PATH", "CONTAINER_ID",
                 "FLATPAK_ID", "SNAP"):
         monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(asm_systemd, "_PACKAGED_UNIT_DIRS", (Path("/nonexistent"),))
 
     asm_systemd.ensure_systemd_unit()
 

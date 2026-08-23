@@ -73,6 +73,10 @@ def _fake_core() -> SimpleNamespace:
         _queue_volume_restore=lambda *a, **k: None,
         _process_volume_restore=lambda: None,
         _enforce_link_hop=_async_true,
+        # The watchdog asks this before the micro hop, so a mic node PipeWire
+        # enumerated late is looked up again instead of staying empty for the
+        # session (#206). A no-op here: this file is about permission refusals.
+        _rediscover_physical_input_if_missing=_async_true,
     )
 
 
