@@ -28,6 +28,9 @@ import usb.core
 from arctis_sound_manager.oled_manager import (
     OledManager,
     _OLED_BUSY_FAIL_THRESHOLD,
+    _OLED_SEND_TIMEOUT_MS,
+    _OLED_SEND_TIMEOUT_UNACKED_MS,
+    _OLED_UNACKED_STREAK,
 )
 
 _LOGGER_NAME = "arctis_sound_manager.oled_manager"
@@ -364,3 +367,90 @@ def test_send_uses_a_bounded_timeout(monkeypatch):
 
     assert seen and "timeout" in seen[0], "no explicit timeout passed to pyusb"
     assert 0 < seen[0]["timeout"] <= 500
+
+
+# ---------------------------------------------------------------------------
+# Both halves of the panel land together on a DAC that never acks (#196)
+# ---------------------------------------------------------------------------
+
+
+class _RecordingUsbDevice(_FakeUsbDevice):
+    """Remembers the timeout pyusb was asked for on every write."""
+
+    def __init__(self, fail_errno: int | None = None) -> None:
+        super().__init__(fail_errno)
+        self.timeouts: list[int] = []
+
+    def ctrl_transfer(self, *args, **kwargs):
+        self.timeouts.append(kwargs.get("timeout"))
+        return super().ctrl_transfer(*args, **kwargs)
+
+
+def test_a_silent_panel_stops_being_waited_for(monkeypatch):
+    """The residue of #196: both halves drew, but a quarter of a second apart.
+
+    Nothing is wrong with the picture on a static screen. Scroll it and the two
+    halves visibly disagree, because each strip spends the whole timeout waiting
+    for an acknowledgement this DAC never sends."""
+    dev = _RecordingUsbDevice(fail_errno=errno_mod.ETIMEDOUT)
+    manager = _make_manager(dev, monkeypatch, packet_count=1)
+
+    for _ in range(_OLED_UNACKED_STREAK):
+        manager._send_oled_packet([0, 0, 0, 0])
+    manager._send_oled_packet([0, 0, 0, 0])
+
+    assert dev.timeouts[0] == _OLED_SEND_TIMEOUT_MS, "should start patient"
+    assert dev.timeouts[-1] == _OLED_SEND_TIMEOUT_UNACKED_MS
+
+
+def test_one_lost_ack_is_not_a_silent_panel(monkeypatch):
+    """A single unanswered write under load is a moment, not a device."""
+    dev = _RecordingUsbDevice(fail_errno=errno_mod.ETIMEDOUT)
+    manager = _make_manager(dev, monkeypatch, packet_count=1)
+
+    for _ in range(_OLED_UNACKED_STREAK - 1):
+        manager._send_oled_packet([0, 0, 0, 0])
+
+    assert manager._send_timeout_ms == _OLED_SEND_TIMEOUT_MS
+
+
+def test_an_answered_write_buys_the_margin_back(monkeypatch):
+    """A device that went quiet under load rather than by design gets its full
+    timeout back the moment it answers — the short one is for panels that never
+    answer at all, and nothing here is allowed to become permanent on a guess."""
+    dev = _RecordingUsbDevice(fail_errno=errno_mod.ETIMEDOUT)
+    manager = _make_manager(dev, monkeypatch, packet_count=1)
+
+    for _ in range(_OLED_UNACKED_STREAK):
+        manager._send_oled_packet([0, 0, 0, 0])
+    assert manager._send_timeout_ms == _OLED_SEND_TIMEOUT_UNACKED_MS
+
+    dev.fail_errno = None
+    manager._send_oled_packet([0, 0, 0, 0])
+
+    assert manager._send_timeout_ms == _OLED_SEND_TIMEOUT_MS
+    assert manager._unacked_streak == 0
+
+
+def test_the_short_timeout_still_covers_a_working_panel(monkeypatch):
+    """A report this panel accepts comes back in single-digit milliseconds, so
+    the short wait has to stay several times that — it exists to stop waiting
+    for an answer that is never coming, not to cut off a slow one."""
+    assert _OLED_SEND_TIMEOUT_UNACKED_MS >= 15
+    assert _OLED_SEND_TIMEOUT_UNACKED_MS < _OLED_SEND_TIMEOUT_MS
+
+
+def test_a_whole_frame_lands_inside_one_scroll_step(monkeypatch):
+    """What the reporter actually sees. A 128 px panel is two strips, and the
+    refresh loop moves scrolling text on every frame: if the strips are further
+    apart than the eye can miss, the halves show different moments."""
+    dev = _RecordingUsbDevice(fail_errno=errno_mod.ETIMEDOUT)
+    manager = _make_manager(dev, monkeypatch, packet_count=2)
+
+    manager._send_current_frame()   # learns on this frame
+    dev.timeouts.clear()
+    manager._send_current_frame()
+
+    assert sum(dev.timeouts) <= 50, (
+        f"a frame can still stall {sum(dev.timeouts)} ms between its halves"
+    )

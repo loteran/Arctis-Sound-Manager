@@ -95,6 +95,24 @@ _OLED_BUSY_SUSPEND_S = 60.0
 # in single-digit milliseconds; past this, waiting longer buys nothing.
 _OLED_SEND_TIMEOUT_MS = 250
 
+# What to wait once a panel has shown it does not acknowledge at all (#196).
+# The 250 ms above is spent in full on every strip of every frame on such a
+# device, and a 128 px panel goes out as two strips: the right half is drawn a
+# quarter of a second after the left one. Nobody sees that on a static screen,
+# but on anything scrolling the two halves visibly disagree — which is what the
+# reporter was left with once both halves finally drew.
+#
+# A report this panel accepts comes back in single-digit milliseconds, so this
+# is still several times the observed round trip; it only stops the wait for an
+# acknowledgement that is never coming. Both strips then go out inside ~40 ms.
+_OLED_SEND_TIMEOUT_UNACKED_MS = 20
+
+# How many unacknowledged writes in a row before believing it of the device
+# rather than of the moment. Two is one whole frame on a 128 px panel: a single
+# lost acknowledgement under load is not a silent device, but a frame where
+# every strip went unanswered is.
+_OLED_UNACKED_STREAK = 2
+
 _BURN_IN_INTERVAL_S = 60.0
 _BURN_IN_POSITIONS: list[tuple[int, int]] = [
     (0, 0), (1, 0), (1, 1), (0, 1), (-1, 1),
@@ -188,6 +206,13 @@ class OledManager:
         self._eq_chat_scroll_offset: int = 0
         self._eq_chat_reset_event = threading.Event()
         self._eq_chat_scroll_thread: threading.Thread | None = None
+
+        # How long to wait for a SET_REPORT acknowledgement, and how many writes
+        # in a row have gone unacknowledged (issue #196). Starts optimistic and
+        # drops to _OLED_SEND_TIMEOUT_UNACKED_MS once this device has shown it
+        # never acknowledges; a single acknowledged write puts it back.
+        self._send_timeout_ms: int = _OLED_SEND_TIMEOUT_MS
+        self._unacked_streak: int = 0
 
         # OLED USB circuit breaker state (issue #100).
         self._frame_fail_streak: int = 0
@@ -518,6 +543,42 @@ class OledManager:
                 "process or container USB passthrough"
             )
 
+    def _on_write_acknowledged(self) -> None:
+        """A write came back. Wait properly for the next one."""
+        self._unacked_streak = 0
+        if self._send_timeout_ms != _OLED_SEND_TIMEOUT_MS:
+            logger.info(
+                "OLED: the panel acknowledged a write — waiting %d ms again",
+                _OLED_SEND_TIMEOUT_MS,
+            )
+            self._send_timeout_ms = _OLED_SEND_TIMEOUT_MS
+
+    def _on_write_unacknowledged(self) -> None:
+        """A write drew but never came back. Stop paying for the answer.
+
+        The wired GameDAC executes screen writes without acknowledging them, so
+        every strip costs the whole timeout even though the pixels are already
+        lit. On a 128 px panel that is two strips, and the second one lands a
+        quarter of a second after the first — invisible on a static screen,
+        plainly visible on anything that scrolls (issue #196).
+
+        Once a full frame has gone unanswered, waiting is no longer buying
+        information about this device, so drop to a timeout that only covers the
+        round trip a working panel actually takes. It is not permanent: an
+        acknowledged write restores the patient one, so a device that goes quiet
+        under load rather than by design gets its margin back.
+        """
+        self._unacked_streak += 1
+        if (self._unacked_streak < _OLED_UNACKED_STREAK
+                or self._send_timeout_ms == _OLED_SEND_TIMEOUT_UNACKED_MS):
+            return
+        logger.info(
+            "OLED: %d writes in a row drew without acknowledging — dropping the "
+            "send timeout to %d ms so both halves of the panel land together",
+            self._unacked_streak, _OLED_SEND_TIMEOUT_UNACKED_MS,
+        )
+        self._send_timeout_ms = _OLED_SEND_TIMEOUT_UNACKED_MS
+
     def _send_oled_packet(self, packet: list[int], *, control: bool = False) -> bool:
         """Send one HID SET_REPORT packet to the OLED controller.
 
@@ -560,8 +621,9 @@ class OledManager:
                         bmRequestType, 0x09,
                         wvalue, self._oled_interface,
                         packet,
-                        timeout=_OLED_SEND_TIMEOUT_MS,
+                        timeout=self._send_timeout_ms,
                     )
+                    self._on_write_acknowledged()
                     return True
                 except usb.core.USBError as e:
                     last_err = e
@@ -575,6 +637,7 @@ class OledManager:
                             "OLED write not acknowledged (errno 110) — "
                             "treating as sent, the panel draws it anyway"
                         )
+                        self._on_write_unacknowledged()
                         return True
             # Back-off outside the lock so other USB users are not blocked.
             if attempt + 1 < _MAX_ATTEMPTS:
