@@ -218,3 +218,62 @@ def test_security_context_is_surfaced():
 def test_client_table_degrades_without_a_dump():
     assert 'unavailable' in _pw_clients(None)
     assert 'no clients' in _pw_clients([])
+
+
+# ── duplicate node names (#205) ──────────────────────────────────────────────
+
+
+def _doubled_graph() -> list[dict]:
+    """Every filter loaded twice, as when a second filter-chain instance runs.
+
+    Reduced from the #205 report: the daemon and filter-chain.service each held
+    a complete copy of the EQ graph, so two nodes answered to every name ASM
+    routes by.
+    """
+    return [
+        _node(363, 'Arctis_Media', 'Audio/Sink', 'running'),
+        _node(357, 'Arctis_Media_sink_out', 'Stream/Output/Audio', 'suspended',
+              **{'target.object': 'effect_input.sonar-media-eq', 'client.id': '311'}),
+        _node(61, 'effect_input.sonar-media-eq', 'Audio/Sink/Internal', 'suspended',
+              **{'client.id': '43'}),
+        _node(84, 'effect_input.sonar-media-eq', 'Audio/Sink/Internal', 'suspended',
+              **{'client.id': '69'}),
+        _node(62, 'effect_output.sonar-media-eq', 'Stream/Output/Audio', 'suspended',
+              **{'client.id': '43'}),
+        _node(85, 'effect_output.sonar-media-eq', 'Stream/Output/Audio', 'suspended',
+              **{'client.id': '69'}),
+    ]
+
+
+def test_a_name_carried_by_two_nodes_is_called_out():
+    """The finding that took a manual read of the whole graph to spot on #205.
+
+    ASM routes by name, so a name owned by two nodes makes every one of those
+    routes ambiguous — and the loopback that cannot resolve it links to nothing.
+    What the user sees is a channel whose meters move while the headset stays
+    silent, which reads as a headset fault rather than a graph fault.
+    """
+    out = _audio_graph(_doubled_graph())
+
+    assert 'DUPLICATE NODE NAMES' in out
+    assert 'effect_input.sonar-media-eq' in out.split('-- audio nodes')[0]
+    # Both ids, so the reader can cross-reference which client owns each copy.
+    assert '61' in out.split('-- audio nodes')[0]
+    assert '84' in out.split('-- audio nodes')[0]
+
+
+def test_a_healthy_graph_says_nothing_about_duplicates():
+    """A warning that fires on every report is a warning nobody reads."""
+    assert 'DUPLICATE' not in _audio_graph(_graph())
+
+
+def test_two_windows_of_one_app_are_not_a_duplicate():
+    """Application streams share a node.name all the time — two browser windows
+    are both "librewolf". Flagging those would bury the one duplicate that
+    matters under noise, so only routing targets are counted."""
+    graph = _graph() + [
+        _node(801, 'librewolf', 'Stream/Output/Audio', 'running'),
+        _node(802, 'librewolf', 'Stream/Output/Audio', 'running'),
+    ]
+
+    assert 'DUPLICATE' not in _audio_graph(graph)

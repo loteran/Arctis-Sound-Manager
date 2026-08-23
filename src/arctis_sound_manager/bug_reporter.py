@@ -298,7 +298,34 @@ def _audio_graph(objects: list | None) -> str:
             names.get(info.get('input-node-id'), '?'),
         ))
 
-    out: list[str] = ['-- audio nodes (id, state, class, name) --']
+    # Two nodes answering to one name is not a cosmetic duplicate: every route
+    # ASM sets is a name (target.object=effect_input.sonar-media-eq), so a name
+    # carried by two nodes makes every one of those routes ambiguous, and the
+    # loopback that cannot resolve it silently links to nothing. What the user
+    # sees is a channel whose meters move while the headset stays silent — the
+    # audio reaches the virtual sink and stops there (#205).
+    #
+    # Only routing targets are counted. Application streams legitimately share
+    # a node.name (two browser windows are both "librewolf"), and flagging
+    # those would bury the one duplicate that matters under noise.
+    dupes: dict[str, list[int]] = {}
+    for nid, _state, mclass, name, _extra in nodes:
+        if _is_asm_node(name) or 'Sink' in mclass or 'Source' in mclass:
+            dupes.setdefault(name, []).append(nid)
+    dupes = {n: ids for n, ids in dupes.items() if len(ids) > 1}
+
+    out: list[str] = []
+    if dupes:
+        out.append('-- ⚠️ DUPLICATE NODE NAMES (every route through these is ambiguous) --')
+        for name, ids in sorted(dupes.items()):
+            out.append(f'       {name}  ->  ids {", ".join(str(i) for i in sorted(ids))}')
+        out.append('       Cross-reference client.id below: one owning process per')
+        out.append('       copy means the same config is loaded twice (a second')
+        out.append('       filter-chain instance, or filters loaded by the pipewire')
+        out.append('       daemon itself on top of filter-chain.service).')
+        out.append('')
+
+    out.append('-- audio nodes (id, state, class, name) --')
     if nodes:
         for nid, state, mclass, name, extra in sorted(nodes, key=lambda n: n[3]):
             mark = ' <-- ASM' if _is_asm_node(name) else ''
@@ -802,6 +829,38 @@ def collect_system_info() -> dict:
     except Exception:
         pass
 
+    # What the *pipewire daemon itself* was told to load, which until #205 no
+    # report showed. filter-chain.conf.d/ is read by filter-chain.service;
+    # pipewire.conf.d/ is read by the daemon. A filter declared in both — or a
+    # drop-in that pulls the same graph in a second time — loads every EQ node
+    # twice under one name, and from there every target.object ASM sets is
+    # ambiguous. The duplicate shows up in the graph section above; this is
+    # where it is explained.
+    info['pipewire_conf_d'] = ''
+    try:
+        _seen: list[str] = []
+        for _root, _label in (
+            (Path.home() / '.config' / 'pipewire', '~/.config/pipewire'),
+            (Path('/etc/pipewire'), '/etc/pipewire'),
+        ):
+            _dropin = _root / 'pipewire.conf.d'
+            if not _dropin.is_dir():
+                continue
+            for _f in sorted(_dropin.glob('*.conf')):
+                try:
+                    _body = _f.read_text(errors='replace')
+                except Exception:
+                    _body = ''
+                _flag = ''
+                if 'libpipewire-module-filter-chain' in _body:
+                    _flag = '   [!] loads a filter-chain in the pipewire daemon'
+                elif 'libpipewire-module-loopback' in _body:
+                    _flag = '   (loopback)'
+                _seen.append(f'{_label}/pipewire.conf.d/{_f.name}{_flag}')
+        info['pipewire_conf_d'] = '\n'.join(_seen)
+    except Exception:
+        info['pipewire_conf_d'] = ''
+
     # --- PipeWire runtime / container diagnostics (issue #74) ----------------
     # When ASM runs inside Distrobox/Flatpak, PipeWire is only reachable
     # through forwarded sockets. These fields show whether the sockets are
@@ -1234,13 +1293,24 @@ def format_bug_report(traceback_str: Optional[str] = None) -> str:
             )
         lines += [
             '',
-            '`filter-chain.conf.d/` (active):',
+            '`filter-chain.conf.d/` (active — read by `filter-chain.service`):',
             '```',
             active_conf or '(empty — no ASM filter-chain configs loaded)',
             '```',
             '`filter-chain.conf.d.disabled/` (moved aside by ASM safe mode):',
             '```',
             disabled_conf or '(none)',
+            '```',
+            '',
+            '`pipewire.conf.d/` (read by the pipewire daemon itself):',
+            '<!-- A filter-chain declared here loads IN ADDITION to the ones',
+            '     filter-chain.service already loads from the directory above.',
+            '     Both copies answer to the same node.name, so every route ASM',
+            '     sets by name becomes ambiguous and the audio stops at the',
+            '     virtual sink: meters move, headset stays silent (#205).',
+            '     Check this against the duplicate-name warning in the graph. -->',
+            '```',
+            info.get('pipewire_conf_d', '') or '(no drop-ins)',
             '```',
             '',
         ]
