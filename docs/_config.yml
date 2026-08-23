@@ -1,0 +1,35 @@
+# GitHub Pages configuration for loteran.github.io/Arctis-Sound-Manager
+#
+# Why this file exists: without it the site is built with GitHub's defaults and
+# every page ships a bare <title> and nothing else — no meta description, no
+# Open Graph tags, no canonical URL. Search engines had a repository link page
+# and no idea what it was about, and a link shared on Discord or Reddit
+# unfurled as a blank card.
+#
+# theme is pinned to primer, the default GitHub Pages already applies, so
+# adding this file changes the metadata without changing how the site looks.
+# Its layout includes {% seo %}, which is what renders the tags below.
+
+title: Arctis Sound Manager
+description: >-
+  Control SteelSeries Arctis headsets on Linux: Sonar-style equalizer, ChatMix,
+  a Game/Chat/Media/Output mixer, sidetone, ANC and battery — with PipeWire.
+
+url: https://loteran.github.io
+baseurl: /Arctis-Sound-Manager
+
+theme: jekyll-theme-primer
+plugins:
+  - jekyll-seo-tag
+
+# Used for the preview card when a link is shared. Absolute because Open Graph
+# consumers do not resolve relative paths.
+logo: https://loteran.github.io/Arctis-Sound-Manager/images/asm-logo.png
+
+author: loteran
+lang: en
+
+# Nothing is excluded on purpose. install.sh in particular MUST keep being
+# published: the documented one-liner is
+#   curl -fsSL https://loteran.github.io/Arctis-Sound-Manager/install.sh | bash
+# and excluding it here would take that URL off the site.

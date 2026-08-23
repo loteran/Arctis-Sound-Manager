@@ -1,5 +1,9 @@
 ---
 title: Arctis Sound Manager
+description: >-
+  A Linux application for SteelSeries Arctis headsets: Sonar-style equalizer,
+  ChatMix, a Game/Chat/Media/Output mixer, sidetone, ANC, battery and OLED —
+  built on PipeWire.
 ---
 
 <p align="center">
@@ -8,13 +12,39 @@ title: Arctis Sound Manager
 
 # Arctis Sound Manager
 
-A Linux GUI for SteelSeries Arctis headsets — device settings, a 4-channel audio mixer
-(Game / Chat / Media / Output), automatic media routing, and a full **Sonar EQ** system
-powered by the PipeWire filter-chain.
+**SteelSeries GG and Sonar are Windows-only.** Arctis Sound Manager is the Linux
+application that replaces them: a parametric equalizer per channel, a
+Game / Chat / Media / Output mixer, a working ChatMix dial, spatial audio, and
+the headset's own settings — sidetone, ANC, inactivity timeout, battery, OLED.
 
-[Get the latest release](https://github.com/loteran/Arctis-Sound-Manager/releases/latest) ·
-[Source & installation instructions](https://github.com/loteran/Arctis-Sound-Manager#installation) ·
+It is built on PipeWire and speaks to the headset over its USB protocol, so it
+needs neither Wine nor a vendor driver.
+
+[Install](https://github.com/loteran/Arctis-Sound-Manager#installation) ·
+[Latest release](https://github.com/loteran/Arctis-Sound-Manager/releases/latest) ·
+[Source](https://github.com/loteran/Arctis-Sound-Manager) ·
 [Discussions](https://github.com/loteran/Arctis-Sound-Manager/discussions)
+
+## Install
+
+```
+curl -fsSL https://loteran.github.io/Arctis-Sound-Manager/install.sh | bash
+```
+
+Detects your distribution and installs the native package — Arch, Fedora,
+Nobara, Debian, Ubuntu, Bazzite, SteamOS. Prefer running the commands yourself?
+They are on the
+[project page](https://github.com/loteran/Arctis-Sound-Manager#installation).
+
+Check your model on the [supported devices](device_support.md) page first: every
+headset is listed with its USB Product ID.
+
+## What it replaces
+
+- **[SteelSeries Sonar on Linux](steelseries-sonar-linux.md)** — what Sonar
+  actually does, what is reproduced, and what is not.
+- **[Arctis ChatMix on Linux](arctis-chatmix-linux.md)** — why the dial does
+  nothing out of the box, and how it is made to work again.
 
 ## Documentation
 
@@ -24,6 +54,7 @@ powered by the PipeWire filter-chain.
 - [Device configuration file specs](device_configuration_file_specs.md) — how a headset is described
   in YAML, and what it takes to add a new one.
 - [D-Bus interface](dbus.md) — the daemon's D-Bus API, for scripting and integrations.
+- [Hardware questions](HARDWARE-QUESTIONS.md) — what to capture when a headset is not yet supported.
 - [Community stats](stats/) — which headsets and distributions people actually run ASM on.
 
 ## Community
