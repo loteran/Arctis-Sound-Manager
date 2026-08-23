@@ -354,7 +354,7 @@ class ClipsPage(QWidget):
 
         self._toggle_btn = QPushButton(_tr("clips_start", "Start capture"))
         self._toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._toggle_btn.clicked.connect(self._on_toggle)
+        self._toggle_btn.clicked.connect(self._on_toggle_clicked)
         actions.addWidget(self._toggle_btn)
 
         self._save_btn = QPushButton(_tr("clips_save", "Save last seconds"))
@@ -620,6 +620,9 @@ class ClipsPage(QWidget):
         self._auto_started = False
         self._game_gone_since: float | None = None
         self._last_detected_game: str | None = None
+        # Which game an automatic start already failed for, so the 5 s poll
+        # does not relaunch it forever (#204).
+        self._autostart_failed_for: str | None = None
         self._game_timer = QTimer(self)
         self._game_timer.setInterval(_GAME_POLL_MS)
         self._game_timer.timeout.connect(self._poll_game)
@@ -688,6 +691,12 @@ class ClipsPage(QWidget):
                 "GlobalShortcuts portal."))
 
     # ── capture control ───────────────────────────────────────────────────────
+
+    def _on_toggle_clicked(self) -> None:
+        """The button. Clears the autostart backoff: asking again by hand is
+        exactly the signal that a retry is wanted."""
+        self._autostart_failed_for = None
+        self._on_toggle()
 
     def _on_toggle(self) -> None:
         if self._capture is None:
@@ -904,10 +913,28 @@ class ClipsPage(QWidget):
         if game:
             self._game_gone_since = None
             if self._capture is None:
+                # One failed autostart is a reason to stop, not to try again in
+                # five seconds. Each attempt asks the portal for a screencast
+                # and spawns an encoder, so a cause that is not going away —
+                # a clips folder on a disconnected drive (issue #204), a
+                # missing dependency, a refused portal — turned this timer into
+                # a machine for launching capture processes for as long as the
+                # game ran. Retry when something has actually changed: another
+                # game, or the user pressing the button.
+                if self._autostart_failed_for == game:
+                    return
                 logger.info("clips: '%s' is playing — starting the capture", game)
                 self._on_toggle()
                 if self._capture is not None:
                     self._auto_started = True
+                    self._autostart_failed_for = None
+                else:
+                    self._autostart_failed_for = game
+                    logger.warning(
+                        "clips: could not autostart the capture for '%s' (%s) — "
+                        "not retrying until the game changes or you start it "
+                        "yourself", game, self._error or "no reason given",
+                    )
             return
 
         if self._capture is None or not self._auto_started:

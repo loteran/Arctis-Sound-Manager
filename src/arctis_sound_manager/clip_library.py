@@ -178,10 +178,34 @@ def list_clips(directory: Path | None = None) -> list[Path]:
     root = directory or clip_dir()
     if not root.exists():
         return []
-    clips = [p for p in root.iterdir()
-             if p.is_file() and p.suffix.lower() in CLIP_SUFFIXES
-             and not is_export(p)]
-    return sorted(clips, key=lambda p: p.stat().st_mtime, reverse=True)
+
+    # exists() answering True is not a promise the directory can be read. A
+    # clips folder on removable media — /run/media/<user>/<disk> — survives the
+    # drive being pulled as a live mount point that answers EIO on the first
+    # read (issue #204). That escaped as an OSError out of the ClipsPage
+    # constructor and took the whole window down with it: no mixer, no Sonar,
+    # no settings, because a disk that is not there. _has_clips() ten lines up
+    # has always guarded for this; this did not.
+    try:
+        entries = list(root.iterdir())
+    except OSError as exc:
+        log.warning("cannot read the clips folder %s: %s — showing none", root, exc)
+        return []
+
+    clips: list[tuple[float, Path]] = []
+    for entry in entries:
+        # Each entry is its own syscall, and on failing media some succeed and
+        # some do not. One unreadable file must not hide the rest.
+        try:
+            if not entry.is_file() or entry.suffix.lower() not in CLIP_SUFFIXES:
+                continue
+            if is_export(entry):
+                continue
+            clips.append((entry.stat().st_mtime, entry))
+        except OSError as exc:
+            log.warning("skipping unreadable clip %s: %s", entry, exc)
+
+    return [entry for _, entry in sorted(clips, key=lambda pair: pair[0], reverse=True)]
 
 
 def export_destination(source: Path, suffix: str = ".mp4",
