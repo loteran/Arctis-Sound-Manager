@@ -19,12 +19,23 @@ _MANIFEST_URL = (
     "https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager"
     "/main/presets_manifest.json"
 )
+_PROVENANCE_URL = (
+    "https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager"
+    "/main/presets_provenance.json"
+)
 _PRESET_RAW_BASE = (
     "https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager"
     "/main/src/arctis_sound_manager/gui/presets/"
 )
 _CFG         = Path.home() / ".config" / "arctis_manager"
 _PRESETS_DIR = _CFG / "sonar_presets"
+# Downloaded presets live apart from the user's own. Both used to land in
+# sonar_presets/, and the Sonar page calls everything in there "custom": it
+# sorts those first, paints them in the accent colour and offers a rename or
+# delete on them. So a SteelSeries preset that arrived by sync looked like
+# something the user had made, and offered to delete a file that comes straight
+# back on the next run. Same origin, same treatment as the bundled ones.
+_SYNCED_DIR  = _CFG / "sonar_presets_synced"
 _CACHE_FILE  = _CFG / ".preset_sync_cache"
 _BUNDLED_DIR = Path(__file__).parent / "gui" / "presets"
 _CACHE_TTL_H = 24
@@ -47,7 +58,9 @@ class PresetSyncWorker(QThread):
     JSON request.
     """
 
-    new_presets_added = Signal(int)
+    # (filenames added, GG versions they came from). The count alone said
+    # "something changed" without saying what, which is not worth a dialog.
+    new_presets_added = Signal(list, list)
 
     def __init__(self, force: bool = False, parent=None) -> None:
         super().__init__(parent)
@@ -69,20 +82,23 @@ class PresetSyncWorker(QThread):
 
         filenames: list[str] = manifest.get("presets", [])
 
+        self._migrate_synced(filenames)
+
         available: set[str] = set()
-        if _BUNDLED_DIR.exists():
-            available.update(p.name for p in _BUNDLED_DIR.glob("*.json"))
-        if _PRESETS_DIR.exists():
-            available.update(p.name for p in _PRESETS_DIR.glob("*.json"))
+        for d in (_BUNDLED_DIR, _SYNCED_DIR, _PRESETS_DIR):
+            if d.exists():
+                available.update(p.name for p in d.glob("*.json"))
 
         missing = [f for f in filenames if f not in available]
-        downloaded = sum(1 for f in missing if self._download(f))
+        added = [f for f in missing if self._download(f)]
 
         self._write_cache()
 
-        if downloaded:
-            log.info("Preset sync: %d new preset(s) downloaded.", downloaded)
-            self.new_presets_added.emit(downloaded)
+        if added:
+            provenance = self._fetch_json(_PROVENANCE_URL) or {}
+            versions = sorted({provenance[f] for f in added if f in provenance})
+            log.info("Preset sync: %d new preset(s) downloaded.", len(added))
+            self.new_presets_added.emit(added, versions)
 
     def _should_check(self) -> bool:
         if not _CACHE_FILE.exists():
@@ -100,14 +116,16 @@ class PresetSyncWorker(QThread):
         return age_h >= _CACHE_TTL_H
 
     def _fetch_manifest(self) -> dict | None:
+        return self._fetch_json(_MANIFEST_URL)
+
+    @staticmethod
+    def _fetch_json(url: str) -> dict | None:
         try:
-            req = urllib.request.Request(
-                _MANIFEST_URL, headers={"Accept": "application/json"}
-            )
+            req = urllib.request.Request(url, headers={"Accept": "application/json"})
             with urllib.request.urlopen(req, timeout=_TIMEOUT) as r:
                 return json.loads(r.read())
         except Exception as exc:
-            log.debug("Failed to fetch preset manifest: %s", exc)
+            log.debug("Failed to fetch %s: %s", url, exc)
             return None
 
     def _download(self, filename: str) -> bool:
@@ -115,13 +133,43 @@ class PresetSyncWorker(QThread):
             url = _PRESET_RAW_BASE + quote(filename)
             with urllib.request.urlopen(urllib.request.Request(url), timeout=_TIMEOUT) as r:
                 content = r.read()
-            _PRESETS_DIR.mkdir(parents=True, exist_ok=True)
-            (_PRESETS_DIR / filename).write_bytes(content)
+            _SYNCED_DIR.mkdir(parents=True, exist_ok=True)
+            (_SYNCED_DIR / filename).write_bytes(content)
             log.info("Downloaded preset: %s", filename)
             return True
         except Exception as exc:
             log.debug("Failed to download %s: %s", filename, exc)
             return False
+
+    @staticmethod
+    def _migrate_synced(filenames: list[str]) -> None:
+        """Move previously downloaded presets out of the user's own folder.
+
+        Everything used to be written to sonar_presets/, so an install that has
+        already synced carries SteelSeries presets that the UI still shows as
+        the user's. The manifest is what tells the two apart: a file whose name
+        is in it came from us, whatever put it there.
+
+        A preset the user genuinely made cannot be caught by this — its name
+        would have to match a published one exactly, and the content is
+        overwritten by the next sync anyway.
+        """
+        if not _PRESETS_DIR.exists():
+            return
+        published = set(filenames)
+        for src in list(_PRESETS_DIR.glob("*.json")):
+            if src.name not in published:
+                continue
+            try:
+                _SYNCED_DIR.mkdir(parents=True, exist_ok=True)
+                dest = _SYNCED_DIR / src.name
+                if dest.exists():
+                    src.unlink()          # already migrated, drop the duplicate
+                else:
+                    src.replace(dest)
+                log.info("Moved synced preset out of the user folder: %s", src.name)
+            except OSError as exc:
+                log.debug("Could not migrate %s: %s", src.name, exc)
 
     def _write_cache(self) -> None:
         _CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)

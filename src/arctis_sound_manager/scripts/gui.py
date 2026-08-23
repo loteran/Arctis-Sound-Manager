@@ -372,6 +372,45 @@ def main():
     QTimer.singleShot(2500, _check_deps)
 
     # -- Preset sync (new Sonar presets added since install) ------------------
+    def _announce_new_presets(filenames: list, versions: list) -> None:
+        """Say what arrived, and where it came from.
+
+        A silent download leaves people wondering whether the list grew or they
+        misremembered it, so this names the presets and the SteelSeries GG
+        release they were taken from. Informational only — they are already
+        installed by the time this runs.
+        """
+        from arctis_sound_manager.i18n import I18n
+        from PySide6.QtWidgets import QMessageBox
+
+        log.info("Preset sync: %d new preset(s) available.", len(filenames))
+
+        def _pretty(f: str) -> str:
+            # "Halo_ Campaign Evolved [Game].json" → "Halo_ Campaign Evolved"
+            stem = f[:-5] if f.endswith(".json") else f
+            return stem.rsplit(" [", 1)[0]
+
+        names = sorted(_pretty(f) for f in filenames)
+        shown = names[:15]
+        body = "\n".join(f"  • {n}" for n in shown)
+        if len(names) > len(shown):
+            body += "\n  " + I18n.translate("ui", "preset_sync_and_more").format(
+                count=len(names) - len(shown))
+
+        title = I18n.translate("ui", "preset_sync_title")
+        header = I18n.translate("ui", "preset_sync_body").format(count=len(names))
+        if versions:
+            header += "\n" + I18n.translate("ui", "preset_sync_from_gg").format(
+                versions=", ".join(versions))
+
+        box = QMessageBox(q_object.main_window if hasattr(q_object, "main_window") else None)
+        box.setWindowTitle(title)
+        box.setText(header)
+        box.setInformativeText(body)
+        box.setIcon(QMessageBox.Information)
+        box.setStandardButtons(QMessageBox.Ok)
+        box.show()
+
     def _sync_presets():
         from arctis_sound_manager.preset_sync import PresetSyncWorker
         # force=True: check on every launch, not once a day. New Sonar preset
@@ -379,9 +418,7 @@ def main():
         # check that ran shortly before a batch was published left the user
         # without it until the next day, with no way to ask for one.
         w = PresetSyncWorker(force=True)
-        w.new_presets_added.connect(
-            lambda n: log.info("Preset sync: %d new preset(s) available.", n)
-        )
+        w.new_presets_added.connect(_announce_new_presets)
         w.finished.connect(w.deleteLater)
         _sync_presets._worker = w  # prevent GC until thread finishes
         w.start()

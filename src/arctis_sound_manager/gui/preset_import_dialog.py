@@ -42,7 +42,11 @@ from arctis_sound_manager.gui.preset_share import (
 import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.i18n import I18n
 
-_PRESETS_DIR = Path.home() / ".config" / "arctis_manager" / "sonar_presets"
+# Community presets shared through loteran.github.io/asm-presets. Kept apart
+# from sonar_presets/ (the user's own work) and sonar_presets_synced/
+# (SteelSeries', pulled from the catalogue) so the Sonar page can say where a
+# preset came from instead of lumping every non-bundled one together.
+_PRESETS_DIR = Path.home() / ".config" / "arctis_manager" / "sonar_presets_community"
 
 
 def _t(key: str) -> str:

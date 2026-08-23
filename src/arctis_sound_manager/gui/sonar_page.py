@@ -102,6 +102,25 @@ from arctis_sound_manager.sonar_to_pipewire import (
 
 _CFG          = Path.home() / ".config" / "arctis_manager"
 _PRESETS_DIR  = _CFG / "sonar_presets"
+# SteelSeries presets pulled by preset_sync. Read like the bundled ones and
+# deliberately NOT like _PRESETS_DIR: everything in that folder is treated as
+# the user's own work — sorted first, painted in the accent colour, offered a
+# rename and a delete. A synced preset is none of those things, and deleting
+# one only makes it come back on the next sync.
+_SYNCED_DIR   = _CFG / "sonar_presets_synced"
+# Presets imported from loteran.github.io/asm-presets.
+_COMMUNITY_DIR = _CFG / "sonar_presets_community"
+
+# Where a preset comes from is the one thing its name cannot tell you, so the
+# list says it in colour:
+#   SteelSeries (bundled or synced) — default text, no tint
+#   the user's own                  — ACCENT
+#   community (asm-presets)         — the teal below
+# That teal is the accent of loteran.github.io/asm-presets itself (its
+# `--accent` custom property), so a preset carries the colour of the site it was
+# shared on. Fixed rather than themed for that reason — it identifies an origin,
+# not a state, and has to stay legible on all five palettes.
+COMMUNITY_COLOR = "#22D3B4"
 _RAW_DIR      = Path(__file__).parent / "presets"
 
 _CHANNEL_TAG  = {"game": "[Game]", "media": "[Game]", "chat": "[Chat]", "micro": "[Mic]", "output": "[Game]"}
@@ -190,9 +209,27 @@ def _list_presets(channel: str) -> dict[str, Path]:
                 name = p.stem[: -len(tag) - 1].strip()
                 result[name] = p
 
-    # Copied presets in config dir
+    # The user's own presets come before downloaded ones: if someone has a
+    # preset of their own under a published name, a sync must not shadow it.
     if _PRESETS_DIR.exists():
         for p in sorted(_PRESETS_DIR.glob("*.json")):
+            if p.name.endswith(suffix):
+                name = p.stem[: -len(tag) - 1].strip()
+                if name not in result:
+                    result[name] = p
+
+    # Imported from the community site.
+    if _COMMUNITY_DIR.exists():
+        for p in sorted(_COMMUNITY_DIR.glob("*.json")):
+            if p.name.endswith(suffix):
+                name = p.stem[: -len(tag) - 1].strip()
+                if name not in result:
+                    result[name] = p
+
+    # Presets pulled from the published catalogue — same standing as bundled,
+    # never treated as the user's own (that is what _custom_names decides).
+    if _SYNCED_DIR.exists():
+        for p in sorted(_SYNCED_DIR.glob("*.json")):
             if p.name.endswith(suffix):
                 name = p.stem[: -len(tag) - 1].strip()
                 if name not in result:
@@ -904,9 +941,16 @@ class _PresetSearchDialog(QDialog):
         self._custom_names: set[str] = {
             n for n, p in presets.items() if p.parent == _PRESETS_DIR
         }
-        # Custom presets first, then built-in (alphabetical within each group)
-        self._all = sorted(self._custom_names) + [
-            n for n in presets.keys() if n not in self._custom_names
+        self._community_names: set[str] = {
+            n for n, p in presets.items() if p.parent == _COMMUNITY_DIR
+        }
+        # The user's own first, then community, then SteelSeries' — alphabetical
+        # within each group.
+        _own = sorted(self._custom_names)
+        _shared = sorted(self._community_names)
+        self._all = _own + _shared + [
+            n for n in presets.keys()
+            if n not in self._custom_names and n not in self._community_names
         ]
 
         layout = QVBoxLayout(self)
@@ -961,6 +1005,9 @@ class _PresetSearchDialog(QDialog):
                 item = QListWidgetItem(name)
                 if name in self._custom_names:
                     item.setForeground(QColor(ACCENT))
+                elif name in self._community_names:
+                    item.setForeground(QColor(COMMUNITY_COLOR))
+                # SteelSeries presets keep the default text colour.
                 self._list.addItem(item)
 
     def _on_context_menu(self, pos) -> None:
@@ -968,7 +1015,10 @@ class _PresetSearchDialog(QDialog):
         if not item:
             return
         name = item.text()
-        if name not in self._custom_names:
+        # Rename and delete apply to files the user chose to have — their own
+        # presets and the ones they imported from the community site. Not to
+        # SteelSeries', which come back on the next sync anyway.
+        if name not in self._custom_names and name not in self._community_names:
             return
         menu = QMenu(self)
         menu.setStyleSheet(
@@ -980,6 +1030,7 @@ class _PresetSearchDialog(QDialog):
             path = self._presets[name]
             path.unlink(missing_ok=True)
             self._custom_names.discard(name)
+            self._community_names.discard(name)
             self._all.remove(name)
             del self._presets[name]
             self._filter(self._search.text())
