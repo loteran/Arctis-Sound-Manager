@@ -5,6 +5,7 @@
 import asyncio
 import logging
 import os
+import re
 import signal
 import sys
 from argparse import ArgumentParser
@@ -42,24 +43,88 @@ def _check_display_or_exit() -> None:
     sys.exit(2)
 
 
-def _import_qt_or_exit():
-    """Import PySide6 with a focused error if QtWayland or Qt platform plugins
-    are missing — the most common breakage on Wayland-only distros (Fedora 41+,
-    RHEL 9+) when the user installed PySide6 via pip without `qt6-wayland`."""
-    try:
-        from PySide6.QtCore import QTimer
-        from PySide6.QtNetwork import QLocalServer, QLocalSocket
-        from PySide6.QtWidgets import QApplication, QDialog
-        return QTimer, QLocalServer, QLocalSocket, QApplication, QDialog
-    except ImportError as e:
-        sys.stderr.write(
-            f"asm-gui: failed to import PySide6 ({e}).\n"
+_QT_ABI_VERSION_RE = re.compile(r"QtPrivate_(\d+)_(\d+)(?:_(\d+))?")
+
+
+def _qt_import_help(exc: ImportError) -> str:
+    """The advice to print when PySide6 will not import.
+
+    Two unrelated failures land in the same ``except`` and they have opposite
+    fixes, which is why this is worth telling apart rather than printing one
+    paragraph for both:
+
+    - **The Qt libraries are missing.** Nothing to load. Installing the
+      platform plugin is the fix, and that is the message this function has
+      always printed.
+    - **They are present but were built against a different Qt.** The loader
+      finds the library, then fails on a symbol: ``undefined symbol:
+      _ZN14QObjectPrivateC2E16QtPrivate_6_11_2, version Qt_6_PRIVATE_API``.
+      PySide6 is compiled against Qt's private ABI, so the two must be the
+      *same* version, not merely both installed. Installing more packages
+      changes nothing here — a user reported doing exactly that, and reasonably
+      concluded the app was broken.
+
+    On a rolling distro the second one is almost always a partial upgrade
+    (``pacman -S <one package>`` rather than ``-Syu``), or a pip-installed
+    PySide6 in ~/.local shadowing the distro one it does not match.
+    """
+    text = str(exc)
+
+    if "undefined symbol" not in text:
+        return (
+            f"asm-gui: failed to import PySide6 ({exc}).\n"
             "  - On Wayland-only distros, install the platform plugin:\n"
             "      Fedora/Nobara : sudo dnf install qt6-qtwayland\n"
             "      Arch/Cachy    : sudo pacman -S qt6-wayland\n"
             "      Debian/Ubuntu : sudo apt install qt6-wayland\n"
             "  - On X11, install qt6-base / python3-pyside6.qtwidgets.\n"
         )
+
+    wanted = ""
+    m = _QT_ABI_VERSION_RE.search(text)
+    if m:
+        wanted = ".".join(part for part in m.groups() if part)
+
+    out = [
+        f"asm-gui: PySide6 and Qt6 do not match ({exc}).\n",
+        "\n",
+        "PySide6 loaded, then failed on a Qt symbol: it was built against a\n",
+    ]
+    out.append(
+        f"different Qt6 than the one installed (it wants Qt {wanted}).\n" if wanted
+        else "different Qt6 than the one installed.\n"
+    )
+    out += [
+        "Installing extra Qt packages will NOT fix this — the two have to be\n",
+        "the same version.\n",
+        "\n",
+        "  1. Upgrade the whole system, not single packages. A partial upgrade\n",
+        "     is the usual cause:\n",
+        "      Arch/Cachy    : sudo pacman -Syu\n",
+        "      Fedora/Nobara : sudo dnf upgrade\n",
+        "      Debian/Ubuntu : sudo apt update && sudo apt full-upgrade\n",
+        "\n",
+        "  2. If it persists, check you are not running a pip copy of PySide6\n",
+        "     on top of the distro one:\n",
+        "      python -c 'import PySide6; print(PySide6.__file__)'\n",
+        "     A path under ~/.local means pip's copy is shadowing the packaged\n",
+        "     one. Remove it: pip uninstall pyside6 pyside6-essentials\n",
+    ]
+    return "".join(out)
+
+
+def _import_qt_or_exit():
+    """Import PySide6, telling a missing Qt apart from a mismatched one.
+
+    See :func:`_qt_import_help` for why those two need different advice.
+    """
+    try:
+        from PySide6.QtCore import QTimer
+        from PySide6.QtNetwork import QLocalServer, QLocalSocket
+        from PySide6.QtWidgets import QApplication, QDialog
+        return QTimer, QLocalServer, QLocalSocket, QApplication, QDialog
+    except ImportError as e:
+        sys.stderr.write(_qt_import_help(e))
         sys.exit(3)
 
 
