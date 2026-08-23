@@ -89,8 +89,8 @@ def _autostart_enabled() -> bool:
         from arctis_sound_manager.settings import GeneralSettings
         return bool(GeneralSettings.read_from_file().clips_autostart)
     except Exception:  # noqa: BLE001 — a broken settings file is not worth the page
-        logger.debug("could not read clips_autostart, assuming on", exc_info=True)
-        return True
+        logger.debug("could not read clips_autostart, assuming off", exc_info=True)
+        return False
 
 
 def _tr(key: str, fallback: str) -> str:

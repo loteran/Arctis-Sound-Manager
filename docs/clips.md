@@ -152,10 +152,14 @@ verify.
 
 ## Following the game
 
-**Capture automatically while a game is running** is on by default, and it only
-ever applies once Clips itself has been switched on. A buffer is only worth
-having if it is already running when something happens, and arming it by hand is
-exactly what gets forgotten.
+**Capture automatically while a game is running** is off by default: starting
+ASM never starts a capture. Opening a session to find the screen already being
+recorded — because a game happened to be running when the tray came up — is a
+surprise nobody asked for, and it costs more than the clip it might have caught.
+
+Tick it and the buffer follows the game on its own, which is worth having if you
+would rather not think about arming it; the setting only ever applies once Clips
+itself has been switched on.
 
 The game is found the same way a clip gets its name: whatever you routed to the
 **Game** channel, so there is no list of titles to keep up to date.

@@ -146,9 +146,15 @@ def test_a_game_returning_during_the_grace_keeps_the_buffer(page, monkeypatch):
     assert page.stopped == []
 
 
-def test_it_is_on_unless_the_user_says_otherwise():
-    """The moment worth clipping has already happened by the time anyone thinks
-    to press Start — which is the whole reason the buffer exists."""
+def test_it_is_off_until_the_user_says_otherwise():
+    """Starting ASM must never start a capture.
+
+    Following the game is worth having, but not before anyone has asked for it:
+    a session that opens with the screen already being recorded — because a
+    game happened to be running when the tray came up — is a surprise, and the
+    surprise costs more than the clip it might have caught. The checkbox on the
+    Clips page turns it on for whoever wants the buffer armed without thinking
+    about it."""
     from arctis_sound_manager.settings import GeneralSettings
 
-    assert GeneralSettings().clips_autostart is True
+    assert GeneralSettings().clips_autostart is False

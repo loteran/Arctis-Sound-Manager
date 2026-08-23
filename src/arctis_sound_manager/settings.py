@@ -346,12 +346,12 @@ class GeneralSettings(JsonSerializable):
     clips_enabled: bool = False
 
     # Arm the rolling buffer while a game is running, and let it go when the
-    # game does. On, because a buffer that has to be armed by hand is armed
-    # after the moment worth keeping — which is the one thing this feature
-    # exists to catch. It only ever applies once Clips itself has been switched
-    # on above, so nothing here records a screen the user did not ask it to;
-    # the switch is for people who would rather decide each time.
-    clips_autostart: bool = True
+    # game does. Off, so that starting ASM never starts a capture: a session
+    # that begins with the screen already being recorded is one nobody asked
+    # for, and the surprise costs more than the clip it might have caught.
+    # Turning it on is one checkbox on the Clips page, and it stays on for
+    # whoever wants the buffer armed without thinking about it.
+    clips_autostart: bool = False
 
     # Where clips are written. None means "wherever the desktop says videos
     # go" — see clip_library.clip_dir(), which owns the whole resolution
