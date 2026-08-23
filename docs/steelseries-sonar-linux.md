@@ -57,16 +57,28 @@ headset is described in a YAML file, so support is data rather than code — see
 Spatial audio is there too, through HeSuVi-compatible HRIR convolution — the
 Linux equivalent of Sonar's virtual surround.
 
+## Sonar's game presets are included
+
+You do not start from a flat curve. **354 Sonar presets ship with the
+application** — 331 game profiles, 14 microphone and 9 chat — in Sonar's own
+shape: parametric EQ bands, bass and treble boost, voice clarity, smart volume,
+virtual surround. Pick your game from the list and the curve is applied to the
+Game channel, the way it would be in Sonar on Windows.
+
+Community presets are shared separately on the
+[ASM Presets site](https://loteran.github.io/asm-presets/), and you can save
+your own.
+
 ## What is not the same
 
 Straight answers, because being sold a like-for-like replacement helps nobody:
 
-- **Presets are not shared with GG.** Sonar's presets live in SteelSeries'
-  format on Windows. ASM has its own, plus a
-  [community preset site](https://loteran.github.io/asm-presets/).
 - **Sonar's AI noise cancellation is not reproduced.** Microphone noise
   suppression is available through standard Linux filters, which are not the
   same model and do not sound identical.
+- **The GG application itself has no Linux build**, so anything that lives in
+  GG rather than in Sonar — account sync, Moments, engine settings — is out of
+  scope here.
 - **PipeWire is required.** PulseAudio-only systems are out of scope; every
   modern desktop distribution ships PipeWire.
 
