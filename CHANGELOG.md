@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.7] - 23 August 2026
+
+### Changed
+
+- **Opening ASM no longer starts recording.** Clip autostart shipped switched on, so a session opened while a game was already running found the screen being captured before anyone had asked for it. Following the game is still there for whoever wants the buffer armed without thinking about it — it is one checkbox on the Clips page, and anyone who ticked it keeps their setting. Only the default changed.
+
+### Fixed
+
+- **The microphone links to its EQ even when PipeWire is slow to enumerate it.** The device's capture node was looked up once, at connect time, within a fixed four-second budget — and right after connecting, ASM detaches and reattaches the USB kernel driver twice to push the on-device equaliser, which is exactly the churn that can delay that node. When the window was missed the empty result was kept for the whole session: the capture link was never even attempted, while the watchdog retried it forever and escalated to a filter-chain repair that could not help, because the filter chain was never the problem. The node is now looked for again while it is missing, which costs nothing once it is known. ([#206](https://github.com/loteran/Arctis-Sound-Manager/issues/206))
+- **ASM stops overwriting its own service file with an outdated copy.** A unit in your home directory replaces the packaged one rather than extending it, and the copy ASM rewrote at every session start had drifted: it no longer waited for the filter chain. That let the daemon start before the node the microphone has to link into even existed, making the failure above more likely. Where your distribution ships the unit, none is written now; a copy ASM recognises as its own is cleared away, and one you edited yourself is left alone with a warning. ([#206](https://github.com/loteran/Arctis-Sound-Manager/issues/206))
+- **A channel whose meters move while the headset stays silent.** A filter declared in both `pipewire.conf.d/` and `filter-chain.conf.d/` is loaded twice — once by the PipeWire daemon and once by the filter-chain service — so two nodes answer to one name and every route ASM sets by name becomes ambiguous. The cleanup for this has existed since April as a hand-written list of four filenames; the Output EQ and the Media surround stage were added to the generator later and never added to that list, so those two survived every startup. It is derived from what is actually generated now, so the next config added cannot be forgotten. ([#205](https://github.com/loteran/Arctis-Sound-Manager/issues/205))
+- **Bug reports show duplicate node names and PipeWire drop-ins.** The report that led to the fix above gave no way to see the duplication at all. The graph section now leads with any routing target owned by more than one node, listing each id so the owning clients can be told apart. ([#205](https://github.com/loteran/Arctis-Sound-Manager/issues/205))
+- **The wired GameDAC's screen halves no longer scroll a quarter-second apart.** That DAC carries out screen writes without ever acknowledging them, so each half of a 128 px panel spent the full timeout waiting for an answer that was not coming — invisible on a static screen, plainly visible on anything that scrolls. The timeout is now learned from the device rather than guessed: once a whole frame has gone unanswered, it drops to a value still several times what a working panel needs to reply. ([#196](https://github.com/loteran/Arctis-Sound-Manager/issues/196))
+- **A Qt version mismatch no longer tells you to install Qt.** Every PySide6 import error printed the same advice — install qt6-wayland, qt6-base — which is right when Qt is missing and actively misleading when it is present but built against another version. PySide6 binds Qt's private ABI, so the two must be the *same* version, not merely both installed. Someone followed that advice, installed a package that was already there, saw no change, and concluded the app did not work.
+
 ## [1.4.6] - 23 August 2026
 
 A crash reported hours after 1.4.5, and the Arctis GameBuds finally reporting their battery.
