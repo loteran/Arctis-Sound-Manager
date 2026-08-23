@@ -381,6 +381,7 @@ def main():
         installed by the time this runs.
         """
         from arctis_sound_manager.i18n import I18n
+        from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QMessageBox
 
         log.info("Preset sync: %d new preset(s) available.", len(filenames))
@@ -403,13 +404,27 @@ def main():
             header += "\n" + I18n.translate("ui", "preset_sync_from_gg").format(
                 versions=", ".join(versions))
 
-        box = QMessageBox(q_object.main_window if hasattr(q_object, "main_window") else None)
-        box.setWindowTitle(title)
-        box.setText(header)
-        box.setInformativeText(body)
-        box.setIcon(QMessageBox.Information)
-        box.setStandardButtons(QMessageBox.Ok)
-        box.show()
+        def _show() -> None:
+            box = QMessageBox()
+            box.setWindowTitle(title)
+            box.setText(header)
+            box.setInformativeText(body)
+            box.setIcon(QMessageBox.Information)
+            box.setStandardButtons(QMessageBox.Ok)
+            # show() does not block, so the local name is the only thing holding
+            # the dialog: without this it is garbage-collected on return and the
+            # window vanishes before anyone sees it. Qt frees it on close.
+            box.setAttribute(Qt.WA_DeleteOnClose)
+            _announce_new_presets._box = box
+            box.show()
+            box.raise_()
+            box.activateWindow()
+
+        # The signal is emitted from PresetSyncWorker's thread, and this is a
+        # plain function rather than a QObject slot — so Qt would run it right
+        # there, building a widget outside the GUI thread. Hand it back to the
+        # GUI thread by giving singleShot a context object that lives in it.
+        QTimer.singleShot(0, q_object, _show)
 
     def _sync_presets():
         from arctis_sound_manager.preset_sync import PresetSyncWorker
