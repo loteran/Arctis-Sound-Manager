@@ -359,6 +359,8 @@ class CoreEngine:
             physical_game=physical_game,
             physical_chat=physical_chat,
             device_name=dev_name,
+            aux=bool(getattr(getattr(self, 'general_settings', None),
+                          'aux_enabled', False)),
         )
         # Every loopback process is about to be replaced: this is a new device
         # session. Bumping the counter tells the watchdog to drop the anti-flap
@@ -604,6 +606,8 @@ class CoreEngine:
                 physical_game=physical_game,
                 physical_chat=physical_chat,
                 device_name=dev_name,
+                aux=bool(getattr(getattr(self, 'general_settings', None),
+                              'aux_enabled', False)),
             )
             recreated = [s for s in specs if s.channel != "chat"]
             for spec in recreated:
@@ -656,6 +660,8 @@ class CoreEngine:
                 physical_game=physical_game,
                 physical_chat=physical_chat,
                 device_name=dev_name,
+                aux=bool(getattr(getattr(self, 'general_settings', None),
+                              'aux_enabled', False)),
             )
             for spec in specs:
                 if spec.channel == channel:

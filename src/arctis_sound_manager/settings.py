@@ -343,6 +343,12 @@ class GeneralSettings(JsonSerializable):
     # False rather than "on if the packages happen to be present": a capture
     # that starts recording because a dependency arrived with something else is
     # a surprise, and this one holds a rolling buffer of the screen.
+    # A fourth playback channel, off unless asked for (#209). Someone using
+    # Media for video wants their music somewhere else, with its own EQ — but
+    # a channel nobody asked for is one more entry in every application's
+    # output list, and one more filter stage running for nothing.
+    aux_enabled: bool = False
+
     clips_enabled: bool = False
 
     # Arm the rolling buffer while a game is running, and let it go when the

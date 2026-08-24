@@ -211,7 +211,20 @@ DEFAULT_SINKS: list[dict] = [
         "sonar_target": "effect_input.sonar-media-eq",
         "description":  "Media",
     },
+    # Opt-in, and last on purpose: it only exists when the user asks for it, so
+    # everything that walks this list in order keeps the layout it had (#209).
+    {
+        "channel":      "aux",
+        "capture_name": "Arctis_Aux",
+        "playback_name": "Arctis_Aux_sink_out",
+        "sonar_target": "effect_input.sonar-aux-eq",
+        "description":  "Aux",
+    },
 ]
+
+# The channel nobody gets unless they ask. Kept as a name rather than "the last
+# entry" so the two places that need to know cannot drift apart.
+OPTIONAL_CHANNELS = ("aux",)
 
 
 # ── Command builder ──────────────────────────────────────────────────────────
@@ -879,6 +892,7 @@ def make_specs(
     physical_game: str,
     physical_chat: str,
     device_name: str = "Arctis",
+    aux: bool = False,
 ) -> list[LoopbackSpec]:
     """Build the three standard Arctis LoopbackSpec objects.
 
@@ -909,6 +923,11 @@ def make_specs(
     """
     specs: list[LoopbackSpec] = []
     for sink in DEFAULT_SINKS:
+        # An opt-in channel that was not asked for produces no loopback at all,
+        # rather than a sink nothing routes to: an empty channel in every
+        # application's output list is worse than no channel.
+        if sink["channel"] in OPTIONAL_CHANNELS and not aux:
+            continue
         if sonar:
             target = sink["sonar_target"]
         elif sink["channel"] == "chat":

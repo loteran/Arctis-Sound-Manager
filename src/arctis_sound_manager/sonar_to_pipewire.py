@@ -513,6 +513,7 @@ _CHANNEL_CHANNELS: dict[str, int] = {
     "game":   8,
     "chat":   2,
     "media":  8,
+    "aux":    8,
     "output": 8,
 }
 
@@ -520,6 +521,7 @@ _CHANNEL_POSITION: dict[str, str] = {
     "game":   "FL FR FC LFE RL RR SL SR",
     "chat":   "FL FR",
     "media":  "FL FR FC LFE RL RR SL SR",
+    "aux":    "FL FR FC LFE RL RR SL SR",
     "output": "FL FR FC LFE RL RR SL SR",
 }
 
@@ -527,6 +529,8 @@ _CHANNEL_POSITION: dict[str, str] = {
 _CHANNEL_TARGET: dict[str, str] = {
     "game":   _SURROUND,
     "media":  _SURROUND,
+    # Same path as media: through the spatial stage, then to the headset.
+    "aux":    _SURROUND,
     "output": "",
 }
 
@@ -1374,8 +1378,9 @@ def generate_sonar_eq_conf(
     are kept (unused for game/media routing) purely for source compatibility
     with existing call sites.
     """
-    if channel not in ("game", "chat", "media", "output"):
-        raise ValueError(f"channel must be 'game', 'chat', 'media' or 'output', got {channel!r}")
+    if channel not in ("game", "chat", "media", "aux", "output"):
+        raise ValueError(
+            f"channel must be 'game', 'chat', 'media', 'aux' or 'output', got {channel!r}")
 
     owns_link = channel in ("game", "media")
     sink_name = f"effect_input.sonar-{channel}-eq"

@@ -29,7 +29,7 @@ import re
 
 from arctis_sound_manager.channel_volumes import (load_channel_volumes,
                                                   save_channel_volume)
-from arctis_sound_manager.loopback_manager import DEFAULT_SINKS
+from arctis_sound_manager.loopback_manager import DEFAULT_SINKS, OPTIONAL_CHANNELS
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +124,12 @@ def show() -> list[str]:
     with pulsectl.Pulse("asm-channel-control") as pulse:
         for channel, node_name in CHANNELS.items():
             sink = _find_sink(pulse, node_name)
+            if sink is None and channel in OPTIONAL_CHANNELS:
+                # Off by choice, not missing by fault. It stays in CHANNELS so
+                # `asm-cli channel aux 50` is accepted once it is switched on,
+                # but listing it as "absent" every time would report a problem
+                # to everyone who simply never asked for it (#209).
+                continue
             if sink is None:
                 remembered = saved.get(node_name)
                 extra = f" (remembered: {remembered}%)" if remembered is not None else ""

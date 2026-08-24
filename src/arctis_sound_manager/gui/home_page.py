@@ -125,6 +125,7 @@ logger = logging.getLogger("HomePage")
 SINK_GAME  = "Arctis_Game"
 SINK_CHAT  = "Arctis_Chat"
 SINK_MEDIA = "Arctis_Media"
+SINK_AUX   = "Arctis_Aux"
 STEELSERIES_VENDOR_ID = "0x1038"
 
 
@@ -160,6 +161,27 @@ def _make_vertical_slider_qss(accent_color: str, groove_color: str | None = None
     """
 
 
+# What one channel card needs, and what it may be squeezed to when the optional
+# Aux channel makes a fifth. The narrow figure still fits the slider, the value
+# and the device picker; below it the picker starts eliding names to nothing.
+CARD_MIN_WIDTH = 260
+CARD_MIN_WIDTH_TIGHT = 205
+
+
+def _read_aux_enabled() -> bool:
+    """Whether the optional Aux channel is switched on.
+
+    Read from the file rather than cached: the daemon and the GUI both act on
+    this, and a stale copy would put a card on screen that has no sink behind
+    it (or the reverse).
+    """
+    try:
+        from arctis_sound_manager.settings import GeneralSettings
+        return bool(GeneralSettings.read_from_file().aux_enabled)
+    except Exception:  # noqa: BLE001 — a broken settings file is not worth the page
+        return False
+
+
 class AudioCard(QWidget):
     """
     Vertical card with:
@@ -178,7 +200,11 @@ class AudioCard(QWidget):
     ):
         super().__init__(parent)
         self.setObjectName("audioCard")
-        self.setMinimumWidth(260)
+        # Set by the mixer, not fixed here: the row holds four cards normally
+        # and five once the Aux channel is switched on, and 5 × 260 plus the
+        # gaps forces a window wider than a 1366 px laptop screen. See
+        # HomePage._fit_cards_to_row (#209).
+        self.setMinimumWidth(CARD_MIN_WIDTH)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._accent = accent_color
         self._ignore_change = False
@@ -774,6 +800,7 @@ class HomePage(QWidget):
         self._sink_game = None
         self._sink_chat = None
         self._sink_media = None
+        self._sink_aux = None
         self._sink_ext = None
         self._ext_device_nick: str | None = None  # from settings
         self._connected = False
@@ -938,6 +965,30 @@ class HomePage(QWidget):
         self._media_card.set_on_drop(lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_MEDIA))
         self._cards_layout.addWidget(self._media_card, stretch=1)
 
+        # Aux card — the opt-in fourth playback channel (#209). Built once and
+        # hidden, rather than created on demand: a card that exists from the
+        # start keeps its device picker, its drop target and its styling in
+        # step with the other four without a second code path.
+        self._aux_card = AudioCard(I18n.translate("ui", "aux"), _theme.c("COLOR_AUX2"), MEDIA_ICON)
+        self._aux_card.set_on_change(self._on_aux_channel_volume_changed)
+        self._aux_card.set_on_drop(lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_AUX))
+        self._aux_card.setVisible(False)
+        # The way back out. A channel you can add and not remove is a trap, and
+        # a visible "−" on the card would sit in every screenshot for a control
+        # used once.
+        self._aux_card.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._aux_card.customContextMenuRequested.connect(self._on_aux_card_menu)
+        self._cards_layout.addWidget(self._aux_card, stretch=1)
+
+        # The control that turns it on. Sits where the card will appear, so the
+        # "+" is in the place the thing it adds will occupy.
+        self._aux_add_btn = QPushButton("+")
+        self._aux_add_btn.setToolTip(I18n.translate("ui", "aux_add_hint"))
+        self._aux_add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._aux_add_btn.setFixedWidth(34)
+        self._aux_add_btn.clicked.connect(lambda: self._set_aux_enabled(True))
+        self._cards_layout.addWidget(self._aux_add_btn, stretch=0)
+
         # External output card (HDMI, sound card, USB speakers, etc.)
         self._ext_card = AudioCard(I18n.translate("ui", "output"), _theme.c("COLOR_HDMI"), HDMI_ICON)
         self._ext_card.set_on_change(self._on_ext_volume_changed)
@@ -945,6 +996,8 @@ class HomePage(QWidget):
 
         cards_outer_layout.addWidget(self._cards_widget, stretch=6)
         cards_outer_layout.addStretch(1)
+
+        self._apply_aux_visibility(_read_aux_enabled())
 
         root.addWidget(cards_outer, stretch=1)
 
@@ -1672,6 +1725,13 @@ class HomePage(QWidget):
                 self._media_card.set_volume(pct)
                 self._sink_media = sink_media
 
+            # Aux exists only while the channel is switched on, so a missing
+            # sink here is the normal case and not a fault to report.
+            sink_aux = next((s for s in sinks if s.name == SINK_AUX), None)
+            if sink_aux is not None:
+                self._aux_card.set_volume(round(sink_aux.volume.value_flat * 100))
+                self._sink_aux = sink_aux
+
             # External output sink (non-Arctis physical sink)
             if self._ext_device_nick:
                 # User chose a specific device in settings. Match node.nick OR
@@ -2199,6 +2259,76 @@ class HomePage(QWidget):
 
     def _on_ext_volume_changed(self, value: int):
         self._apply_volume(self._sink_ext, value)
+
+    def _on_aux_channel_volume_changed(self, value: int):
+        self._apply_volume(getattr(self, "_sink_aux", None), value)
+
+    # ── the optional Aux channel (#209) ──────────────────────────────────────
+
+    def _set_aux_enabled(self, enabled: bool) -> None:
+        """Turn the channel on or off, and tell the daemon.
+
+        The daemon owns the loopback and the filter-chain stage; all this does
+        is persist the choice and let it act. The card follows immediately so
+        the click has a visible effect without waiting for a round trip.
+        """
+        try:
+            from arctis_sound_manager.settings import GeneralSettings
+            gs = GeneralSettings.read_from_file()
+            gs.aux_enabled = bool(enabled)
+            gs.write_to_file()
+        except Exception:  # noqa: BLE001
+            logger.warning("could not persist aux_enabled", exc_info=True)
+        self._apply_aux_visibility(enabled)
+        try:
+            from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
+            DbusWrapper.change_setting("aux_enabled", bool(enabled))
+        except Exception:  # noqa: BLE001
+            logger.debug("could not notify the daemon about aux_enabled", exc_info=True)
+
+    def _on_aux_card_menu(self, pos) -> None:
+        from PySide6.QtWidgets import QMenu
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            f"QMenu {{ background: {_theme.c('BG_CARD')}; "
+            f"border: 1px solid {_theme.c('BORDER')}; "
+            f"color: {_theme.c('TEXT_PRIMARY')}; }}"
+            f"QMenu::item:selected {{ background: {_theme.c('ACCENT')}; color: #fff; }}"
+        )
+        act = menu.addAction(I18n.translate("ui", "aux_remove_hint"))
+        if menu.exec(self._aux_card.mapToGlobal(pos)) is act:
+            self._set_aux_enabled(False)
+
+    def _apply_aux_visibility(self, enabled: bool) -> None:
+        """Show either the Aux card or the "+" that adds it — never both."""
+        self._aux_card.setVisible(bool(enabled))
+        self._aux_add_btn.setVisible(not enabled)
+        self._fit_cards_to_row()
+
+    def _fit_cards_to_row(self) -> None:
+        """Give every card a minimum width the window can actually satisfy.
+
+        The row is four cards wide normally and five with Aux on, laid out
+        side by side with 20 px gaps and taking three quarters of the window.
+        At 260 px each, five cards need a window around 1840 px — wider than a
+        1366 px laptop screen, and the row has no scroll area to fall back on,
+        so Qt would simply force the window past the edge of the display.
+
+        The cards keep their Expanding policy, so this only lowers the floor:
+        on a wide screen they still spread out exactly as before.
+        """
+        # isHidden(), not isVisible(): isVisible() is False for every child of
+        # a window that has not been shown yet, so asking it during start-up
+        # counts zero cards and picks the wrong width. isHidden() answers about
+        # the widget itself, whatever its parent is doing.
+        shown = [c for c in self._all_cards() if not c.isHidden()]
+        width = CARD_MIN_WIDTH_TIGHT if len(shown) > 4 else CARD_MIN_WIDTH
+        for card in self._all_cards():
+            card.setMinimumWidth(width)
+
+    def _all_cards(self) -> tuple:
+        return (self._game_card, self._chat_card, self._media_card,
+                self._aux_card, self._ext_card)
 
     def _apply_volume(self, sink, value: int):
         pulse = self._get_pulse()

@@ -14,35 +14,35 @@ THEMES = {
         "BG_BUTTON": "#2D363E", "BG_BUTTON_HOVER": "#3A4550", "BG_SIDEBAR_ACTIVE": "#262B30",
         "ACCENT": "#FB4A00", "ACCENT2": "#FB4A00",
         "TEXT_PRIMARY": "#C8C8C8", "TEXT_SECONDARY": "#8D96AA", "BORDER": "#2A3038",
-        "COLOR_GAME": "#04C5A8", "COLOR_CHAT": "#2791CE", "COLOR_AUX": "#FB4A00", "COLOR_HDMI": "#9B59B6",
+        "COLOR_GAME": "#04C5A8", "COLOR_CHAT": "#2791CE", "COLOR_AUX": "#FB4A00", "COLOR_HDMI": "#9B59B6", "COLOR_AUX2": "#E4B53C",
     },
     "aurora": {
         "BG_MAIN": "#0d0d1f", "BG_SIDEBAR": "#0a0a1a", "BG_CARD": "#121224",
         "BG_BUTTON": "#1a1a3a", "BG_BUTTON_HOVER": "#252545", "BG_SIDEBAR_ACTIVE": "#1e1040",
         "ACCENT": "#7B2FFF", "ACCENT2": "#00D4FF",
         "TEXT_PRIMARY": "#E0DEFF", "TEXT_SECONDARY": "#6060AA", "BORDER": "#2a2050",
-        "COLOR_GAME": "#7B2FFF", "COLOR_CHAT": "#00D4FF", "COLOR_AUX": "#f472b6", "COLOR_HDMI": "#34d399",
+        "COLOR_GAME": "#7B2FFF", "COLOR_CHAT": "#00D4FF", "COLOR_AUX": "#f472b6", "COLOR_HDMI": "#34d399", "COLOR_AUX2": "#facc15",
     },
     "neon": {
         "BG_MAIN": "#07070f", "BG_SIDEBAR": "#050508", "BG_CARD": "#0b0b15",
         "BG_BUTTON": "#0f0f1e", "BG_BUTTON_HOVER": "#141428", "BG_SIDEBAR_ACTIVE": "#0d1f1a",
         "ACCENT": "#00ffcc", "ACCENT2": "#ff00aa",
         "TEXT_PRIMARY": "#C8FFF0", "TEXT_SECONDARY": "#2a6655", "BORDER": "#0a2a20",
-        "COLOR_GAME": "#00ffcc", "COLOR_CHAT": "#ff00aa", "COLOR_AUX": "#ff6600", "COLOR_HDMI": "#9b59b6",
+        "COLOR_GAME": "#00ffcc", "COLOR_CHAT": "#ff00aa", "COLOR_AUX": "#ff6600", "COLOR_HDMI": "#9b59b6", "COLOR_AUX2": "#ffe600",
     },
     "premium": {
         "BG_MAIN": "#131a24", "BG_SIDEBAR": "#0f1520", "BG_CARD": "#18202c",
         "BG_BUTTON": "#1e2938", "BG_BUTTON_HOVER": "#263344", "BG_SIDEBAR_ACTIVE": "#1a2535",
         "ACCENT": "#F59E0B", "ACCENT2": "#EF4444",
         "TEXT_PRIMARY": "#F0EDE8", "TEXT_SECONDARY": "#5a6880", "BORDER": "#2a3040",
-        "COLOR_GAME": "#F59E0B", "COLOR_CHAT": "#EF4444", "COLOR_AUX": "#3b82f6", "COLOR_HDMI": "#8b5cf6",
+        "COLOR_GAME": "#F59E0B", "COLOR_CHAT": "#EF4444", "COLOR_AUX": "#3b82f6", "COLOR_HDMI": "#8b5cf6", "COLOR_AUX2": "#10b981",
     },
     "arctic": {
         "BG_MAIN": "#111d2c", "BG_SIDEBAR": "#0c1825", "BG_CARD": "#162030",
         "BG_BUTTON": "#1c2d40", "BG_BUTTON_HOVER": "#24384e", "BG_SIDEBAR_ACTIVE": "#142038",
         "ACCENT": "#4cc9f0", "ACCENT2": "#1d6fa4",
         "TEXT_PRIMARY": "#D8EFF8", "TEXT_SECONDARY": "#3d6080", "BORDER": "#1a3050",
-        "COLOR_GAME": "#4cc9f0", "COLOR_CHAT": "#0ea5e9", "COLOR_AUX": "#06b6d4", "COLOR_HDMI": "#6366f1",
+        "COLOR_GAME": "#4cc9f0", "COLOR_CHAT": "#0ea5e9", "COLOR_AUX": "#06b6d4", "COLOR_HDMI": "#6366f1", "COLOR_AUX2": "#a78bfa",
     },
 }
 
@@ -60,6 +60,10 @@ THEME_KEYS: tuple[str, ...] = (
     "TEXT_SECONDARY", "BORDER", "COLOR_GAME", "COLOR_CHAT",
     "COLOR_AUX", "COLOR_HDMI",
 )
+# Deliberately NOT in THEME_KEYS: that tuple is the shared-theme wire format,
+# and theme_share rejects a link missing any key in it. Adding COLOR_AUX2 would
+# invalidate every theme link already shared. Built-in themes all define it and
+# c() falls back to the default palette for themes that do not (#209).
 
 THEME_GROUPS: dict[str, tuple[str, ...]] = {
     "theme_group_backgrounds": ("BG_MAIN", "BG_SIDEBAR", "BG_CARD", "BG_BUTTON",
