@@ -441,6 +441,11 @@ def _hesuvi_conf_name(channel: str) -> str:
     return f"sink-virtual-surround-7.1-hesuvi{_hesuvi_suffix(channel)}.conf"
 
 
+def _hesuvi_output_node(channel: str) -> str:
+    """The ``playback.props`` node.name — what links OUT to the device."""
+    return f"effect_output.virtual-surround-7.1-hesuvi{_hesuvi_suffix(channel)}"
+
+
 def _hesuvi_input_node(channel: str) -> str:
     """The ``capture.props`` node.name — the sink EQ output links INTO."""
     return f"effect_input.virtual-surround-7.1-hesuvi{_hesuvi_suffix(channel)}"
@@ -3765,8 +3770,10 @@ def ensure_physical_output_links(data: list | None = None) -> dict[str, bool]:
     # Media its own chain, and channel_destination decides where that chain
     # comes out. Sharing one destination is what made Media's device menu inert
     # and dragged it along with Game.
-    for _ch, _hes_node in (("game", _HESUVI_OUTPUT_NAME),
-                           ("media", _HESUVI_OUTPUT_NAME_MEDIA)):
+    # Derived, not listed: Aux was missing from the pair above, so picking a
+    # device for it changed the saved setting and relinked nothing — the exact
+    # inertness described for Media two comments up (#209).
+    for _ch, _hes_node in ((c, _hesuvi_output_node(c)) for c in spatial_channels()):
         _dest = channel_destination(_ch, data)
         if not _dest:
             continue

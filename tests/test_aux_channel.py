@@ -233,3 +233,30 @@ def test_the_daemon_acts_on_the_toggle_instead_of_waiting_for_a_restart():
     marker = src.index("setting == 'aux_enabled'")
     assert "configure_virtual_sinks" in src[marker:marker + 700], (
         "the toggle must reconfigure the sinks, like preferred_device does")
+
+
+def test_a_stream_on_aux_belongs_to_its_card(page):
+    """It was landing in "other applications" at the bottom: that list is
+    everything no card represents, and Arctis_Aux was not on the list of sinks
+    a card stands for."""
+    from types import SimpleNamespace
+    from arctis_sound_manager.gui.home_page import SINK_AUX
+
+    sinks = [SimpleNamespace(index=7, name=SINK_AUX, description="Aux")]
+
+    assert 7 in page._channel_sink_indices(sinks, None)
+
+
+def test_picking_a_device_for_aux_relinks_it(monkeypatch):
+    """The output side used to be a hand-written pair of (game, media), so
+    choosing a device for Aux saved the setting and relinked nothing — the same
+    inertness the code comments describe for Media before #169."""
+    from arctis_sound_manager import sonar_to_pipewire as sp
+
+    # The suite runs on a throwaway HOME where the channel is off, which is the
+    # right default and the wrong fixture for this.
+    monkeypatch.setattr(sp, "_aux_enabled", lambda: True)
+    outputs = {c: sp._hesuvi_output_node(c) for c in sp.spatial_channels()}
+
+    assert outputs["aux"] == "effect_output.virtual-surround-7.1-hesuvi-aux"
+    assert len(set(outputs.values())) == len(outputs), "each channel needs its own"

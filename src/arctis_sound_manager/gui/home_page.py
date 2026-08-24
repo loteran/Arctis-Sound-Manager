@@ -1924,7 +1924,7 @@ class HomePage(QWidget):
         from its AUX port, setting the hardware device as the system default is
         a sensible choice, and it made every application invisible to ASM.
         """
-        wanted = (SINK_GAME, SINK_CHAT, SINK_MEDIA,
+        wanted = (SINK_GAME, SINK_CHAT, SINK_MEDIA, SINK_AUX,
                   "effect_input.sonar-", "effect_input.virtual-surround")
         indices = {s.index for s in sinks if any(w in s.name for w in wanted)}
         if sink_ext is not None:
