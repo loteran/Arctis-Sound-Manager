@@ -4,7 +4,14 @@ set -e
 if [ "$1" = "configure" ]; then
     # Reload udev rules (system-level, runs as root)
     udevadm control --reload-rules 2>/dev/null || true
-    udevadm trigger --action=add --subsystem-match=usb 2>/dev/null || true
+    # Scoped to SteelSeries (idVendor=1038), the way the Distrobox installers
+    # have always done it. Re-adding every USB device on the machine disturbs
+    # hardware that has nothing to do with ASM, and — because this runs while
+    # asm-daemon still holds the headset's interface with the kernel driver
+    # detached — it makes the running daemon lose the device (errno 19) and
+    # lets hid-generic claim interface 4 back. The headset then reads as absent
+    # until it is physically replugged, after every single upgrade.
+    udevadm trigger --action=add --subsystem-match=usb --attr-match=idVendor=1038 2>/dev/null || true
 
     # Upgrade ($2 holds the previous version): apt replaced the files, but the
     # running asm-daemon still holds the old code in memory and would keep

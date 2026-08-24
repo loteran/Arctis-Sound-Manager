@@ -183,7 +183,14 @@ install -Dm644 debian/asm-first-run.desktop \
 %post
 %systemd_user_post arctis-manager.service arctis-video-router.service arctis-stream-guard.service app-ArctisManager.service
 udevadm control --reload-rules || :
-udevadm trigger --action=add --subsystem-match=usb || :
+# Scoped to SteelSeries (idVendor=1038), the way the Distrobox installers
+# have always done it. Re-adding every USB device on the machine disturbs
+# hardware that has nothing to do with ASM, and — because this runs while
+# asm-daemon still holds the headset's interface with the kernel driver
+# detached — it makes the running daemon lose the device (errno 19) and
+# lets hid-generic claim interface 4 back. The headset then reads as absent
+# until it is physically replugged, after every single upgrade.
+udevadm trigger --action=add --subsystem-match=usb --attr-match=idVendor=1038 || :
 
 # On upgrade ($1 >= 2), restart the user services: dnf replaced the files, but
 # the running asm-daemon still holds the previous version in memory.
