@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.9] - 25 August 2026
+
+An Aux channel for people who want their music apart from their video, a device picker where the problem is visible, and an upgrade that stops disturbing the headset it just updated.
+
+### Added
+
+- **An Aux channel, off unless you ask for it.** A fourth playback channel with its own output device, its own equaliser and the whole Sonar preset catalogue — for anyone using Media for video who wants music somewhere else. Add it from the profile bar, beside "Save current settings"; press it again to put it away. It is a twin of Media rather than a stripped-down extra: its own spatial stage, so its immersion settings never bleed into another channel, its own routing button beside every running application, and its own entry in Stream Guard. The channel cards narrow when it is on, because five cards at the old width needed a window wider than a 1366 px laptop screen. ([#209](https://github.com/loteran/Arctis-Sound-Manager/issues/209))
+- **Choosing which headset ASM drives, from the Headset tab.** The preference existed only in Settings, but the tab showing the device is where you are looking when you notice the wrong one is being driven. Both pickers are one setting: change it in either and the other follows. It appears once a second Arctis is detected, which is exactly when there is a choice to make. ([#199](https://github.com/loteran/Arctis-Sound-Manager/issues/199))
+- **The Aux channel's colour is themeable**, and shared themes made before it existed still import. The share format now fills in colours added after a link was made, rather than refusing it — a link missing one of the original colours is still rejected, since that means truncated rather than older.
+
+### Changed
+
+- **The virtual channels are called Sonar on generic hardware.** Running ASM on a device it cannot talk to put "Generic audio device Game" in every application's output picker. Naming a channel after the headset is right when there is one — it says which headset the channel belongs to — so a profile can now name its channels separately, and only the generic one does. ([#208](https://github.com/loteran/Arctis-Sound-Manager/issues/208))
+
+### Fixed
+
+- **Updating no longer leaves the headset unrecognised.** The install scripts re-emitted an "add" event for every USB device on the machine, while the daemon still held the headset's interface with the kernel driver detached. The running daemon lost its device mid-upgrade, the kernel's own HID driver took the interface back, and the headset read as absent until it was physically unplugged and replugged — after every single update. Scoped to SteelSeries devices now, which is what that step was ever for.
+- **An application listed once per tick.** Two sources feed the row of applications under each channel, and they were drawn in sequence: the first cleared the card, the second appended to it. Once the first learned to skip the rebuild when nothing had changed — which is what made dragging an application stutter — the second kept appending to a card nobody had cleared. A game running under Proton piled up a copy of itself twice a second, and closing it left them behind.
+- **A Qt version mismatch no longer tells you to install Qt.** Carried over from 1.4.8 for anyone who missed it: PySide6 binds Qt's private ABI, so the two must be the same version, not merely both installed.
+
 ## [1.4.8] - 24 August 2026
 
 New Sonar presets from SteelSeries GG 117, and a library that finally says where each preset came from.
