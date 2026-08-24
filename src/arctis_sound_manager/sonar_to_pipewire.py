@@ -401,6 +401,32 @@ _SURROUND = "effect_input.virtual-surround-7.1-hesuvi"
 _SURROUND_MEDIA = "effect_input.virtual-surround-7.1-hesuvi-media"
 
 
+# Game and Media always; Aux only when the user switched it on. Everything that
+# used to spell ("game", "media") asks this instead — the hand-written list is
+# how the Output EQ and the Media surround stage were forgotten by the
+# duplicate-config cleanup for months (#205), and this file has a dozen of them.
+_SPATIAL_BASE = ("game", "media")
+
+
+def _aux_enabled() -> bool:
+    """Whether the optional Aux channel is switched on (#209).
+
+    Read per call rather than cached: the user can turn it on while the daemon
+    is running, and a stale answer here means either a HeSuVi convolver running
+    for a channel nobody asked for, or a channel with no chain behind it.
+    """
+    try:
+        from arctis_sound_manager.settings import GeneralSettings
+        return bool(GeneralSettings.read_from_file().aux_enabled)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def spatial_channels() -> tuple[str, ...]:
+    """The channels that own an 8-channel HeSuVi chain right now."""
+    return _SPATIAL_BASE + (("aux",) if _aux_enabled() else ())
+
+
 def _hesuvi_suffix(channel: str) -> str:
     """Filename/node suffix for a channel's HeSuVi chain.
 
@@ -1335,7 +1361,7 @@ def apply_hrir_choice(hrir_id: str | None) -> None:
         shutil.copy(src, _HRIR_DEST)
         _log.info("HRIR changed → %s", src.name)
     _restart_filter_chain()
-    ensure_spatial_eq_links(("game", "media"))
+    ensure_spatial_eq_links(spatial_channels())
 
 
 # ── Config generator — game / chat ────────────────────────────────────────────
@@ -1382,7 +1408,7 @@ def generate_sonar_eq_conf(
         raise ValueError(
             f"channel must be 'game', 'chat', 'media', 'aux' or 'output', got {channel!r}")
 
-    owns_link = channel in ("game", "media")
+    owns_link = channel in spatial_channels()
     sink_name = f"effect_input.sonar-{channel}-eq"
 
     # Only a conf written to the channel's real path represents the live EQ;
@@ -3046,7 +3072,7 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
                 position = _CHANNEL_POSITION.get(channel, "FL FR")
                 _regenerate_eq_conf(
                     channel, path, sink_name, target, channels, position,
-                    owns_link=channel in ("game", "media"), log=log,
+                    owns_link=channel in spatial_channels(), log=log,
                     reason=regen_reason,
                 )
                 fixed = True
@@ -3151,7 +3177,7 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
         # registered there), so the daemon detects the drift here, regenerates,
         # and the caller restarts the filter-chain (see `fixed`).
         _dev = _device_attached()
-        for _hz_channel in ("game", "media"):
+        for _hz_channel in spatial_channels():
             immersion_pct, distance_pct = _load_spatial_pct(_hz_channel)
             hesuvi_path = _CONF_DIR / _hesuvi_conf_name(_hz_channel)
             if not hesuvi_path.exists():
@@ -3255,7 +3281,7 @@ def regenerate_hesuvi_if_changed() -> bool:
     # daemon-init path so a first-ever generation here still has its WAV staged.
     ensure_hrir_materialized()
     changed = False
-    for channel in ("game", "media"):
+    for channel in spatial_channels():
         immersion_pct, distance_pct = _load_spatial_pct(channel)
         path = _CONF_DIR / _hesuvi_conf_name(channel)
         old = path.read_text() if path.exists() else None
@@ -3290,7 +3316,7 @@ def apply_spatial_audio_change() -> bool:
     # Same recovery as apply_hrir_choice()'s restart: re-establish ASM-owned
     # links immediately for a responsive slider; the loopback watchdog also
     # heals these on its next tick if a node is still coming up.
-    ensure_spatial_eq_links(("game", "media"))
+    ensure_spatial_eq_links(spatial_channels())
     ensure_physical_output_links()
     return True
 
@@ -3345,6 +3371,17 @@ def ensure_sonar_eq_configs() -> bool:
             "target":   _get_physical_out_chat(),
         },
     }
+    # Aux is Media's twin — same channel count, same position, same spatial
+    # stage — and only present while it is switched on. Without an entry here
+    # nothing guarantees sonar-aux-eq.conf, so the loopback would point at a
+    # node that never loads and the channel would be silent (#209); the same
+    # gap the micro EQ had.
+    if _aux_enabled():
+        expected["aux"] = {
+            "channels": _CHANNEL_CHANNELS["aux"],
+            "position": _CHANNEL_POSITION["aux"],
+            "target":   _SURROUND,
+        }
 
     # Output is a passthrough to the external sink at its native channel count
     # (2.0–7.1). Include it so its node is (re)created if missing — its config
@@ -3356,7 +3393,7 @@ def ensure_sonar_eq_configs() -> bool:
         "target":   _out_target,
     }
 
-    for channel in ("game", "media", "chat", "output"):
+    for channel in (*spatial_channels(), "chat", "output"):
         conf_path = _CONF_DIR / f"sonar-{channel}-eq.conf"
         sink_name = f"effect_input.sonar-{channel}-eq"
         exp = expected[channel]
@@ -3415,7 +3452,7 @@ def ensure_sonar_eq_configs() -> bool:
             _regenerate_eq_conf(
                 channel, conf_path, sink_name, exp["target"],
                 exp["channels"], exp["position"],
-                owns_link=channel in ("game", "media"), log=log,
+                owns_link=channel in spatial_channels(), log=log,
                 reason=regen_reason,
             )
             generated = True
@@ -3449,7 +3486,7 @@ def _spatial_enabled(channel: str) -> bool:
 
 
 def ensure_spatial_eq_links(
-    channels: tuple[str, ...] = ("game", "media"),
+    channels: tuple[str, ...] | None = None,
     data: list | None = None,
 ) -> dict[str, bool]:
     """Move each EQ's live output link to match its Spatial Audio toggle.
@@ -3507,15 +3544,24 @@ def ensure_spatial_eq_links(
     """
     from arctis_sound_manager.pw_utils import ensure_loopback_link, pw_node_exists
 
+    # None means "whatever carries a spatial chain right now", which is what
+    # every caller wanted — spelling it as a default argument would freeze the
+    # answer at import time, before the user has switched Aux on.
+    if channels is None:
+        channels = spatial_channels()
+
     results: dict[str, bool] = {}
     for channel in channels:
-        if channel not in ("game", "media"):
+        if channel not in spatial_channels():
             continue
         enabled = _spatial_enabled(channel)
         # Each channel links to its OWN HeSuVi chain (issue #169): Game keeps the
         # historical un-suffixed node, Media routes to effect_input.…-hesuvi-media,
         # so their independent Immersion/Distance never bleed into each other.
-        surround_node = _SURROUND if channel == "game" else _SURROUND_MEDIA
+        # _hesuvi_input_node() already derives this from the channel name, and
+        # spelling it as a two-way choice sent Aux into Media's chain — which
+        # is exactly the bleed between channels #169 set out to stop.
+        surround_node = _hesuvi_input_node(channel)
         target = surround_node if enabled else channel_destination(channel, data)
         if enabled and not pw_node_exists(surround_node, data):
             # HeSuVi is not in the graph. If its HRIR WAV is missing the
