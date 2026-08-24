@@ -1268,16 +1268,26 @@ class CoreEngine:
                 # applies (or after any out-of-band filter-chain restart) is
                 # never repaired on its own. Reuses link_data from the pass
                 # above when available; best-effort otherwise.
-                # Before enforcing it: the mic's ALSA node is discovered once,
-                # at connect time, with a fixed budget (8 x 0.5 s). PipeWire can
-                # take longer than that to enumerate it — the USB churn from
-                # pushing on-device EQ right after connect makes that likelier —
-                # and the empty result was then cached for the whole session.
+                # Before enforcing it: the mic's ALSA node is discovered at
+                # connect time, and it gets exactly one look, not the 8 x 0.5 s
+                # the retry loop suggests. _discover_physical_nodes() returns as
+                # soon as a *sink* matches, handing back whatever the source
+                # lookup produced on that same pass, so a mic that PipeWire has
+                # not enumerated yet comes back None while the retry budget goes
+                # unspent. The USB churn from pushing on-device EQ right after
+                # connect makes that likelier. Raising `attempts` therefore does
+                # nothing for the mic: the loop is already gone.
+                #
+                # The empty result was then cached for the whole session.
                 # resolve_micro_input_source() returned "", so
                 # ensure_micro_capture_link() short-circuited before ever asking
                 # for a link, and the watchdog retried a link that could never
                 # be attempted, for ever. Nothing re-ran the discovery, so only
-                # a reconnect could fix it — racing the same window again (#206).
+                # a reconnect could fix it, racing the same window again (#206).
+                #
+                # Re-looking here is what closes it, and it is the right place:
+                # the mic can also appear long after connect (headset powered on
+                # later), which no widening of the connect-time window covers.
                 await self._rediscover_physical_input_if_missing()
 
                 from arctis_sound_manager.sonar_to_pipewire import ensure_micro_capture_link
@@ -2218,6 +2228,19 @@ class CoreEngine:
         return the same sink for both roles.
 
         Returns (game_sink_name, chat_sink_name, source_name) — any can be None.
+
+        `attempts` is a budget for finding a **sink**, not a source: the loop
+        returns on the first pass where a sink matches, and reports whatever the
+        source lookup happened to yield on that same pass. When the sink is
+        there immediately, which is the usual case, the microphone gets exactly
+        one look and None is a perfectly ordinary answer for it. Raising
+        `attempts` does not widen anything for the mic.
+
+        That is deliberate rather than an oversight: audio routing should not
+        wait on a capture node, and the mic is picked up afterwards by
+        `_rediscover_physical_input_if_missing()` on the watchdog tick, which
+        also covers the mic appearing minutes later (#206). Callers must treat a
+        None source as "not known yet", never as "this device has no mic".
         """
         # Try all PIDs from the device config — HID and audio PIDs often differ
         # (e.g. Arctis Pro Wireless: HID=0x1290, audio=0x1294).
