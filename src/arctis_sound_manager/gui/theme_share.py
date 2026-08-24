@@ -15,7 +15,8 @@ import json
 import re
 from urllib.parse import parse_qs, urlparse
 
-from arctis_sound_manager.gui.theme import THEME_KEYS
+from arctis_sound_manager.gui.theme import (THEME_KEYS, THEME_KEYS_OPTIONAL,
+                                            THEMES)
 
 _ASM_SCHEME = "arctis-asm"
 THEME_SHARE_VERSION = 1
@@ -42,12 +43,26 @@ def _b64url_encode(data: bytes) -> str:
 
 
 def _validate_colors(colors: dict) -> dict[str, str]:
-    """Raise ThemeImportError unless every THEME_KEYS entry is a valid color."""
+    """Validate a shared theme's colours, filling in ones added since it was made.
+
+    Every key must be a valid colour, and every *original* key must be present:
+    a link missing one of those is truncated or corrupt, and accepting it would
+    paint half a theme.
+
+    Keys in ``THEME_KEYS_OPTIONAL`` are the ones added after this format
+    shipped. A link written before they existed cannot carry them, and refusing
+    it would break every theme already in circulation the moment a colour is
+    added — which is why the Aux channel's colour sat outside the format until
+    now (#209). They fall back to the default palette instead.
+    """
     if not isinstance(colors, dict):
         raise ThemeImportError("'colors' must be a JSON object")
     result: dict[str, str] = {}
     for key in THEME_KEYS:
         if key not in colors:
+            if key in THEME_KEYS_OPTIONAL:
+                result[key] = THEMES["steelseries"][key]
+                continue
             raise ThemeImportError(f"colors missing key: {key}")
         val = colors[key]
         if not isinstance(val, str) or not _COLOR_RE.match(val):

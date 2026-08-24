@@ -58,19 +58,23 @@ THEME_KEYS: tuple[str, ...] = (
     "BG_MAIN", "BG_SIDEBAR", "BG_CARD", "BG_BUTTON", "BG_BUTTON_HOVER",
     "BG_SIDEBAR_ACTIVE", "ACCENT", "ACCENT2", "TEXT_PRIMARY",
     "TEXT_SECONDARY", "BORDER", "COLOR_GAME", "COLOR_CHAT",
-    "COLOR_AUX", "COLOR_HDMI",
+    "COLOR_AUX", "COLOR_HDMI", "COLOR_AUX2",
 )
-# Deliberately NOT in THEME_KEYS: that tuple is the shared-theme wire format,
-# and theme_share rejects a link missing any key in it. Adding COLOR_AUX2 would
-# invalidate every theme link already shared. Built-in themes all define it and
-# c() falls back to the default palette for themes that do not (#209).
+
+# Colours added after the share format shipped. A link written before they
+# existed cannot carry them, so theme_share fills them from the default palette
+# instead of refusing the import — while a link missing one of the original
+# keys is still rejected, because that means it is truncated or corrupt rather
+# than merely older. Anything added here in future goes in this set too.
+THEME_KEYS_OPTIONAL: frozenset[str] = frozenset({"COLOR_AUX2"})
 
 THEME_GROUPS: dict[str, tuple[str, ...]] = {
     "theme_group_backgrounds": ("BG_MAIN", "BG_SIDEBAR", "BG_CARD", "BG_BUTTON",
                                 "BG_BUTTON_HOVER", "BG_SIDEBAR_ACTIVE"),
     "theme_group_accents":     ("ACCENT", "ACCENT2", "BORDER"),
     "theme_group_text":        ("TEXT_PRIMARY", "TEXT_SECONDARY"),
-    "theme_group_channels":    ("COLOR_GAME", "COLOR_CHAT", "COLOR_AUX", "COLOR_HDMI"),
+    "theme_group_channels":    ("COLOR_GAME", "COLOR_CHAT", "COLOR_AUX",
+                                "COLOR_AUX2", "COLOR_HDMI"),
 }
 
 COLOR_LABEL_KEYS: dict[str, str] = {
@@ -83,6 +87,7 @@ COLOR_LABEL_KEYS: dict[str, str] = {
     "TEXT_PRIMARY": "theme_color_text_primary", "TEXT_SECONDARY": "theme_color_text_secondary",
     "COLOR_GAME": "theme_color_game", "COLOR_CHAT": "theme_color_chat",
     "COLOR_AUX": "theme_color_aux", "COLOR_HDMI": "theme_color_hdmi",
+    "COLOR_AUX2": "theme_color_aux2",
 }
 
 USER_THEMES_DIR = Path(os.environ.get('XDG_CONFIG_HOME') or (Path.home() / '.config')) / "arctis-sound-manager" / "themes"

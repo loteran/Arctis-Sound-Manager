@@ -47,6 +47,7 @@ def valid_colors() -> dict[str, str]:
         "COLOR_GAME":       "#00FF88",
         "COLOR_CHAT":       "#00AAFF",
         "COLOR_AUX":        "#FF8800",
+        "COLOR_AUX2":       "#FFD166",
         "COLOR_HDMI":       "#BB44FF",
     }
     assert set(base.keys()) == set(THEME_KEYS), "Fixture must cover all THEME_KEYS"
