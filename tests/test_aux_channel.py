@@ -192,3 +192,20 @@ def test_stream_guard_can_hold_it_back():
     from arctis_sound_manager.stream_guard import CHANNEL_SINKS
 
     assert CHANNEL_SINKS["aux"] == ("Arctis_Aux", "effect_input.sonar-aux-eq")
+
+
+def test_hiding_the_channel_takes_the_A_button_with_it(page):
+    """Each tag reads the registry once, when it is built, so changing the
+    registry leaves the buttons already on screen untouched. Hiding Aux left an
+    "A" under every application, pointing at a channel that was gone."""
+    from arctis_sound_manager.gui.home_page import _AppTag
+
+    page._apply_aux_visibility(True)
+    assert "A" in [label for label, _c, _cb in _AppTag._cards_registry]
+    # A card that has already drawn a row remembers it and skips the rebuild.
+    page._game_card._app_sig = (("Some Game", 1, 2),)
+
+    page._apply_aux_visibility(False)
+
+    assert "A" not in [label for label, _c, _cb in _AppTag._cards_registry]
+    assert page._game_card._app_sig is None, "the row must be rebuilt, not kept"

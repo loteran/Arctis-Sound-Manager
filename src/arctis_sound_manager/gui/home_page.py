@@ -2385,6 +2385,14 @@ class HomePage(QWidget):
              lambda si, app, pid: self._on_stream_drop_ext(si, app, pid)))
         _AppTag._cards_registry = registry
 
+        # Each tag reads this list once, when it is built, so changing it does
+        # nothing to the tags already on screen — hiding Aux left an "A" under
+        # every application, pointing at a channel that was gone. Drop the
+        # remembered row signature so the next poll rebuilds them with the
+        # buttons the registry now describes.
+        for card in self._all_cards():
+            card._app_sig = None
+
     def _all_cards(self) -> tuple:
         return (self._game_card, self._chat_card, self._media_card,
                 self._aux_card, self._ext_card)
