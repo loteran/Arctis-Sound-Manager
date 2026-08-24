@@ -42,6 +42,9 @@ CHANNEL_SINKS: dict[str, tuple[str, ...]] = {
     "game":  ("Arctis_Game",  "effect_input.sonar-game-eq"),
     "chat":  ("Arctis_Chat",  "effect_input.sonar-chat-eq"),
     "media": ("Arctis_Media", "effect_input.sonar-media-eq"),
+    # Present whether or not the channel is switched on: the guard matches by
+    # node name, and a name that resolves to nothing simply never matches.
+    "aux":   ("Arctis_Aux",   "effect_input.sonar-aux-eq"),
 }
 
 DEFAULT_CHANNELS = ("game",)

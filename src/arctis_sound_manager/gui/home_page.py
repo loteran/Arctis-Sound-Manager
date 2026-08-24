@@ -973,20 +973,17 @@ class HomePage(QWidget):
         self._aux_card.set_on_change(self._on_aux_channel_volume_changed)
         self._aux_card.set_on_drop(lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_AUX))
         self._aux_card.setVisible(False)
-        # The way back out. A channel you can add and not remove is a trap, and
-        # a visible "−" on the card would sit in every screenshot for a control
-        # used once.
-        self._aux_card.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self._aux_card.customContextMenuRequested.connect(self._on_aux_card_menu)
         self._cards_layout.addWidget(self._aux_card, stretch=1)
 
         # The control that turns it on. Sits where the card will appear, so the
         # "+" is in the place the thing it adds will occupy.
-        self._aux_add_btn = QPushButton("+")
+        self._aux_add_btn = QPushButton(I18n.translate("ui", "aux_add"))
         self._aux_add_btn.setToolTip(I18n.translate("ui", "aux_add_hint"))
         self._aux_add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._aux_add_btn.setFixedWidth(34)
-        self._aux_add_btn.clicked.connect(lambda: self._set_aux_enabled(True))
+        # One control, two states: it says what pressing it will do, and it
+        # stays in place when the channel is on so there is always a way back.
+        self._aux_add_btn.clicked.connect(
+            lambda: self._set_aux_enabled(self._aux_card.isHidden()))
         self._cards_layout.addWidget(self._aux_add_btn, stretch=0)
 
         # External output card (HDMI, sound card, USB speakers, etc.)
@@ -1111,6 +1108,7 @@ class HomePage(QWidget):
             ("M", _theme.c("COLOR_AUX"),  lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_MEDIA)),
             ("O", _theme.c("COLOR_HDMI"), lambda si, app, pid: self._on_stream_drop_ext(si, app, pid)),
         ]
+        self._refresh_app_tag_buttons()
 
         # ── Polling timer ─────────────────────────────────────────────────────
         # Started from showEvent, not here: every tick forks a `pw-dump` to
@@ -1144,6 +1142,8 @@ class HomePage(QWidget):
         self._media_card.set_on_device_change(
             lambda s: self._on_channel_output_changed("media", s)
         )
+        self._aux_card.set_on_device_change(
+            lambda dev: self._on_channel_output_changed("aux", dev))
         self._ext_card.set_on_device_change(self._on_external_output_changed)
 
         # Apply the currently active theme so the initial render is correct
@@ -1238,6 +1238,9 @@ class HomePage(QWidget):
             ("G", color_game, lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_GAME)),
             ("C", color_chat, lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_CHAT)),
             ("M", color_aux,  lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_MEDIA)),
+            *([("A", _theme.c("COLOR_AUX2"),
+                lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_AUX))]
+              if not self._aux_card.isHidden() else []),
             ("O", color_hdmi, lambda si, app, pid: self._on_stream_drop_ext(si, app, pid)),
         ]
 
@@ -2108,13 +2111,14 @@ class HomePage(QWidget):
         # showing a stale selection until a device was plugged or unplugged.
         ch_outputs = _load_channel_outputs()
         selections = (
-            tuple(ch_outputs.get(k, "") for k in ("game", "chat", "media")),
+            tuple(ch_outputs.get(k, "") for k in ("game", "chat", "media", "aux")),
             self._ext_device_nick or "",
         )
         if (options, ext_options, selections) == self._available_sinks:
             return
         self._available_sinks = (options, ext_options, selections)
-        for key, card in (("game", self._game_card), ("chat", self._chat_card), ("media", self._media_card)):
+        for key, card in (("game", self._game_card), ("chat", self._chat_card),
+                          ("media", self._media_card), ("aux", self._aux_card)):
             card.set_device_options(options, ch_outputs.get(key, ""))
         self._ext_card.set_device_options(ext_options, self._ext_device_nick or "")
 
@@ -2286,24 +2290,17 @@ class HomePage(QWidget):
         except Exception:  # noqa: BLE001
             logger.debug("could not notify the daemon about aux_enabled", exc_info=True)
 
-    def _on_aux_card_menu(self, pos) -> None:
-        from PySide6.QtWidgets import QMenu
-        menu = QMenu(self)
-        menu.setStyleSheet(
-            f"QMenu {{ background: {_theme.c('BG_CARD')}; "
-            f"border: 1px solid {_theme.c('BORDER')}; "
-            f"color: {_theme.c('TEXT_PRIMARY')}; }}"
-            f"QMenu::item:selected {{ background: {_theme.c('ACCENT')}; color: #fff; }}"
-        )
-        act = menu.addAction(I18n.translate("ui", "aux_remove_hint"))
-        if menu.exec(self._aux_card.mapToGlobal(pos)) is act:
-            self._set_aux_enabled(False)
-
     def _apply_aux_visibility(self, enabled: bool) -> None:
         """Show either the Aux card or the "+" that adds it — never both."""
         self._aux_card.setVisible(bool(enabled))
-        self._aux_add_btn.setVisible(not enabled)
         self._fit_cards_to_row()
+        self._refresh_app_tag_buttons()
+        # The button stays put and changes what it says: it is the one control
+        # for this channel, and hiding it would leave no way back.
+        self._aux_add_btn.setText(
+            I18n.translate("ui", "aux_remove" if enabled else "aux_add"))
+        self._aux_add_btn.setToolTip(
+            I18n.translate("ui", "aux_remove_hint" if enabled else "aux_add_hint"))
 
     def _fit_cards_to_row(self) -> None:
         """Give every card a minimum width the window can actually satisfy.
@@ -2325,6 +2322,34 @@ class HomePage(QWidget):
         width = CARD_MIN_WIDTH_TIGHT if len(shown) > 4 else CARD_MIN_WIDTH
         for card in self._all_cards():
             card.setMinimumWidth(width)
+
+    def _refresh_app_tag_buttons(self) -> None:
+        """Keep the per-application routing buttons in step with the channels.
+
+        Each running application shows one small square per destination — G, C,
+        M, O — and Aux adds an A when it is on. The registry is rebuilt rather
+        than patched because apply_theme() rebuilds it too, with fresh colours,
+        and two places writing the same list in different ways is how one of
+        them ends up stale.
+        """
+        registry = [
+            ("G", _theme.c("COLOR_GAME"),
+             lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_GAME)),
+            ("C", _theme.c("COLOR_CHAT"),
+             lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_CHAT)),
+            ("M", _theme.c("COLOR_AUX"),
+             lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_MEDIA)),
+        ]
+        # No button for a channel with no sink behind it: pressing it would
+        # move the stream to a target that does not exist and lose the audio.
+        if not self._aux_card.isHidden():
+            registry.append(
+                ("A", _theme.c("COLOR_AUX2"),
+                 lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_AUX)))
+        registry.append(
+            ("O", _theme.c("COLOR_HDMI"),
+             lambda si, app, pid: self._on_stream_drop_ext(si, app, pid)))
+        _AppTag._cards_registry = registry
 
     def _all_cards(self) -> tuple:
         return (self._game_card, self._chat_card, self._media_card,

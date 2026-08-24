@@ -40,7 +40,8 @@ def _label(sink) -> str:
 
     stub = SimpleNamespace(
         _game_card=_Card(), _chat_card=_Card(), _media_card=_Card(),
-        _ext_card=_Card(), _available_sinks=None, _ext_device_nick=None,
+        _aux_card=_Card(), _ext_card=_Card(),
+        _available_sinks=None, _ext_device_nick=None,
     )
     HomePage._refresh_device_combos(stub, [sink])
     # Drop the synthetic "headset by default" entry the channel combos prepend;

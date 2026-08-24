@@ -37,6 +37,7 @@ def _page():
     page._game_card = MagicMock()
     page._chat_card = MagicMock()
     page._media_card = MagicMock()
+    page._aux_card = MagicMock()
     page._ext_card = MagicMock()
     return page
 

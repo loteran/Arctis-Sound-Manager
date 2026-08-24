@@ -128,13 +128,67 @@ def test_turning_it_off_gives_the_width_back(page):
     assert page._game_card.minimumWidth() == CARD_MIN_WIDTH
 
 
-def test_the_plus_and_the_card_are_never_both_shown(page):
-    """The "+" stands where the card will be, so one replaces the other."""
-    for enabled in (True, False, True):
-        page._apply_aux_visibility(enabled)
-        assert page._aux_card.isHidden() != page._aux_add_btn.isHidden()
+def test_the_button_says_what_pressing_it_will_do(page):
+    """One control, two states. It stays in place when the channel is on —
+    hiding it would leave no way back out."""
+    page._apply_aux_visibility(False)
+    add_label = page._aux_add_btn.text()
+    assert not page._aux_add_btn.isHidden()
+
+    page._apply_aux_visibility(True)
+
+    assert not page._aux_add_btn.isHidden()
+    assert page._aux_add_btn.text() != add_label
 
 
 def test_the_card_starts_hidden_on_a_default_install(page):
     assert page._aux_card.isHidden()
     assert not page._aux_add_btn.isHidden()
+
+
+# ── parity with the other channels ───────────────────────────────────────────
+
+
+def test_it_has_an_output_device_picker_like_the_others(page):
+    """The first thing missing when this shipped: every other channel lets you
+    choose where it plays, and a channel you cannot point anywhere is a slider
+    attached to nothing."""
+    assert page._aux_card._device_combo is not None
+
+
+def test_it_gets_a_routing_button_only_while_it_exists(page):
+    """The small squares next to each running application — G, C, M, O — gain
+    an A. Not while the channel is off: pressing it would move the stream to a
+    sink that does not exist and lose the audio."""
+    from arctis_sound_manager.gui.home_page import _AppTag
+
+    page._apply_aux_visibility(False)
+    assert "A" not in [label for label, _c, _cb in _AppTag._cards_registry]
+
+    page._apply_aux_visibility(True)
+    assert "A" in [label for label, _c, _cb in _AppTag._cards_registry]
+
+
+def test_the_routing_button_keeps_output_last(page):
+    """O is the way out of the Arctis channels; it reads as the last step."""
+    from arctis_sound_manager.gui.home_page import _AppTag
+
+    page._apply_aux_visibility(True)
+
+    assert [l for l, _c, _cb in _AppTag._cards_registry][-1] == "O"
+
+
+def test_it_has_an_equalizer_tab_with_the_game_presets():
+    """Its own EQ is the request. Same tag as Game and Media, so the Sonar
+    catalogue applies to it — a music channel with no presets would be an
+    equaliser you have to build by hand."""
+    from arctis_sound_manager.gui.sonar_page import _CHANNEL_TAG
+
+    assert _CHANNEL_TAG["aux"] == "[Game]"
+
+
+def test_stream_guard_can_hold_it_back():
+    """Selectable like the others, so a screen share can exclude it."""
+    from arctis_sound_manager.stream_guard import CHANNEL_SINKS
+
+    assert CHANNEL_SINKS["aux"] == ("Arctis_Aux", "effect_input.sonar-aux-eq")

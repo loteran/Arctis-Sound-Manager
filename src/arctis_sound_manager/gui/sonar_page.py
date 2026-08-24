@@ -123,7 +123,8 @@ _COMMUNITY_DIR = _CFG / "sonar_presets_community"
 COMMUNITY_COLOR = "#22D3B4"
 _RAW_DIR      = Path(__file__).parent / "presets"
 
-_CHANNEL_TAG  = {"game": "[Game]", "media": "[Game]", "chat": "[Chat]", "micro": "[Mic]", "output": "[Game]"}
+_CHANNEL_TAG  = {"game": "[Game]", "media": "[Game]", "aux": "[Game]",
+                 "chat": "[Chat]", "micro": "[Mic]", "output": "[Game]"}
 _FAV_ROW_SIZE = 9   # slots per row before wrapping to a new row
 _APPLY_DELAY  = 600   # ms debounce before restarting filter-chain
 # Curve edits ride the live-apply path (a handful of pw-cli set-param calls,
@@ -531,15 +532,15 @@ class _ApplyWorker(QThread):
             else:
                 if self._channel == "game":
                     spatial = _load_spatial_audio("game")["enabled"]
-                elif self._channel == "media":
-                    spatial = _load_spatial_audio("media")["enabled"]
+                elif self._channel in ("media", "aux"):
+                    spatial = _load_spatial_audio(self._channel)["enabled"]
                 else:
                     spatial = True
                 _new_eq_conf = generate_sonar_eq_conf(
                     self._channel, self._bands,
                     self._basses, self._voix, self._aigus,
                     spatial_audio=spatial if self._channel == "game" else True,
-                    media_spatial_audio=spatial if self._channel == "media" else True,
+                    media_spatial_audio=spatial if self._channel in ("media", "aux") else True,
                     boost_db=boost_db,
                     smart_volume=smart_state,
                     target_override=self._target_override,
@@ -565,7 +566,7 @@ class _ApplyWorker(QThread):
                     "_ApplyWorker: conf unchanged for channel=%s — skipping restart",
                     self._channel,
                 )
-                if self._channel in ("game", "media"):
+                if self._channel in ("game", "media", "aux"):
                     # Phase 3 (issue #100/#88): the conf itself never encodes
                     # the Spatial Audio routing decision anymore (see
                     # generate_sonar_eq_conf's docstring) — a toggle alone
@@ -609,7 +610,7 @@ class _ApplyWorker(QThread):
                             "channel=%s, no filter-chain restart needed",
                             len(controls), self._channel,
                         )
-                        if self._channel in ("game", "media"):
+                        if self._channel in ("game", "media", "aux"):
                             from arctis_sound_manager.sonar_to_pipewire import ensure_spatial_eq_links
                             ensure_spatial_eq_links((self._channel,))
                         elif self._channel == "micro":
@@ -633,7 +634,7 @@ class _ApplyWorker(QThread):
                         "raw restart", self._channel,
                     )
                     ensure_filter_chain_healthy()
-                    if self._channel in ("game", "media"):
+                    if self._channel in ("game", "media", "aux"):
                         from arctis_sound_manager.sonar_to_pipewire import ensure_spatial_eq_links
                         ensure_spatial_eq_links((self._channel,))
                     elif self._channel == "micro":
@@ -712,7 +713,7 @@ class _ApplyWorker(QThread):
             # recreated, which keeps Arctis_Chat alive in Discord's device
             # list across filter-chain restarts.  Micro and Output have no
             # Arctis_* loopback of their own.
-            if self._channel in ("game", "media"):
+            if self._channel in ("game", "media", "aux"):
                 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
                 DbusWrapper.recreate_loopback_single_sync(self._channel)
 
@@ -780,7 +781,7 @@ class _ApplyWorker(QThread):
                 from arctis_sound_manager.pw_utils import reapply_routing_overrides
                 reapply_routing_overrides()
 
-            if self._channel in ("game", "media"):
+            if self._channel in ("game", "media", "aux"):
                 # The freshly-recreated EQ node runs with node.autoconnect=false
                 # (Phase 3, issue #100/#88) — nothing links it automatically,
                 # so ASM must establish the initial EQ→target link itself here,
@@ -847,7 +848,7 @@ class _ApplyAllWorker(QThread):
                     macro.get("voix", 0.0),
                     macro.get("aigus", 0.0),
                     spatial_audio=game_sp_on if channel == "game" else True,
-                    media_spatial_audio=media_sp_on if channel == "media" else True,
+                    media_spatial_audio=media_sp_on if channel in ("media", "aux") else True,
                     boost_db=boost_db,
                     smart_volume=smart_state,
                 )
@@ -1694,7 +1695,7 @@ class SonarChannelWidget(QWidget):
             scl.setContentsMargins(0, 0, 0, 0)
             scl.addStretch(1)
             root.addWidget(settings_card)
-        elif channel in ("game", "chat", "media"):
+        elif channel in ("game", "chat", "media", "aux"):
             settings_card = QWidget()
             settings_card.setObjectName("settingsCard")
             settings_card.setStyleSheet(f"""
@@ -1719,7 +1720,7 @@ class SonarChannelWidget(QWidget):
                 sep.setStyleSheet(f"background: {BORDER}; border: none; max-height: 1px;")
                 sep.setVisible(_has_spatial)
                 scl.addWidget(sep)
-            elif channel == "media":
+            elif channel in ("media", "aux"):
                 from arctis_sound_manager import device_state as _ds
                 _has_spatial = _ds.get_spatial_engine() != "none"
                 self._spatial = SpatialAudioWidget(channel="media")
@@ -3206,7 +3207,7 @@ class _StreamGuardBar(QFrame):
         row.addWidget(self._title)
 
         self._boxes: dict[str, QCheckBox] = {}
-        for channel in ("game", "media", "chat"):
+        for channel in ("game", "media", "aux", "chat"):
             cb = QCheckBox(_t(channel))
             cb.setChecked(channel in cfg.channels)
             cb.stateChanged.connect(self._on_changed)
@@ -3363,6 +3364,9 @@ class SonarPage(QWidget):
 
         self._game_widget   = SonarChannelWidget("game")
         self._media_widget  = SonarChannelWidget("media")
+        # Same shape as media — 8 channels through the spatial stage — so it
+        # gets the same widget and the same game presets (#209).
+        self._aux_widget    = SonarChannelWidget("aux")
         self._chat_widget   = SonarChannelWidget("chat")
         self._micro_widget  = SonarMicroWidget()
         self._output_widget = SonarChannelWidget("output")
@@ -3378,6 +3382,7 @@ class SonarPage(QWidget):
 
         self._tabs.addTab(self._game_widget,   _t("game"))
         self._tabs.addTab(self._media_widget,  _t("media"))
+        self._tabs.addTab(self._aux_widget,    _t("aux"))
         self._tabs.addTab(self._chat_widget,   _t("chat"))
         self._tabs.addTab(self._micro_widget,  _t("micro"))
         self._tabs.addTab(self._output_widget, _t("output"))
