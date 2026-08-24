@@ -353,7 +353,7 @@ class CoreEngine:
         sonar = self._read_eq_mode_is_sonar()
         physical_game = device_state.get_physical_out_game()
         physical_chat = device_state.get_physical_out_chat()
-        dev_name = device_state.get_device_name()
+        dev_name = device_state.get_channel_label()
         specs = make_specs(
             sonar=sonar,
             physical_game=physical_game,
@@ -598,7 +598,7 @@ class CoreEngine:
             sonar = self._read_eq_mode_is_sonar()
             physical_game = device_state.get_physical_out_game()
             physical_chat = device_state.get_physical_out_chat()
-            dev_name = device_state.get_device_name()
+            dev_name = device_state.get_channel_label()
             specs = make_specs(
                 sonar=sonar,
                 physical_game=physical_game,
@@ -650,7 +650,7 @@ class CoreEngine:
             sonar = self._read_eq_mode_is_sonar()
             physical_game = device_state.get_physical_out_game()
             physical_chat = device_state.get_physical_out_chat()
-            dev_name = device_state.get_device_name()
+            dev_name = device_state.get_channel_label()
             specs = make_specs(
                 sonar=sonar,
                 physical_game=physical_game,
@@ -1929,6 +1929,7 @@ class CoreEngine:
             physical_in=source or "",
             spatial_engine=device_config.spatial_engine,
             device_name=device_config.name,
+            channel_label=device_config.channel_label,
         )
         self.logger.info(
             "Generic mode: channels on %s%s", sink,
@@ -2098,6 +2099,7 @@ class CoreEngine:
                 physical_in=physical_in or "",
                 spatial_engine=device_config.spatial_engine,
                 device_name=device_config.name,
+                channel_label=device_config.channel_label,
             )
 
             # Repair stale PipeWire configs at daemon startup (issue #23).

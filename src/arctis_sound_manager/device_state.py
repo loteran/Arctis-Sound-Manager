@@ -29,6 +29,13 @@ _physical_out_chat:  str = ""   # mono PCM   (pro-output-0) — chat, sidetone
 _physical_in:        str = ""
 _spatial_engine:     str = "hesuvi"
 _device_name:        str = ""
+# What the virtual channels are called, which is not always the device name.
+# On a real headset the two are the same and the name is what you want —
+# "Arctis Nova Pro Wireless Game" tells you which headset the channel belongs
+# to, and that matters when more than one is plugged in. The generic profile
+# has no headset to name, so the same rule produced "Generic audio device
+# Game" in every application's output picker (#208).
+_channel_label:      str = ""
 
 
 def set_current_device(
@@ -37,9 +44,11 @@ def set_current_device(
     physical_in:       str,
     spatial_engine:    str,
     device_name:       str,
+    channel_label:     str = "",
 ) -> None:
     """Called by CoreEngine after a device is detected."""
     global _physical_out_game, _physical_out_chat, _physical_in, _spatial_engine, _device_name
+    global _channel_label
     with _lock:
         _physical_out_game = physical_out_game
         _physical_out_chat = physical_out_chat
@@ -47,6 +56,9 @@ def set_current_device(
         _spatial_engine    = spatial_engine
         # Strip "SteelSeries " prefix for use in PipeWire node descriptions
         _device_name = device_name.replace("SteelSeries ", "")
+        # Falls back to the device name, so every profile that does not ask for
+        # anything keeps the behaviour it had.
+        _channel_label = (channel_label or _device_name)
     _log.info(
         "Device state: %s | out_game=%s | out_chat=%s | engine=%s",
         _device_name, physical_out_game, physical_out_chat, spatial_engine,
@@ -56,7 +68,9 @@ def set_current_device(
 def clear() -> None:
     """Called by CoreEngine.teardown() when the device disconnects."""
     global _physical_out_game, _physical_out_chat, _physical_in, _spatial_engine, _device_name
+    global _channel_label
     with _lock:
+        _channel_label = ""
         _physical_out_game = ""
         _physical_out_chat = ""
         _physical_in       = ""
@@ -101,3 +115,9 @@ def get_spatial_engine() -> str:
 def get_device_name() -> str:
     with _lock:
         return _device_name
+
+
+def get_channel_label() -> str:
+    """What to call the virtual channels. See ``_channel_label``."""
+    with _lock:
+        return _channel_label or _device_name

@@ -269,6 +269,10 @@ class DeviceConfiguration:
             raise ValueError("Invalid configuration: missing 'device' section")
 
         self.name = raw_config.get('name', '')
+        # Optional. Overrides the device name in the virtual channels'
+        # descriptions only — the device keeps its own name everywhere else
+        # (the GUI header, the D-Bus settings, the bug report). See #208.
+        self.channel_label = raw_config.get('channel_label', '')
         self.vendor_id = raw_config.get('vendor_id', 0)
         self.product_ids = raw_config.get('product_ids', [])
         # True for the profile that stands in for 'no SteelSeries hardware'.

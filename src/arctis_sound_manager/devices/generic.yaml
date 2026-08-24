@@ -25,6 +25,12 @@
 # depends on it (redirect on connect, repatriation on disconnect) behaves.
 device:
   name: Generic audio device
+  # What the virtual channels are called in every application's output picker.
+  # Without this they inherit the device name, and "Generic audio device Game"
+  # is a mouthful that says nothing — there is no headset here to name (#208).
+  # "Sonar" matches what the EQ nodes are already called (Sonar Game EQ, and
+  # its siblings in sonar_to_pipewire).
+  channel_label: Sonar
   # Exempts this profile from the USB validation a real headset must pass,
   # and is what _setup_generic_device looks for. Explicit on purpose.
   generic: true
