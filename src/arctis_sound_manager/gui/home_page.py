@@ -904,6 +904,8 @@ class HomePage(QWidget):
         # Profiles bar inline
         from arctis_sound_manager.gui.profile_bar import ProfileBar
         self.profile_bar = ProfileBar()
+        self.profile_bar.sig_toggle_aux.connect(
+            lambda: self._set_aux_enabled(self._aux_card.isHidden()))
         toggle_layout.addWidget(self.profile_bar, stretch=1)
 
         # Reclaim audio — one-click fix for apps stuck on a non-ASM output
@@ -974,17 +976,6 @@ class HomePage(QWidget):
         self._aux_card.set_on_drop(lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_AUX))
         self._aux_card.setVisible(False)
         self._cards_layout.addWidget(self._aux_card, stretch=1)
-
-        # The control that turns it on. Sits where the card will appear, so the
-        # "+" is in the place the thing it adds will occupy.
-        self._aux_add_btn = QPushButton(I18n.translate("ui", "aux_add"))
-        self._aux_add_btn.setToolTip(I18n.translate("ui", "aux_add_hint"))
-        self._aux_add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        # One control, two states: it says what pressing it will do, and it
-        # stays in place when the channel is on so there is always a way back.
-        self._aux_add_btn.clicked.connect(
-            lambda: self._set_aux_enabled(self._aux_card.isHidden()))
-        self._cards_layout.addWidget(self._aux_add_btn, stretch=0)
 
         # External output card (HDMI, sound card, USB speakers, etc.)
         self._ext_card = AudioCard(I18n.translate("ui", "output"), _theme.c("COLOR_HDMI"), HDMI_ICON)
@@ -2329,12 +2320,9 @@ class HomePage(QWidget):
         self._aux_card.setVisible(bool(enabled))
         self._fit_cards_to_row()
         self._refresh_app_tag_buttons()
-        # The button stays put and changes what it says: it is the one control
-        # for this channel, and hiding it would leave no way back.
-        self._aux_add_btn.setText(
-            I18n.translate("ui", "aux_remove" if enabled else "aux_add"))
-        self._aux_add_btn.setToolTip(
-            I18n.translate("ui", "aux_remove_hint" if enabled else "aux_add_hint"))
+        bar = getattr(self, "profile_bar", None)
+        if bar is not None:
+            bar.refresh_aux_label()
 
     def _fit_cards_to_row(self) -> None:
         """Give every card a minimum width the window can actually satisfy.

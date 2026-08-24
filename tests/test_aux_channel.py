@@ -128,22 +128,29 @@ def test_turning_it_off_gives_the_width_back(page):
     assert page._game_card.minimumWidth() == CARD_MIN_WIDTH
 
 
-def test_the_button_says_what_pressing_it_will_do(page):
-    """One control, two states. It stays in place when the channel is on —
-    hiding it would leave no way back out."""
-    page._apply_aux_visibility(False)
-    add_label = page._aux_add_btn.text()
-    assert not page._aux_add_btn.isHidden()
+def test_the_button_lives_with_the_other_page_actions(page):
+    """It sits in the profile bar beside "Save current settings", not among the
+    channel cards: it is something you do to the page, not one of the channels
+    it acts on. The bar rebuilds itself, so it owns the widget."""
+    assert page.profile_bar._aux_btn is not None
 
-    page._apply_aux_visibility(True)
 
-    assert not page._aux_add_btn.isHidden()
-    assert page._aux_add_btn.text() != add_label
+def test_the_button_says_what_pressing_it_will_do(page, monkeypatch):
+    """One control, two states."""
+    from arctis_sound_manager.gui import profile_bar as pb
+
+    monkeypatch.setattr(pb.ProfileBar, "_aux_label", staticmethod(lambda: "ADD"))
+    page.profile_bar.refresh_aux_label()
+    assert page.profile_bar._aux_btn.text() == "ADD"
+
+    monkeypatch.setattr(pb.ProfileBar, "_aux_label", staticmethod(lambda: "HIDE"))
+    page.profile_bar.refresh_aux_label()
+
+    assert page.profile_bar._aux_btn.text() == "HIDE"
 
 
 def test_the_card_starts_hidden_on_a_default_install(page):
     assert page._aux_card.isHidden()
-    assert not page._aux_add_btn.isHidden()
 
 
 # ── parity with the other channels ───────────────────────────────────────────
@@ -209,3 +216,20 @@ def test_hiding_the_channel_takes_the_A_button_with_it(page):
 
     assert "A" not in [label for label, _c, _cb in _AppTag._cards_registry]
     assert page._game_card._app_sig is None, "the row must be rebuilt, not kept"
+
+
+def test_the_daemon_acts_on_the_toggle_instead_of_waiting_for_a_restart():
+    """Without this the setting was written and nothing acted on it: the mixer
+    showed the channel while no Arctis_Aux sink existed, so the "A" button had
+    nowhere to move a stream to and silently did nothing.
+
+    Read from the source rather than driven through D-Bus — the handler runs
+    inside the daemon's event loop, which a unit test has no way to stand up."""
+    import inspect
+    from arctis_sound_manager import dbus_service
+
+    src = inspect.getsource(dbus_service)
+    assert "setting == 'aux_enabled'" in src
+    marker = src.index("setting == 'aux_enabled'")
+    assert "configure_virtual_sinks" in src[marker:marker + 700], (
+        "the toggle must reconfigure the sinks, like preferred_device does")

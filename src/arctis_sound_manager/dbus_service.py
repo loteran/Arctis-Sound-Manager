@@ -522,6 +522,20 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
                     daemon=True,
                 ).start()
 
+            if setting == 'aux_enabled':
+                # Same reasoning as preferred_device above: without this the
+                # setting was written and nothing acted on it, so the mixer
+                # showed the channel while no Arctis_Aux sink existed — the
+                # "A" button then had nowhere to move a stream to and silently
+                # did nothing until the next daemon start (#209).
+                self.logger.info(
+                    "aux_enabled set to %r — reconfiguring virtual sinks", value)
+                threading.Thread(
+                    target=self.core_engine.configure_virtual_sinks,
+                    name='asm-aux-channel-toggle',
+                    daemon=True,
+                ).start()
+
             _oled = self.core_engine.oled_manager
             if _oled is not None:
                 if setting == 'oled_brightness':

@@ -65,6 +65,12 @@ def _btn_add_ss() -> str:
 class ProfileBar(QWidget):
     sig_apply = Signal(object)   # emits Profile
     sig_changed = Signal()       # emits after save/delete
+    # The optional Aux channel's toggle lives here rather than in the mixer row
+    # (#209): it belongs with the other things you *do* to the page, not among
+    # the channels it acts on. The bar rebuilds itself, so it owns the widget
+    # and the page listens — a button inserted from outside would be destroyed
+    # on the next rebuild.
+    sig_toggle_aux = Signal()
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -125,7 +131,31 @@ class ProfileBar(QWidget):
         add_btn.setFixedHeight(30)
         add_btn.clicked.connect(self._on_add)
         self._layout.addWidget(add_btn)
+
+        self._aux_btn = QPushButton(self._aux_label())
+        self._aux_btn.setStyleSheet(_btn_add_ss())
+        self._aux_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._aux_btn.setFixedHeight(30)
+        self._aux_btn.clicked.connect(self.sig_toggle_aux.emit)
+        self._layout.addWidget(self._aux_btn)
+
         self._layout.addStretch(1)
+
+    @staticmethod
+    def _aux_label() -> str:
+        from arctis_sound_manager.settings import GeneralSettings
+        try:
+            on = bool(GeneralSettings.read_from_file().aux_enabled)
+        except Exception:  # noqa: BLE001
+            on = False
+        return ("－  " if on else "＋  ") + I18n.translate(
+            'ui', 'aux_remove' if on else 'aux_add')
+
+    def refresh_aux_label(self) -> None:
+        """Re-read the setting after the page toggled it."""
+        btn = getattr(self, "_aux_btn", None)
+        if btn is not None:
+            btn.setText(self._aux_label())
 
     def set_active(self, name: str | None) -> None:
         for n, btn in self._chips.items():
