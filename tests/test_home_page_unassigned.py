@@ -198,7 +198,8 @@ def test_an_unchanged_row_of_apps_is_left_alone():
     sis = [_FakeSI(10, 1, "GenshinImpact.exe")]
 
     for _ in range(5):
-        HomePage._update_apps(HomePage, sis, sinks, card)
+        rows = HomePage._update_apps(HomePage, sis, sinks, card)
+        HomePage._apply_app_rows(HomePage, card, rows)
 
     assert card.cleared == 1
     assert card.tags == [("GenshinImpact.exe", 10, 1)]
@@ -210,9 +211,10 @@ def test_a_changed_row_is_rebuilt():
     card = _FakeCard()
     sinks = [_FakeSink(1, "Arctis_Game")]
 
-    HomePage._update_apps(HomePage, [_FakeSI(10, 1, "GenshinImpact.exe")], sinks, card)
-    HomePage._update_apps(HomePage, [_FakeSI(10, 1, "GenshinImpact.exe"),
-                                     _FakeSI(11, 1, "Discord")], sinks, card)
+    for sis in ([_FakeSI(10, 1, "GenshinImpact.exe")],
+                [_FakeSI(10, 1, "GenshinImpact.exe"), _FakeSI(11, 1, "Discord")]):
+        HomePage._apply_app_rows(
+            HomePage, card, HomePage._update_apps(HomePage, sis, sinks, card))
 
     assert card.cleared == 2
     assert [t[0] for t in card.tags] == ["GenshinImpact.exe", "Discord"]
@@ -222,7 +224,25 @@ def test_a_channel_that_lost_its_sink_is_cleared_once():
     from arctis_sound_manager.gui.home_page import HomePage
 
     card = _FakeCard()
-    HomePage._update_apps(HomePage, [], [], card)
-    HomePage._update_apps(HomePage, [], [], card)
+    for _ in range(2):
+        HomePage._apply_app_rows(
+            HomePage, card, HomePage._update_apps(HomePage, [], [], card))
 
+    assert card.cleared == 1
+
+
+def test_a_native_stream_is_not_added_once_per_tick():
+    """The bug this split fixes. Native rows used to be appended after the
+    PulseAudio pass had already decided not to clear the card, so a game
+    running as a native PipeWire stream gained one more copy of itself every
+    tick — which is what "Rocket League appears three times" was."""
+    from arctis_sound_manager.gui.home_page import HomePage
+
+    card = _FakeCard()
+    native = [("RocketLeague.exe", 42, 1234)]
+
+    for _ in range(6):
+        HomePage._apply_app_rows(HomePage, card, list(native))
+
+    assert card.tags == native
     assert card.cleared == 1

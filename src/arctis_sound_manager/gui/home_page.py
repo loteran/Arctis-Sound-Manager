@@ -1702,6 +1702,9 @@ class HomePage(QWidget):
             sinks_game  = _find_all(SINK_GAME)
             sinks_chat  = _find_all(SINK_CHAT)
             sinks_media = _find_all(SINK_MEDIA)
+            # Empty while the optional channel is off, which _update_apps
+            # already reads as "no rows".
+            sinks_aux   = _find_all(SINK_AUX)
 
             sink_game  = _primary(sinks_game)
             sink_chat  = _primary(sinks_chat)
@@ -1767,9 +1770,14 @@ class HomePage(QWidget):
             # Update application lists — pass all matching sinks to catch duplicates
             sink_inputs = pulse.sink_input_list()
             pulse_app_names = {si.proplist.get("application.name", "") for si in sink_inputs}
-            self._update_apps(sink_inputs, sinks_game,  self._game_card)
-            self._update_apps(sink_inputs, sinks_chat,  self._chat_card)
-            self._update_apps(sink_inputs, sinks_media, self._media_card)
+            rows_by_card = {
+                id(self._game_card):  self._update_apps(sink_inputs, sinks_game,  self._game_card),
+                id(self._chat_card):  self._update_apps(sink_inputs, sinks_chat,  self._chat_card),
+                id(self._media_card): self._update_apps(sink_inputs, sinks_media, self._media_card),
+                # Aux was missing from this list entirely, so its card never
+                # listed anything routed to it (#209).
+                id(self._aux_card):   self._update_apps(sink_inputs, sinks_aux,   self._aux_card),
+            }
             if sink_ext is not None:
                 # Include both the physical sink and the EQ sink so apps
                 # routed through the output EQ still appear on this card.
@@ -1777,7 +1785,8 @@ class HomePage(QWidget):
                 sink_eq = next((s for s in sinks if s.name == "effect_input.sonar-output-eq"), None)
                 if sink_eq is not None:
                     ext_sinks.append(sink_eq)
-                self._update_apps(sink_inputs, ext_sinks, self._ext_card)
+                rows_by_card[id(self._ext_card)] = self._update_apps(
+                    sink_inputs, ext_sinks, self._ext_card)
             self._combo_tick += 1
 
             # Also show native PipeWire streams (mpv, haruna…), skip duplicates.
@@ -1789,8 +1798,15 @@ class HomePage(QWidget):
             # from the cached result on every tick, because _update_apps above
             # clears them each time and skipping this would make those entries
             # blink.
-            self._update_native_apps(sinks, pulse_app_names,
-                                     rescan=(self._combo_tick % 4 == 1))
+            native_by_card = self._update_native_apps(
+                sinks, pulse_app_names, rescan=(self._combo_tick % 4 == 1))
+
+            # Both sources in, one rebuild decision per card.
+            for card in self._all_cards():
+                self._apply_app_rows(
+                    card,
+                    list(rows_by_card.get(id(card), []))
+                    + list(native_by_card.get(id(card), [])))
 
             # Anything playing that no card above represents.
             self._refresh_unassigned(sink_inputs, sinks, sink_ext)
@@ -1827,7 +1843,30 @@ class HomePage(QWidget):
             return binary[:1].upper() + binary[1:]
         return name or "Audio"
 
-    def _update_apps(self, sink_inputs, sinks: list, card: "AudioCard"):
+    def _apply_app_rows(self, card: "AudioCard", rows: list) -> None:
+        """Draw a card's application tags, rebuilding only when they changed.
+
+        One signature for both sources. They used to be drawn separately —
+        _update_apps cleared the card and drew the PulseAudio streams, then
+        _update_native_apps appended the native ones — and that worked only
+        while the first half cleared on every tick. Once it learned to skip
+        the rebuild when nothing had changed (it runs twice a second, and
+        tearing down every widget that often is what made dragging an app
+        stutter), the second half kept appending to a card nobody had cleared:
+        one extra copy of every native stream per tick, which is a game
+        listed three times after you closed it.
+        """
+        signature = tuple(rows)
+        if card._app_sig == signature:
+            return
+        card.clear_apps()
+        for app_name, si_index, pid in rows:
+            card.add_app_tag(app_name, si_index, pid, bg_color=card._accent)
+        # After the rebuild, not before: clear_apps() resets the signature, so
+        # setting it first threw it away and rebuilt on every tick.
+        card._app_sig = signature
+
+    def _update_apps(self, sink_inputs, sinks: list, card: "AudioCard") -> list:
         """Redraw a card's application tags — but only when they changed.
 
         This runs on the 500 ms poll, and it used to clear the row and build a
@@ -1841,10 +1880,7 @@ class HomePage(QWidget):
         row that is already there, and left alone otherwise.
         """
         if not sinks:
-            if card._app_sig != ():
-                card.clear_apps()
-                card._app_sig = ()
-            return
+            return []
         sink_indices = {s.index for s in sinks}
         matching = [
             si for si in sink_inputs
@@ -1861,13 +1897,7 @@ class HomePage(QWidget):
             rows.append((app_name, si.index,
                          int(si.proplist.get("application.process.id", 0))))
 
-        signature = tuple(rows)
-        if card._app_sig == signature:
-            return
-
-        card.clear_apps()
-        for app_name, si_index, pid in rows:
-            card.add_app_tag(app_name, si_index, pid, bg_color=card._accent)
+        return rows
         card._app_sig = signature
 
     def _style_unassigned(self) -> None:
@@ -2036,8 +2066,10 @@ class HomePage(QWidget):
             SINK_GAME:  self._game_card,
             SINK_CHAT:  self._chat_card,
             SINK_MEDIA: self._media_card,
+            SINK_AUX:   self._aux_card,
         }
 
+        per_card: dict[int, list] = {}
         for s in native:
             if s["app_name"] in already_shown:
                 continue  # already listed via PulseAudio
@@ -2045,7 +2077,9 @@ class HomePage(QWidget):
             card = next((c for bound, c in card_map.items() if bound in sink_name), None)
             if card is None:
                 continue
-            card.add_app_tag(s["app_name"], s["id"], int(s["pid"] or 0), bg_color=card._accent)
+            per_card.setdefault(id(card), []).append(
+                (s["app_name"], s["id"], int(s["pid"] or 0)))
+        return per_card
 
     def _set_disconnected(self):
         if self._connected:
