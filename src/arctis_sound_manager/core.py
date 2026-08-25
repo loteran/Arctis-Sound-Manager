@@ -2879,6 +2879,48 @@ class CoreEngine:
 
         return result
     
+    def _command_interface_number(self) -> int:
+        """The interface commands go to — the profile's, or one found to work."""
+        override = getattr(self, "_command_iface_override", None)
+        if override is not None:
+            return override
+        return self.device_config.command_interface_index[0]
+
+    def _retarget_command_interface(self) -> None:
+        """Move to another HID interface after the declared one answered ENOENT.
+
+        Only interfaces whose IN endpoint carries a full-size report are
+        considered: a device's small-packet interface is its volume or dial
+        control, not the vendor channel commands go to, and writing there
+        achieves nothing while looking like it worked.
+
+        One move, logged loudly. Cycling would turn a wrong profile into a
+        quiet loop across every interface, which is harder to diagnose than
+        the failure it replaces.
+        """
+        if getattr(self, "_command_iface_override", None) is not None:
+            return
+        declared = self.device_config.command_interface_index[0]
+        try:
+            cfg = self.usb_device.get_active_configuration()
+        except Exception:  # noqa: BLE001
+            return
+        candidates: list[int] = []
+        for intf in cfg:
+            if intf.bInterfaceClass != 3 or intf.bInterfaceNumber == declared:
+                continue
+            if any(ep.wMaxPacketSize >= 64 for ep in intf):
+                candidates.append(intf.bInterfaceNumber)
+        if not candidates:
+            return
+        chosen = max(candidates)
+        self._command_iface_override = chosen
+        self.logger.warning(
+            "Interface %d does not exist on this device (errno 2) — the profile "
+            "does not match the hardware. Falling back to interface %d. "
+            "Please report this with the device's product id.",
+            declared, chosen)
+
     def _get_command_interface(self, config: DeviceConfiguration) -> int:
         """Returns the USB interface number used for commands."""
         return config.command_interface_index[0]
@@ -3013,10 +3055,20 @@ class CoreEngine:
                     report_type = 0x03 if self.device_config.command_transport == CommandTransport.CTRL_FEATURE else 0x02
                     report_id = self.device_config.command_report_id or 0
                     wValue = (report_type << 8) | (report_id & 0xFF)
-                    wIndex = self.device_config.command_interface_index[0]
+                    wIndex = self._command_interface_number()
                     self.usb_device.ctrl_transfer(bmRequestType, 0x09, wValue, wIndex, command_lst)
         except usb.core.USBError as e:
-            if getattr(e, "errno", None) == 16:  # EBUSY — throttle log
+            # ENOENT means the interface this profile names does not exist on
+            # this device, and no retry on the same number will ever work. The
+            # USB layout is in no SteelSeries specification — the sync-interface
+            # they publish is not the bInterfaceNumber — so a profile shared by
+            # several products can name an interface only some of them have.
+            # The GameDAC (#213) is the case: arctis_7.yaml says 5, taken from
+            # the Arctis 7 dongle, and the GameDAC exposes 0, 1 and 2. Every
+            # command failed, twice a second, for as long as it was plugged in.
+            if getattr(e, "errno", None) == 2:
+                self._retarget_command_interface()
+            elif getattr(e, "errno", None) == 16:  # EBUSY — throttle log
                 self._usb_busy_count = getattr(self, "_usb_busy_count", 0) + 1
                 if self._usb_busy_count == 1 or self._usb_busy_count % 10 == 0:
                     self.logger.warning("Error sending command (EBUSY ×%d): %s",
