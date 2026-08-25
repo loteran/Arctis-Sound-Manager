@@ -1,3 +1,51 @@
+arctis-sound-manager (1.4.10-1) noble; urgency=medium
+
+  * Clips records where the desktop has no ScreenCast portal. It built one
+    pipeline whose source was a portal session, so XFCE, MATE, Cinnamon and
+    plain window managers — anything using xdg-desktop-portal-gtk, which
+    does not implement that interface — could not record at all. X11 is now
+    captured directly there, with the same encoder, the same frame rate and
+    the same per-channel audio tracks. Nothing to configure: the portal is
+    asked whether it exists rather than inferred from the session type,
+    because X11 under GNOME or KDE has a working one and must keep using it.
+    (#214)
+  * Bug reports say how Clips can capture this screen — the desktop, which
+    portal backends are installed, whether ScreenCast answers, and which
+    GStreamer elements and encoders exist. Only when Clips is switched on.
+    There is also scripts/diagnose-clips-capture.py for anyone who cannot
+    open the window to produce a report in the first place. (#215)
+  * A headset's control interface is found from what it declares, not from a
+    number written by hand. SteelSeries' own device specifications address
+    it the way Windows does — by HID usage page — and never carry the
+    interface number Linux needs, so every profile's was transcribed, and
+    several were wrong. The number is now read back from the device's report
+    descriptor. A profile that already names the right interface is
+    untouched, so nothing that works today changes. (#213)
+  * The Arctis Pro GameDAC has its own profile. It shared one with the
+    Arctis 7 dongle and inherited all of it: an interface that does not
+    exist on this device, so every command failed twice a second and its
+    status came back empty; a battery request, which a mains-powered DAC has
+    none of; ChatMix on the wrong command; and the wrong sidetone opcode.
+    Read from SteelSeries' specification for this product rather than
+    carried over by name. (#213)
+  * The ChatMix dial no longer skips whole ranges. The read loop waited on
+    every interface at once, so the slowest set the pace for all of them:
+    the dial pushes its frames on one while another blocks for a full second
+    on a polled status frame. Reported on a Nova 7 Gen 2, where the wheel
+    jumped from 100 to 53 rather than moving through the values. (#211)
+  * The Nova 5's dial interface, lost when its profile was copied. Upstream
+    lists two interfaces for it and ASM's profile has carried one since the
+    day it was written, so the wheel worked only when the runtime detection
+    happened to catch a frame, and stopped whenever that cache was cleared.
+  * An application listed once per tick. Two sources feed the row of
+    applications under each channel and they were drawn in sequence, the
+    first clearing the card and the second appending to it. Once the first
+    learned to skip the rebuild when nothing had changed, the second kept
+    appending to a card nobody had cleared — a game running under Proton
+    gained a copy of itself twice a second, and closing it left them behind.
+
+ -- loteran <axel.valadon@gmail.com>  Tue, 25 Aug 2026 00:00:00 +0000
+
 arctis-sound-manager (1.4.9-1) noble; urgency=medium
 
   * An Aux channel, off unless you ask for it. A fourth playback channel
