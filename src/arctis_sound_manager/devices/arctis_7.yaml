@@ -5,7 +5,6 @@ device:
     - 0x1260 # Arctis 7
     - 0x12ad # Arctis 7 2019
     - 0x1252 # Arctis Pro 2019
-    - 0x1280 # Arctis Pro GameDAC
   command_padding:
     length: 31
     position: end

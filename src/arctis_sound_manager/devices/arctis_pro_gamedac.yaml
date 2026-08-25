@@ -1,0 +1,91 @@
+# Arctis Pro + GameDAC — the wired DAC base station (issue #213).
+#
+# Split out of arctis_7.yaml, which it shared with the Arctis 7 dongle and
+# whose protocol is not its own. Every value here is read from SteelSeries'
+# own specification for this product (arctis-pro-gameDac.device), not carried
+# over by analogy.
+#
+# What the shared profile got wrong, and what it cost:
+#
+# * It declared USB interface 5, the Arctis 7 dongle's. This device exposes
+#   0, 1 and 2, so every command failed with ENOENT twice a second for as
+#   long as it was plugged in, and its status came back as the empty
+#   sentinel while the headset was plainly on.
+# * It asked for battery (0x0618). A GameDAC is mains-powered through USB and
+#   reports none — the spec has no headset_status struct at all, which is the
+#   giveaway that this is a base station rather than a headset.
+# * It read ChatMix from command 0x24. This device pushes 0x45.
+device:
+  name: SteelSeries Arctis Pro GameDAC
+  vendor_id: 0x1038
+  product_ids:
+    - 0x1280 # Arctis Pro GameDAC — the control device
+
+  command_padding:
+    length: 62
+    position: end
+    filler: 0x00
+
+  # The spec's APIs are all `(chunk HIDIO 65 payload)`: one report-id byte and
+  # 64 of data. With report_id a constant 0x00 the reports are unnumbered, so
+  # nothing of it goes on the wire and the wValue low byte stays 0.
+  command_transport: ctrl_output
+  command_report_id: 0x00
+
+  # Inferred, not read: the USB layout is in no SteelSeries specification —
+  # their `sync-interface` is not the bInterfaceNumber, as the Nova 7 Gen 2
+  # already showed. Of this device's three HID interfaces (0, 1, 2) the
+  # 4-byte one is a dial or volume control and interface 2 is the usual place
+  # for the vendor channel. If it is wrong the daemon moves off it on the
+  # first ENOENT and says so in the log; scripts/reverse-engineering/
+  # gamedac_status_probe.py settles it on real hardware.
+  command_interface_index: [2, 0]
+  listen_interface_indexes: [2]
+
+  device_init:
+    - ['status.request']   # get_audio_settings — command 0x20
+
+  status:
+    # [report_id, command] like every other profile here: the Nova Pro
+    # Wireless writes 0x06b0 for its own report id 0x06 and command 0xb0.
+    # This device's report id is 0x00.
+    request: 0x0020
+
+    response_mapping:
+      # hp_speaker_mix. The same command as the Nova Pro Wireless's ChatMix
+      # frame, and the same shape: the spec's own event handler for 0x45
+      # reads game from byte 2 and chat from byte 3, which is exactly what
+      # nova_pro_wireless.yaml declares. ASM's names for the two halves are
+      # the firmware's, where "media" is the game side.
+      - starts_with: 0x0045
+        media_mix: 0x02
+        chat_mix: 0x03
+
+      # get_audio_settings. Sidetone sits past ten int32 EQ bands and the
+      # int32 mic volume, so the offsets are counted rather than guessed:
+      # command(1) host_mode(2) volume(3) dac_gain(4) volume_limiter(5)
+      # surround(6) surround_offload(7) eq_preset(8) eq1..10(9-48)
+      # mic_volume(49-52) sidetone(53).
+      - starts_with: 0x0020
+        mic_side_tone: 0x35
+
+    representation:
+      headset:
+        - chat_mix
+        - media_mix
+
+  audio:
+    spatial_engine: hesuvi
+
+  settings:
+    microphone:
+      # side_tone, command 0x39 in the spec, one byte of level.
+      mic_side_tone:
+        type: slider
+        min: 0x00
+        max: 0x0a
+        step: 1
+        min_label: off
+        max_label: perc_100
+        default: 0x00
+        update_sequence: [0x39, 'value']
