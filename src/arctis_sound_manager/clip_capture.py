@@ -887,7 +887,11 @@ class ClipCapture:
                          "%dx%d at %d,%d", x1 - x0 + 1, y1 - y0 + 1, x0, y0)
             else:
                 log.info("no ScreenCast portal — capturing the whole X screen")
-            self._x11_source = f"ximagesrc name=screen {props}"
+            # Ask for the configured rate explicitly. ximagesrc produces 25 fps
+            # unless told otherwise, and max-rate downstream is a ceiling, not a
+            # floor — without this a 60 fps setting silently recorded 25.
+            self._x11_source = (f"ximagesrc name=screen {props} "
+                                f"! video/x-raw,framerate={int(self.max_fps)}/1")
 
         if self._x11_source is None:
             self.portal = ScreenCastPortal()
