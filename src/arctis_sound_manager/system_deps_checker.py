@@ -1107,6 +1107,52 @@ def clip_dep_checks() -> list[DepCheck]:
             },
         ),
         DepCheck(
+            # Only consulted where the desktop has no ScreenCast portal and
+            # Clips falls back to capturing X11 directly (#214). Without them
+            # the whole X screen is recorded instead of one monitor, which is
+            # right on a single-monitor machine and merely wide on others —
+            # so optional, not degraded.
+            name="xrandr",
+            severity=Severity.OPTIONAL,
+            feature="clip capture on X11 (picks the monitor to record)",
+            detect=lambda: _which("xrandr"),
+            install_commands={
+                "fedora": ["dnf", "install", "-y", "xrandr"],
+                "debian": ["apt-get", "install", "-y", "x11-xserver-utils"],
+                "arch":   ["pacman", "-S", "--noconfirm", "xorg-xrandr"],
+            },
+        ),
+        DepCheck(
+            # The portal remembers which output the user picked. With no
+            # portal there is nobody to ask, so the monitor under the pointer
+            # is used — and this is what reads the pointer. Without it the
+            # primary monitor is recorded, which is a reasonable answer.
+            name="xdotool",
+            severity=Severity.OPTIONAL,
+            feature="clip capture on X11 (records the monitor you are looking at)",
+            detect=lambda: _which("xdotool"),
+            install_commands={
+                "fedora": ["dnf", "install", "-y", "xdotool"],
+                "debian": ["apt-get", "install", "-y", "xdotool"],
+                "arch":   ["pacman", "-S", "--noconfirm", "xdotool"],
+            },
+        ),
+        DepCheck(
+            # Used by the bug report to say which GStreamer elements exist,
+            # which is how "Clips will not record here" gets answered without
+            # a round trip. It ships with the GStreamer base package
+            # everywhere, so its absence means a very unusual install.
+            name="gst-inspect-1.0",
+            severity=Severity.OPTIONAL,
+            feature="bug reports (lists the GStreamer elements present)",
+            detect=lambda: _which("gst-inspect-1.0"),
+            install_commands={
+                "fedora": ["dnf", "install", "-y", "gstreamer1"],
+                "debian": ["apt-get", "install", "-y", "gstreamer1.0-tools"],
+                "arch":   ["pacman", "-S", "--noconfirm", "gstreamer"],
+            },
+        ),
+        DepCheck(
             # Everything a clip does *after* it has been captured runs through
             # ffmpeg: the poster frame on its card, the per-channel level scan
             # that says which tracks are empty, and the export itself. The
