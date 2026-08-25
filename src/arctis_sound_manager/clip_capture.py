@@ -38,7 +38,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
+import subprocess
 import time
 from collections import deque
 from pathlib import Path
@@ -534,6 +536,97 @@ def _default_microphone(pulse) -> str | None:
     return wired[0].name
 
 
+def screencast_portal_available() -> bool:
+    """Whether this desktop's portal actually implements ScreenCast.
+
+    Asked, never assumed. XDG_SESSION_TYPE says nothing useful here: X11 under
+    GNOME or KDE has a portal that implements ScreenCast perfectly well, and
+    treating "x11" as "no portal" would give up window and multi-monitor
+    selection on desktops that support both. What matters is whether the
+    interface answers — xdg-desktop-portal-gtk, the backend XFCE, MATE and
+    Cinnamon use, does not implement it at all (#214).
+
+    The version property is read rather than a session created: it is the
+    cheapest call that fails the same way a real one would, and it puts no
+    recording indicator on screen.
+    """
+    try:
+        import gi
+        gi.require_version("Gio", "2.0")
+        from gi.repository import Gio, GLib
+    except Exception:  # noqa: BLE001 — no GI means no portal path anyway
+        return False
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        reply = bus.call_sync(
+            PORTAL, PORTAL_PATH, "org.freedesktop.DBus.Properties", "Get",
+            GLib.Variant("(ss)", (SCREENCAST, "version")),
+            None, Gio.DBusCallFlags.NONE, 2000, None)
+        return reply is not None
+    except Exception as exc:  # noqa: BLE001
+        log.info("no ScreenCast portal on this desktop (%s) — using X11 capture", exc)
+        return False
+
+
+def x11_capture_region() -> tuple[int, int, int, int] | None:
+    """The monitor to record on X11, as (startx, starty, endx, endy).
+
+    The portal asks the user which output to record and remembers the answer.
+    With no portal there is nobody to ask, so this picks the monitor the
+    pointer is on — the one being looked at — and falls back to the primary.
+
+    Returns None when the geometry cannot be read, which leaves ximagesrc to
+    capture the whole X screen: right on a single-monitor machine, and on a
+    multi-monitor one still better than not recording.
+    """
+    if not shutil.which("xrandr"):
+        return None
+    try:
+        out = subprocess.run(["xrandr", "--listactivemonitors"],
+                             capture_output=True, text=True, timeout=3).stdout
+    except Exception:  # noqa: BLE001
+        return None
+
+    # " 0: +*eDP-1 1920/344x1080/193+0+0  eDP-1"  — the * marks the primary.
+    monitors: list[tuple[bool, int, int, int, int]] = []
+    for line in out.splitlines():
+        m = re.search(r"(\*)?\S*\s+(\d+)/\d+x(\d+)/\d+\+(\d+)\+(\d+)", line)
+        if not m:
+            continue
+        primary = bool(m.group(1))
+        w, h, x, y = (int(m.group(i)) for i in (2, 3, 4, 5))
+        monitors.append((primary, x, y, w, h))
+    if not monitors:
+        return None
+
+    chosen = None
+    pointer = _x11_pointer()
+    if pointer is not None:
+        px, py = pointer
+        chosen = next((mo for mo in monitors
+                       if mo[1] <= px < mo[1] + mo[3] and mo[2] <= py < mo[2] + mo[4]),
+                      None)
+    if chosen is None:
+        chosen = next((mo for mo in monitors if mo[0]), monitors[0])
+
+    _p, x, y, w, h = chosen
+    # ximagesrc's end coordinates are inclusive.
+    return x, y, x + w - 1, y + h - 1
+
+
+def _x11_pointer() -> tuple[int, int] | None:
+    """Pointer position in root-window coordinates, or None."""
+    if not shutil.which("xdotool"):
+        return None
+    try:
+        out = subprocess.run(["xdotool", "getmouselocation"],
+                             capture_output=True, text=True, timeout=2).stdout
+    except Exception:  # noqa: BLE001
+        return None
+    m = re.search(r"x:(\d+)\s+y:(\d+)", out)
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
 class ScreenCastPortal:
     """xdg-desktop-portal ScreenCast client.
 
@@ -778,17 +871,37 @@ class ClipCapture:
             self.portal.close()
             self.portal = None
 
-        self.portal = ScreenCastPortal()
-        try:
-            fd, node_id = self.portal.open(window=self.window)
-        except BaseException:
-            # CreateSession may well have succeeded before whatever failed
-            # here — a cancelled picker, a refused stream. That half-open
-            # session is exactly as visible to the compositor as a working one.
-            self.portal.close()
-            self.portal = None
-            raise
-        log.info("screencast node %s on fd %s", node_id, fd)
+        # Desktops whose portal has no ScreenCast — xdg-desktop-portal-gtk, so
+        # XFCE, MATE, Cinnamon — could not record at all. There is nothing to
+        # ask there, so X11 is captured directly and no session is opened
+        # (#214). Probed, not guessed: X11 under GNOME or KDE does have the
+        # portal, and this must not take that path away from them.
+        self._x11_source = None
+        if not screencast_portal_available():
+            region = x11_capture_region()
+            props = "use-damage=false show-pointer=true do-timestamp=true"
+            if region:
+                x0, y0, x1, y1 = region
+                props += f" startx={x0} starty={y0} endx={x1} endy={y1}"
+                log.info("no ScreenCast portal — capturing X11 region "
+                         "%dx%d at %d,%d", x1 - x0 + 1, y1 - y0 + 1, x0, y0)
+            else:
+                log.info("no ScreenCast portal — capturing the whole X screen")
+            self._x11_source = f"ximagesrc name=screen {props}"
+
+        if self._x11_source is None:
+            self.portal = ScreenCastPortal()
+            try:
+                fd, node_id = self.portal.open(window=self.window)
+            except BaseException:
+                # CreateSession may well have succeeded before whatever failed
+                # here — a cancelled picker, a refused stream. That half-open
+                # session is exactly as visible to the compositor as a working
+                # one.
+                self.portal.close()
+                self.portal = None
+                raise
+            log.info("screencast node %s on fd %s", node_id, fd)
 
         # gop == fps gives a keyframe every second, which bounds how far the
         # clip start can be rounded back (see clip_buffer).
@@ -818,8 +931,9 @@ class ClipCapture:
         # past what it can sustain. Clip lengths stay correct regardless: the
         # buffer measures time from buffer timestamps, never from a frame count.
         parts = [
-            f"pipewiresrc name=screen fd={fd} path={node_id} "
-            f"do-timestamp=true keepalive-time=1000",
+            self._x11_source or (
+                f"pipewiresrc name=screen fd={fd} path={node_id} "
+                f"do-timestamp=true keepalive-time=1000"),
             f"! videorate max-rate={self.max_fps} drop-only=true",
             f"! {convert} ! {encoder}",
             "! h264parse config-interval=-1",

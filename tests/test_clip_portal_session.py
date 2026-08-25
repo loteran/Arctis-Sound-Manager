@@ -123,6 +123,18 @@ def test_a_portal_that_refuses_to_close_does_not_raise():
 # ── the call sites ────────────────────────────────────────────────────────────
 
 
+def _force_portal_path(monkeypatch) -> None:
+    """Keep start() on the portal branch.
+
+    The test environment has no PyGObject, so screencast_portal_available()
+    answers False and start() would take the X11 capture path added in #214 —
+    which never opens a session, and a session is what these tests are about.
+    """
+    monkeypatch.setattr(
+        "arctis_sound_manager.clip_capture.screencast_portal_available",
+        lambda: True)
+
+
 def _capture_shell(portal) -> ClipCapture:
     """A ClipCapture with only what stop()/restart() reach for."""
     cap = object.__new__(ClipCapture)
@@ -182,6 +194,7 @@ def test_restart_closes_the_old_session_before_opening_the_next(monkeypatch):
 def test_starting_twice_does_not_strand_the_first_session(monkeypatch):
     """Overwriting self.portal would leave a session on the bus with nothing
     left holding a handle able to close it."""
+    _force_portal_path(monkeypatch)
     first = _FakePortal()
     cap = _capture_shell(first)
 
@@ -201,6 +214,7 @@ def test_starting_twice_does_not_strand_the_first_session(monkeypatch):
 def test_a_failed_open_closes_the_half_made_session(monkeypatch):
     """CreateSession may have succeeded before the picker was cancelled. That
     half-open session is as visible to the compositor as a working one."""
+    _force_portal_path(monkeypatch)
     made = _FakePortal()
 
     def _open(window=False):
