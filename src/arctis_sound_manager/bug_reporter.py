@@ -996,6 +996,53 @@ def collect_system_info() -> dict:
             else '<not set>')
     )
     info['session_type'] = os.environ.get('XDG_SESSION_TYPE', '<unset>')
+
+    # How Clips can get frames off this screen, which is the whole of "Clips
+    # will not record here" (#214). Collected only when Clips is switched on:
+    # an install that never enabled it must not be told GStreamer is missing,
+    # and must not pay for the import either (see test_clips_opt_in).
+    info['clips_capture'] = ''
+    try:
+        from arctis_sound_manager.system_deps_checker import clips_enabled
+        if clips_enabled():
+            lines = [
+                f"desktop:  {os.environ.get('XDG_CURRENT_DESKTOP', '<unset>')}",
+                f"display:  DISPLAY={os.environ.get('DISPLAY', '<unset>')} "
+                f"WAYLAND_DISPLAY={os.environ.get('WAYLAND_DISPLAY', '<unset>')}",
+            ]
+            # Which backend is installed decides more than the desktop's name:
+            # xdg-desktop-portal-gtk is the one with no ScreenCast at all.
+            found = [b for b in ('xdg-desktop-portal', 'xdg-desktop-portal-gtk',
+                                 'xdg-desktop-portal-kde', 'xdg-desktop-portal-gnome',
+                                 'xdg-desktop-portal-wlr', 'xdg-desktop-portal-hyprland')
+                     if shutil.which(b) or Path(f'/usr/lib/{b}').exists()
+                     or Path(f'/usr/libexec/{b}').exists()]
+            lines.append(f"portal backends: {', '.join(found) or 'none found'}")
+
+            from arctis_sound_manager.clip_capture import (
+                screencast_portal_available, x11_capture_region)
+            portal = screencast_portal_available()
+            lines.append(f"ScreenCast portal: {'available' if portal else 'ABSENT'}")
+            if not portal:
+                lines.append(f"→ X11 capture, region: {x11_capture_region() or 'whole screen'}")
+                lines.append(f"  xrandr={'yes' if shutil.which('xrandr') else 'no'} "
+                             f"xdotool={'yes' if shutil.which('xdotool') else 'no'}")
+
+            if shutil.which('gst-inspect-1.0'):
+                def _has(el: str) -> bool:
+                    return subprocess.run(['gst-inspect-1.0', el],
+                                          capture_output=True, timeout=10).returncode == 0
+                els = [e for e in ('ximagesrc', 'pipewiresrc', 'videorate',
+                                   'videoconvert', 'h264parse', 'matroskamux',
+                                   'opusenc', 'pulsesrc') if not _has(e)]
+                lines.append(f"missing GStreamer elements: {', '.join(els) or 'none'}")
+                enc = [e for e in ('nvh264enc', 'vah264enc', 'x264enc') if _has(e)]
+                lines.append(f"encoders: {', '.join(enc) or 'NONE — cannot encode'}")
+            else:
+                lines.append("gst-inspect-1.0 missing — GStreamer tools not installed")
+            info['clips_capture'] = "\n".join(lines)
+    except Exception as exc:  # noqa: BLE001
+        info['clips_capture'] = f"(could not probe: {exc})"
     info['desktop'] = os.environ.get('XDG_CURRENT_DESKTOP', '<unset>')
 
     # ── Gamescope / Steam Game Mode detection ─────────────────────────────────
@@ -1311,6 +1358,21 @@ def format_bug_report(traceback_str: Optional[str] = None) -> str:
             '     Check this against the duplicate-name warning in the graph. -->',
             '```',
             info.get('pipewire_conf_d', '') or '(no drop-ins)',
+            '```',
+            '',
+        ]
+
+    clips_capture = info.get('clips_capture', '')
+    if clips_capture:
+        lines += [
+            '## Clips — how it can capture this screen',
+            '<!-- Clips takes one of two routes and they fail for different',
+            '     reasons. With a ScreenCast portal it asks the portal, which is',
+            '     what gives window and multi-monitor selection. Without one —',
+            '     xdg-desktop-portal-gtk, so XFCE/MATE/Cinnamon — it captures X11',
+            '     directly. Neither works on Wayland with no portal (#214). -->',
+            '```',
+            clips_capture,
             '```',
             '',
         ]

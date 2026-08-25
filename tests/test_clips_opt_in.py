@@ -730,3 +730,27 @@ def test_a_distro_install_is_never_mistaken_for_a_venv(monkeypatch):
     monkeypatch.setattr(sys, "base_prefix", "/usr")
 
     assert clips_setup.isolated_venv() is False
+
+
+def test_the_bug_report_says_nothing_about_capture_when_clips_is_off(monkeypatch):
+    """The same silence the rest of this file is about, for the capture probe
+    added in #214: an install that never enabled Clips must not be told its
+    GStreamer elements are missing, and must not pay to find out."""
+    from arctis_sound_manager import bug_reporter
+
+    monkeypatch.setattr(sdc, "clips_enabled", lambda: False)
+
+    assert bug_reporter.collect_system_info().get("clips_capture", "") == ""
+
+
+def test_the_bug_report_names_the_capture_route_when_clips_is_on(monkeypatch):
+    """"Clips will not record here" is answered by which of the two routes this
+    desktop is on, so the report has to say — otherwise it is a separate script
+    the reporter has to be talked through."""
+    from arctis_sound_manager import bug_reporter
+
+    monkeypatch.setattr(sdc, "clips_enabled", lambda: True)
+    out = bug_reporter.collect_system_info().get("clips_capture", "")
+
+    assert "ScreenCast portal:" in out
+    assert "portal backends:" in out
