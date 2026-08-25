@@ -21,6 +21,10 @@ device:
   # Interface confirmed by real lsusb capture from an issue #100 reporter:
   # interface 3 (alt 0) exposes endpoint 0x83 IN only — no OUT endpoint.
   # ASM falls back to HID SET_REPORT (control transfer) automatically.
+  # The HID usage page the vendor interface declares, from this device's
+  # own (sync-interface 0xff00 …). ASM resolves the interface number
+  # from it rather than trusting the one below (#213).
+  hid_usage_page: 0xff00
   command_interface_index: [3, 0]
   listen_interface_indexes: [3]
 

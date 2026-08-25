@@ -279,6 +279,13 @@ class DeviceConfiguration:
         # See the validation block below and _setup_generic_device (#189).
         self.generic = bool(raw_config.get('generic', False))
         self.command_interface_index = raw_config.get('command_interface_index', (-1, -1))
+        # The HID usage page the vendor interface declares, from SteelSeries'
+        # own (sync-interface <page> …). Their specifications address an
+        # interface by page rather than by number, which is why every
+        # command_interface_index here was written by hand — and why several
+        # were wrong. Optional: without it the resolver still prefers any
+        # vendor-defined page over the consumer-control one (#213).
+        self.hid_usage_page = raw_config.get('hid_usage_page', None)
         self.command_transport = CommandTransport(raw_config.get('command_transport', 'interrupt'))
         self.command_report_id = raw_config.get('command_report_id', None)
         self.listen_interface_indexes = raw_config.get('listen_interface_indexes', [])

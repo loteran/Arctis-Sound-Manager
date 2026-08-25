@@ -2092,6 +2092,12 @@ class CoreEngine:
                 self.device_config = device_config
                 self.device_status = self.new_device_status()
                 self.device_settings = DeviceSettings(self.usb_device.idVendor, self.usb_device.idProduct)
+                # Before anything is claimed or written: the profile's
+                # interface number is the one value SteelSeries' specs never
+                # carry, so ask the hardware which interface is the vendor one
+                # rather than trusting a number typed by hand (#213).
+                self._command_iface_override = None
+                self.resolve_command_interface()
 
             # Apply (or clean up) per-device WirePlumber quirks now that the config
             # is resolved — e.g. the ALSA headroom fix for the Nova Pro Wireless USB
@@ -2880,11 +2886,109 @@ class CoreEngine:
         return result
     
     def _command_interface_number(self) -> int:
-        """The interface commands go to — the profile's, or one found to work."""
+        """The interface commands go to — resolved from the hardware if it can be."""
         override = getattr(self, "_command_iface_override", None)
         if override is not None:
             return override
         return self.device_config.command_interface_index[0]
+
+    @staticmethod
+    def _hid_usage_page(device, interface_number: int) -> int | None:
+        """The HID usage page an interface declares, or None if unreadable.
+
+        A HID report descriptor opens with its usage page: `05 xx` for the
+        short form, `06 xx xx` little-endian for the long one. Vendor-defined
+        pages are 0xff00 and up, and that is the whole point — it is what
+        separates a device's control channel from the consumer-control
+        interface carrying its media keys.
+        """
+        # usbhid owns these interfaces until something takes them, and a
+        # descriptor read on one it holds fails with EBUSY — which read as
+        # "no usage page" and left every device on its profile's number, the
+        # very thing this exists to stop. Borrow the interface, read, hand it
+        # straight back: this runs before anything is claimed, and an
+        # interface left detached here would be one usbhid no longer drives.
+        detached = False
+        try:
+            if device.is_kernel_driver_active(interface_number):
+                device.detach_kernel_driver(interface_number)
+                detached = True
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            raw = bytes(device.ctrl_transfer(0x81, 0x06, 0x2200,
+                                             interface_number, 512))
+        except Exception:  # noqa: BLE001 — refused, or no descriptor
+            return None
+        finally:
+            if detached:
+                try:
+                    device.attach_kernel_driver(interface_number)
+                except Exception:  # noqa: BLE001
+                    pass
+        if len(raw) >= 3 and raw[0] == 0x06:
+            return raw[1] | (raw[2] << 8)
+        if len(raw) >= 2 and raw[0] == 0x05:
+            return raw[1]
+        return None
+
+    def resolve_command_interface(self) -> None:
+        """Find the vendor interface by what it declares, not by its number.
+
+        SteelSeries' specifications address an interface the way hidapi does on
+        Windows — by HID usage page, in `(sync-interface 0xff00 0x0001 …)`.
+        They never carry a bInterfaceNumber, which is why every profile's was
+        written by hand and why several were wrong: the Arctis Pro GameDAC was
+        given the Arctis 7 dongle's interface 5 on a device exposing 0, 1 and 2
+        (#213), and the Nova 5 lost one of its two in a copy.
+
+        The usage page is readable here too, straight from the report
+        descriptor, so the number can be worked out instead of guessed. The
+        exact page is preferred when the profile names one; failing that, any
+        vendor-defined page (>= 0xff00) — a Nova Pro Wireless answers 0xffc0
+        where its specification says 0xff00, so the range is what holds, not
+        the value.
+
+        Falls back to the profile's own number, which keeps every headset that
+        already worked working: this only ever moves a device that would
+        otherwise have been addressed wrongly.
+        """
+        cfg = None
+        declared = self.device_config.command_interface_index[0]
+        try:
+            cfg = self.usb_device.get_active_configuration()
+        except Exception:  # noqa: BLE001
+            return
+        wanted = getattr(self.device_config, "hid_usage_page", None)
+
+        exact, vendor = [], []
+        for intf in cfg:
+            if intf.bInterfaceClass != 3:
+                continue
+            page = self._hid_usage_page(self.usb_device, intf.bInterfaceNumber)
+            if page is None:
+                continue
+            if wanted is not None and page == wanted:
+                exact.append(intf.bInterfaceNumber)
+            elif page >= 0xFF00:
+                vendor.append(intf.bInterfaceNumber)
+
+        chosen = None
+        if exact:
+            chosen = exact[0]
+        elif len(vendor) == 1:
+            # One vendor interface and no ambiguity to resolve.
+            chosen = vendor[0]
+        elif declared in vendor:
+            # Several, and the profile names one of them: it stays.
+            return
+
+        if chosen is None or chosen == declared:
+            return
+        self._command_iface_override = chosen
+        self.logger.info(
+            "Command interface resolved to %d from its HID usage page "
+            "(the profile says %d)", chosen, declared)
 
     def _retarget_command_interface(self) -> None:
         """Move to another HID interface after the declared one answered ENOENT.

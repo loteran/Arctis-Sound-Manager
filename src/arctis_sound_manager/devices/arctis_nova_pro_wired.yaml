@@ -16,6 +16,10 @@ device:
   command_transport: ctrl_output
   command_report_id: 0x06   # commands are prefixed with report id 0x06; the GameDAC
                             # firmware validates the SET_REPORT wValue strictly (#76)
+  # The HID usage page the vendor interface declares, from this device's
+  # own (sync-interface 0xff00 …). ASM resolves the interface number
+  # from it rather than trusting the one below (#213).
+  hid_usage_page: 0xff00
   command_interface_index: [4, 0]
   listen_interface_indexes: [4]
 
