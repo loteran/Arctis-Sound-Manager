@@ -70,8 +70,18 @@ jobs:
           git fetch origin main
 
           if git merge --no-edit --no-ff origin/main; then
-            # Merge succeeded — check whether there is actually anything new to push.
-            if git diff --quiet origin/develop..HEAD; then
+            # Push whenever the merge produced a commit. Asking `git diff
+            # origin/develop..HEAD` instead — as this did until 2026-08-25 —
+            # compares file contents, not history, so it threw the merge away
+            # in the one case that needs it most: main carrying a commit whose
+            # content develop already has (a cherry-pick, a fix landed on both
+            # sides). The trees match, the diff is empty, and the merge commit
+            # that would make main an ancestor of develop is dropped — which is
+            # exactly the drift this workflow exists to prevent, and why a
+            # release's `--ff-only` promotion of develop to main could fail.
+            # `git merge` leaves HEAD untouched when there is genuinely nothing
+            # to merge, so comparing revisions is both correct and sufficient.
+            if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/develop)" ]; then
               echo "develop already up to date with main — nothing to push."
             else
               git push origin develop
