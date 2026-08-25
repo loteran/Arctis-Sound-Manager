@@ -234,15 +234,53 @@ def check_ppa(v: str):
         return MISSING, "no source published for this version"
     published = [e for e in entries if e.get("status") == "Published"]
     pending = [e for e in entries if e.get("status") in ("Pending",)]
-    if published:
-        series = ", ".join(sorted(e.get("distro_series_link", "").rsplit("/", 1)[-1] for e in published))
-        note = f"Published [{series}]"
+
+    if not published:
         if pending:
-            note += f" — {len(pending)} series still Pending"
-        return DELIVERED, note
-    if pending:
-        return PENDING, f"{len(pending)} series Pending ({pending[0].get('source_package_version')})"
-    return MISSING, f"only {entries[0].get('status')}"
+            return PENDING, f"{len(pending)} series Pending ({pending[0].get('source_package_version')})"
+        return MISSING, f"only {entries[0].get('status')}"
+
+    # A published SOURCE is not an installable package. Launchpad accepts the
+    # upload, then builds it, and that build can fail on its own — 1.4.8 did,
+    # on 2026-08-23, while the release workflow reported success because it
+    # only ever measured the upload. Ubuntu users had no package for a day and
+    # nothing said so. Same shape as PKG-2 on the AUR side: audit green, fresh
+    # install impossible. So ask for the build state, the way check_copr()
+    # above already refuses to call a COPR build delivered until it succeeded.
+    built, building, failed = [], [], []
+    for entry in published:
+        series = entry.get("distro_series_link", "").rsplit("/", 1)[-1]
+        try:
+            builds = _get(entry["self_link"] + "?ws.op=getBuilds").get("entries", [])
+        except Exception as exc:
+            # Never fail a release over the audit's own network trouble: say
+            # what could not be checked and let the caller judge.
+            building.append(f"{series} (build state unavailable: {exc})")
+            continue
+        if not builds:
+            building.append(f"{series} (no build yet)")
+            continue
+        for b in builds:
+            state = b.get("buildstate", "")
+            arch = b.get("arch_tag", "?")
+            if state == "Successfully built":
+                built.append(f"{series}/{arch}")
+            elif state in ("Failed to build", "Chroot problem",
+                           "Failed to upload", "Build for superseded Source",
+                           "Cancelled build"):
+                failed.append(f"{series}/{arch}: {state} — {b.get('web_link', '')}")
+            else:
+                building.append(f"{series}/{arch}: {state}")
+
+    if failed:
+        return MISSING, ("source Published but the build FAILED, so there is no "
+                         "package to install: " + "; ".join(failed))
+    if building:
+        note = "; ".join(building)
+        if built:
+            note = f"built {', '.join(built)}; still working: {note}"
+        return PENDING, note
+    return DELIVERED, f"Published and built [{', '.join(sorted(built))}]"
 
 
 def check_terra(v: str):
