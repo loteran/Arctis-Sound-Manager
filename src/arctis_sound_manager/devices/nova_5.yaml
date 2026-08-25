@@ -13,7 +13,17 @@ device:
 
   command_transport: ctrl_output  # HID SET_REPORT (no interrupt OUT endpoint)
   command_interface_index: [3, 0]
-  listen_interface_indexes: [3]
+  # 5 as well as 3, which is what upstream has had all along. This profile was
+  # written with [3] when the family was added (2026-04-03) and the 5 was lost
+  # in the copy: elegos/Linux-Arctis-Manager lists [3, 5] for the Nova 5, and
+  # it is the same split the Nova 7 Gen 2 turned out to need (#211), the dial
+  # pushing on 5 while 3 carries only the polled status frame.
+  #
+  # Restored from upstream rather than measured: nobody here has a Nova 5. The
+  # downside is bounded, an interface a model does not expose costs one warning
+  # and no reads, while leaving it out means the dial works only when the
+  # runtime detection happens to catch a frame on a candidate interface.
+  listen_interface_indexes: [3, 5]
 
   device_init:
     - ['status.request']

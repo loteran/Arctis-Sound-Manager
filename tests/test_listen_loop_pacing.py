@@ -117,3 +117,25 @@ def test_nova_7_listens_on_the_dial_interface():
             break
     else:
         raise AssertionError("no profile claims PID 0x22a1 any more")
+
+
+def test_nova_5_listens_on_the_dial_interface_too():
+    """The same gap, found while checking #211 and older than it.
+
+    upstream (elegos/Linux-Arctis-Manager) lists [3, 5] for the Nova 5. ASM's
+    profile was written with [3] when the family was added on 2026-04-03, so
+    the 5 was never there: a value lost in the copy rather than a decision.
+    Restored, not measured, so this test names its source instead of claiming
+    hardware it was never checked against.
+    """
+    from arctis_sound_manager.config import load_device_configurations
+
+    for c in load_device_configurations():
+        if 0x2232 in getattr(c, "product_ids", []):
+            assert 5 in c.listen_interface_indexes, (
+                f"{c.name} lost interface 5 again. Upstream lists [3, 5]; the "
+                f"dial pushes there while 3 carries the polled status frame"
+            )
+            break
+    else:
+        raise AssertionError("no profile claims PID 0x2232 any more")
