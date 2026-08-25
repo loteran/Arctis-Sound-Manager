@@ -19,7 +19,14 @@ device:
   name: SteelSeries Arctis Pro GameDAC
   vendor_id: 0x1038
   product_ids:
-    - 0x1280 # Arctis Pro GameDAC — the control device
+    # The GameDAC presents itself as several USB products. 0x1280 carries HID
+    # interfaces 0, 1 and 2; 0x1282 — "GameDAC Chat" in SteelSeries' own
+    # specification, and the device's chat audio — carries interface 5, the
+    # one the old shared profile named. It was listed nowhere here, so udev
+    # granted it nothing and a report showed it as "no permission": the udev
+    # rules are generated from these ids (#213).
+    - 0x1280 # Arctis Pro GameDAC — control (HID interfaces 0, 1, 2)
+    - 0x1282 # Arctis Pro GameDAC — chat audio + HID interface 5
 
   command_padding:
     length: 62
