@@ -27,7 +27,19 @@ device:
 
   command_transport: ctrl_output  # HID SET_REPORT (no interrupt OUT endpoint)
   command_interface_index: [3, 0]
-  listen_interface_indexes: [3]
+  # 5 as well as 3: the dial pushes its ChatMix frames (0x45 <game> <chat>) on
+  # interface 5, while 3 only carries the polled 0xb0 status frame. Confirmed
+  # on 0x22a1 by a reporter running both ASM and rust-arctis-chatmix on the
+  # same headset, whose hardware-verified device table lists interface 5 for
+  # this family (#211).
+  #
+  # ASM did reach interface 5, but by runtime detection alone: a dial frame
+  # arriving on a candidate interface gets that interface cached (see
+  # listen_endpoint_loop). Listing it here means the dial answers on the first
+  # turn instead of after the detection has got lucky once, and it survives the
+  # cache being cleared. A model in this family with no interface 5 costs one
+  # warning and no reads.
+  listen_interface_indexes: [3, 5]
 
   device_init:
     - [0x10]

@@ -38,6 +38,12 @@ from arctis_sound_manager.oled_manager import OledManager
 # USB autosuspend resume. (issue #76)
 RESCAN_INTERVAL_S: float = 3.0
 
+# How long a listen task waits before returning when it has nothing to read:
+# no device attached, or an interface the profile declares that this model does
+# not expose. loop() resubmits a finished listen task immediately, so a path
+# that returns without awaiting anything would spin a core (#211).
+_LISTEN_IDLE_BACKOFF_S: float = 1.0
+
 
 class TypedDevice(Device):
     idVendor: int
@@ -221,6 +227,10 @@ class CoreEngine:
         self.media_mix = 100
         self.chat_mix = 100
         self._active_extra_dial_interfaces = []
+        # Interfaces the profile names but this model does not expose. Kept so
+        # the "no endpoint" warning is logged once per connection rather than
+        # on every read attempt.
+        self._endpointless_interfaces: set[int] = set()
         self._device_lock = threading.RLock()
         self._usb_write_lock = threading.Lock()
 
@@ -1570,15 +1580,32 @@ class CoreEngine:
         self.pa_audio_manager.set_mix(self.media_mix, self.chat_mix)
     
     async def listen_endpoint_loop(self, interface_id: int):
+        # Every early return here has to cost time. This runs one read and
+        # ends, and loop() resubmits it the moment it does; a path that returns
+        # without ever awaiting therefore spins a core (#211). It could not
+        # before, because gather() held the turn until the slowest interface
+        # finished, which quietly paced the failing ones too. Waiting on the
+        # first completed read removed that accidental brake.
         with self._device_lock:
             if self.usb_device is None:
+                await asyncio.sleep(_LISTEN_IDLE_BACKOFF_S)
                 return
             usb_device = self.usb_device
 
         endpoint, max_packet_size = self.guess_interface_endpoint('in', interface_id)
 
         if not endpoint:
-            self.logger.warning(f'Failed to find listen interface endpoint for device: {usb_device.idProduct:04x}:{usb_device.idVendor:04x}')
+            # Declared in the YAML but absent on this model: permanent for as
+            # long as this device is attached, so back off hard rather than ask
+            # again every few milliseconds. Logged once per connection, not per
+            # attempt, or it would fill the journal on its own.
+            if interface_id not in self._endpointless_interfaces:
+                self._endpointless_interfaces.add(interface_id)
+                self.logger.warning(
+                    'Failed to find listen interface endpoint %d for device: '
+                    '%04x:%04x', interface_id,
+                    usb_device.idProduct, usb_device.idVendor)
+            await asyncio.sleep(_LISTEN_IDLE_BACKOFF_S)
             return
 
         try:
@@ -1685,6 +1712,9 @@ class CoreEngine:
         
     
     async def loop(self):
+        # Keyed by interface so a finished read can be resubmitted on its own,
+        # without waiting for the other interfaces (#211, see the wait() below).
+        listen_tasks: dict[int, asyncio.Task] = {}
         listen_coroutines: list[asyncio.Task] = []
         poll_task: asyncio.Task | None = None
         # Unlike poll_task this is not tied to a connected headset: it watches
@@ -1698,6 +1728,7 @@ class CoreEngine:
                 for task in listen_coroutines:
                     task.cancel()
                 listen_coroutines = []
+                listen_tasks.clear()
                 if poll_task is not None:
                     poll_task.cancel()
                     poll_task = None
@@ -1718,16 +1749,45 @@ class CoreEngine:
 
             if self.device_config is not None:
                 all_listen = list(set(self.device_config.listen_interface_indexes + self._active_extra_dial_interfaces))
-                listen_coroutines = [asyncio.create_task(self.listen_endpoint_loop(interface_id)) for interface_id in all_listen]
+
+                # Resubmit only the interfaces whose read has come back, and
+                # leave the others reading. Each task performs a single read
+                # and returns, so this keeps one read in flight per interface.
+                for interface_id in all_listen:
+                    task = listen_tasks.get(interface_id)
+                    if task is None or task.done():
+                        if task is not None and not task.cancelled():
+                            # gather(return_exceptions=True) used to swallow
+                            # these. asyncio.wait() does not: an exception left
+                            # unread on a discarded task logs "Task exception
+                            # was never retrieved" on every turn of this loop.
+                            exc = task.exception()
+                            if exc is not None:
+                                self.logger.debug(
+                                    'listen loop on interface %d ended with %r',
+                                    interface_id, exc)
+                        listen_tasks[interface_id] = asyncio.create_task(
+                            self.listen_endpoint_loop(interface_id))
+
+                # An interface can leave the set: the dial candidate is dropped
+                # once the real one is known. Stop reading from it.
+                for interface_id in [i for i in listen_tasks if i not in all_listen]:
+                    listen_tasks.pop(interface_id).cancel()
+
+                listen_coroutines = list(listen_tasks.values())
 
                 if poll_task is None or poll_task.done():
                     poll_task = asyncio.create_task(self._status_poll_loop())
 
             if not listen_coroutines:
-                # Nothing to listen on. gather() over an empty list returns
-                # immediately, so this while-loop would spin at 100% CPU and
-                # never yield — the event loop never gets to acquire the D-Bus
-                # name, and the GUI finds no daemon at all.
+                # Nothing to listen on. This guard was written when the wait
+                # below was a gather(), which returns immediately on an empty
+                # list and span this while-loop at 100% CPU without ever
+                # yielding, so the event loop never acquired the D-Bus name and
+                # the GUI found no daemon at all. It matters more now:
+                # asyncio.wait() raises ValueError on an empty set rather than
+                # spinning, which would take the loop down outright instead of
+                # merely pinning a core.
                 #
                 # No headset reaches this: every profile declares at least one
                 # listen interface, and the validation refuses one that does
@@ -1736,7 +1796,17 @@ class CoreEngine:
                 await asyncio.sleep(1)
                 continue
 
-            await asyncio.gather(*listen_coroutines, return_exceptions=True)
+            # FIRST_COMPLETED, not gather(): gather waits for every interface,
+            # so the slowest one set the pace for all of them. On a Nova 7 the
+            # ChatMix dial pushes its frames on one interface while another
+            # only answers a polled status frame, and that quiet interface
+            # blocks until its 1 s read timeout expires. Every dial frame
+            # arriving during that second was read late or not at all, which is
+            # the wheel "jumping from 100 to 53" instead of moving through the
+            # values (#211). Waking on the first completed read and resubmitting
+            # just that one keeps the dial at its own pace.
+            await asyncio.wait(listen_coroutines,
+                               return_when=asyncio.FIRST_COMPLETED)
 
         # Cleanup on stop
         for task in listen_coroutines:
@@ -3722,5 +3792,10 @@ class CoreEngine:
             self.device_config = None
             self.device_status = None
             self._active_extra_dial_interfaces = []
+            # Tied to the device that just went away: the next one plugged in
+            # may well expose the interfaces this one did not. Assigned rather
+            # than cleared so teardown also works on an engine built without
+            # __init__, which is how several tests construct theirs.
+            self._endpointless_interfaces = set()
         self._device_ready = False
         self._warned_no_out_endpoint = False

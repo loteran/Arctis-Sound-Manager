@@ -334,9 +334,13 @@ def test_the_main_loop_does_not_spin_when_no_interface_is_listened_on():
     body = body.group(1)
 
     guard = body.index("if not listen_coroutines:")
-    gather = body.index("await asyncio.gather(*listen_coroutines")
-    assert guard < gather, "the empty-list guard must come before the gather"
-    assert "await asyncio.sleep" in body[guard:gather], (
+    # asyncio.wait() since #211, where gather() made the slowest interface set
+    # the pace for the dial. The guard matters more with wait(), not less: an
+    # empty set makes it raise ValueError rather than return immediately, so
+    # the loop would die instead of spinning.
+    wait = body.index("await asyncio.wait(listen_coroutines")
+    assert guard < wait, "the empty-list guard must come before the wait"
+    assert "await asyncio.sleep" in body[guard:wait], (
         "the guard must yield to the event loop, not just continue")
 
 
