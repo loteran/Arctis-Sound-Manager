@@ -324,7 +324,16 @@ sudo apt update && sudo apt install arctis-sound-manager
 asm-setup
 ```
 
-> Ubuntu 24.04 (Noble) is the currently supported series. Other series may work via the `.deb` in each [GitHub release](https://github.com/loteran/Arctis-Sound-Manager/releases).
+> The PPA builds for Ubuntu 24.04 (Noble) and 26.04 (Resolute). Once Ubuntu retires a series, Launchpad stops accepting uploads for it but keeps serving the last package published before then — so **25.10 (Questing) is stuck on 1.2.8**, and `apt` will not say so. On any other series, and on Debian, install the `.deb` from the [latest release](https://github.com/loteran/Arctis-Sound-Manager/releases/latest) instead:
+>
+> ```bash
+> sudo add-apt-repository -r ppa:loteran/arctis-sound-manager   # if you added it
+> curl -fsSL https://api.github.com/repos/loteran/Arctis-Sound-Manager/releases/latest \
+>   | grep -o 'https://[^"]*_all\.deb' | head -1 | xargs curl -fLO
+> sudo apt install ./arctis-sound-manager_*.deb
+> ```
+>
+> The [installer](#installation) does this for you: it checks what the PPA really offers before trusting it.
 </details>
 
 <details>

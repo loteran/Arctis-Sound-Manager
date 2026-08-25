@@ -15,7 +15,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        series: [noble, questing, resolute]
+        # Only series Launchpad still accepts uploads for. Once Ubuntu retires
+        # one it goes active=false there and every dput is rejected by mail —
+        # while this job still reports success, because dput only ever proves
+        # the file left the runner. questing (25.10) went that way in July 2026
+        # and sat in this matrix for fifteen releases, uploading into a void,
+        # with the PPA quietly serving 1.2.8 to anyone still on it. Check
+        # https://api.launchpad.net/1.0/ubuntu/<series> before adding one back.
+        series: [noble, resolute]
 
     steps:
       - uses: actions/checkout@v4

@@ -143,14 +143,122 @@ copr_install() {
     run sudo dnf install -y "$PKG"
 }
 
+# The PPA only carries the Ubuntu series Launchpad still accepts uploads for.
+# When Ubuntu retires a series, Launchpad marks it Obsolete and refuses every
+# further upload — but it keeps serving whatever was published before that day,
+# forever. 25.10 (questing) went Obsolete in July 2026 and is still handing out
+# 1.2.8. apt says nothing about it: it just installs a version from months ago.
+# Debian itself, and derivatives built on an older Ubuntu base, have no series
+# there at all. So don't trust the PPA to be current — add it, ask apt what it
+# actually offers, and fall back to the release .deb when that is behind.
+GITHUB_API="https://api.github.com/repos/loteran/Arctis-Sound-Manager/releases/latest"
+
+# Prints the latest released version ("1.4.10"), or nothing if unreachable.
+latest_version() {
+    curl -fsSL "$GITHUB_API" 2>/dev/null \
+        | sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"v\{0,1\}\([^"]*\)".*/\1/p' \
+        | head -n 1
+}
+
+# Answers "no" only when Launchpad states this series is obsolete, which is
+# the fact behind the whole problem: Ubuntu retires a series, Launchpad flips
+# it to active=false and refuses every upload from then on, yet keeps serving
+# the last package published before that day. Asking is exact, where guessing
+# from version numbers is not. Silence (no network, unknown series) answers
+# nothing, and the age check below is left to decide.
+LAUNCHPAD_API="https://api.launchpad.net/1.0/ubuntu"
+series_obsolete() {
+    local series active
+    series="$( [ -f /etc/os-release ] && . /etc/os-release && echo "${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}")"
+    [ -n "$series" ] || return 1
+    active="$(curl -fsSL "$LAUNCHPAD_API/$series" 2>/dev/null \
+        | sed -n 's/.*"active":[[:space:]]*\(true\|false\).*/\1/p' | head -n 1)"
+    [ "$active" = "false" ]
+}
+
+# Prints how many hours ago the latest release was published, or nothing.
+# Launchpad needs a couple of hours to build and publish after a tag, and a
+# supported series catching up is not a broken one — only one still behind long
+# after the build window (a build that failed outright, as 1.4.8 did) is.
+release_age_hours() {
+    local published now
+    published="$(curl -fsSL "$GITHUB_API" 2>/dev/null \
+        | sed -n 's/^[[:space:]]*"published_at":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+    [ -n "$published" ] || return 0
+    published="$(date -u -d "$published" +%s 2>/dev/null)" || return 0
+    now="$(date -u +%s)"
+    printf '%s\n' "$(( (now - published) / 3600 ))"
+}
+
+# Prints the download URL of that release's .deb.
+latest_deb_url() {
+    curl -fsSL "$GITHUB_API" 2>/dev/null \
+        | sed -n 's/.*"browser_download_url":[[:space:]]*"\([^"]*_all\.deb\)".*/\1/p' \
+        | head -n 1
+}
+
+# Prints the version apt would install, upstream part only: the PPA's
+# "1.4.10-1~noble1" and the release's "1.4.10" have to be comparable.
+apt_candidate() {
+    local cand
+    cand="$(apt-cache policy "$PKG" 2>/dev/null | awk '/Candidate:/ {print $2}')"
+    [ -n "$cand" ] && [ "$cand" != "(none)" ] || return 0
+    printf '%s\n' "${cand%%-*}"
+}
+
+# Last resort for every apt system the PPA does not build for. apt-get resolves
+# the dependencies of a local .deb by itself, so this needs no extra plumbing.
+deb_install() {
+    local url tmp
+    url="$(latest_deb_url)"
+    [ -n "$url" ] || die "Couldn't find the .deb of the latest release — install manually: $REPO_URL/releases/latest"
+    tmp="$(mktemp -d)"
+    run curl -fsSL "$url" -o "$tmp/$PKG.deb"
+    run sudo apt-get update
+    run sudo apt-get install -y "$tmp/$PKG.deb"
+    warn "Installed from the release .deb — apt will NOT upgrade ASM on its own here."
+    warn "Re-run this installer for the next version, or move to a supported Ubuntu release."
+}
+
 ppa_install() {
     command -v apt >/dev/null 2>&1 || die "apt not found — is this really a Debian/Ubuntu system?"
     if ! command -v add-apt-repository >/dev/null 2>&1; then
         run sudo apt-get update
         run sudo apt-get install -y software-properties-common
     fi
-    run sudo add-apt-repository -y "$PPA"
+
+    # No series for this system (Debian, an unknown derivative): straight to the .deb.
+    if ! run sudo add-apt-repository -y "$PPA"; then
+        warn "This system has no series in the PPA — using the release .deb instead."
+        deb_install; return
+    fi
     run sudo apt-get update
+
+    local want have age why="" stale=0
+    want="$(latest_version)"
+    have="$(apt_candidate)"
+    age="$(release_age_hours)"
+    # Nothing at all for this series is decisive on its own, and so is Launchpad
+    # calling the series obsolete. Short of those two, a version behind only
+    # means something once the build window has passed — otherwise every install
+    # run in the two hours after a tag would desert a perfectly healthy series.
+    if series_obsolete; then
+        stale=1; why="Ubuntu no longer supports this series, so the PPA is frozen at ${have:-nothing}"
+    elif [ -z "$have" ]; then
+        stale=1; why="the PPA has no package for this series"
+    elif [ -n "$want" ] && dpkg --compare-versions "$have" lt "$want" \
+         && [ -n "$age" ] && [ "$age" -ge 24 ]; then
+        stale=1; why="the PPA is still on $have, ${age}h after $want was released"
+    fi
+    # No answer from GitHub? Say nothing and trust the PPA, as before — a network
+    # hiccup must not push a working apt install onto the manual path.
+    if [ "$DRY_RUN" -eq 0 ] && [ -n "$want" ] && [ "$stale" -eq 1 ]; then
+        warn "Using the release .deb instead: $why."
+        run sudo add-apt-repository -r -y "$PPA"
+        run sudo apt-get update
+        deb_install; return
+    fi
+
     run sudo apt-get install -y "$PKG"
 }
 
@@ -193,7 +301,7 @@ case "$flavor" in
     bazzite|silverblue|steamos) say "Plan: install inside a Distrobox container." ;;
     arch)   say "Plan: add the signed '$PKG' pacman repository, then install '$PKG' (falls back to the AUR)." ;;
     fedora) say "Plan: enable COPR '$COPR', then install '$PKG'." ;;
-    debian) say "Plan: add PPA '$PPA', then install '$PKG'." ;;
+    debian) say "Plan: add PPA '$PPA' — or the release .deb if this series isn't built there — then install '$PKG'." ;;
     unknown) die "Couldn't recognise this distribution. Install manually — see $REPO_URL#installation" ;;
 esac
 
