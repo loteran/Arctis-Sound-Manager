@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.11] - 26 August 2026
+
+A hotfix: 1.4.10 stopped detecting some headsets, and this puts them back.
+
+### Fixed
+
+- **Headsets that 1.4.10 stopped detecting are detected again.** 1.4.10 added a step that works out a headset's control interface from the HID usage page it declares, and it was too eager in three ways, each enough on its own: it moved a device on a single vendor page seen anywhere, it read an unreadable descriptor as "not the control channel" rather than "no idea", and — the one that did the damage — it moved the address commands were written to without also claiming that interface, so every command hit an interface the kernel still held and failed silently, once every ten log lines. An Arctis 7+ lost its battery, its status and its automatic output switching; a set of GameBuds lost battery and online status. A device is now moved only on proof, read from the hardware's own report descriptor, that the interface its profile names cannot be the control channel — and the interface it moves to is always the interface it claims. A missing or wrong usage page can no longer misroute a headset that works. ([#216](https://github.com/loteran/Arctis-Sound-Manager/issues/216), [#217](https://github.com/loteran/Arctis-Sound-Manager/issues/217))
+- **The usage pages themselves, which were read from the wrong field of the specification.** SteelSeries write two different declarations — `(usage-page …)` for the interface commands go to, `(sync-interface …)` for the interface a device pushes events on — and 1.4.10 took the second and wrote it in as the first. Thirteen profiles ended up carrying the same wrong value. The field is removed everywhere `sync-interface` was its only source, and kept only where the command interface's page is independently attested: the Arctis 7+, the GameBuds and the Nova 7P. ([#216](https://github.com/loteran/Arctis-Sound-Manager/issues/216), [#217](https://github.com/loteran/Arctis-Sound-Manager/issues/217))
+
+### Changed
+
+- **Bug reports and the USB diagnostic now say which interface is the control channel, and where audio is going.** Each HID interface lists its class and the usage page it declares — the one thing no report could show before, and the whole question #216 and #217 turned on — and the diagnostic records the default sink and the sink every playback stream sits on, so "ASM is holding my audio" and "the default was left somewhere dead" can be told apart.
+
 ## [1.4.10] - 25 August 2026
 
 Clips records on desktops that never could, and the interface a headset is addressed on is worked out from the hardware instead of typed by hand.
