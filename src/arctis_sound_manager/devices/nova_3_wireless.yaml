@@ -30,10 +30,15 @@ device:
     filler: 0x00
 
   command_transport: ctrl_output  # HID SET_REPORT, report id 0x00
-  # The HID usage page the vendor interface declares, from this device's
-  # own (sync-interface 0xff00 …). ASM resolves the interface number
-  # from it rather than trusting the one below (#213).
-  hid_usage_page: 0xff00
+
+  # No hid_usage_page here on purpose. The value that used to be here came from
+  # the spec's `(sync-interface ...)`, which is a different declaration from
+  # `(usage-page ...)`: the first names the interface that pushes events, the
+  # second the interface commands go to. SteelSeries' own engine treats them as
+  # two primitives taking different arguments. Naming the sync interface's page
+  # as the command interface's is what shipped 1.4.10 (#216, #217). Absent is
+  # honest here; a wrong page would be used to choose between vendor interfaces.
+
   command_interface_index: [3, 0]
   # Listen on BOTH 3 and 5. @rhavinx's usbhid-dump on real hardware (#149)
   # showed the async push frames (0x52 mic mute, 0xB7 battery, 0xB9 connection,

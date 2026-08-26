@@ -44,10 +44,15 @@ device:
 
   # Control/data interface = 3 (64-byte Interrupt IN on EP 0x83); interface 4 is
   # the 2-byte consumer-control endpoint. Confirmed via asm-cli tools arctis-devices.
-  # The HID usage page the vendor interface declares, from this device's
-  # own (sync-interface 0xff00 …). ASM resolves the interface number
-  # from it rather than trusting the one below (#213).
-  hid_usage_page: 0xff00
+
+  # No hid_usage_page here on purpose. The value that used to be here came from
+  # the spec's `(sync-interface ...)`, which is a different declaration from
+  # `(usage-page ...)`: the first names the interface that pushes events, the
+  # second the interface commands go to. SteelSeries' own engine treats them as
+  # two primitives taking different arguments. Naming the sync interface's page
+  # as the command interface's is what shipped 1.4.10 (#216, #217). Absent is
+  # honest here; a wrong page would be used to choose between vendor interfaces.
+
   command_interface_index: [3, 0] # bInterfaceNumber, bAlternateSetting
   listen_interface_indexes: [3]   # bInterfaceNumber (status read on EP 0x83)
 

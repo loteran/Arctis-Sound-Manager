@@ -10,11 +10,12 @@ device:
     filler: 0x00
 
   command_transport: ctrl_output  # HID SET_REPORT (wIndex=3, interface vendor 0xffc0)
-  # The HID usage page the vendor interface declares. SteelSeries publish
-  # (sync-interface 0xff00 …) for this product; the interface itself answers
-  # 0xffc0, as the line above has recorded since the profile was written.
-  # The hardware wins - the published value is what shipped 1.4.10 with a
-  # profile whose page matched nothing on the device (#216, #217).
+  # The HID usage page the *command* interface declares, which the line above
+  # has recorded since this profile was written. 1.4.10 replaced it with
+  # 0xff00, taken from the spec's `(sync-interface ...)` - a different
+  # declaration, naming the interface that pushes events rather than the one
+  # commands go to. The page then matched nothing on the device, which is what
+  # sent the resolver guessing and cost this headset its status (#216, #217).
   hid_usage_page: 0xffc0
   command_interface_index: [3, 0]
   listen_interface_indexes: [3]
