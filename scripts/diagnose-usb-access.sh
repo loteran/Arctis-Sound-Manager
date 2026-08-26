@@ -167,6 +167,36 @@ else
     say "(lsusb not installed: usbutils)"
 fi
 
+head_ "Where audio is actually going"
+# The second half of #216: applications that could not be moved off
+# "Arctis 7 Game", to the point of uninstalling ASM to get sound back. ASM
+# never moves an application's stream itself, so what matters is the default
+# sink and whether the Arctis sinks still have a working path to hardware.
+# An application that reopens its stream lands on the default sink again, so a
+# default left pointing at an Arctis sink whose loopback is dead looks exactly
+# like "the change would not take".
+if command -v pactl >/dev/null 2>&1; then
+    say "default sink: $(pactl get-default-sink 2>/dev/null || echo unknown)"
+    say ""
+    say "sinks:"
+    pactl list short sinks 2>/dev/null | sed 's/^/  /' | tee -a "$OUT"
+    say ""
+    say "playback streams and the sink each is on:"
+    # Which sink a stream sits on is the question; the app name says whose it is.
+    pactl list sink-inputs 2>/dev/null         | grep -E 'Sink Input #|Sink:|application.name = '         | sed 's/^[[:space:]]*/  /' | tee -a "$OUT"
+else
+    say "(pactl not installed: pulseaudio-utils)"
+fi
+
+say ""
+if command -v pw-link >/dev/null 2>&1; then
+    say "links out of the Arctis sinks (empty means audio has nowhere to go):"
+    _links=$(pw-link -l 2>/dev/null | grep -A2 -i 'arctis\|sonar' | head -40)
+    say "${_links:-(none found)}"
+else
+    say "(pw-link not installed: pipewire-utils)"
+fi
+
 head_ "ASM processes still running"
 # "Closing it leaves it in the system monitor": the daemon is a separate user
 # service and stays up by design, so what matters is which of these is which.
