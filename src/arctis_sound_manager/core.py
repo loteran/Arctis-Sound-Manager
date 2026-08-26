@@ -15,7 +15,9 @@ from usb.core import Device
 
 from arctis_sound_manager import device_state
 from arctis_sound_manager.bug_reporter import (find_interface_sysfs_dir,
-                                               kernel_driver_for_interface)
+                                               kernel_driver_for_interface,
+                                               usage_page_for_interface,
+                                               usage_page_of_descriptor)
 from arctis_sound_manager.config import (CommandTransport,
                                          DeviceConfiguration,
                                          load_device_configurations,
@@ -2892,103 +2894,115 @@ class CoreEngine:
             return override
         return self.device_config.command_interface_index[0]
 
-    @staticmethod
-    def _hid_usage_page(device, interface_number: int) -> int | None:
+    # One implementation, shared with the bug report, which lists the same
+    # pages per interface so a report says what this resolver saw.
+    _usage_page_of_descriptor = staticmethod(usage_page_of_descriptor)
+
+    def _hid_usage_page(
+        self, interface_number: int,
+        sys_root: Path = Path('/sys/bus/usb/devices'),
+    ) -> int | None:
         """The HID usage page an interface declares, or None if unreadable.
 
-        A HID report descriptor opens with its usage page: `05 xx` for the
-        short form, `06 xx xx` little-endian for the long one. Vendor-defined
-        pages are 0xff00 and up, and that is the whole point — it is what
-        separates a device's control channel from the consumer-control
-        interface carrying its media keys.
+        Read from sysfs, where the kernel already publishes the descriptor it
+        parsed. 1.4.10 asked the device instead, over a control transfer, and
+        that read fails with EBUSY while usbhid holds the interface - so it
+        detached usbhid first and re-attached afterwards, on every HID
+        interface of the device, on the discovery path, before anything was
+        claimed. That is a lot of driver churn to answer a question the kernel
+        had already answered, and re-attach failures were swallowed, which
+        leaves an interface no driver drives.
+
+        Nothing here touches the device. An unreadable descriptor returns
+        None, and None means "not known" - never "not the vendor interface".
         """
-        # usbhid owns these interfaces until something takes them, and a
-        # descriptor read on one it holds fails with EBUSY — which read as
-        # "no usage page" and left every device on its profile's number, the
-        # very thing this exists to stop. Borrow the interface, read, hand it
-        # straight back: this runs before anything is claimed, and an
-        # interface left detached here would be one usbhid no longer drives.
-        detached = False
         try:
-            if device.is_kernel_driver_active(interface_number):
-                device.detach_kernel_driver(interface_number)
-                detached = True
+            bus = self.usb_device.bus
+            ports = getattr(self.usb_device, 'port_numbers', None)
         except Exception:  # noqa: BLE001
-            pass
-        try:
-            raw = bytes(device.ctrl_transfer(0x81, 0x06, 0x2200,
-                                             interface_number, 512))
-        except Exception:  # noqa: BLE001 — refused, or no descriptor
             return None
-        finally:
-            if detached:
-                try:
-                    device.attach_kernel_driver(interface_number)
-                except Exception:  # noqa: BLE001
-                    pass
-        if len(raw) >= 3 and raw[0] == 0x06:
-            return raw[1] | (raw[2] << 8)
-        if len(raw) >= 2 and raw[0] == 0x05:
-            return raw[1]
-        return None
+        if not bus or not ports:
+            return None
+        device_dir_name = f"{bus}-" + ".".join(str(p) for p in ports)
+        try:
+            iface_dir = find_interface_sysfs_dir(
+                sys_root, device_dir_name, interface_number)
+            if iface_dir is None:
+                return None
+            # The HID device sits one level under the interface, in a
+            # directory named for the bus/vendor/product triple.
+            return usage_page_for_interface(iface_dir)
+        except OSError:
+            return None
 
     def resolve_command_interface(self) -> None:
-        """Find the vendor interface by what it declares, not by its number.
+        """Correct a profile that names an interface which cannot be the vendor one.
 
         SteelSeries' specifications address an interface the way hidapi does on
         Windows — by HID usage page, in `(sync-interface 0xff00 0x0001 …)`.
         They never carry a bInterfaceNumber, which is why every profile's was
-        written by hand and why several were wrong: the Arctis Pro GameDAC was
-        given the Arctis 7 dongle's interface 5 on a device exposing 0, 1 and 2
-        (#213), and the Nova 5 lost one of its two in a copy.
+        written by hand and why some were wrong: the Arctis Pro GameDAC was
+        given the Arctis 7 dongle's interface 5 on a device exposing 0, 1 and
+        2 (#213).
 
-        The usage page is readable here too, straight from the report
-        descriptor, so the number can be worked out instead of guessed. The
-        exact page is preferred when the profile names one; failing that, any
-        vendor-defined page (>= 0xff00) — a Nova Pro Wireless answers 0xffc0
-        where its specification says 0xff00, so the range is what holds, not
-        the value.
+        This moves a device only on proof that the interface it names cannot
+        be the control channel - the interface is absent from the device, or
+        it is present and declares a page that is not vendor-defined. A page
+        that simply cannot be read is not proof of anything, and leaves the
+        profile in charge.
 
-        Falls back to the profile's own number, which keeps every headset that
-        already worked working: this only ever moves a device that would
-        otherwise have been addressed wrongly.
+        The published page is evidence about the specification, not about the
+        interface: SteelSeries write 0xff00 for products whose hardware
+        answers 0xffc0. It is used to pick between vendor interfaces, never to
+        rule one out. 1.4.10 ruled them out on it and moved headsets that
+        worked, which is what left an Arctis 7+ and a set of GameBuds with no
+        battery and no status at all (#216, #217).
         """
-        cfg = None
         declared = self.device_config.command_interface_index[0]
+        wanted = getattr(self.device_config, "hid_usage_page", None)
         try:
             cfg = self.usb_device.get_active_configuration()
         except Exception:  # noqa: BLE001
             return
-        wanted = getattr(self.device_config, "hid_usage_page", None)
 
-        exact, vendor = [], []
-        for intf in cfg:
-            if intf.bInterfaceClass != 3:
+        present = {intf.bInterfaceNumber: intf for intf in cfg}
+        declared_intf = present.get(declared)
+        if declared_intf is not None:
+            page = self._hid_usage_page(declared)
+            if page is None or page >= 0xFF00:
+                # Either it is the control channel, whatever page the
+                # specification claims for it, or there is no telling. Both
+                # leave the profile alone.
+                return
+
+        vendor: list[int] = []
+        exact: list[int] = []
+        for number, intf in present.items():
+            if intf.bInterfaceClass != 3 or number == declared:
                 continue
-            page = self._hid_usage_page(self.usb_device, intf.bInterfaceNumber)
-            if page is None:
+            page = self._hid_usage_page(number)
+            if page is None or page < 0xFF00:
                 continue
+            vendor.append(number)
             if wanted is not None and page == wanted:
-                exact.append(intf.bInterfaceNumber)
-            elif page >= 0xFF00:
-                vendor.append(intf.bInterfaceNumber)
+                exact.append(number)
 
-        chosen = None
-        if exact:
-            chosen = exact[0]
-        elif len(vendor) == 1:
-            # One vendor interface and no ambiguity to resolve.
-            chosen = vendor[0]
-        elif declared in vendor:
-            # Several, and the profile names one of them: it stays.
+        chosen = exact[0] if len(exact) == 1 else (
+            vendor[0] if len(vendor) == 1 else None)
+        if chosen is None:
+            self.logger.warning(
+                "Interface %d cannot be this device's control channel, and %d "
+                "of its interfaces declare a vendor page - leaving the profile "
+                "alone rather than guessing. Please report this with the "
+                "device's product id.", declared, len(vendor))
             return
 
-        if chosen is None or chosen == declared:
-            return
         self._command_iface_override = chosen
         self.logger.info(
             "Command interface resolved to %d from its HID usage page "
-            "(the profile says %d)", chosen, declared)
+            "(the profile says %d, which %s)", chosen, declared,
+            "this device does not have" if declared_intf is None
+            else "is not a vendor interface")
 
     def _retarget_command_interface(self) -> None:
         """Move to another HID interface after the declared one answered ENOENT.
@@ -3024,6 +3038,17 @@ class CoreEngine:
             "does not match the hardware. Falling back to interface %d. "
             "Please report this with the device's product id.",
             declared, chosen)
+        # The claim happened at discovery, against the profile's number, and
+        # this moves off it: usbhid still holds the interface just chosen, so
+        # without this every command trades ENOENT for a silent EBUSY. Best
+        # effort - this runs from the command path, and failing to claim is a
+        # reason to log, never a reason to take the daemon down with it.
+        try:
+            self.kernel_detach(self.usb_device, self.device_config)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning(
+                "Could not claim interface %d after moving to it: %r",
+                chosen, exc)
 
     def _get_command_interface(self, config: DeviceConfiguration) -> int:
         """Returns the USB interface number used for commands."""
@@ -3275,13 +3300,32 @@ class CoreEngine:
         return result
 
     def _all_used_interfaces(self, config: DeviceConfiguration) -> list[int]:
-        """Returns all USB interfaces that may be used: command, status listeners, and all dial candidates."""
-        return list(set([
+        """Every USB interface ASM may touch: command, status listeners, dial candidates.
+
+        The command interface appears twice over - the number the profile
+        declares *and* whatever the resolver settled on, when they differ
+        (#213). An interface commands are written to but never claimed is one
+        usbhid still holds, and every transfer to it fails with EBUSY. That is
+        how 1.4.10 could leave a headset with no battery and no status while
+        looking, in the log, like it was talking to it (#216, #217): the
+        resolver moved the address commands go to, and this list - which
+        decides what gets detached and claimed - did not follow.
+
+        The union rather than the resolved number alone, so that claim,
+        release and re-attach keep covering the same set even when the
+        resolver moves after the claim has already happened.
+        """
+        interfaces = set([
             self._get_command_interface(config),
             *config.listen_interface_indexes,
             config.dial_interface_index,
             *config.dial_interface_candidates,
-        ]))
+        ])
+        if config == getattr(self, 'device_config', None):
+            override = getattr(self, '_command_iface_override', None)
+            if override is not None:
+                interfaces.add(override)
+        return list(interfaces)
 
     def _interface_kernel_driver(
         self, usb_device: TypedDevice, interface: int,
@@ -3825,8 +3869,11 @@ class CoreEngine:
                 usb_device = getattr(self, 'usb_device', None)
                 device_config = getattr(self, 'device_config', None)
                 if usb_device is not None and device_config is not None:
+                    # The interface actually addressed, which is not always the
+                    # one the profile names (#213) - naming the wrong one here
+                    # sends the next bug report after the wrong driver.
                     driver = self._interface_kernel_driver(
-                        usb_device, device_config.command_interface_index[0])
+                        usb_device, self._command_interface_number())
                 hint = f" — something else is holding the interface (driver={driver})"
             self.logger.warning(
                 "Status poll USB error (x%d): %r%s", streak, exc, hint)

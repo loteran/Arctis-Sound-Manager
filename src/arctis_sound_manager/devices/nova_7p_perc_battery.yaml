@@ -10,10 +10,12 @@ device:
     filler: 0x00
 
   command_transport: ctrl_output
-  # The HID usage page the vendor interface declares, from this device's
-  # own (sync-interface 0xff00 …). ASM resolves the interface number
-  # from it rather than trusting the one below (#213).
-  hid_usage_page: 0xff00
+  # The HID usage page interface 3 declares. 0xff00 is the page of the
+  # *sync* interface (5), which the note below already sets apart from the
+  # command interface; the spec gives 3 its own (usage-page 0xFFC0). Naming
+  # the wrong one here was how 1.4.10 shipped profiles whose page matched
+  # nothing on the interface they command (#216, #217).
+  hid_usage_page: 0xffc0
   command_interface_index: [3, 0]
   # Interface 3 carries commands and their polled replies (it is the one
   # matching the spec's `(usage-page 0xFFC0)`). Interface 5 is a second,

@@ -56,7 +56,15 @@ def _engine(device=None, declared: int = 5):
     eng = CoreEngine.__new__(CoreEngine)
     eng.logger = logging.getLogger("test")
     eng.usb_device = device if device is not None else _Device()
-    eng.device_config = SimpleNamespace(command_interface_index=[declared, 0])
+    eng.device_config = SimpleNamespace(
+        command_interface_index=[declared, 0], name="test device",
+        listen_interface_indexes=[declared], dial_interface_index=declared,
+        dial_interface_candidates=[])
+    # Moving off the declared interface has to claim the one it moves to, so
+    # the engine records what it was asked to detach instead of touching USB.
+    eng.claimed = []
+    eng.kernel_detach = lambda dev, cfg: eng.claimed.extend(
+        eng._all_used_interfaces(cfg)) or True
     return eng
 
 
@@ -126,6 +134,28 @@ def test_it_says_so_loudly(caplog):
         eng._retarget_command_interface()
 
     assert "does not match the hardware" in caplog.text
+
+
+def test_the_interface_moved_to_is_claimed():
+    """The move only changes the address commands are written to. usbhid still
+    holds the interface it moves to, so without a claim ENOENT is traded for a
+    silent EBUSY and nothing reaches the device either way (#216, #217)."""
+    eng = _engine()
+
+    eng._retarget_command_interface()
+
+    assert eng._command_interface_number() in eng.claimed
+
+
+def test_a_claim_that_fails_does_not_take_the_command_path_down():
+    """This runs from the command path: failing to claim is a reason to log,
+    never a reason to bring the daemon down."""
+    eng = _engine()
+    eng.kernel_detach = lambda dev, cfg: (_ for _ in ()).throw(OSError("nope"))
+
+    eng._retarget_command_interface()
+
+    assert eng._command_interface_number() == 2
 
 
 def test_an_unreadable_configuration_is_survivable():

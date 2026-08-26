@@ -92,6 +92,40 @@ for d in /sys/bus/usb/devices/*; do
     pid=$(cat "$d/idProduct" 2>/dev/null)
     say ""
     say "$(basename "$d"): 1038:$pid  $(cat "$d/product" 2>/dev/null)"
+    # Which interface is this device's vendor control channel. ASM's device
+    # profiles name one by number, and the number is the one value SteelSeries'
+    # specifications never carry, so it was typed by hand for every profile.
+    # class=03 is HID; the usage page tells the vendor control channel (0xff00
+    # and up) apart from the consumer-control interface carrying media keys
+    # (0x000c). Reading it here needs no permissions and disturbs no driver:
+    # the kernel already parsed the descriptor and published it.
+    for i in "$d":*; do
+        [ -r "$i/bInterfaceNumber" ] || continue
+        inum=$(cat "$i/bInterfaceNumber" 2>/dev/null)
+        icls=$(cat "$i/bInterfaceClass" 2>/dev/null || echo "??")
+        idrv="(none - unclaimed)"
+        [ -L "$i/driver" ] && idrv=$(basename "$(readlink -f "$i/driver")")
+        page="not readable"
+        for rd in "$i"/*/report_descriptor; do
+            [ -r "$rd" ] || continue
+            # The descriptor opens with its usage page: 06 lo hi (long form,
+            # little-endian) or 05 xx (short form).
+            bytes=$(od -An -tx1 -N3 "$rd" 2>/dev/null | tr -s ' ' | sed 's/^ //')
+            b0=$(echo "$bytes" | cut -d' ' -f1)
+            b1=$(echo "$bytes" | cut -d' ' -f2)
+            b2=$(echo "$bytes" | cut -d' ' -f3)
+            if [ "$b0" = "06" ]; then
+                page="0x$b2$b1"
+            elif [ "$b0" = "05" ]; then
+                page="0x00$b1"
+            fi
+            break
+        done
+        case "$page" in
+            0xff*) page="$page (vendor control channel)" ;;
+        esac
+        say "  interface $inum: class=0x$icls usage_page=$page driver=$idrv"
+    done
     bus=$(cat "$d/busnum" 2>/dev/null); dev=$(cat "$d/devnum" 2>/dev/null)
     if [ -z "$bus" ] || [ -z "$dev" ]; then
         say "  (no bus/dev number: cannot locate the device node)"
@@ -144,6 +178,18 @@ head_ "ASM user services"
 run systemctl --user --no-pager --plain list-units 'arctis-*'
 say ""
 run systemctl --user is-enabled arctis-manager.service
+
+head_ "Which interface the daemon settled on"
+# 1.4.10 could move commands to another interface without saying much about
+# it, and the profile it moved off is the one it kept claiming, so every write
+# went to an interface usbhid still held. These lines say whether that
+# happened here (issues #216 and #217).
+if command -v journalctl >/dev/null 2>&1; then
+    _iface=$(journalctl --user -u arctis-manager.service -n 4000 --no-pager 2>/dev/null         | grep -E 'Command interface resolved|does not match the hardware|cannot be this device|Detaching kernel driver|Kernel driver active on interface|holding the interface'         | tail -25)
+    say "${_iface:-(nothing about interface selection in the journal)}"
+else
+    say "(journalctl not available)"
+fi
 
 head_ "Daemon log (last 60 lines)"
 run journalctl --user -u arctis-manager.service -n 60 --no-pager

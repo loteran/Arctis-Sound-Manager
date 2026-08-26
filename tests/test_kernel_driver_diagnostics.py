@@ -53,6 +53,8 @@ def _make_interface_dir(
     sys_root: Path, device_name: str, config: int, interface: int,
     *, hid_driver: str | None = None, own_driver: str | None = None,
     hid_instance: str = "0005",
+    interface_class: str | None = None,
+    usage_page: int | None = None,
 ) -> Path:
     """Build "<device_name>:<config>.<interface>" the way sysfs really lays
     it out: the interface's own 'driver' symlink (usbhid, in real life,
@@ -64,12 +66,17 @@ def _make_interface_dir(
     iface_dir = sys_root / f"{device_name}:{config}.{interface}"
     iface_dir.mkdir(parents=True)
     (iface_dir / "bInterfaceNumber").write_text(f"{interface:02d}")
+    if interface_class is not None:
+        (iface_dir / "bInterfaceClass").write_text(interface_class)
     if own_driver is not None:
         (iface_dir / "driver").symlink_to(_driver_target(sys_root, own_driver))
     if hid_driver is not None:
         hid_child = iface_dir / f"0003:1038:12E0.{hid_instance}"
         hid_child.mkdir()
         (hid_child / "driver").symlink_to(_driver_target(sys_root, hid_driver))
+        if usage_page is not None:
+            (hid_child / "report_descriptor").write_bytes(
+                bytes([0x06, usage_page & 0xFF, usage_page >> 8, 0x09, 0x01]))
     return iface_dir
 
 
@@ -346,3 +353,44 @@ class TestBehaviourUnchanged:
         # the remediation steps a user still needs.
         assert "udev rules are missing" in caplog.text
         assert "driver=unknown" in caplog.text  # no sysfs tree behind tmp_path/sys
+
+
+# ── what a report must say about which interface is the control channel ──────
+
+def test_usb_access_names_the_usage_page_of_every_hid_interface(tmp_path):
+    """Both #216 and #217 came down to one question - which interface is this
+    device's vendor control channel - and no report could answer it. The
+    driver was listed; the class and the usage page it declares were not, so a
+    profile naming interface 3 could not be checked against the hardware at
+    all."""
+    sys_root = tmp_path / "sys"
+    _make_device(sys_root, "1-6", pid="220e", product="SteelSeries Arctis 7+")
+    _make_interface_dir(sys_root, "1-6", 1, 0, own_driver="snd-usb-audio",
+                        interface_class="01")
+    _make_interface_dir(sys_root, "1-6", 1, 3, own_driver="usbhid",
+                        hid_driver="hid-generic", interface_class="03",
+                        usage_page=0xFFC0)
+    _make_interface_dir(sys_root, "1-6", 1, 4, own_driver="usbhid",
+                        hid_driver="hid-generic", hid_instance="0006",
+                        interface_class="03", usage_page=0x000C)
+
+    out = _usb_access([], sys_root=sys_root, dev_root=tmp_path / "dev")
+
+    assert "usage_page=0xffc0 (vendor)" in out
+    assert "usage_page=0x000c" in out
+    assert "0x000c (vendor)" not in out
+    assert "class=0x03" in out and "class=0x01" in out
+
+
+def test_usb_access_says_so_when_a_usage_page_cannot_be_read(tmp_path):
+    """"Not readable" and "not a vendor interface" are different answers, and
+    a report that blurred them is how 1.4.10's resolver came to move devices
+    it had learnt nothing about."""
+    sys_root = tmp_path / "sys"
+    _make_device(sys_root, "1-6")
+    _make_interface_dir(sys_root, "1-6", 1, 3, own_driver="usbhid",
+                        interface_class="03")
+
+    out = _usb_access([], sys_root=sys_root, dev_root=tmp_path / "dev")
+
+    assert "usage_page=not readable" in out

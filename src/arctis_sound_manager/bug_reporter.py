@@ -499,6 +499,37 @@ def find_interface_sysfs_dir(
     return matches[0] if matches else None
 
 
+def usage_page_of_descriptor(raw: bytes) -> int | None:
+    """The usage page a HID report descriptor opens with, if it does.
+
+    `05 xx` is the short form, `06 xx xx` the long one, little-endian.
+    Vendor-defined pages are 0xff00 and up, and that is the whole point - it
+    is what separates a device's control channel from the consumer-control
+    interface carrying its media keys.
+    """
+    if len(raw) >= 3 and raw[0] == 0x06:
+        return raw[1] | (raw[2] << 8)
+    if len(raw) >= 2 and raw[0] == 0x05:
+        return raw[1]
+    return None
+
+
+def usage_page_for_interface(iface_dir: Path) -> int | None:
+    """The usage page declared by the HID device under *iface_dir*, if any.
+
+    Read from the descriptor the kernel already parsed and published, so this
+    needs no access to the device and disturbs no driver.
+    """
+    try:
+        for descriptor in sorted(iface_dir.glob('*/report_descriptor')):
+            page = usage_page_of_descriptor(descriptor.read_bytes())
+            if page is not None:
+                return page
+    except OSError:
+        return None
+    return None
+
+
 def interface_driver_name(
     sys_root: Path, device_dir_name: str, interface_number: int,
 ) -> str | None:
@@ -595,7 +626,21 @@ def _usb_access(
                 except OSError:
                     num = '?'
                 drv = kernel_driver_for_interface(iface_dir)
+                # Class and usage page: which interface is the vendor control
+                # channel, straight from the hardware. Their absence is what
+                # made #216 and #217 undiagnosable from a report - the profiles
+                # name an interface by number, and nothing here said what that
+                # interface actually was.
+                try:
+                    cls = (iface_dir / 'bInterfaceClass').read_text().strip()
+                except OSError:
+                    cls = '??'
+                page = usage_page_for_interface(iface_dir)
+                page_txt = 'not readable' if page is None else f'0x{page:04x}'
+                if page is not None and page >= 0xFF00:
+                    page_txt += ' (vendor)'
                 out.append(f'    {iface_dir.name} (bInterfaceNumber {num}): '
+                          f'class=0x{cls} usage_page={page_txt} '
                           f'driver={drv or "(none — unclaimed)"}')
 
         if not (busnum.isdigit() and devnum.isdigit()):

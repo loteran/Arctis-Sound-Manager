@@ -36,6 +36,11 @@ dev = [
     "pytest>=9.0.3",
 ]
 
+[tool.pytest.ini_options]
+markers = [
+    "real_sysfs: exercises a real sysfs read, so the fixture that fakes usage pages stands aside",
+]
+
 [tool.pyright]
 reportUnknownMemberType = "none"
 extraPaths = ["src"]
