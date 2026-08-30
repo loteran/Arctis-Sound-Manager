@@ -1,3 +1,17 @@
+arctis-sound-manager (1.4.13-1) noble; urgency=medium
+
+  * A headset that powers off and on gets its settings back. Sidetone, mic
+  * **The Arctis 7 ChatMix dial no longer freezes at the position it had
+    when the
+  * The Arctis 7 2019 ChatMix dial reported the wrong volume.
+  * Sonar EQ live-apply no longer lies about success on restricted systems.
+  * **The udev dialog no longer writes rules into the container on distrobox
+  * **The "positional fallback" log line no longer drowns out real device
+  * **The update banner no longer loops when a distro repository lags behind
+  * A probe for the Arctis 7 ChatMix dial in scripts/reverse-engineering/,
+
+ -- loteran <axel.valadon@gmail.com>  Sun, 30 Aug 2026 00:00:00 +0000
+
 arctis-sound-manager (1.4.12-1) noble; urgency=medium
 
   * The first launch no longer looks like a freeze. Two people described the

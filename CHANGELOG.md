@@ -5,6 +5,94 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.13] - 30 August 2026
+
+Settings the user changes on the headset now survive a power cycle, the Arctis 7
+ChatMix dial is read correctly, and the update banner stops lying about what is
+available when a distro repository lags behind GitHub.
+
+### Fixed
+
+- **A headset that powers off and on gets its settings back.** Sidetone, mic
+  volume, the volume limiter and the on-device EQ live in the headset, not the
+  dongle. Switch it off and they are gone; on wireless families the dongle never
+  leaves the port, so a power cycle fires no USB event and ASM never re-applies
+  anything. The user's saved settings stayed on the Devices page while the
+  hardware ran on firmware defaults — reported for the Nova 3 Wireless in #221,
+  but the gap covers the whole wireless line. GG re-pushes on the connection
+  event; this is the same re-push. The connection status already drives the
+  audio redirect in `on_device_status_changed`; it now also schedules a settings
+  replay from the profile's own `device_init` frames — mode switches included, so
+  the two paths cannot drift — plus any explicit setting `device_init` does not
+  cover and the stored EQ curve. Runs off the listen thread, debounced on the
+  last push. ([#221](https://github.com/loteran/Arctis-Sound-Manager/issues/221))
+- **The Arctis 7 ChatMix dial no longer freezes at the position it had when the
+  daemon started.** SteelSeries' spec declares `game_chat_status` as out
+  `[0x06, 0x24]`, back `[0x06, 0x24, game, chat]` — it is not part of the
+  battery reply, and this dongle pushes nothing when the dial turns. The profile
+  asked for it exactly once in `device_init`, and the status poll only asked for
+  battery, so the mix ASM showed stayed pinned for the whole session.
+  `manage_mix_change` applies those values to the Game and Chat channel volumes,
+  which meant a dial at one end at startup pinned a channel there forever. The
+  poll now sends `status.extra_requests` after the main request, each reply
+  mapped by its own `starts_with`, and a failing extra never costs the battery
+  reading that already landed. ([#220](https://github.com/loteran/Arctis-Sound-Manager/issues/220))
+- **The Arctis 7 2019 ChatMix dial reported the wrong volume.**
+  `game_chat_status`'s game/chat fields are a signed byte of attenuation from
+  `0x00` (full volume), counting down through `0xFF…0xC0` toward mute — the same
+  convention `hardware_eq.py` already decodes for EQ gain. The plain unsigned
+  `percentage(0, 100)` mapping read the loudest position as 0% and clamped every
+  attenuated one to 100%. A signed `percentage` parser is added and pointed at
+  `media_mix` and `chat_mix` in `arctis_7.yaml`. Based on reporter jsuvanto's
+  raw USB capture on #220 — SteelSeries' own spec only declares game/chat as
+  plain uint8 with no documented scale, so real hardware behaviour is the only
+  source here.
+- **Sonar EQ live-apply no longer lies about success on restricted systems.**
+  On SteamOS and other setups that start clients restricted (#181), `pw-cli
+  set-param` can be refused by PipeWire with "Operation not permitted" the same
+  way `pw-link` is. Unlike the link-permission fix, this call site had no
+  repair-and-retry, so the refusal was silently eaten and `_ApplyWorker`
+  reported the apply as successful anyway — the conf on disk was correct but the
+  running graph kept the old values, matching the "presets do nothing" symptom.
+  `grant_props_permissions()` is added, mirroring `grant_link_permissions()`'s
+  already-confirmed repair (raise the owning client to rwxml, retry once), and
+  wired into `set_filter_controls`. `_ApplyWorker` now only reports success when
+  the push genuinely cannot be attempted (node not up yet).
+- **The udev dialog no longer writes rules into the container on distrobox
+  installs.** `udev_checker` already learned to read the host's rules through
+  `distrobox-host-exec`, but `write_udev_rules` and `reload_udev_rules` still
+  targeted the container's own `/etc`, where udev never looks — the dialog's
+  "Run" button reported success and changed nothing. Rules are now staged under
+  `~/.cache` (shared with the host via distrobox's bind mount) and installed
+  through `distrobox-host-exec`, trying sudo then pkexec. `container.py`
+  centralizes `running_in_container()` / `host_exec()` / `host_distro()` /
+  `host_is_immutable()`, replacing three drifted copies. On an immutable host
+  reached through a container the dialog now offers the matching
+  `scripts/distrobox/*.sh` installer instead of fabricating an untested
+  rpm-ostree command. Reported on Bazzite alongside #140.
+- **The "positional fallback" log line no longer drowns out real device
+  reports.** It fired at INFO before the "does this link already exist" check,
+  so it went out on every watchdog pass whether or not anything was created — on
+  a Nova Pro that is every loopback, since the headset's sink names its ports
+  AUX0/AUX1. Three to four INFO lines every five seconds run about 270
+  characters each, filling the "Recent daemon logs" section of a bug report with
+  nothing but noise. It now logs INFO the first time for a given pair and DEBUG
+  after.
+- **The update banner no longer loops when a distro repository lags behind
+  GitHub.** COPR lagged a release by roughly seven hours in discussion #140: the
+  banner announced 1.4.12 while the user's dnf could still install only 1.4.11,
+  so "Update now" ran an upgrade that found nothing and the banner came back.
+  The same pattern would have hit APT and pacman installs. The user's own
+  repository is what the upgrade command runs through — it is the only answer
+  that is actionable — so it now decides first. GitHub is the fallback for pipx,
+  pip and AUR installs.
+
+### Added
+
+- **A probe for the Arctis 7 ChatMix dial** in `scripts/reverse-engineering/`,
+  with a README explaining how to capture and analyse the raw USB report. Used
+  to confirm the signed-attenuation decoding in #220.
+
 ## [1.4.12] - 30 August 2026
 
 Nothing here changes what ASM does with your audio. It changes what ASM tells you when something is wrong: every entry below is a window you could not see, or a message that sent someone looking in the wrong place.
