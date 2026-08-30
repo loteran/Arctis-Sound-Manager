@@ -125,3 +125,124 @@ def test_should_NOT_show_when_all_pass(tmp_path, monkeypatch):
     monkeypatch.setattr(sdd, "run_all_checks",
                         lambda: [_make_check(ok=True, severity=Severity.BLOCKING)])
     assert sdd.should_show_dialog() is False
+
+
+# ── container.py delegation + defensive fallbacks ───────────────────────────
+#
+# system_deps_dialog used to carry its own copy of _running_in_container,
+# copy-pasted from udev_checker.py and systemd.py, and the three drifted.
+# container.py is now the one shared home for this and the host-reaching
+# helpers built on it (host_exec, host_distro). These tests check the
+# delegation and, importantly, that a broken/missing container module falls
+# back to "behave as if native" rather than taking the dialog down with it —
+# the same defensive contract systemd.py already relies on.
+
+def test_running_in_container_delegates_to_container_module(monkeypatch):
+    monkeypatch.setattr("arctis_sound_manager.container.running_in_container", lambda: True)
+    assert sdd._running_in_container() is True
+
+
+def test_running_in_container_false_on_import_failure(monkeypatch):
+    import builtins
+    real_import = builtins.__import__
+
+    def broken_import(name, *args, **kwargs):
+        if name == "arctis_sound_manager.container":
+            raise ImportError("simulated")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", broken_import)
+    assert sdd._running_in_container() is False
+
+
+def test_host_exec_delegates_to_container_module(monkeypatch):
+    monkeypatch.setattr("arctis_sound_manager.container.host_exec", lambda: ["distrobox-host-exec"])
+    assert sdd._host_exec() == ["distrobox-host-exec"]
+
+
+def test_host_exec_none_means_no_way_out(monkeypatch):
+    monkeypatch.setattr("arctis_sound_manager.container.host_exec", lambda: None)
+    assert sdd._host_exec() is None
+
+
+def test_host_exec_falls_back_to_no_prefix_on_import_failure(monkeypatch):
+    """A broken import must not be indistinguishable from 'stuck in a
+    container with no way out' — that would refuse to run commands that
+    used to work fine before this file knew about containers at all."""
+    import builtins
+    real_import = builtins.__import__
+
+    def broken_import(name, *args, **kwargs):
+        if name == "arctis_sound_manager.container":
+            raise ImportError("simulated")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", broken_import)
+    assert sdd._host_exec() == []
+
+
+def test_host_distro_delegates_to_container_module(monkeypatch):
+    monkeypatch.setattr("arctis_sound_manager.container.host_distro", lambda: "bazzite")
+    assert sdd._host_distro() == "bazzite"
+
+
+def test_host_distro_none_on_import_failure(monkeypatch):
+    import builtins
+    real_import = builtins.__import__
+
+    def broken_import(name, *args, **kwargs):
+        if name == "arctis_sound_manager.container":
+            raise ImportError("simulated")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", broken_import)
+    assert sdd._host_distro() is None
+
+
+# ── Immutable host → point at the maintained script, never fabricate ───────
+
+def test_immutable_host_script_bazzite(monkeypatch):
+    monkeypatch.setattr(sdd, "_host_is_immutable", lambda: True)
+    assert sdd._immutable_host_script("bazzite") == "bazzite.sh"
+
+
+def test_immutable_host_script_is_case_insensitive(monkeypatch):
+    monkeypatch.setattr(sdd, "_host_is_immutable", lambda: True)
+    assert sdd._immutable_host_script("BAZZITE") == "bazzite.sh"
+
+
+def test_silverblue_and_kinoite_both_report_fedora_and_share_a_script(monkeypatch):
+    """The case that made naming unworkable: an ostree Fedora is "fedora" like
+    any other, so only the immutability probe tells them apart."""
+    monkeypatch.setattr(sdd, "_host_is_immutable", lambda: True)
+    assert sdd._immutable_host_script("fedora") == "silverblue.sh"
+
+
+def test_immutable_host_script_none_for_mutable_host(monkeypatch):
+    """Fedora Workstation, Ubuntu, Arch, … — dnf/apt/pacman all write to a
+    normal writable rootfs, so nothing here should redirect them. Note that
+    "fedora" appears here AND in the immutable test above: the distribution
+    name alone never decides this, the probe does."""
+    monkeypatch.setattr(sdd, "_host_is_immutable", lambda: False)
+    assert sdd._immutable_host_script("fedora") is None
+    assert sdd._immutable_host_script("ubuntu") is None
+    assert sdd._immutable_host_script("arch") is None
+
+
+def test_immutable_host_script_none_when_host_is_mutable_and_unknown(monkeypatch):
+    monkeypatch.setattr(sdd, "_host_is_immutable", lambda: False)
+    assert sdd._immutable_host_script(None) is None
+
+
+def test_unidentified_immutable_host_still_gets_a_script(monkeypatch):
+    """An ostree host we could not name is still an ostree host: the generic
+    script beats an install command it will reject."""
+    monkeypatch.setattr(sdd, "_host_is_immutable", lambda: True)
+    assert sdd._immutable_host_script(None) == "silverblue.sh"
+
+
+def test_unprobeable_host_keeps_its_install_path(monkeypatch):
+    """A host we cannot reach is not assumed immutable — unknown must never
+    silently take away an install path that works."""
+    monkeypatch.setattr(sdd, "_host_is_immutable", lambda: False)
+    assert sdd._immutable_host_script("bazzite") is None

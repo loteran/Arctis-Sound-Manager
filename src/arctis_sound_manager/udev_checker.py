@@ -57,10 +57,14 @@ def _pids_in_rules(content: str) -> set[int]:
 
 
 def _running_in_container() -> bool:
+    # Delegates to container.py, the shared home for this check (it used to
+    # be copy-pasted here, in systemd.py and in gui/system_deps_dialog.py, and
+    # the copies drifted). Imported lazily and defensively: this must never be
+    # the thing that stops the dialog from opening.
     try:
-        from arctis_sound_manager.bug_reporter import _detect_container_env
-        return _detect_container_env() != 'native'
-    except Exception:
+        from arctis_sound_manager.container import running_in_container
+        return running_in_container()
+    except Exception:  # noqa: BLE001
         return False
 
 

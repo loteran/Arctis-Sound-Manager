@@ -151,6 +151,89 @@ def _make_elevated_script(*commands: list[str]) -> str:
     return sh_path
 
 
+# Timeouts for calls that cross into the host via distrobox-host-exec: cheap
+# but not free, and a wedged host must not hang a GUI thread or a CLI script
+# forever (same reasoning as container.py's _HOST_CALL_TIMEOUT).
+_HOST_PROBE_TIMEOUT = 5
+_HOST_SCRIPT_TIMEOUT = 60
+
+# Where staged files for a host crossing live. distrobox bind-mounts $HOME
+# (and therefore ~/.cache) into the container at the same path, so a file
+# written here is visible on both sides — unlike the container's own /tmp,
+# which distrobox does NOT bind-mount and which tempfile.NamedTemporaryFile
+# would otherwise write into.
+_HOST_STAGE_DIR = Path.home() / '.cache' / 'arctis-sound-manager'
+
+
+def _print_manual_udev_fix(rules_path: Path) -> None:
+    """The copy-pasteable fallback for a udev write that could not cross into the host.
+
+    This is the branch the whole container-boundary fix exists to reach
+    instead of the old behaviour: writing the rules into the CONTAINER's own
+    /etc/udev/rules.d, where udev never looks, and reporting success anyway.
+    That silent local write is what left a Bazzite user stuck in a loop — the
+    "install rules" dialog reopening on every launch right after a "Run" that
+    claimed to have worked. So when the automatic host crossing is unavailable
+    (no distrobox-host-exec) or fails (non-zero exit, a dead host socket),
+    write nothing here and hand back the exact commands scripts/distrobox/
+    bazzite.sh's install_udev_rules() already runs from the host side.
+    """
+    container_name = os.environ.get('CONTAINER_ID') or '<container-name>'
+    print()
+    print('=' * 70)
+    print('Could not install the udev rules automatically.')
+    print('ASM is running inside a container, and udev rules only take effect')
+    print('once installed on the HOST. Run this in a terminal on the HOST')
+    print('(not inside the container):')
+    print()
+    print(f'  distrobox enter {container_name} -- asm-cli udev dump-rules \\')
+    print(f'      | sudo tee {rules_path} >/dev/null')
+    print('  sudo udevadm control --reload-rules')
+    print('  sudo udevadm trigger --action=add --subsystem-match=usb')
+    print()
+    print('Then unplug and replug the headset.')
+    print('=' * 70)
+
+
+def _run_script_on_host(prefix: list[str], sh_path: Path) -> subprocess.CompletedProcess | None:
+    """Run an elevated script on the host, through host_exec()'s prefix.
+
+    'sudo' and 'pkexec' are passed as bare command names, not resolved with
+    shutil.which — that would answer for the CONTAINER's filesystem, and the
+    binary that matters is whichever of the two exists on the HOST's PATH.
+    distrobox-host-exec forwards the argv to a shell in the host namespace,
+    which resolves it there. Returns None if neither elevator could complete
+    the script successfully — the caller must not treat that as success.
+    """
+    for elevator in ('sudo', 'pkexec'):
+        try:
+            result = subprocess.run(
+                [*prefix, elevator, str(sh_path)],
+                timeout=_HOST_SCRIPT_TIMEOUT, check=False)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if result.returncode == 0:
+            return result
+    return None
+
+
+def _stage_elevated_script_for_host(*commands: list[str]) -> Path:
+    """Build the elevated script via _make_elevated_script, then relocate it
+    under _HOST_STAGE_DIR so the host side of a host_exec() call can read it.
+
+    _make_elevated_script writes into the container's own /tmp, which is not
+    shared with the host — 'install'/'sh' run there via distrobox-host-exec
+    would find nothing at that path. The staged copy is the caller's to clean
+    up (it lives in a shared, persistent directory, not a temp one).
+    """
+    _HOST_STAGE_DIR.mkdir(parents=True, exist_ok=True)
+    local_path = _make_elevated_script(*commands)
+    staged = _HOST_STAGE_DIR / f'{Path(local_path).name}'
+    shutil.move(local_path, staged)
+    os.chmod(staged, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+    return staged
+
+
 def generate_udev_rules_content(config_paths: list[Path] | None = None) -> str:
     """Return the udev rules file content generated from device YAML files.
 
@@ -163,6 +246,16 @@ def generate_udev_rules_content(config_paths: list[Path] | None = None) -> str:
 
 
 def write_udev_rules(rules_path: Path, create_directories: bool, force_write: bool, and_reload: bool = False) -> int:
+    # Inside a distrobox/toolbox, /etc/udev/rules.d belongs to the CONTAINER —
+    # udev only ever reads the HOST's copy. This check must come before
+    # anything else in the function: everything below it is the original,
+    # container-oblivious behaviour, left byte-for-byte as it was. It is still
+    # the entire install path for every normal (non-container) user, and a
+    # regression there would be worse than the bug this branch fixes.
+    from arctis_sound_manager.container import running_in_container
+    if running_in_container():
+        return _write_udev_rules_on_host(rules_path, force_write, and_reload)
+
     run_with_sudo = False
 
     print('Writing udev rules...')
@@ -229,8 +322,92 @@ def write_udev_rules(rules_path: Path, create_directories: bool, force_write: bo
     return 0
 
 
+def _write_udev_rules_on_host(rules_path: Path, force_write: bool, and_reload: bool) -> int:
+    """Cross into the host to install the udev rules, from inside a container.
+
+    This is the write-side counterpart of udev_checker.py's
+    _host_rules_contents(): that one already learned to *read* the host's
+    rules through distrobox-host-exec, while this path kept writing into the
+    container's own /etc and reporting success — the mismatch documented in
+    container.py's module docstring. What follows is the same three-step
+    gesture scripts/distrobox/bazzite.sh's install_udev_rules() already
+    performs from the host side: dump the generated rules, write them into
+    the HOST's /etc, then reload+trigger the HOST's udevd.
+
+    Never falls back to writing locally: a local write here is invisible to
+    the host's udev and indistinguishable, from the user's side, from the
+    original bug — a "Run" that reports success and changes nothing.
+    """
+    from arctis_sound_manager.container import host_exec
+
+    prefix = host_exec()
+    if prefix is None:
+        _print_manual_udev_fix(rules_path)
+        return 1
+
+    if not force_write:
+        try:
+            already_exists = subprocess.run(
+                [*prefix, 'test', '-f', str(rules_path)],
+                timeout=_HOST_PROBE_TIMEOUT, check=False,
+            ).returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            already_exists = False
+        if already_exists:
+            print(f'File {rules_path} already exists on the host.')
+            print('To overwrite add option --force.')
+            return 3
+
+    try:
+        _HOST_STAGE_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        print(f'Cannot create staging directory {_HOST_STAGE_DIR}: {e!r}')
+        _print_manual_udev_fix(rules_path)
+        return 1
+
+    rules_stage = _HOST_STAGE_DIR / '91-steelseries-arctis.rules.staged'
+    rules_stage.write_text(f'{generate_udev_rules_content()}\n')
+
+    commands = [["install", "-m", "644", str(rules_stage), str(rules_path)]]
+    if and_reload:
+        commands += [
+            ["udevadm", "control", "--reload-rules"],
+            ["udevadm", "trigger", "--action=add", "--subsystem-match=usb"],
+            ["sh", "-c",
+             "for d in /sys/bus/usb/devices/*/; do "
+             "v=$(cat \"$d/idVendor\" 2>/dev/null); "
+             "[ \"$v\" = 1038 ] && echo on > \"$d/power/control\" 2>/dev/null; "
+             "true; done"],
+        ]
+
+    sh_stage = None
+    try:
+        print('Installing udev rules on the host...')
+        sh_stage = _stage_elevated_script_for_host(*commands)
+        result = _run_script_on_host(prefix, sh_stage)
+        if result is None or result.returncode != 0:
+            code = result.returncode if result is not None else 1
+            print(f'Host-side install failed (exit code {code}).')
+            _print_manual_udev_fix(rules_path)
+            return code or 1
+        print(f'Rules installed on the host at {rules_path}.')
+        return 0
+    finally:
+        rules_stage.unlink(missing_ok=True)
+        if sh_stage is not None:
+            sh_stage.unlink(missing_ok=True)
+
+
 def reload_udev_rules() -> int:
     print('Reloading udev rules...')
+
+    # Same crossing as write_udev_rules: udevadm run inside the container
+    # talks to the container's own (irrelevant) udevd instance, never the
+    # host's — reloading here would silently reload nothing that matters.
+    from arctis_sound_manager.container import running_in_container
+    if running_in_container():
+        return _reload_udev_rules_on_host()
+
     if os.geteuid() == 0:
         # Already root — run both commands directly
         for cmd in [
@@ -269,6 +446,47 @@ def reload_udev_rules() -> int:
         return sudo_it([sh_path])
     finally:
         os.unlink(sh_path)
+
+
+def _reload_udev_rules_on_host() -> int:
+    """See _write_udev_rules_on_host — the container-crossing counterpart of
+    the "not root" branch above, run on the HOST instead of locally."""
+    from arctis_sound_manager.container import host_exec
+
+    prefix = host_exec()
+    fallback_path = Path(UDEV_RULES_PATHS[0])
+    if prefix is None:
+        _print_manual_udev_fix(fallback_path)
+        return 1
+
+    try:
+        _HOST_STAGE_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        print(f'Cannot create staging directory {_HOST_STAGE_DIR}: {e!r}')
+        _print_manual_udev_fix(fallback_path)
+        return 1
+
+    sh_stage = None
+    try:
+        sh_stage = _stage_elevated_script_for_host(
+            ["udevadm", "control", "--reload-rules"],
+            ["udevadm", "trigger", "--action=add", "--subsystem-match=usb"],
+            ["sh", "-c",
+             "for d in /sys/bus/usb/devices/*/; do "
+             "v=$(cat \"$d/idVendor\" 2>/dev/null); "
+             "[ \"$v\" = 1038 ] && echo on > \"$d/power/control\" 2>/dev/null; "
+             "true; done"],
+        )
+        result = _run_script_on_host(prefix, sh_stage)
+        if result is None or result.returncode != 0:
+            code = result.returncode if result is not None else 1
+            print(f'Host-side reload failed (exit code {code}).')
+            _print_manual_udev_fix(fallback_path)
+            return code or 1
+        return 0
+    finally:
+        if sh_stage is not None:
+            sh_stage.unlink(missing_ok=True)
 
 def write_desktop_entries() -> int:
     print('Writing desktop entries...')

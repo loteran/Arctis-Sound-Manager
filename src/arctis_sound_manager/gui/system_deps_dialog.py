@@ -57,16 +57,100 @@ log = logging.getLogger(__name__)
 
 
 def _running_in_container() -> bool:
-    """distrobox/toolbox/docker, as the bug report already detects it.
+    """distrobox/toolbox/docker/flatpak/snap.
 
-    Imported lazily and defensively for the same reason systemd.py does it:
-    this must never be the thing that stops the dialog from opening.
+    Delegates to container.py, the shared home for this check (it used to
+    be copy-pasted here, in udev_checker.py and in systemd.py, and the
+    copies drifted). Imported lazily and defensively for the same reason
+    systemd.py does it: this must never be the thing that stops the dialog
+    from opening.
     """
     try:
-        from arctis_sound_manager.bug_reporter import _detect_container_env
-        return _detect_container_env() != 'native'
-    except Exception:
+        from arctis_sound_manager.container import running_in_container
+        return running_in_container()
+    except Exception:  # noqa: BLE001
         return False
+
+
+def _host_exec() -> list[str] | None:
+    """See container.host_exec(): ``[]`` outside a container, an argv prefix
+    when the host is reachable, ``None`` when it is not.
+
+    Same lazy/defensive import as `_running_in_container`. On the (very
+    unlikely) failure of the import itself we fall back to "no prefix
+    needed" rather than "no way out" — that reproduces the old native
+    behaviour instead of refusing to run commands that were working fine
+    before this file ever heard of containers.
+    """
+    try:
+        from arctis_sound_manager.container import host_exec
+        return host_exec()
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _host_distro() -> str | None:
+    """See container.host_distro(). None is the safe fallback: it makes the
+    dialog admit the host is unknown instead of asserting the container's
+    distribution as if it were the host's — the exact bug this file shipped
+    with (announcing "arch" on a Bazzite host)."""
+    try:
+        from arctis_sound_manager.container import host_distro
+        return host_distro()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _host_is_immutable() -> bool:
+    """See container.host_is_immutable(). False is the safe fallback: a host we
+    cannot probe must keep the install path it has, never lose it to a guess."""
+    try:
+        from arctis_sound_manager.container import host_is_immutable
+        return host_is_immutable()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+# Which maintained installer covers a given immutable host. Keyed on the
+# distribution's ID, which is all it takes once immutability is established as
+# a fact: Universal Blue images carry their own ID (bazzite, bluefin, …),
+# while Silverblue and Kinoite both report plain "fedora" and share a script.
+_IMMUTABLE_HOST_SCRIPTS = {
+    "bazzite": "bazzite.sh",
+    "fedora": "silverblue.sh",
+    # SteamOS ships pacman, which is exactly the trap: the rootfs is
+    # read-only, so an install appears to work and is gone at the next system
+    # update (#181, #88). It gets its own maintained script.
+    "steamos": "steamos.sh",
+}
+_IMMUTABLE_FALLBACK_SCRIPT = "silverblue.sh"
+
+
+def _immutable_host_script(host_distro_id: str | None) -> str | None:
+    """The maintained scripts/distrobox/*.sh installer for an immutable host,
+    or None when the host can take a normal package install.
+
+    Immutability is asked of the host as a fact (an ostree marker, or a
+    read-only /usr), not guessed from its name. Naming was the first attempt
+    and it did not survive contact: Silverblue and Kinoite are both "fedora"
+    and would have been missed, and reading VARIANT_ID instead would have
+    renamed Fedora Workstation to "workstation", which is not a distribution
+    anything can act on.
+
+    Deliberately does NOT synthesize an `rpm-ostree install` command: that
+    needs a reboot to take effect, ASM has never exercised that path, and a
+    fabricated line we cannot test is a worse failure mode than being honest
+    and pointing at the script that already handles it correctly and is
+    kept up to date.
+    """
+    if not _host_is_immutable():
+        return None
+    if not host_distro_id:
+        # Immutable but unidentified: the generic ostree script is still much
+        # closer to right than an install command the host will reject.
+        return _IMMUTABLE_FALLBACK_SCRIPT
+    return _IMMUTABLE_HOST_SCRIPTS.get(
+        host_distro_id.lower(), _IMMUTABLE_FALLBACK_SCRIPT)
 
 
 def _is_user_run(argv: list[str] | None) -> bool:
@@ -181,7 +265,13 @@ class _DepRow(QFrame):
 
     install_requested = Signal(object)  # emits the CheckResult
 
-    def __init__(self, result: CheckResult, parent: QWidget | None = None):
+    def __init__(
+        self,
+        result: CheckResult,
+        parent: QWidget | None = None,
+        *,
+        host_distro_id: str | None = None,
+    ):
         super().__init__(parent)
         self.result = result
         self.setStyleSheet(
@@ -226,6 +316,17 @@ class _DepRow(QFrame):
         layout.addLayout(text_col, stretch=1)
 
         argv = install_command_for(result.check)
+        # On an immutable host reached through a container, refuse to offer a
+        # button at all rather than one that runs a fabricated (and never
+        # exercised) `rpm-ostree install` line: `_is_user_run` commands are
+        # exempt because they never touch the host's package manager in the
+        # first place.
+        immutable_script = None
+        if argv and not _is_user_run(argv) and _running_in_container():
+            immutable_script = _immutable_host_script(host_distro_id)
+            if immutable_script:
+                argv = None
+
         if argv:
             label = I18n.translate('ui', 'run') if argv[0] in ("asm-setup", "asm-cli", "systemctl") else I18n.translate('ui', 'install')
             self.action_btn = QPushButton(label)
@@ -236,7 +337,12 @@ class _DepRow(QFrame):
             self.action_btn.clicked.connect(lambda: self.install_requested.emit(result))
             layout.addWidget(self.action_btn)
         else:
-            no_path_lbl = QLabel(I18n.translate('ui', 'no_install_path'))
+            if immutable_script:
+                no_path_text = I18n.translate('ui', 'sysdeps_immutable_host').format(
+                    host=host_distro_id, script=immutable_script)
+            else:
+                no_path_text = I18n.translate('ui', 'no_install_path')
+            no_path_lbl = QLabel(no_path_text)
             no_path_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             no_path_lbl.setWordWrap(True)
             no_path_lbl.setStyleSheet(
@@ -264,8 +370,20 @@ class _DepRow(QFrame):
         cmd = shlex.join(argv)
         # Prepend `sudo ` for system-pkg installs so the clipboard line is
         # ready to paste into a terminal. Skip for anything that runs as the
-        # user (ASM helpers, systemctl --user, paru, pip --user — #175).
-        line = cmd if _is_user_run(argv) else "sudo " + cmd
+        # user (ASM helpers, systemctl --user, paru, pip --user — #175) —
+        # those run in the container's own userland even when we're in one,
+        # so they need no host escape either.
+        if _is_user_run(argv):
+            line = cmd
+        else:
+            line = "sudo " + cmd
+            if _running_in_container():
+                # Whatever terminal this gets pasted into is a container
+                # shell: a bare `sudo dnf install …` would elevate root
+                # *inside* the container and install nothing where the
+                # package actually needs to land. distrobox-host-exec is
+                # the standard escape hatch to the host.
+                line = "distrobox-host-exec " + line
         # Under Wayland the clipboard belongs to the focused window: a
         # compositor drops setText() from a window that does not have keyboard
         # focus, silently. This dialog used to open behind the main window
@@ -294,6 +412,13 @@ class SystemDepsDialog(QDialog):
         self._row_widgets: list[_DepRow] = []
         self._running_processes: list[QProcess] = []
         self._active_worker: _UserCmdsWorker | None = None
+        # host_distro() round-trips through distrobox-host-exec (bounded, but
+        # not free) and cannot change for the life of this dialog — looked up
+        # once here and reused by every row and every refresh, instead of
+        # re-querying the host on every click.
+        self._host_distro_id: str | None = (
+            _host_distro() if _running_in_container() else None
+        )
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(28, 24, 28, 20)
@@ -305,7 +430,7 @@ class SystemDepsDialog(QDialog):
         )
         outer.addWidget(header)
 
-        sub = QLabel(I18n.translate('ui', 'sysdeps_sub').format(distro=detect_distro()))
+        sub = QLabel(self._sysdeps_sub_text())
         sub.setStyleSheet(
             f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 10pt; background: transparent;"
         )
@@ -371,6 +496,25 @@ class SystemDepsDialog(QDialog):
 
         self._refresh()
 
+    def _sysdeps_sub_text(self) -> str:
+        """Wording for the subtitle under the dialog header.
+
+        Naming the *container's* distro was the second half of the Bazzite
+        bug report: an Arch distrobox on a Bazzite host announced itself as
+        "arch" and every install line below matched pacman — useless on the
+        host, where these packages actually need to land. Name both when we
+        can, and admit the host is unknown rather than asserting the
+        container's identity as if it were the host's.
+        """
+        container_distro = detect_distro()
+        if not _running_in_container():
+            return I18n.translate('ui', 'sysdeps_sub').format(distro=container_distro)
+        if self._host_distro_id:
+            return I18n.translate('ui', 'sysdeps_sub_container').format(
+                container_distro=container_distro, host_distro=self._host_distro_id)
+        return I18n.translate('ui', 'sysdeps_sub_container_unknown_host').format(
+            container_distro=container_distro)
+
     # ── Population / refresh ────────────────────────────────────────────────
 
     def _refresh(self) -> None:
@@ -392,7 +536,7 @@ class SystemDepsDialog(QDialog):
         # Order: BLOCKING first, then DEGRADED
         bad.sort(key=lambda r: 0 if r.check.severity is Severity.BLOCKING else 1)
         for result in bad:
-            row = _DepRow(result, parent=self._rows_container)
+            row = _DepRow(result, parent=self._rows_container, host_distro_id=self._host_distro_id)
             row.install_requested.connect(self._install_one)
             # Insert before the existing stretch
             self._rows_layout.insertWidget(self._rows_layout.count() - 1, row)
@@ -424,6 +568,7 @@ class SystemDepsDialog(QDialog):
         groups: dict[str, list[str]] = {}  # pkgmgr -> packages list
         internals: list[list[str]] = []    # asm-setup / asm-cli / systemctl
         skipped: list[str] = []
+        immutable_blocked: list[str] = []  # needs the host, but it's immutable
         batches: list[list[str]] = []      # multi-step bash cmds + per-pkgmgr groups
 
         for r in bad:
@@ -431,6 +576,13 @@ class SystemDepsDialog(QDialog):
             if not argv:
                 skipped.append(r.check.name)
                 continue
+            if not _is_user_run(argv) and _running_in_container():
+                # Same guard as _DepRow: never batch a fabricated install line
+                # for a dep that actually needs to land on an immutable host.
+                script = _immutable_host_script(self._host_distro_id)
+                if script:
+                    immutable_blocked.append(r.check.name)
+                    continue
             head = argv[0]
             if _is_user_run(argv):
                 # asm-setup / asm-cli / systemctl --user / paru / pip --user —
@@ -468,11 +620,18 @@ class SystemDepsDialog(QDialog):
             else:
                 batches.append([mgr, "install", "-y", *pkgs])
 
+        notices = []
         if skipped:
-            self._status_lbl.setText(
-                f"No install path on this distro for: {', '.join(skipped)} — "
-                "use 'Copy cmd' on each row instead."
+            notices.append(
+                I18n.translate('ui', 'sysdeps_no_path_for').format(names=', '.join(skipped))
             )
+        if immutable_blocked:
+            notices.append(
+                I18n.translate('ui', 'sysdeps_immutable_blocked').format(
+                    host=self._host_distro_id or '?', names=', '.join(immutable_blocked))
+            )
+        if notices:
+            self._status_lbl.setText(' '.join(notices))
 
         all_cmds = batches + internals
         if not all_cmds:
@@ -495,31 +654,13 @@ class SystemDepsDialog(QDialog):
         with `pacman -Syy` prepended to the elevated batch (_mirror_retry
         guards against a second retry loop).
         """
-        if not shutil.which("pkexec"):
-            # Inside a distrobox/toolbox container, installing polkit here
-            # would not help: pkexec in the container cannot elevate on the
-            # host, and that is where these packages belong. Telling people to
-            # install polkit sent a Bazzite user down that path with every
-            # button silently doing nothing.
-            if _running_in_container():
-                self._status_lbl.setText(
-                    "Running inside a container — system packages have to be installed "
-                    "from the host. Use 'Copy cmd' and run each line in a host terminal "
-                    "(or prefix it with distrobox-host-exec)."
-                )
-            else:
-                self._status_lbl.setText(
-                    "pkexec not found — install polkit, or copy each command manually."
-                )
-            return
-
-        self._set_busy(True)
-        self._status_lbl.setText(f"Installing: {context}…")
-
-        # Chain commands sequentially via a small shell snippet so we only
-        # raise one pkexec prompt for the whole batch. Internals that don't
-        # need root (asm-setup, asm-cli, paru) run un-elevated AFTER the
-        # pkexec batch.
+        # Split FIRST, before asking anything about pkexec or a container
+        # boundary: ASM helpers, `systemctl --user`, paru and
+        # `pip install --user` (#175) must run un-elevated as the invoking
+        # user regardless of where we are, and a batch made up only of those
+        # (e.g. a lone `asm-cli` command) never touches root or the host at
+        # all — gating it on either question would just be a new way to
+        # block work that was never going to need them.
         elevated, user_local = [], []
         for argv in commands:
             if _is_user_run(argv):
@@ -532,18 +673,53 @@ class SystemDepsDialog(QDialog):
         if not elevated:
             # Nothing needs pkexec at all (e.g. a lone `asm-cli` command) —
             # hand it straight to the worker thread instead of blocking here
-            # (issue #200).
+            # (issue #200). Still marks the dialog busy: the worker thread
+            # takes a moment (up to the 120s per-command timeout), and the
+            # buttons must reflect that exactly as they do for the elevated
+            # path below.
+            self._set_busy(True)
+            self._status_lbl.setText(f"Installing: {context}…")
             self._start_user_cmds(user_local)
             return
 
+        # From here on there is at least one system-package install, which
+        # needs root — and, inside a container, needs the HOST's root, not
+        # the container's. Ask the container question before even looking
+        # at pkexec: polkit is frequently pulled into a distrobox as a
+        # dependency of something else, so `shutil.which("pkexec")`
+        # succeeding proves nothing about where it will elevate. The old
+        # code checked container-ness only *inside* the "pkexec missing"
+        # branch, so a distrobox with polkit already installed skipped the
+        # container question entirely and ran pkexec inside the container —
+        # elevating nothing on the host, with no message at all.
+        pkexec_prefix = ["pkexec"]
+        if _running_in_container():
+            host_prefix = _host_exec()
+            if not host_prefix:
+                # No way out of the container (distrobox-host-exec missing,
+                # or the host unreachable). Run nothing — a pkexec that
+                # "succeeds" inside the container would look like progress
+                # while installing nothing where it matters.
+                self._status_lbl.setText(I18n.translate('ui', 'sysdeps_container_no_host'))
+                return
+            # Route pkexec itself through distrobox-host-exec so the prompt
+            # — and the actual install — happens on the host.
+            pkexec_prefix = [*host_prefix, "pkexec"]
+        elif not shutil.which("pkexec"):
+            self._status_lbl.setText(I18n.translate('ui', 'sysdeps_no_pkexec'))
+            return
+
+        self._set_busy(True)
+        self._status_lbl.setText(f"Installing: {context}…")
+
         proc = QProcess(self)
         proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
-        proc.setProgram("pkexec")
+        proc.setProgram(pkexec_prefix[0])
         if len(elevated) == 1:
             # The common case: exactly one command to elevate. Pass its argv
             # straight through pkexec — no shell in the privileged path at
             # all, so there is nothing left to quote or get wrong (EXT-3).
-            proc.setArguments(elevated[0])
+            proc.setArguments([*pkexec_prefix[1:], *elevated[0]])
         else:
             # Multiple commands: they still need chaining into one shell so
             # only a single pkexec prompt covers the whole batch (that's the
@@ -552,7 +728,7 @@ class SystemDepsDialog(QDialog):
             # leading `-`, unlike the old ad-hoc "quote only if it contains a
             # space" check (EXT-3).
             chained = " && ".join(shlex.join(a) for a in elevated)
-            proc.setArguments(["sh", "-c", chained])
+            proc.setArguments([*pkexec_prefix[1:], "sh", "-c", chained])
 
         uses_pacman = any(a[0] == "pacman" for a in elevated)
 
