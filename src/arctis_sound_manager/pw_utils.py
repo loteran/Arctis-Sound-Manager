@@ -64,6 +64,9 @@ _LINK_DENIED = "not permitted"
 # cannot succeed is not hammered.
 _PERM_REPAIR_RETRY_S = 60.0
 _perm_repair_attempted: dict[tuple[int, int], float] = {}
+# Same debounce, keyed by node.name, for the Props (set-param) repair below —
+# ids are ephemeral across filter-chain restarts, the name is not.
+_perm_repair_attempted_props: dict[str, float] = {}
 
 
 # Node names ASM creates itself. Only the clients behind these are ever
@@ -162,28 +165,96 @@ def grant_link_permissions(out_port: int, in_port: int) -> bool:
     if not owners:
         return False
 
+    granted = _grant_owners_rwxml(owners, context="link")
+    if granted:
+        logger.warning(
+            "Link was refused by PipeWire; granted link permission to client(s) %s "
+            "and retrying. This system starts our clients restricted (#181).",
+            ", ".join(sorted(owners)),
+        )
+    return granted
+
+
+def _grant_owners_rwxml(owners: set[str], context: str) -> bool:
+    """Raise each of *owners* to ``rwxml`` on every object. Shared by
+    :func:`grant_link_permissions` and :func:`grant_props_permissions`.
+
+    Returns True if at least one owner was actually granted — pw-cli reports
+    a failed grant on stderr while still exiting 0, so the exit status alone
+    is not trusted (that previously made a refused grant look like a success
+    and the caller would retry the link/set-param for nothing).
+    """
     granted = False
     for owner in sorted(owners):
         try:
             r = _pw_run(["pw-cli", "--", "permissions", owner, "-1", "rwxml"],
                         check=False, timeout=5, capture_output=True)
         except Exception as exc:
-            logger.warning("could not grant link permissions to client %s: %r", owner, exc)
+            logger.warning("could not grant %s permissions to client %s: %r",
+                           context, owner, exc)
             continue
         err = (r.stderr or b"").decode(errors="replace").strip()
-        # The exit status alone is not enough: pw-cli reports a command that
-        # failed on stderr and still exits 0, so trusting the status would call
-        # a refused grant a success and retry the link for nothing.
         if r.returncode == 0 and not err:
             granted = True
         else:
             logger.warning("pw-cli permissions %s failed: %s", owner,
                            err or f"exit status {r.returncode}")
+    return granted
+
+
+def grant_props_permissions(node_name: str, dump: list | None = None) -> bool:
+    """Give the client owning *node_name* permission to have its Props set (#181).
+
+    Same failure family as :func:`grant_link_permissions`, on the same class
+    of system (clients coming up ``access=restricted``, seen on SteamOS), but
+    hit from a different call site: ``pw-cli set-param`` on a filter-chain
+    node (the Sonar EQ live-apply path in ``set_filter_controls``) rather than
+    ``pw-link``. Both are refused with the same "Operation not permitted",
+    and the fix that unblocked linking — raising the *owning* client to
+    ``rwxml`` on ``-1`` and retrying — is the one already confirmed against
+    real hardware for the link case; nothing here has been confirmed for
+    Props yet, so treat a persistent failure after this repair as new
+    information, not as proof the repair itself is wrong.
+
+    Only ever raises permissions for a client behind a node ASM created
+    (same guard as the link case) and no more than once a minute per node
+    name, so a system where the grant genuinely does not help is not
+    hammered with retries.
+    """
+    now = time.monotonic()
+    last = _perm_repair_attempted_props.get(node_name)
+    if last is not None and now - last < _PERM_REPAIR_RETRY_S:
+        return False
+    _perm_repair_attempted_props[node_name] = now
+
+    if shutil.which("pw-cli") is None:
+        return False
+    data = dump if dump is not None else _pw_dump()
+
+    if not node_name.startswith(_ASM_OWNED_NODES):
+        logger.debug("not raising Props permissions for %r (not ours)", node_name)
+        return False
+
+    node_id: int | None = None
+    for obj in data:
+        if obj.get("type") != "PipeWire:Interface:Node":
+            continue
+        if ((obj.get("info") or {}).get("props") or {}).get("node.name") == node_name:
+            node_id = obj["id"]
+            break
+    if node_id is None:
+        return False
+
+    owner, _ = _node_owner(node_id, data)
+    if owner is None:
+        return False
+
+    granted = _grant_owners_rwxml({owner}, context="props")
     if granted:
         logger.warning(
-            "Link was refused by PipeWire; granted link permission to client(s) %s "
-            "and retrying. This system starts our clients restricted (#181).",
-            ", ".join(sorted(owners)),
+            "set-param on '%s' was refused by PipeWire; granted permission to "
+            "client %s and retrying. This system starts our clients restricted "
+            "(#181).", node_name, owner,
         )
     return granted
 
@@ -650,11 +721,13 @@ def set_filter_controls(node_name: str, controls: dict[str, float]) -> bool:
     -------
     bool
         True when *node_name* was found in the graph and ``pw-cli set-param``
-        exited 0. False when the node is not currently present (filter-chain
-        not up yet, or these controls belong to a node that does not exist in
-        the running graph) or the call failed — the caller should treat this
-        as "cannot live-apply" and fall back to regenerating the conf +
-        ``ensure_filter_chain_healthy()`` rather than forcing a raw restart.
+        exited 0 (after one permission-repair retry if the first attempt was
+        refused — see :func:`grant_props_permissions`, #181). False when the
+        node is not currently present (filter-chain not up yet, or these
+        controls belong to a node that does not exist in the running graph)
+        or the call still failed after that retry — the caller must treat
+        this as a genuine failure, not silently report success, since the
+        conf on disk and the running graph now disagree.
     """
     if not controls:
         return True
@@ -680,10 +753,25 @@ def set_filter_controls(node_name: str, controls: dict[str, float]) -> bool:
              f'{{ params = [ {params} ] }}'],
             capture_output=True, text=True, timeout=3,
         )
+        err = (r.stderr or "").strip()
+
+        # Same failure family as ensure_loopback_link (#181): on a system
+        # that starts our clients restricted, PipeWire refuses set-param the
+        # same way it refuses pw-link. Raise the owning client's permission
+        # once and retry before giving up — see grant_props_permissions().
+        if r.returncode != 0 and _LINK_DENIED in err.lower():
+            if grant_props_permissions(node_name, data):
+                r = _pw_run(
+                    ["pw-cli", "set-param", str(node_id), "Props",
+                     f'{{ params = [ {params} ] }}'],
+                    capture_output=True, text=True, timeout=3,
+                )
+                err = (r.stderr or "").strip()
+
         if r.returncode != 0:
             logger.warning(
                 "set_filter_controls: pw-cli set-param on '%s' (%s) failed: %s",
-                node_name, params, (r.stderr or "").strip(),
+                node_name, params, err,
             )
             return False
         return True

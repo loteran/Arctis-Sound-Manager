@@ -54,6 +54,7 @@ def _ok(*_a, **_k):
 
 def setup_function():
     pw_utils._perm_repair_attempted.clear()
+    pw_utils._perm_repair_attempted_props.clear()
 
 
 def test_grants_only_the_two_clients_at_the_ends():
@@ -299,3 +300,111 @@ def test_outcome_is_clean_when_the_links_go_through():
 
     assert linked is True
     assert outcome == {'created': 2, 'total': 2, 'denied': 0}, outcome
+
+
+# ---------------------------------------------------------------------------
+# The same repair, hit from the Props (set-param) call site instead of a link
+# (#181, SteamOS EQ/preset case): PipeWire refuses set-param on a filter-chain
+# node the same way it refuses pw-link, on the same class of system.
+# ---------------------------------------------------------------------------
+
+def test_grant_props_permissions_grants_the_owning_client():
+    calls: list[list[str]] = []
+
+    def run(argv, **_k):
+        calls.append(argv)
+        return SimpleNamespace(returncode=0, stdout=b'', stderr=b'')
+
+    with patch.object(pw_utils, '_pw_run', run), \
+         patch.object(pw_utils.shutil, 'which', lambda _: '/usr/bin/pw-cli'):
+        assert pw_utils.grant_props_permissions('effect_input.sonar-game-eq', _dump()) is True
+
+    targets = [c[3] for c in calls if c[:3] == ['pw-cli', '--', 'permissions']]
+    assert targets == ['184']
+    assert all(c[-1] == 'rwxml' for c in calls)
+
+
+def test_grant_props_permissions_leaves_non_asm_nodes_alone():
+    dump = _dump() + [
+        {'id': 400, 'type': 'PipeWire:Interface:Node',
+         'info': {'props': {'node.name': 'alsa_output.usb-SteelSeries_Arctis_7_-00',
+                            'client.id': '56'}}},
+    ]
+    calls: list[list[str]] = []
+
+    def run(argv, **_k):
+        calls.append(argv)
+        return SimpleNamespace(returncode=0, stdout=b'', stderr=b'')
+
+    with patch.object(pw_utils, '_pw_run', run), \
+         patch.object(pw_utils.shutil, 'which', lambda _: '/usr/bin/pw-cli'):
+        assert pw_utils.grant_props_permissions(
+            'alsa_output.usb-SteelSeries_Arctis_7_-00', dump) is False
+
+    assert calls == [], "a client ASM does not own must never be granted anything"
+
+
+def test_grant_props_permissions_respects_cooldown():
+    calls: list[list[str]] = []
+
+    def run(argv, **_k):
+        calls.append(argv)
+        return SimpleNamespace(returncode=0, stdout=b'', stderr=b'')
+
+    with patch.object(pw_utils, '_pw_run', run), \
+         patch.object(pw_utils.shutil, 'which', lambda _: '/usr/bin/pw-cli'):
+        assert pw_utils.grant_props_permissions('effect_input.sonar-game-eq', _dump()) is True
+        first = len(calls)
+        assert pw_utils.grant_props_permissions('effect_input.sonar-game-eq', _dump()) is False
+        assert len(calls) == first, 'second attempt must not re-run pw-cli'
+
+
+def test_set_filter_controls_retries_after_permission_repair():
+    """The live-apply path used by every preset click / EQ slider drag: a
+    set-param refused on permissions must be retried once, exactly like a
+    refused pw-link, instead of being reported as a failed apply."""
+    set_param_calls: list[list[str]] = []
+    grant_calls: list[list[str]] = []
+
+    def run(argv, **_k):
+        if argv[:2] == ['pw-cli', 'set-param']:
+            set_param_calls.append(argv)
+            if len(set_param_calls) == 1:
+                # set_filter_controls runs pw-cli with text=True.
+                return SimpleNamespace(
+                    returncode=1, stdout='',
+                    stderr='Error: set-param failed: Operation not permitted')
+            return SimpleNamespace(returncode=0, stdout='', stderr='')
+        grant_calls.append(argv)
+        return SimpleNamespace(returncode=0, stdout=b'', stderr=b'')
+
+    with patch.object(pw_utils, '_pw_dump', _dump), \
+         patch.object(pw_utils, '_pw_run', run), \
+         patch.object(pw_utils.shutil, 'which', lambda _: '/usr/bin/pw-cli'):
+        ok = pw_utils.set_filter_controls('effect_input.sonar-game-eq', {'bq0:Gain': 3.0})
+
+    assert ok is True
+    assert len(set_param_calls) == 2, 'must retry set-param exactly once after the repair'
+    assert any(c[:3] == ['pw-cli', '--', 'permissions'] for c in grant_calls)
+
+
+def test_set_filter_controls_gives_up_when_repair_does_not_help():
+    """When granting the owning client changes nothing, set_filter_controls
+    must report the genuine failure rather than retry forever or lie."""
+    set_param_calls: list[list[str]] = []
+
+    def run(argv, **_k):
+        if argv[:2] == ['pw-cli', 'set-param']:
+            set_param_calls.append(argv)
+            return SimpleNamespace(
+                returncode=1, stdout='',
+                stderr='Error: set-param failed: Operation not permitted')
+        return SimpleNamespace(returncode=1, stdout=b'', stderr=b'denied')
+
+    with patch.object(pw_utils, '_pw_dump', _dump), \
+         patch.object(pw_utils, '_pw_run', run), \
+         patch.object(pw_utils.shutil, 'which', lambda _: '/usr/bin/pw-cli'):
+        ok = pw_utils.set_filter_controls('effect_input.sonar-game-eq', {'bq0:Gain': 3.0})
+
+    assert ok is False
+    assert len(set_param_calls) == 1, 'a failed grant must not be followed by a retry'

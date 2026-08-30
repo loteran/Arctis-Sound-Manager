@@ -258,3 +258,63 @@ def test_apply_worker_spatial_toggle_skips_restart(monkeypatch, tmp_path):
     assert results == [True]
     assert restart_calls == [], "a Spatial Audio toggle must not restart filter-chain"
     assert ("game",) in link_calls, "toggle must move the ASM-owned EQ→target link"
+
+
+def test_apply_worker_live_apply_refused_reports_failure(monkeypatch, tmp_path):
+    """#181 (Props variant): when set_filter_controls() cannot push the new
+    values to a node that IS present in the graph (e.g. PipeWire still
+    refuses set-param after grant_props_permissions()'s retry), the worker
+    must heal the links but report failure — not claim "Applied" while the
+    running graph and the on-disk conf disagree."""
+    _prepare_conf_dir(monkeypatch, tmp_path)
+    _stub_settings(monkeypatch)
+
+    bands = [EqBand(freq=100, gain=2.0, q=0.7, type="peakingEQ", enabled=True)]
+    stp.generate_sonar_eq_conf("chat", bands, 0.0, 0.0, 0.0)
+
+    restart_calls = []
+    monkeypatch.setattr(sp.sc, "restart", lambda *a, **kw: restart_calls.append(a) or True)
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.set_filter_controls",
+        lambda node, controls: False,
+    )
+    monkeypatch.setattr("arctis_sound_manager.pw_utils.pw_node_exists", lambda name, data=None: True)
+    healed = []
+    monkeypatch.setattr(sp, "ensure_filter_chain_healthy", lambda *a, **kw: healed.append(True))
+
+    worker = sp._ApplyWorker("chat", bands, 3.0, 0.0, 0.0)
+    results = []
+    worker.done.connect(lambda ok: results.append(ok))
+    worker.run()
+
+    assert results == [False], "a refused live-apply on a present node must not report success"
+    assert restart_calls == [], "still no raw restart — healing only"
+    assert healed == [True]
+
+
+def test_apply_worker_live_apply_node_missing_reports_success(monkeypatch, tmp_path):
+    """Same refusal, but the node genuinely is not up yet (filter-chain still
+    starting): this is the benign case the heal-instead-of-restart path was
+    written for, and it must keep reporting success."""
+    _prepare_conf_dir(monkeypatch, tmp_path)
+    _stub_settings(monkeypatch)
+
+    bands = [EqBand(freq=100, gain=2.0, q=0.7, type="peakingEQ", enabled=True)]
+    stp.generate_sonar_eq_conf("chat", bands, 0.0, 0.0, 0.0)
+
+    restart_calls = []
+    monkeypatch.setattr(sp.sc, "restart", lambda *a, **kw: restart_calls.append(a) or True)
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.set_filter_controls",
+        lambda node, controls: False,
+    )
+    monkeypatch.setattr("arctis_sound_manager.pw_utils.pw_node_exists", lambda name, data=None: False)
+    monkeypatch.setattr(sp, "ensure_filter_chain_healthy", lambda *a, **kw: None)
+
+    worker = sp._ApplyWorker("chat", bands, 3.0, 0.0, 0.0)
+    results = []
+    worker.done.connect(lambda ok: results.append(ok))
+    worker.run()
+
+    assert results == [True]
+    assert restart_calls == []

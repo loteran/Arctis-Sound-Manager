@@ -623,15 +623,25 @@ class _ApplyWorker(QThread):
                             ensure_micro_capture_link()
                         self.done.emit(True)
                         return
-                    # A control could not be pushed — most likely the node is
-                    # not in the graph yet (filter-chain not up), not a real
-                    # crash. Heal instead of forcing a raw restart; the new
-                    # conf is already on disk and will be picked up once the
-                    # service is (re)started.
+                    # A control could not be pushed. Two different situations
+                    # land here and they are not equally benign:
+                    #  - the node is not in the graph yet (filter-chain not
+                    #    up) — heal, the new conf is already on disk and will
+                    #    be picked up once the service is (re)started.
+                    #  - the node IS present but PipeWire refused set-param
+                    #    even after grant_props_permissions()'s repair retry
+                    #    (#181) — the running graph and the conf on disk now
+                    #    disagree, and nothing here will make that converge
+                    #    on its own. Reporting success would be the exact bug
+                    #    reported against SteamOS: presets/EQ look applied in
+                    #    the GUI while the headset keeps playing the old curve.
+                    from arctis_sound_manager.pw_utils import pw_node_exists
+                    node_missing = not pw_node_exists(sink_name)
                     log.warning(
                         "_ApplyWorker: live-apply could not reach channel=%s "
-                        "(filter-chain node missing) — healing instead of a "
-                        "raw restart", self._channel,
+                        "(filter-chain node %s) — healing instead of a raw "
+                        "restart", self._channel,
+                        "missing" if node_missing else "present but refused",
                     )
                     ensure_filter_chain_healthy()
                     if self._channel in ("game", "media", "aux"):
@@ -640,7 +650,7 @@ class _ApplyWorker(QThread):
                     elif self._channel == "micro":
                         from arctis_sound_manager.sonar_to_pipewire import ensure_micro_capture_link
                         ensure_micro_capture_link()
-                    self.done.emit(True)
+                    self.done.emit(node_missing)
                     return
                 # else: a real structural change (band added/removed/retyped,
                 # preset switch, spatial/channel-count change, …) — fall
