@@ -26,7 +26,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QProcess, QThread, Signal
+from PySide6.QtCore import Qt, QProcess, QThread, QTimer, Signal
 from PySide6.QtGui import QClipboard, QGuiApplication
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -54,6 +54,19 @@ from arctis_sound_manager.system_deps_checker import (
 from arctis_sound_manager.utils import project_version
 
 log = logging.getLogger(__name__)
+
+
+def _running_in_container() -> bool:
+    """distrobox/toolbox/docker, as the bug report already detects it.
+
+    Imported lazily and defensively for the same reason systemd.py does it:
+    this must never be the thing that stops the dialog from opening.
+    """
+    try:
+        from arctis_sound_manager.bug_reporter import _detect_container_env
+        return _detect_container_env() != 'native'
+    except Exception:
+        return False
 
 
 def _is_user_run(argv: list[str] | None) -> bool:
@@ -238,10 +251,10 @@ class _DepRow(QFrame):
             _btn_ss(_theme.c('BG_BUTTON'), _theme.c('TEXT_PRIMARY'), _theme.c('BG_BUTTON_HOVER'))
         )
         copy_btn.setEnabled(argv is not None)
-        copy_btn.clicked.connect(lambda: self._copy_command(argv))
+        copy_btn.clicked.connect(lambda: self._copy_command(argv, copy_btn))
         layout.addWidget(copy_btn)
 
-    def _copy_command(self, argv: list[str] | None) -> None:
+    def _copy_command(self, argv: list[str] | None, button: QPushButton | None = None) -> None:
         if not argv:
             return
         # shlex.join quotes each argument, so multi-word commands like
@@ -253,7 +266,19 @@ class _DepRow(QFrame):
         # ready to paste into a terminal. Skip for anything that runs as the
         # user (ASM helpers, systemctl --user, paru, pip --user — #175).
         line = cmd if _is_user_run(argv) else "sudo " + cmd
+        # Under Wayland the clipboard belongs to the focused window: a
+        # compositor drops setText() from a window that does not have keyboard
+        # focus, silently. This dialog used to open behind the main window
+        # (fixed in scripts/gui.py), and "Copy cmd" then did nothing at all
+        # with no error anywhere — reported on Bazzite. Claim focus first.
+        self.activateWindow()
         QGuiApplication.clipboard().setText(line, QClipboard.Mode.Clipboard)
+        # And say so. Without a visible acknowledgement there is no way to tell
+        # a copy that worked from one the compositor refused.
+        if button is not None:
+            button.setText(I18n.translate('ui', 'copy_cmd_done'))
+            QTimer.singleShot(
+                1500, lambda: button.setText(I18n.translate('ui', 'copy_cmd')))
 
 
 class SystemDepsDialog(QDialog):
@@ -471,9 +496,21 @@ class SystemDepsDialog(QDialog):
         guards against a second retry loop).
         """
         if not shutil.which("pkexec"):
-            self._status_lbl.setText(
-                "pkexec not found — install polkit, or copy each command manually."
-            )
+            # Inside a distrobox/toolbox container, installing polkit here
+            # would not help: pkexec in the container cannot elevate on the
+            # host, and that is where these packages belong. Telling people to
+            # install polkit sent a Bazzite user down that path with every
+            # button silently doing nothing.
+            if _running_in_container():
+                self._status_lbl.setText(
+                    "Running inside a container — system packages have to be installed "
+                    "from the host. Use 'Copy cmd' and run each line in a host terminal "
+                    "(or prefix it with distrobox-host-exec)."
+                )
+            else:
+                self._status_lbl.setText(
+                    "pkexec not found — install polkit, or copy each command manually."
+                )
             return
 
         self._set_busy(True)
