@@ -300,6 +300,49 @@ def main():
 
     server.newConnection.connect(_on_new_connection)
 
+    # ── Startup dialogs: one at a time, and in front ─────────────────────────
+    # Every dialog below is created without a parent — at 300ms the main window
+    # may not exist yet — and an unparented dialog is exactly what KDE/Wayland
+    # and GNOME hand to focus-stealing prevention: it opens *behind* the main
+    # window. ASM then looks completely frozen, because it is waiting on a
+    # modal nobody can see. Two people reported that as their first contact
+    # with ASM (discussion #17), one of them force-killing the GUI over it.
+    #
+    # Two things were wrong. The dialogs never asked for the foreground, and
+    # they were scheduled to collide: exec() runs a nested event loop, so the
+    # other timers keep firing while one is up, and the udev (2500ms) and deps
+    # (2500ms) dialogs stack modals on top of whatever is already open.
+    #
+    # So: queue them, run one at a time, and raise each one once it is mapped
+    # (raise_() before the window exists does nothing, hence the 0ms timer
+    # firing from inside exec()'s own loop).
+    _dialog_queue: list = []
+    _dialog_busy: list = []
+
+    def _exec_foreground(dlg) -> int:
+        def _to_front() -> None:
+            dlg.raise_()
+            dlg.activateWindow()
+        QTimer.singleShot(0, _to_front)
+        return dlg.exec()
+
+    def _drain_dialogs() -> None:
+        if _dialog_busy:
+            return
+        _dialog_busy.append(True)
+        try:
+            while _dialog_queue:
+                _dialog_queue.pop(0)()
+        finally:
+            _dialog_busy.clear()
+
+    def _queue_dialog(delay_ms: int, show) -> None:
+        """Show `show` after delay_ms, once every earlier dialog is closed."""
+        def _due() -> None:
+            _dialog_queue.append(show)
+            _drain_dialogs()
+        QTimer.singleShot(delay_ms, _due)
+
     # ── First-run setup (pipx installs that never ran asm-setup) ──────────────
     # Distro packages (deb/rpm/AUR) install /etc/xdg/autostart/asm-first-run.desktop
     # which auto-runs asm-setup on first login. Pipx installs don't get that, so
@@ -311,16 +354,16 @@ def main():
     if setup_was_missing:
         from arctis_sound_manager.gui.first_run_dialog import FirstRunDialog
         def _first_run():
-            FirstRunDialog().exec()
-        QTimer.singleShot(300, _first_run)
+            _exec_foreground(FirstRunDialog())
+        _queue_dialog(300, _first_run)
 
     # ── Crash report from previous session ────────────────────────────────────
     crash = read_crash_report()
     if crash:
         from arctis_sound_manager.gui.report_dialog import ReportBugDialog
         def _show_crash():
-            ReportBugDialog(traceback_str=crash.get('traceback'), is_crash=True).exec()
-        QTimer.singleShot(1500, _show_crash)
+            _exec_foreground(ReportBugDialog(traceback_str=crash.get('traceback'), is_crash=True))
+        _queue_dialog(1500, _show_crash)
 
     # ── udev rules check ──────────────────────────────────────────────────────
     # Run AFTER the first-run dialog has had time to install rules (delay 2500ms
@@ -334,7 +377,7 @@ def main():
             return
         if status == 'missing':
             from arctis_sound_manager.gui.udev_dialog import UdevRulesDialog
-            UdevRulesDialog().exec()
+            _exec_foreground(UdevRulesDialog())
         elif status == 'outdated':
             # Rules file exists but new device YAMLs added PIDs not yet in it.
             # Silently re-write — one pkexec prompt from the OS, no Qt dialog.
@@ -345,17 +388,16 @@ def main():
                 subprocess.run([cli, 'udev', 'write-rules', '--force', '--reload'], check=False)
             else:
                 from arctis_sound_manager.gui.udev_dialog import UdevRulesDialog
-                UdevRulesDialog().exec()
-    QTimer.singleShot(udev_delay_ms, _check_udev)
+                _exec_foreground(UdevRulesDialog())
+    _queue_dialog(udev_delay_ms, _check_udev)
 
     # ── Telemetry consent (first launch only) ─────────────────────────────────
     from arctis_sound_manager.telemetry import get_consent, set_consent
     if get_consent() is None:
         from arctis_sound_manager.gui.telemetry_dialog import TelemetryConsentDialog
         def _ask_telemetry():
-            dlg = TelemetryConsentDialog()
-            set_consent(dlg.exec() == QDialog.Accepted)
-        QTimer.singleShot(2000, _ask_telemetry)
+            set_consent(_exec_foreground(TelemetryConsentDialog()) == QDialog.Accepted)
+        _queue_dialog(2000, _ask_telemetry)
 
     # ── System deps self-healing dialog (Phase 4 of ASM_PLAN_DEPS_CHECK) ──
     # Re-runs the system_deps_checker registry shared with --verify-setup;
@@ -368,8 +410,8 @@ def main():
             SystemDepsDialog, should_show_dialog,
         )
         if should_show_dialog():
-            SystemDepsDialog().exec()
-    QTimer.singleShot(2500, _check_deps)
+            _exec_foreground(SystemDepsDialog())
+    _queue_dialog(2500, _check_deps)
 
     # -- Preset sync (new Sonar presets added since install) ------------------
     def _announce_new_presets(filenames: list, versions: list) -> None:
