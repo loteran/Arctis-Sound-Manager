@@ -968,6 +968,32 @@ def _node_ports(data: list, node_id: int, direction: str) -> dict[str, int]:
 # relative order matters (not the exact set of names PipeWire may ever emit).
 _CANONICAL_CHANNEL_ORDER = ("FL", "FR", "FC", "LFE", "RL", "RR", "SL", "SR", "RC", "MONO")
 
+#: Pairs whose positional fallback has already been reported, so it is said
+#: once instead of on every watchdog pass.
+#:
+#: The fallback is a property of two nodes, not of a pass: an 8ch positioned
+#: source into an AUX-named pro-audio sink resolves positionally the first
+#: time and every time after. Logged unconditionally, it produced three or four
+#: INFO lines every five seconds for as long as the daemon ran — on a Nova Pro
+#: it is *every* loopback, since the headset's sink names its ports AUX0/AUX1.
+#: `journalctl -n 100` then reaches about two minutes back, so bug reports from
+#: exactly the devices that need investigating carried nothing else: no device
+#: init, no HID error, nothing (#219).
+_POSITIONAL_FALLBACK_SEEN: set[tuple[str, str]] = set()
+
+
+def _log_positional_fallback(what: str, out_name: str, in_name: str,
+                             out_ports, in_ports) -> None:
+    """Say it the first time for this pair, then keep it at debug level."""
+    key = (out_name, in_name)
+    first = key not in _POSITIONAL_FALLBACK_SEEN
+    _POSITIONAL_FALLBACK_SEEN.add(key)
+    logger.log(
+        logging.INFO if first else logging.DEBUG,
+        "%s: positional fallback: '%s' -> '%s' (no shared channel names; out=%s in=%s)",
+        what, out_name, in_name, list(out_ports), list(in_ports),
+    )
+
 
 def _channel_sort_key(channel: str) -> tuple:
     """Deterministic sort key for a PipeWire ``audio.channel`` name.
@@ -1205,10 +1231,8 @@ def ensure_loopback_link(
             # defensive only.
             return False
         if not any(channel in in_ports for channel in out_ports):
-            logger.info(
-                "ensure_loopback_link: positional fallback: '%s' → '%s' (no shared channel names; out=%s in=%s)",
-                playback_name, target_name, list(out_ports), list(in_ports),
-            )
+            _log_positional_fallback("ensure_loopback_link", playback_name,
+                                     target_name, out_ports, in_ports)
 
         out_port_to_channel = {port_id: channel for channel, port_id in out_ports.items()}
 
@@ -1409,10 +1433,8 @@ def ensure_capture_link(
             # all (e.g. a stereo mic feeding a mono capture) — nothing to link.
             return False
         if not any(channel in in_ports for channel in out_ports):
-            logger.info(
-                "ensure_capture_link: positional fallback: '%s' -> '%s' (no shared channel names; out=%s in=%s)",
-                source_name, capture_name, list(out_ports), list(in_ports),
-            )
+            _log_positional_fallback("ensure_capture_link", source_name,
+                                     capture_name, out_ports, in_ports)
 
         out_port_to_channel = {port_id: channel for channel, port_id in out_ports.items()}
 

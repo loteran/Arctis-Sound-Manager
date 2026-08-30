@@ -4,15 +4,18 @@
 """Find out why ASM reads nothing from a headset that is plainly working.
 
 Symptom this exists for: the battery never appears — not in the tray, not on
-the DAC screen — while audio plays perfectly and nothing at all is logged. The
-daemon's GetStatus answers with exactly this and nothing else:
+the DAC screen — while audio plays perfectly and nothing at all is logged. A
+bug report shows it as an empty device status:
 
-    {"headset": {"headset_power_status": {"value": "online", "type": "label"}}}
+    ## Device status (what the daemon decodes)
+    {}
 
-That payload is a *fallback* ASM injects when it has parsed nothing. It is not
-a reading. So the real question is where, between the device and the parser,
-the status is being lost — and the daemon cannot tell you, because a read that
-returns nothing is indistinguishable from an idle device.
+Until 1.4.10 that same state answered "online" instead, from a fallback ASM
+injected when it had parsed nothing — a claim, never a reading, and the reason
+#198 took three rounds of questions. The fallback is gone; the question it hid
+is not. Where, between the device and the parser, is the status being lost?
+The daemon cannot tell you: a read that returns nothing is indistinguishable
+from an idle device.
 
 This walks the same path the daemon walks, one step at a time, and says what
 happened at each. The steps are ordered so that the first failure *is* the

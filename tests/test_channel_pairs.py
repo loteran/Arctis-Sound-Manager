@@ -94,3 +94,55 @@ class TestResolveChannelPairs:
         assert _resolve_channel_pairs(out_ports, in_ports) == [
             (11, 202), (12, 203), (13, 201),
         ]
+
+
+class TestPositionalFallbackLogVolume:
+    """The fallback is a property of two nodes, not of a watchdog pass (#219).
+
+    On a Nova Pro the headset's sink names its ports AUX0/AUX1, so *every*
+    loopback resolves positionally, on every pass. Logged unconditionally at
+    INFO that is three or four lines every five seconds forever — and since a
+    bug report carries `journalctl -n 100`, it reached about two minutes back
+    and contained nothing else. The devices that most need investigating were
+    the ones whose reports said the least.
+    """
+
+    def setup_method(self) -> None:
+        from arctis_sound_manager import pw_utils
+
+        pw_utils._POSITIONAL_FALLBACK_SEEN.clear()
+
+    def test_first_time_for_a_pair_is_said_out_loud(self, caplog) -> None:
+        from arctis_sound_manager.pw_utils import _log_positional_fallback
+
+        with caplog.at_level("DEBUG"):
+            _log_positional_fallback("ensure_loopback_link", "src", "dst",
+                                     {"FL": 1, "FR": 2}, {"AUX0": 3, "AUX1": 4})
+
+        assert [r.levelname for r in caplog.records] == ["INFO"]
+        message = caplog.records[0].getMessage()
+        assert "src" in message and "dst" in message
+        assert "FL" in message and "AUX0" in message, "the ports are the point of the line"
+
+    def test_every_pass_after_the_first_drops_to_debug(self, caplog) -> None:
+        from arctis_sound_manager.pw_utils import _log_positional_fallback
+
+        with caplog.at_level("DEBUG"):
+            for _ in range(200):    # ~17 minutes of watchdog passes
+                _log_positional_fallback("ensure_loopback_link", "src", "dst",
+                                         {"FL": 1}, {"AUX0": 3})
+
+        levels = [r.levelname for r in caplog.records]
+        assert levels.count("INFO") == 1
+        assert levels.count("DEBUG") == 199
+
+    def test_a_different_pair_is_still_worth_saying(self, caplog) -> None:
+        from arctis_sound_manager.pw_utils import _log_positional_fallback
+
+        with caplog.at_level("DEBUG"):
+            _log_positional_fallback("ensure_loopback_link", "game", "sink",
+                                     {"FL": 1}, {"AUX0": 3})
+            _log_positional_fallback("ensure_capture_link", "mic", "micro-eq",
+                                     {"AUX0": 1}, {"MONO": 3})
+
+        assert [r.levelname for r in caplog.records] == ["INFO", "INFO"]
