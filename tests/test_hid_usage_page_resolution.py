@@ -283,3 +283,33 @@ def test_the_profiles_that_regressed_declare_the_page_their_hardware_answers():
             seen += 1
             assert page == 0xFFC0, config.name
     assert seen == 2, "both profiles should be loaded"
+
+
+def test_no_profile_declares_the_page_that_belongs_to_the_sync_interface():
+    """0xff00 in this field is the signature of the 1.4.10 mistake.
+
+    Every `_tx` specification in the SteelSeries set - the dongles and DACs
+    ASM actually drives - carries the same pair:
+
+        (usage-page 0xffc0)
+        (sync-interface 0xff00 0x0001 5)
+
+    checked across the Arctis 7+, the GameBuds, and the whole Nova 3/4/5/7/
+    Pro/Elite/Omni family. The command interface answers 0xffc0; 0xff00 is
+    the page of the interface that pushes events, on a different interface
+    number. Reading the second line for the first is what shipped 1.4.10 and
+    cost an Arctis 7+ and a set of GameBuds their status (#216, #217).
+
+    0xff00 is a real usage page on some older headsets' own `_rx` files, so
+    this is a statement about the profiles ASM ships, not about the value.
+    A profile that genuinely needs it should say which spec file and which
+    `(usage-page ...)` line it came from, and update this test.
+    """
+    from arctis_sound_manager.config import load_device_configurations
+
+    offenders = [c.name for c in load_device_configurations()
+                 if getattr(c, "hid_usage_page", None) == 0xFF00]
+
+    assert not offenders, (
+        "these profiles name the sync interface's page as their command "
+        f"interface's: {offenders}")
