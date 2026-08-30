@@ -25,6 +25,14 @@ device:
 
   status:
     request: 0x0618
+    # The dial's position is not in the battery reply, and this dongle does not
+    # push it: SteelSeries' own spec declares `game_chat_status` as a read —
+    # out [0x06, 0x24], back [0x06, 0x24, game, chat]. device_init asked for it
+    # once and nothing asked again, so the mix ASM displayed (and applied to
+    # the channel volumes) was frozen at wherever the dial stood when the
+    # daemon started, and stayed there however far the user turned it (#220).
+    extra_requests:
+      - 0x0624
     response_mapping:
       - starts_with: 0x0618
         headset_battery_charge: 0x02

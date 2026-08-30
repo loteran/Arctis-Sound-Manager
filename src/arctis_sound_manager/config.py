@@ -4,7 +4,7 @@
 
 import inspect
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Literal
 
@@ -200,6 +200,19 @@ class ConfigStatus:
     request: int
     response_mapping: list[ConfigStatusResponseMapping]
     representation: dict[str, list[str]]
+    #: Further read commands the status poll must send alongside `request`.
+    #:
+    #: A device whose status does not fit in one reply needs one query per
+    #: reply, and only the profile knows which. The Arctis 7 keeps its
+    #: ChatMix dial behind its own `game_chat_status` read (spec: out
+    #: [0x06, 0x24], back [0x06, 0x24, game, chat]) — asking for the battery
+    #: never tells you where the dial is. Asked once at init and never again,
+    #: the mix ASM showed was frozen at whatever the dial read when the daemon
+    #: started (#220).
+    #:
+    #: Only for commands the device answers on demand. A value that arrives as
+    #: an unsolicited push (mic mute on most families) needs nothing here.
+    extra_requests: list[int] = field(default_factory=list)
 
     def __post_init__(self):
         raw_mappings: list[dict[str, int]] = self.response_mapping # pyright: ignore[reportAssignmentType]
@@ -404,6 +417,7 @@ class DeviceConfiguration:
                 request=raw_status.get('request', 0),
                 response_mapping=raw_status.get('response_mapping', []),
                 representation=raw_status.get('representation', {}),
+                extra_requests=[int(r) for r in raw_status.get('extra_requests', [])],
             )
         else:
             self.status = None

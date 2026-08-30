@@ -3897,6 +3897,15 @@ class CoreEngine:
         
         endpoint = self.get_command_endpoint_address()
         self.send_command([self.device_config.status.request], endpoint)
+        # Whatever the main request does not answer. Each extra query is one
+        # more reply on the listen loop, mapped by its own `starts_with`.
+        # Failing one must not cost the others, nor the poll's success: the
+        # battery reply already landed by the time we get here.
+        for request in self.device_config.status.extra_requests:
+            try:
+                self.send_command([request], endpoint)
+            except usb.core.USBError as e:
+                self.logger.debug("Extra status request 0x%04x failed: %r", request, e)
 
     # Xrun self-diagnostics (#183) ──────────────────────────────────────────
     #
