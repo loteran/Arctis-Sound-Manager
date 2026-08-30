@@ -14,6 +14,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from arctis_sound_manager import update_checker as uc
 from arctis_sound_manager.update_checker import (
     PACKAGE_MANAGER_COMMANDS,
     InstallMethod,
@@ -443,3 +444,83 @@ def test_pacman_repo_setup_can_be_run_twice():
     pacman = repo_setup_command(InstallMethod.PACMAN)
     assert "grep -q" in pacman, \
         f"nothing stops the repo block being appended twice:\n{pacman}"
+
+
+# ── The repository, not GitHub, decides what is offered (discussion #140) ────
+#
+# COPR lagged a release by ~7 hours: the banner announced 1.4.12 while the
+# user's dnf could still only install 1.4.11, so "Update now" ran an upgrade
+# that found nothing and the banner came back.
+
+def test_repo_available_version_rpm():
+    with mock.patch("subprocess.run", side_effect=_route({"dnf": _ok(stdout="1.4.11\n")})):
+        assert uc.repo_available_version(InstallMethod.RPM, "arctis-sound-manager") == "1.4.11"
+
+
+def test_repo_available_version_apt_reads_candidate():
+    policy = (
+        "arctis-sound-manager:\n"
+        "  Installed: 1.4.11-1\n"
+        "  Candidate: 1.4.12-1\n"
+        "  Version table:\n"
+    )
+    with mock.patch("subprocess.run", side_effect=_route({"apt-cache": _ok(stdout=policy)})):
+        assert uc.repo_available_version(InstallMethod.APT, "arctis-sound-manager") == "1.4.12"
+
+
+def test_repo_available_version_apt_none_candidate():
+    """A package no repository supplies must read as unknown, not as a version."""
+    policy = "arctis-sound-manager:\n  Installed: 1.4.11-1\n  Candidate: (none)\n"
+    with mock.patch("subprocess.run", side_effect=_route({"apt-cache": _ok(stdout=policy)})):
+        assert uc.repo_available_version(InstallMethod.APT, "arctis-sound-manager") is None
+
+
+def test_repo_available_version_pacman_strips_pkgrel_and_epoch():
+    out = "Repository : arctis-sound-manager\nName : arctis-sound-manager\nVersion : 1:1.4.12-1\n"
+    with mock.patch("subprocess.run", side_effect=_route({"pacman": _ok(stdout=out)})):
+        assert uc.repo_available_version(InstallMethod.PACMAN, "arctis-sound-manager") == "1.4.12"
+
+
+def test_repo_available_version_unknown_when_query_fails():
+    """A failed query must not read as 'nothing available' — that would hide
+    a real update behind a transient error."""
+    with mock.patch("subprocess.run", side_effect=_route({"dnf": _fail()})):
+        assert uc.repo_available_version(InstallMethod.RPM, "arctis-sound-manager") is None
+
+
+def test_repo_available_version_unsupported_method():
+    assert uc.repo_available_version(InstallMethod.PIPX, "arctis-sound-manager") is None
+    assert uc.repo_available_version(InstallMethod.PIP, "arctis-sound-manager") is None
+
+
+def _offer(monkeypatch, current, repo_version, github=("9.9.9", "u", "w")):
+    """Drive UpdateCheckWorker._check without threads, capturing what it emits."""
+    w = uc.UpdateCheckWorker(current)
+    monkeypatch.setattr(uc, "detect_all_install_methods", lambda: [InstallMethod.RPM])
+    monkeypatch.setattr(uc, "repo_available_version", lambda *a, **k: repo_version)
+    monkeypatch.setattr(w, "_github_offer", lambda: github)
+    emitted = []
+    monkeypatch.setattr(w, "result", SimpleNamespace(emit=lambda *a: emitted.append(a)))
+    w._check()
+    return emitted[0]
+
+
+def test_no_banner_while_the_repo_still_lags_the_release(monkeypatch):
+    """The exact #140 window: 1.4.12 is tagged, dnf still only offers 1.4.11,
+    and 1.4.11 is what is installed. Nothing to offer."""
+    assert _offer(monkeypatch, "1.4.11", "1.4.11", github=("1.4.12", "u", "w")) == ("", "", "")
+
+
+def test_banner_appears_once_the_repo_catches_up(monkeypatch):
+    version, url, wheel = _offer(monkeypatch, "1.4.11", "1.4.12", github=("1.4.12", "u", "w"))
+    assert version == "1.4.12"
+    assert url.endswith("/releases/tag/v1.4.12")
+    # A repo install upgrades through its manager, never the wheel installer.
+    assert wheel == ""
+
+
+def test_falls_back_to_github_when_no_repo_can_answer(monkeypatch):
+    """pipx / pip / AUR: no distro repository tracks the package, so the
+    upstream tag is the right — and only — answer."""
+    assert _offer(monkeypatch, "1.4.11", None, github=("1.4.12", "u", "w")) \
+        == ("1.4.12", "u", "w")

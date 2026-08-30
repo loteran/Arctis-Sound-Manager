@@ -332,6 +332,107 @@ def upgrade_source_available(method: InstallMethod, pkg: str | None = None) -> b
 
 log = logging.getLogger(__name__)
 
+
+# ── What the user's own repository can actually install ───────────────────────
+#
+# A release exists upstream hours before the repositories that ship it finish
+# rebuilding — COPR lagged a release by roughly seven hours in discussion #140.
+# Announcing GitHub's newest tag during that window offers an update the user's
+# dnf cannot serve: they click "Update now", the upgrade command reports
+# nothing to do, and the banner comes back. What the manager could install
+# right now is the only answer that is actionable, so it is the one ASM asks
+# for. GitHub stays the fallback for installs no distro repository tracks
+# (pipx, pip) and for the AUR, whose PKGBUILD builds from the tag itself.
+
+_REPO_QUERY_TIMEOUT = 10
+
+#: Managers that can be asked which version they would install.
+_AVAILABLE_VERSION_QUERIES = (
+    InstallMethod.RPM, InstallMethod.APT, InstallMethod.PACMAN,
+)
+
+
+def _normalize_pkg_version(raw: str) -> str:
+    """Reduce a distro version string to the upstream version alone.
+
+    Distro versions carry packaging metadata the upstream one does not: apt
+    answers `1.4.12-1` and pacman `1.4.12-1`, either possibly behind an epoch
+    (`1:1.4.12-1`). _parse_version only understands the bare `1.4.12` form and
+    returns None for the rest, which would read as "cannot tell" forever.
+    """
+    raw = raw.strip()
+    if ":" in raw:                      # strip an epoch prefix
+        raw = raw.split(":", 1)[1]
+    return raw.split("-", 1)[0].strip()
+
+
+def _run_query(argv: list[str]) -> str | None:
+    """Run a read-only manager query, or None if it cannot be answered."""
+    try:
+        r = subprocess.run(argv, capture_output=True, text=True,
+                           timeout=_REPO_QUERY_TIMEOUT)
+    except (FileNotFoundError, subprocess.SubprocessError, OSError) as exc:
+        log.debug("repo version query failed (%s): %r", argv[0], exc)
+        return None
+    if r.returncode != 0:
+        return None
+    return r.stdout
+
+
+def repo_available_version(method: InstallMethod, pkg: str | None = None) -> str | None:
+    """The newest version *method* could install right now, or None.
+
+    None means the question has no answer here — an unsupported install
+    method, a manager that isn't present, a package no configured repository
+    carries (a hand-installed .rpm, or an AUR build pacman knows nothing
+    about). The caller must fall back rather than treat it as "no update":
+    reporting nothing available because a query failed would hide real
+    updates.
+
+    Deliberately reads the metadata already on disk — no `--refresh`. This
+    runs on every daily check, and forcing a full metadata re-sync would add
+    seconds to it for a lag that resolves itself within hours anyway.
+    """
+    if method not in _AVAILABLE_VERSION_QUERIES:
+        return None
+    pkg = pkg or installed_package_name(method) or "arctis-sound-manager"
+
+    if method is InstallMethod.RPM:
+        out = _run_query(["dnf", "repoquery", "--quiet", "--available",
+                          "--latest-limit", "1",
+                          "--queryformat", "%{version}", pkg])
+        if not out:
+            return None
+        line = out.strip().splitlines()[-1] if out.strip() else ""
+        return _normalize_pkg_version(line) or None
+
+    if method is InstallMethod.APT:
+        out = _run_query(["apt-cache", "policy", pkg])
+        if not out:
+            return None
+        for line in out.splitlines():
+            key, sep, value = line.strip().partition(":")
+            if sep and key.strip().lower() == "candidate":
+                value = value.strip()
+                # apt prints "(none)" for a package no repository supplies.
+                if not value or value.startswith("("):
+                    return None
+                return _normalize_pkg_version(value) or None
+        return None
+
+    # pacman: only the sync databases answer. An AUR install has no entry, so
+    # this returns None and the GitHub tag — which is what the PKGBUILD builds
+    # from — takes over.
+    out = _run_query(["pacman", "-Si", pkg])
+    if not out:
+        return None
+    for line in out.splitlines():
+        key, sep, value = line.partition(":")
+        if sep and key.strip().lower() == "version":
+            return _normalize_pkg_version(value) or None
+    return None
+
+
 _CACHE_FILE = Path.home() / ".config" / "arctis_manager" / ".update_check_cache"
 _CACHE_TTL_HOURS = 24
 _API_TIMEOUT = 5  # seconds
@@ -402,21 +503,53 @@ class UpdateCheckWorker(QThread):
             self.result.emit("", "", "")
             return
 
-        # Try cache first (skipped when force=True)
+        # The user's own repository decides. Only when it cannot answer — pipx,
+        # pip, an AUR build, a hand-installed package — does the GitHub tag
+        # stand in. See the block above repo_available_version().
+        offered, url, wheel_url = self._repo_offer()
+        if offered is None:
+            offered, url, wheel_url = self._github_offer()
+
+        if not offered:
+            self.result.emit("", "", "")
+            return
+
+        if _version_gt(offered, self._current):
+            self.result.emit(offered, url, wheel_url)
+        else:
+            self.result.emit("", "", "")
+
+    def _repo_offer(self) -> tuple[str | None, str, str]:
+        """What the installed-from repository could give us, live.
+
+        Not cached on purpose: the whole point is to follow the repository as
+        it catches up, and a day-old answer would reinstate the lag this
+        replaces. The queries read local metadata, and this runs off the GUI
+        thread.
+
+        No wheel URL: a repository-managed install upgrades through its
+        manager (package_manager_command), never through the wheel installer.
+        """
+        try:
+            methods = detect_all_install_methods()
+        except Exception as exc:            # noqa: BLE001 — never break the check
+            log.debug("install-method detection failed: %r", exc)
+            return None, "", ""
+
+        for method in methods:
+            version = repo_available_version(method)
+            if version and _parse_version(version):
+                return version, f"https://github.com/{_REPO}/releases/tag/v{version}", ""
+        return None, "", ""
+
+    def _github_offer(self) -> tuple[str | None, str, str]:
+        """The newest upstream tag, cached for a day as before."""
         latest_str, url, wheel_url = (None, "", "") if self._force else self._read_cache()
         if latest_str is None:
             latest_str, url, wheel_url = self._fetch()
             if latest_str:
                 self._write_cache(latest_str, url, wheel_url)
-
-        if not latest_str:
-            self.result.emit("", "", "")
-            return
-
-        if _version_gt(latest_str, self._current):
-            self.result.emit(latest_str, url, wheel_url)
-        else:
-            self.result.emit("", "", "")
+        return latest_str, url, wheel_url
 
     def _read_cache(self) -> tuple[str | None, str, str]:
         if not _CACHE_FILE.exists():
