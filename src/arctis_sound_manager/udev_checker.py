@@ -3,6 +3,8 @@
 
 import logging
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 from arctis_sound_manager.constants import UDEV_RULES_PATHS
@@ -54,6 +56,60 @@ def _pids_in_rules(content: str) -> set[int]:
     return pids
 
 
+def _running_in_container() -> bool:
+    try:
+        from arctis_sound_manager.bug_reporter import _detect_container_env
+        return _detect_container_env() != 'native'
+    except Exception:
+        return False
+
+
+def _local_rules_contents() -> list[tuple[str, str]]:
+    """(path, content) for every rules file readable on this filesystem."""
+    found: list[tuple[str, str]] = []
+    for p in UDEV_RULES_PATHS:
+        path = Path(p)
+        if not path.exists():
+            continue
+        try:
+            found.append((p, path.read_text()))
+        except OSError as e:
+            _logger.warning(f"udev_checker: cannot read {path}: {e!r}")
+    return found
+
+
+def _host_rules_contents() -> list[tuple[str, str]]:
+    """The same files on the host, when ASM runs inside a container.
+
+    A distrobox container has its own /etc, and udev only ever reads the
+    host's. scripts/distrobox/*.sh install the rules there, from the host,
+    which is correct — but this checker looked inside the container and so
+    reported 'missing' on a perfectly good Bazzite install, then offered to
+    fix it by writing to the container's /etc, where nothing would read it.
+
+    Best effort: no distrobox-host-exec, or a call that fails, simply leaves
+    the local answer standing.
+    """
+    if not _running_in_container():
+        return []
+    host_exec = shutil.which('distrobox-host-exec')
+    if host_exec is None:
+        return []
+
+    found: list[tuple[str, str]] = []
+    for p in UDEV_RULES_PATHS:
+        try:
+            result = subprocess.run(
+                [host_exec, 'cat', p],
+                capture_output=True, text=True, timeout=5, check=False)
+        except (OSError, subprocess.SubprocessError) as e:
+            _logger.warning(f"udev_checker: cannot read host rules via distrobox-host-exec: {e!r}")
+            break
+        if result.returncode == 0 and result.stdout.strip():
+            found.append((f'{p} (host)', result.stdout))
+    return found
+
+
 def get_udev_rules_status() -> str:
     """Return the status of the installed udev rules.
 
@@ -67,25 +123,21 @@ def get_udev_rules_status() -> str:
         return 'missing'
 
     any_file_found = False
-    for p in UDEV_RULES_PATHS:
-        path = Path(p)
-        if not path.exists():
-            continue
-        try:
-            content = path.read_text()
-        except OSError as e:
-            _logger.warning(f"udev_checker: cannot read {path}: {e!r}")
-            continue
-        any_file_found = True
-        covered = _pids_in_rules(content)
-        if expected.issubset(covered):
-            return 'ok'
-        missing = sorted(expected - covered)
-        if missing:
-            _logger.info(
-                f"udev_checker: {path} missing PIDs: "
-                + ', '.join(f'0x{pid:04x}' for pid in missing)
-            )
+    # The host is consulted only when the container's own filesystem has not
+    # already answered 'ok', so the subprocess cost lands on the path that was
+    # about to open a dialog anyway.
+    for source in (_local_rules_contents, _host_rules_contents):
+        for label, content in source():
+            any_file_found = True
+            covered = _pids_in_rules(content)
+            if expected.issubset(covered):
+                return 'ok'
+            missing = sorted(expected - covered)
+            if missing:
+                _logger.info(
+                    f"udev_checker: {label} missing PIDs: "
+                    + ', '.join(f'0x{pid:04x}' for pid in missing)
+                )
 
     return 'outdated' if any_file_found else 'missing'
 
