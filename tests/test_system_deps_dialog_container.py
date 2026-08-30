@@ -33,10 +33,10 @@ pyside6 = pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QProcess
 from PySide6.QtGui import QGuiApplication
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QPushButton
 
 from arctis_sound_manager.gui import system_deps_dialog as sdd
-from arctis_sound_manager.system_deps_checker import CheckResult, DepCheck, Severity
+from arctis_sound_manager.system_deps_checker import CheckResult, DepCheck, Severity, Scope
 
 
 @pytest.fixture(scope="module")
@@ -44,7 +44,7 @@ def qt_app():
     return QApplication.instance() or QApplication([])
 
 
-def _make_failing_check(argv: list[str], name: str = "udev rules") -> CheckResult:
+def _make_failing_check(argv: list[str], name: str = "udev rules", *, scope: Scope = Scope.HOST) -> CheckResult:
     return CheckResult(
         check=DepCheck(
             name=name, severity=Severity.BLOCKING, feature="hotplug",
@@ -52,6 +52,7 @@ def _make_failing_check(argv: list[str], name: str = "udev rules") -> CheckResul
             install_commands={
                 "fedora": argv, "debian": argv, "arch": argv, "unknown": argv,
             },
+            scope=scope,
         ),
         ok=False,
     )
@@ -195,6 +196,8 @@ def test_user_run_command_still_works_unelevated_in_container(monkeypatch, qt_ap
 # ── Defect (b): naming and Copy cmd must target the host, not the container ─
 
 def test_copy_cmd_in_container_carries_host_prefix(monkeypatch, qt_app):
+    """HOST-scope checks (like the polkit check used to be for all deps) get
+    the distrobox-host-exec prefix so a pasted command runs on the host."""
     argv = ["dnf", "install", "-y", "polkit"]
     monkeypatch.setattr(sdd, "run_all_checks", lambda: [])
     monkeypatch.setattr(sdd, "_running_in_container", lambda: True)
@@ -203,9 +206,11 @@ def test_copy_cmd_in_container_carries_host_prefix(monkeypatch, qt_app):
     monkeypatch.setattr(sdd, "_host_is_immutable", lambda: False)
 
     dialog = sdd.SystemDepsDialog()
-    row = sdd._DepRow(_make_failing_check(argv), parent=None, host_distro_id="fedora")
+    # Polkit/pkexec is a HOST-scope check — it elevates on the host.
+    check = _make_failing_check(argv, scope=Scope.HOST)
+    row = sdd._DepRow(check, parent=None, host_distro_id="fedora")
     try:
-        row._copy_command(argv)
+        row._copy_command(argv, is_host_scope=True)
         line = QGuiApplication.clipboard().text()
         assert line.startswith("distrobox-host-exec sudo "), line
         assert "dnf install -y polkit" in line
@@ -255,17 +260,27 @@ def test_copy_cmd_native_unchanged(monkeypatch, qt_app):
 # ── Immutable host: never fabricate an rpm-ostree line ──────────────────────
 
 def test_row_hides_install_button_on_immutable_host(monkeypatch, qt_app):
+    """HOST-scope checks (e.g. udev rules) are blocked on an immutable host:
+    offering a fabricated dnf/pacman line would do nothing useful."""
     argv = ["dnf", "install", "-y", "polkit"]
     monkeypatch.setattr(sdd, "run_all_checks", lambda: [])
     monkeypatch.setattr(sdd, "_running_in_container", lambda: True)
     monkeypatch.setattr(sdd, "_host_is_immutable", lambda: True)
+    monkeypatch.setattr(sdd, "_host_exec", lambda: ["distrobox-host-exec"])
 
     dialog = sdd.SystemDepsDialog()
-    row = sdd._DepRow(_make_failing_check(argv), parent=None, host_distro_id="bazzite")
+    # HOST-scope: the immutable guard must fire.
+    check = _make_failing_check(argv, name="pkexec (polkit)", scope=Scope.HOST)
+    row = sdd._DepRow(check, parent=None, host_distro_id="bazzite")
     try:
         assert row.action_btn is None, (
             "must not offer a button that would run a fabricated rpm-ostree "
             "line on an immutable host"
+        )
+        # But Copy cmd must be available so the user can paste the host command.
+        copy_btns = row.findChildren(QPushButton)
+        assert any(b.text() == "Copy cmd" for b in copy_btns), (
+            "must always offer Copy cmd for HOST-scope checks on immutable hosts"
         )
     finally:
         row.deleteLater()
@@ -277,10 +292,11 @@ def test_install_all_skips_immutable_blocked_checks(monkeypatch, qt_app):
     otherwise 'Install all missing' would still batch a pacman/dnf line the
     row itself refused to offer."""
     argv = ["dnf", "install", "-y", "polkit"]
-    check = _make_failing_check(argv, name="polkit")
+    check = _make_failing_check(argv, name="pkexec (polkit)", scope=Scope.HOST)
     monkeypatch.setattr(sdd, "run_all_checks", lambda: [check])
     monkeypatch.setattr(sdd, "_running_in_container", lambda: True)
     monkeypatch.setattr(sdd, "_host_is_immutable", lambda: True)
+    monkeypatch.setattr(sdd, "_host_exec", lambda: ["distrobox-host-exec"])
     monkeypatch.setattr(sdd, "QProcess", _NoSpawnQProcess)
 
     dialog = sdd.SystemDepsDialog()
@@ -288,8 +304,10 @@ def test_install_all_skips_immutable_blocked_checks(monkeypatch, qt_app):
     try:
         dialog._install_all()
         assert _NoSpawnQProcess.start_called is False
-        assert "bazzite" in dialog._status_lbl.text().lower()
-        assert "polkit" in dialog._status_lbl.text()
+        # The status message should mention the blocked check and the host.
+        text = dialog._status_lbl.text().lower()
+        assert "bazzite" in text
+        assert "polkit" in text
     finally:
         dialog.deleteLater()
 
@@ -370,6 +388,39 @@ def test_container_sub_header_admits_unknown_host(monkeypatch, qt_app):
         # Must not claim "arch" as the distro to install on.
         assert "the detected distribution is arch" not in text.lower()
     finally:
+        dialog.deleteLater()
+
+
+def test_container_scope_dep_keeps_button_on_immutable_host(monkeypatch, qt_app):
+    """CONTAINER-scope checks (e.g. pactl) are installed inside the container,
+    which is always writable — immutability of the host is irrelevant. The
+    Install button must stay and the Copy cmd must NOT carry the
+    distrobox-host-exec prefix."""
+    argv = ["pacman", "-S", "--noconfirm", "libpulse"]
+    monkeypatch.setattr(sdd, "run_all_checks", lambda: [])
+    monkeypatch.setattr(sdd, "_running_in_container", lambda: True)
+    monkeypatch.setattr(sdd, "_host_is_immutable", lambda: True)
+
+    dialog = sdd.SystemDepsDialog()
+    # pactl is Scope.CONTAINER (the default) — host immutability must not
+    # affect it.
+    check = _make_failing_check(argv, name="pactl CLI (pulseaudio-utils)", scope=Scope.CONTAINER)
+    row = sdd._DepRow(check, parent=None, host_distro_id="bazzite")
+    try:
+        assert row.action_btn is not None, (
+            "CONTAINER-scope dep must keep the Install button even on an "
+            "immutable host — the container filesystem is writable"
+        )
+        # Copy cmd must NOT carry the distrobox-host-exec prefix for
+        # CONTAINER-scope checks.
+        row._copy_command(argv, is_host_scope=False)
+        line = QGuiApplication.clipboard().text()
+        assert "distrobox-host-exec" not in line, (
+            f"Copy cmd for CONTAINER scope must not carry distrobox-host-exec: {line}"
+        )
+        assert "pacman -S --noconfirm libpulse" in line
+    finally:
+        row.deleteLater()
         dialog.deleteLater()
 
 

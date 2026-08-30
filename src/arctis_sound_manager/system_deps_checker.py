@@ -57,6 +57,27 @@ class Severity(Enum):
     OPTIONAL = "optional"
 
 
+class Scope(Enum):
+    """Which environment a dependency belongs to.
+
+    CONTAINER — the dependency is consumed by ASM's own processes inside the
+                container (Python modules, pactl, pw-* tools). An immutable
+                host does NOT block installing these — the container's
+                package manager is writable even when the host's is not.
+    HOST      — the dependency is consumed by a process on the HOST: udev
+                rules (host's udevd), pkexec (host's polkit agent), LADSPA
+                plugins (host's pipewire filter-chain). These CANNOT be
+                installed from inside a container on an immutable host; the
+                distrobox scripts handle them, or the user must run a command
+                on the host directly.
+
+    The default is CONTAINER so a new DepCheck added without thinking about
+    scope keeps the current behaviour (install inside the container).
+    """
+    CONTAINER = "container"
+    HOST = "host"
+
+
 # Distro IDs we know how to install packages on. Anything else falls back
 # to "copy the install command to the clipboard" mode in the GUI.
 _KNOWN_DISTROS = {
@@ -98,6 +119,11 @@ class DepCheck:
     # Extra step the user must take after the install command runs
     # (e.g. "log out and back in" for a group change).
     user_action: str | None = None
+    # Scope: where the dependency is consumed. See the Scope enum for the rule.
+    # Default is CONTAINER (writable even on an immutable host); HOST marks
+    # deps consumed by host processes (udev rules, pkexec, LADSPA plugins
+    # loaded by host's pipewire).
+    scope: Scope = Scope.CONTAINER
 
 
 @dataclass(frozen=True)
@@ -218,6 +244,79 @@ _LADSPA_DIRS = (
     "/usr/lib/x86_64-linux-gnu/ladspa",
 )
 
+# Cache for host LADSPA listing when running in a container. Populated once
+# per check pass by _host_ladspa_files(), consumed by all LADSPA detect calls.
+_host_ladspa_cache: set[str] | None = None
+
+
+def _running_in_container() -> bool:
+    """Delegates to container.running_in_container() for consistency."""
+    try:
+        from arctis_sound_manager.container import running_in_container
+        return running_in_container()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _host_exec_prefix() -> list[str] | None:
+    """The argv prefix to run a command on the host, or None if unreachable."""
+    try:
+        from arctis_sound_manager.container import host_exec
+        return host_exec()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _host_ladspa_files() -> set[str]:
+    """List of .so filenames found in host LADSPA directories.
+
+    When NOT in a container, returns an empty set (the local filesystem IS
+    the host's, and _find_ladspa_plugin already scans it). When in a container,
+    queries the host via distrobox-host-exec once and caches the result for
+    the duration of the check pass.
+
+    Only system directories are queried on the host; ~/.ladspa is bind-mounted
+    into the container and already visible to the local scan.
+    """
+    global _host_ladspa_cache
+    if not _running_in_container():
+        return set()
+    if _host_ladspa_cache is not None:
+        return _host_ladspa_cache
+
+    prefix = _host_exec_prefix()
+    if not prefix:
+        _host_ladspa_cache = set()
+        return set()
+
+    quoted_dirs = " ".join(repr(d) for d in _LADSPA_DIRS)
+    script = (
+        f"for d in {quoted_dirs}; do "
+        "if [ -d \"$d\" ]; then "
+        "find \"$d\" -maxdepth 1 -type f -name '*.so' -printf '%f\\n' 2>/dev/null; "
+        "fi; "
+        "done"
+    )
+    try:
+        result = subprocess.run(
+            [*prefix, "sh", "-c", script],
+            capture_output=True, text=True, timeout=5, check=False)
+    except (OSError, subprocess.SubprocessError):
+        _host_ladspa_cache = set()
+        return set()
+
+    if result.returncode != 0:
+        _host_ladspa_cache = set()
+        return set()
+    _host_ladspa_cache = {line.strip() for line in result.stdout.splitlines() if line.strip()}
+    return _host_ladspa_cache
+
+
+def _reset_host_ladspa_cache() -> None:
+    """Clear the host LADSPA cache. Called at the start of each check pass."""
+    global _host_ladspa_cache
+    _host_ladspa_cache = None
+
 
 def _ladspa_search_dirs() -> tuple[str, ...]:
     """Full LADSPA search path, honouring the same lookup that pipewire's
@@ -237,8 +336,27 @@ def _ladspa_search_dirs() -> tuple[str, ...]:
 def _find_ladspa_plugin(name_pattern: str) -> str | None:
     """Return the absolute path of the first LADSPA .so matching `name_pattern`,
     or None if not found. `name_pattern` is a filename glob, e.g. `plate_1423.so`
-    or `librnnoise*.so` (rnnoise has different basenames per build)."""
+    or `librnnoise*.so` (rnnoise has different basenames per build).
+
+    In a container, the host's LADSPA plugins are what matters — the host's
+    pipewire loads the filter-chain. This function checks the host's system
+    dirs via distrobox-host-exec first, then falls back to the local scan
+    (which covers ~/.ladspa, bind-mounted and shared between both sides).
+    """
     import fnmatch
+
+    # In a container, the host's system LADSPA dirs are authoritative.
+    # A .so present only in the container and not on the host is a false OK.
+    if _running_in_container():
+        host_files = _host_ladspa_files()
+        for fname in host_files:
+            if fnmatch.fnmatch(fname, name_pattern):
+                # The file exists on the host; report it as found. The exact
+                # path is not needed for the boolean check.
+                return f"(host:{fname})"
+
+    # Local scan (covers ~/.ladspa which is shared, and is the only scan
+    # when not in a container).
     for d in _ladspa_search_dirs():
         p = Path(d)
         if not p.is_dir():
@@ -608,6 +726,13 @@ def _build_checks() -> list[DepCheck]:
             # gate_1410 (mic noise gate) all ship in the same swh-plugins
             # package. A referenced-but-missing .so can SEGV the whole
             # filter-chain (issue #88), so require all three, not just plate.
+            #
+            # HOST scope: the LADSPA plugin is loaded by the HOST's pipewire
+            # filter-chain.service, not by any process inside the container.
+            # When in a container the check must look at the host's LADSPA
+            # directories, not the container's (a .so present only in the
+            # container is a false OK because the host's pipewire won't find
+            # it).
             name="LADSPA SWH plugins (plate_1423 / sc4m_1916 / gate_1410)",
             severity=Severity.BLOCKING,
             feature="Spatial Audio, Smart Volume, mic noise gate",
@@ -620,10 +745,14 @@ def _build_checks() -> list[DepCheck]:
                 "debian": ["apt-get", "install", "-y", "swh-plugins"],
                 "arch":   ["pacman", "-S", "--noconfirm", "swh-plugins"],
             },
+            scope=Scope.HOST,
         ),
         DepCheck(
             # Optional ClearCast mic noise suppression — the rest of ASM works
             # without it, so this is DEGRADED, not BLOCKING (issue #65).
+            #
+            # HOST scope: same reasoning as LADSPA SWH — the plugin is loaded
+            # by the host's pipewire filter-chain.
             name="rnnoise LADSPA plugin",
             severity=Severity.DEGRADED,
             feature="ClearCast mic noise suppression",
@@ -655,6 +784,23 @@ def _build_checks() -> list[DepCheck]:
                 "the LADSPA plugin only — takes a moment). Without it, only ClearCast "
                 "mic noise suppression is unavailable."
             ),
+            scope=Scope.HOST,
+        ),
+        DepCheck(
+            # udev rules live on the HOST: udevd only ever reads the host's
+            # /etc/udev/rules.d/. A distrobox container has its own /etc,
+            # so checking the container would give a false 'ok' on an
+            # otherwise good host install. Delegates to udev_checker which
+            # already handles the cross-containment dance.
+            name="udev rules",
+            severity=Severity.BLOCKING,
+            feature="non-root USB access",
+            detect=_udev_rules_valid,
+            install_commands={
+                # asm-cli has the elevated write+reload helper.
+                "_internal": ["asm-cli", "udev", "write-rules", "--force", "--reload"],
+            },
+            scope=Scope.HOST,
         ),
         DepCheck(
             name="HRIR file (EAC_Default.wav)",
@@ -812,16 +958,11 @@ def _build_checks() -> list[DepCheck]:
                 "arch":   ["pacman", "-S", "--noconfirm", "libusb"],
             },
         ),
-        DepCheck(
-            name="udev rules",
-            severity=Severity.BLOCKING,
-            feature="non-root USB access",
-            detect=_udev_rules_valid,
-            install_commands={
-                # asm-cli has the elevated write+reload helper.
-                "_internal": ["asm-cli", "udev", "write-rules", "--force", "--reload"],
-            },
-        ),
+        # Note: "udev rules" is defined earlier (near HRIR) because it was
+        # moved to Scope.HOST — keep it in alphabetical-ish order within
+        # its group for readability. See the comment on that entry above.
+        # It was originally positioned here (after pyusb) in the "USB stack"
+        # group but needed the HOST annotation and a cross-module import.
 
         # Python deps that the wheel's own metadata covers but a manual
         # `dnf remove --noautoremove python3-pyudev` can still strip.
@@ -952,6 +1093,11 @@ def _build_checks() -> list[DepCheck]:
 
         # Privilege escalation + session
         DepCheck(
+            # pkexec is the POLKIT agent that elevates installs — it runs on
+            # the HOST, not inside the container. Inside a container `which
+            # pkexec` may succeed (polkit is often pulled as a dependency)
+            # but the container's pkexec cannot elevate on the host. The
+            # real authority is the host's pkexec.
             name="pkexec (polkit)",
             severity=Severity.BLOCKING,
             feature="install missing system packages from the GUI",
@@ -961,6 +1107,7 @@ def _build_checks() -> list[DepCheck]:
                 "debian": ["apt-get", "install", "-y", "policykit-1"],
                 "arch":   ["pacman", "-S", "--noconfirm", "polkit"],
             },
+            scope=Scope.HOST,
         ),
         DepCheck(
             name="D-Bus session bus",

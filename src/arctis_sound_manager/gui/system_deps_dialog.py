@@ -45,11 +45,14 @@ import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.i18n import I18n
 from arctis_sound_manager.system_deps_checker import (
     CheckResult,
+    DepCheck,
     Severity,
+    Scope,
     detect_distro,
     failing,
     install_command_for,
     run_all_checks,
+    _reset_host_ladspa_cache,
 )
 from arctis_sound_manager.utils import project_version
 
@@ -318,11 +321,13 @@ class _DepRow(QFrame):
         argv = install_command_for(result.check)
         # On an immutable host reached through a container, refuse to offer a
         # button at all rather than one that runs a fabricated (and never
-        # exercised) `rpm-ostree install` line: `_is_user_run` commands are
-        # exempt because they never touch the host's package manager in the
-        # first place.
+        # exercised) `rpm-ostree install` line. This only applies to checks
+        # that are consumed on the HOST (udev rules, pkexec, LADSPA plugins):
+        # container-scoped checks are installed inside the container, which is
+        # always writable, so immutability of the host is irrelevant.
+        _is_host_scope = result.check.scope is Scope.HOST
         immutable_script = None
-        if argv and not _is_user_run(argv) and _running_in_container():
+        if argv and _is_host_scope and not _is_user_run(argv) and _running_in_container():
             immutable_script = _immutable_host_script(host_distro_id)
             if immutable_script:
                 argv = None
@@ -340,6 +345,26 @@ class _DepRow(QFrame):
             if immutable_script:
                 no_path_text = I18n.translate('ui', 'sysdeps_immutable_host').format(
                     host=host_distro_id, script=immutable_script)
+                # Always offer Copy cmd for HOST-scope checks on immutable
+                # hosts — the user needs the host-side command. For CONTAINER
+                # scope this path is never reached (argv is kept).
+                copy_btn = QPushButton(I18n.translate('ui', 'copy_cmd'))
+                copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                copy_btn.setStyleSheet(
+                    _btn_ss(_theme.c('BG_BUTTON'), _theme.c('TEXT_PRIMARY'), _theme.c('BG_BUTTON_HOVER'))
+                )
+                _scripted_argv = [
+                    "distrobox-host-exec",
+                    "bash",
+                    "-c",
+                    (
+                        f"bash <(curl -fsSL https://raw.githubusercontent.com/"
+                        f"loteran/Arctis-Sound-Manager/main/scripts/distrobox/{immutable_script})"
+                    ),
+                ]
+                copy_btn.clicked.connect(lambda a=_scripted_argv, b=copy_btn: self._copy_command(a, b, is_host_scope=True))
+                copy_btn.setEnabled(True)
+                layout.addWidget(copy_btn)
             else:
                 no_path_text = I18n.translate('ui', 'no_install_path')
             no_path_lbl = QLabel(no_path_text)
@@ -351,16 +376,26 @@ class _DepRow(QFrame):
             layout.addWidget(no_path_lbl)
             self.action_btn = None
 
-        copy_btn = QPushButton(I18n.translate('ui', 'copy_cmd'))
-        copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        copy_btn.setStyleSheet(
-            _btn_ss(_theme.c('BG_BUTTON'), _theme.c('TEXT_PRIMARY'), _theme.c('BG_BUTTON_HOVER'))
-        )
-        copy_btn.setEnabled(argv is not None)
-        copy_btn.clicked.connect(lambda: self._copy_command(argv, copy_btn))
-        layout.addWidget(copy_btn)
+        # The Copy cmd button is added below for the immutable-script path
+        # (that block creates its own copy_btn). For all other paths, add it
+        # here so it gets wired with the right argv/is_host_scope.
+        if immutable_script is None:
+            copy_btn = QPushButton(I18n.translate('ui', 'copy_cmd'))
+            copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            copy_btn.setStyleSheet(
+                _btn_ss(_theme.c('BG_BUTTON'), _theme.c('TEXT_PRIMARY'), _theme.c('BG_BUTTON_HOVER'))
+            )
+            copy_btn.setEnabled(argv is not None)
+            copy_btn.clicked.connect(lambda: self._copy_command(argv, copy_btn, is_host_scope=_is_host_scope))
+            layout.addWidget(copy_btn)
 
-    def _copy_command(self, argv: list[str] | None, button: QPushButton | None = None) -> None:
+    def _copy_command(
+        self,
+        argv: list[str] | None,
+        button: QPushButton | None = None,
+        *,
+        is_host_scope: bool = False,
+    ) -> None:
         if not argv:
             return
         # shlex.join quotes each argument, so multi-word commands like
@@ -377,7 +412,7 @@ class _DepRow(QFrame):
             line = cmd
         else:
             line = "sudo " + cmd
-            if _running_in_container():
+            if _running_in_container() and is_host_scope:
                 # Whatever terminal this gets pasted into is a container
                 # shell: a bare `sudo dnf install …` would elevate root
                 # *inside* the container and install nothing where the
@@ -525,6 +560,10 @@ class SystemDepsDialog(QDialog):
             w.deleteLater()
         self._row_widgets.clear()
 
+        # Reset the host LADSPA cache so each refresh re-probes the host fresh
+        # (the cache is per-pass, not per-check, and we must not reuse stale
+        # results if the user installed something between refreshes).
+        _reset_host_ladspa_cache()
         self._results = run_all_checks()
         bad = failing(self._results, min_severity=Severity.DEGRADED)
 
@@ -542,7 +581,14 @@ class SystemDepsDialog(QDialog):
             self._rows_layout.insertWidget(self._rows_layout.count() - 1, row)
             self._row_widgets.append(row)
 
-        self._install_all_btn.setEnabled(any(install_command_for(r.check) for r in bad))
+        # Install-all is enabled when there is at least one check with an
+        # install path — but only CONTAINER-scope checks matter for it:
+        # HOST-scope checks are installed on the host and either handled by
+        # the immutable-host script or by the user running a copied command.
+        self._install_all_btn.setEnabled(
+            any(install_command_for(r.check) for r in bad
+                if r.check.scope is not Scope.HOST)
+        )
         self._status_lbl.setText(
             I18n.translate_plural('ui', 'issue_count', len(bad))
         )
@@ -576,9 +622,11 @@ class SystemDepsDialog(QDialog):
             if not argv:
                 skipped.append(r.check.name)
                 continue
-            if not _is_user_run(argv) and _running_in_container():
+            if not _is_user_run(argv) and r.check.scope is Scope.HOST and _running_in_container():
                 # Same guard as _DepRow: never batch a fabricated install line
                 # for a dep that actually needs to land on an immutable host.
+                # Only HOST-scope checks are subject to this: CONTAINER-scope
+                # checks install inside the container regardless of host immutability.
                 script = _immutable_host_script(self._host_distro_id)
                 if script:
                     immutable_blocked.append(r.check.name)
@@ -626,6 +674,12 @@ class SystemDepsDialog(QDialog):
                 I18n.translate('ui', 'sysdeps_no_path_for').format(names=', '.join(skipped))
             )
         if immutable_blocked:
+            # When blocked checks exist, hint the user that a script on the
+            # host covers this. The key still names the generic distrobox
+            # script so it is true for the udev case (which the script does
+            # install) but the user will need to look for the one that matches
+            # their host distro.
+            script_name = _immutable_host_script(self._host_distro_id) or "bazzite.sh"
             notices.append(
                 I18n.translate('ui', 'sysdeps_immutable_blocked').format(
                     host=self._host_distro_id or '?', names=', '.join(immutable_blocked))
