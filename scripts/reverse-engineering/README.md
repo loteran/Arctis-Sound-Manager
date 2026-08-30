@@ -92,3 +92,30 @@ Needs only pyusb, and runs from a checkout with ASM not installed — see the
 script's own header for the exact command. Every run is saved to a
 timestamped file in the working directory and ends with a short summary
 meant to be pasted straight into the issue.
+
+## 4. Watch a value the device only answers on request — `arctis7_chatmix_probe.py`
+
+Not every state a headset knows arrives on its own. The Arctis 7 dongle's spec
+declares its ChatMix dial as a read — out `[0x06, 0x24]`, back
+`[0x06, 0x24, game, chat]` — and pushes nothing when the dial turns, so a
+passive listen (§3) sees nothing however long it runs and however far you turn
+it. ASM asked once at startup and never again, which is why the mix it showed
+was frozen wherever the dial happened to be when the daemon started (#220).
+
+```bash
+systemctl --user stop arctis-manager     # it holds the interface
+python3 arctis7_chatmix_probe.py         # sweep the dial slowly, then Ctrl-C
+systemctl --user start arctis-manager
+```
+
+It asks once per 250 ms and prints a line only when the bytes change, so a
+full sweep of the dial is a handful of lines rather than hundreds of identical
+ones — short enough to paste straight into the issue. It tries the interface
+the profile names first, then any other HID interface with an IN endpoint,
+because the USB layout is in no SteelSeries specification and a profile shared
+by several products can name an interface only some of them have (#213).
+
+Read-only: one query per pass, no setting written. Needs only pyusb, and is a
+single self-contained file — it can be downloaded on its own rather than
+cloning the repository. Adapting it to another opcode is a matter of changing
+`QUERY` and `PRODUCTS`.
