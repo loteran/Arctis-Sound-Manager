@@ -1853,11 +1853,29 @@ class CoreEngine:
         # loudly so unsupported PIDs are easy to spot in journalctl / bug
         # reports. Limited to the SteelSeries vendor to avoid noise from the
         # rest of the bus when running under the polling backend.
-        if vendor_id == 0x1038:
-            self.logger.warning(
-                f"USB device {vendor_id:04x}:{product_id:04x} appeared but no device YAML matches. "
-                "If this is a SteelSeries Arctis headset, please open an issue with this PID so support can be added."
-            )
+        if vendor_id != 0x1038:
+            return
+
+        # Some hardware enumerates under more than one PID and only answers on
+        # one of them — the Nova Pro Omni's DAC has a physical USB-1/USB-2/XBOX
+        # switch, and two of the three positions are mute to us by design. Those
+        # PIDs are declared in the owning YAML, so this is a known state to
+        # explain, not an unsupported headset to report (#218).
+        for device_config in self.device_configurations:
+            if device_config.vendor_id != vendor_id:
+                continue
+            reason = device_config.known_unsupported_product_ids.get(product_id)
+            if reason is not None:
+                self.logger.warning(
+                    f"USB device {vendor_id:04x}:{product_id:04x} is a {device_config.name}, "
+                    f"but {reason}. ASM cannot control it in this state — no need to report it."
+                )
+                return
+
+        self.logger.warning(
+            f"USB device {vendor_id:04x}:{product_id:04x} appeared but no device YAML matches. "
+            "If this is a SteelSeries Arctis headset, please open an issue with this PID so support can be added."
+        )
     
     def on_device_disconnected(self, vendor_id: int, product_id: int) -> None:
         # vendor_id and product_id are not available. Check if the current device is still plugged in.

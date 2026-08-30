@@ -286,6 +286,16 @@ class DeviceConfiguration:
         # were wrong. Optional: without it the resolver still prefers any
         # vendor-defined page over the consumer-control one (#213).
         self.hid_usage_page = raw_config.get('hid_usage_page', None)
+        # Optional {product_id: reason}. PIDs this hardware is known to
+        # enumerate as while being deliberately not driven — a mode switch in
+        # a non-SteelSeries position, typically. They are NOT part of
+        # product_ids (nothing here can talk to them); they exist so an
+        # unmatched PID can be reported as the known situation it is instead
+        # of as an unsupported headset (#218).
+        self.known_unsupported_product_ids: dict[int, str] = {
+            int(pid): str(reason)
+            for pid, reason in (raw_config.get('known_unsupported_product_ids') or {}).items()
+        }
         self.command_transport = CommandTransport(raw_config.get('command_transport', 'interrupt'))
         self.command_report_id = raw_config.get('command_report_id', None)
         self.listen_interface_indexes = raw_config.get('listen_interface_indexes', [])

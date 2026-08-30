@@ -58,8 +58,16 @@ def arctis_usb_info(vendor_id: int = 0x1038, bInterfaceClass: int = 0x03):
             manufacturer = device.manufacturer
             product = device.product
         except (usb.core.USBError, ValueError):
+            # Reading the string descriptors needs access to the device node,
+            # and that is all this failure proves. It says nothing about
+            # whether the udev rules are installed: a PID that no rule matches
+            # lands here with a perfectly valid rules file on disk, and the old
+            # wording ("udev rules missing — run asm-setup") sent people
+            # chasing a permission problem they did not have (#218). The bug
+            # report's "USB device access" section answers the question this
+            # line used to guess at, per device.
             manufacturer = "(no permission)"
-            product = "(udev rules missing — run asm-setup)"
+            product = "(name unreadable — see 'USB device access' below)"
 
         print(f'{manufacturer} {product} ({device.idVendor:04x}:{device.idProduct:04x})')
         for config in device:

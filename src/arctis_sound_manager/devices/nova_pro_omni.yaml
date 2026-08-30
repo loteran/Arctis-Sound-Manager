@@ -37,6 +37,14 @@ device:
   vendor_id: 0x1038
   product_ids:
     - 0x2290 # SteelSeries Arctis Nova Pro Omni (DAC switch in USB-1 position)
+
+  # The other two switch positions, named so the daemon can say what is
+  # actually wrong. Without this the Omni in USB-2 enumerates as a PID no
+  # YAML claims, and ASM told its owner to open an issue for an unsupported
+  # headset — which is how #218 was filed for a switch in the wrong position.
+  known_unsupported_product_ids:
+    0x2292: "the DAC's mode switch is in the USB-2 position, where the SteelSeries control protocol is silent — set it to USB-1"
+    0x2293: "the DAC's mode switch is in the XBOX position, which speaks the Xbox GIP protocol, not SteelSeries — set it to USB-1"
   command_padding:
     length: 64
     position: end
