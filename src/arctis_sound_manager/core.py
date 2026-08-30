@@ -124,6 +124,22 @@ _DERIVED_TOKENS = {
 }
 
 
+# A headset that has been switched off and back on comes up on its firmware
+# defaults: sidetone, mic volume, the volume limiter and the on-device EQ all
+# live in the headset, not in the dongle, and nothing in the radio link carries
+# them back. ASM used to push its settings exactly twice — when the USB device
+# appeared and when the machine woke from sleep — so on every family whose
+# dongle stays plugged in, a power cycle silently reverted every control the
+# user had set (#221, Nova 3 Wireless). SteelSeries GG does not have the bug
+# because it re-pushes on the connection event; this is that re-push.
+#
+# The settle delay exists because the connection event fires when the link is
+# up, not when the headset is ready to be configured; the minimum interval is
+# flap protection, for a headset sitting at the edge of its range.
+_SETTINGS_REPLAY_SETTLE_S = 1.5
+_SETTINGS_REPLAY_MIN_INTERVAL_S = 5.0
+
+
 #: Auto mic-switch trigger, stored as an int in the ``micro_autoswitch`` setting.
 _MIC_AUTOSWITCH_MODES = {0: 'off', 1: 'connection', 2: 'mute', 3: 'both'}
 
@@ -302,6 +318,12 @@ class CoreEngine:
         # troubled channel" from "a brand new process that happens to have the
         # same name" and reset accordingly.
         self._device_session_id: int = 0
+
+        # When the settings last went out to the headset, and the timer that
+        # will send them again once it comes back on. See
+        # _schedule_settings_replay().
+        self._last_settings_push: float = 0.0
+        self._settings_replay_timer: threading.Timer | None = None
 
         self.reload_device_configurations()
         self.usb_devices_monitor.register_on_connect(self.on_device_connected)
@@ -2398,36 +2420,140 @@ class CoreEngine:
         # replies land on the listen loop and only fill in settings the user
         # never chose here — see _absorb_settings_readback().
         self._request_settings_readback()
-        if self.device_config and self.device_config.device_init:
-            endpoint = self.get_command_endpoint_address()
-            total = len(self.device_config.device_init)
-
-            for index, bytes in enumerate(self.device_config.device_init, start=1):
-                # One retry on USBError — most failures here are transient
-                # (kernel driver re-attached itself between detach and write,
-                # device still warming up after enumeration). Persistent
-                # failures continue with the remaining commands so partial
-                # state at least powers something rather than nothing.
-                for attempt in (1, 2):
-                    try:
-                        self.send_command(self.translate_init_bytes(bytes), endpoint)
-                        break
-                    except usb.core.USBError as e:
-                        if attempt == 1:
-                            self.logger.warning(
-                                f"init_device cmd {index}/{total} failed ({e!r}); retrying once."
-                            )
-                            continue
-                        self.logger.error(
-                            f"init_device cmd {index}/{total} still failing after retry: {e!r}. "
-                            "Device may be left in a partially-configured state."
-                        )
+        self._send_device_init_sequence(context="init_device")
 
         # Not _apply_stored_eq() directly: in Sonar mode the stored curve must
         # not be reinstated at all, or the headset would colour the sound
         # underneath the software EQ on every start.
         self._applied_eq_mode = None
         self.reconcile_hardware_eq_mode()
+
+    def _send_device_init_sequence(self, context: str = "init_device") -> None:
+        """Push the profile's `device_init` frames to the headset.
+
+        Split out of :meth:`init_device` so the power-on replay sends exactly
+        what init sends. The list is the profile author's own answer to "what
+        does this device need to be told", mode switches included (the Nova 3
+        Wireless' `[0x49, 0x01]` that turns software ChatMix on, for one), so
+        the two paths must not drift apart.
+        """
+        if not (self.device_config and self.device_config.device_init):
+            return
+        endpoint = self.get_command_endpoint_address()
+        total = len(self.device_config.device_init)
+
+        for index, bytes in enumerate(self.device_config.device_init, start=1):
+            # One retry on USBError — most failures here are transient
+            # (kernel driver re-attached itself between detach and write,
+            # device still warming up after enumeration). Persistent
+            # failures continue with the remaining commands so partial
+            # state at least powers something rather than nothing.
+            for attempt in (1, 2):
+                try:
+                    self.send_command(self.translate_init_bytes(bytes), endpoint)
+                    break
+                except usb.core.USBError as e:
+                    if attempt == 1:
+                        self.logger.warning(
+                            f"{context} cmd {index}/{total} failed ({e!r}); retrying once."
+                        )
+                        continue
+                    self.logger.error(
+                        f"{context} cmd {index}/{total} still failing after retry: {e!r}. "
+                        "Device may be left in a partially-configured state."
+                    )
+        self._last_settings_push = time.monotonic()
+
+    def _schedule_settings_replay(self) -> None:
+        """Arrange for the settings to go back out now the headset is on.
+
+        Off the listen thread: this runs from the status observer, which is
+        driven by :meth:`listen_endpoint_loop`, and the replay both sleeps and
+        writes. Debounced on ``_last_settings_push`` so a headset flapping at
+        the edge of its range doesn't turn every reconnect into a burst of USB
+        writes, and so the connection frame that arrives right after
+        :meth:`init_device` doesn't re-send what was just sent.
+        """
+        if self.device_config is None or self.usb_device is None:
+            return
+        now = time.monotonic()
+        if now - self._last_settings_push < _SETTINGS_REPLAY_MIN_INTERVAL_S:
+            self.logger.debug(
+                "Headset back online — settings were pushed %.1fs ago, not replaying",
+                now - self._last_settings_push)
+            return
+        timer = self._settings_replay_timer
+        if timer is not None and timer.is_alive():
+            return
+
+        def _run() -> None:
+            try:
+                self.replay_device_settings()
+            except Exception as e:  # never kill the timer thread
+                self.logger.warning("Settings replay after power-on failed: %r", e)
+
+        timer = threading.Timer(_SETTINGS_REPLAY_SETTLE_S, _run)
+        timer.daemon = True
+        self._settings_replay_timer = timer
+        timer.start()
+
+    def replay_device_settings(self) -> None:
+        """Re-push what the headset forgot while it was switched off.
+
+        Sidetone, mic volume, the volume limiter and the on-device EQ are
+        stored in the headset, so they are gone the moment it powers down —
+        and nothing brings them back, because the dongle never left its port
+        and ASM only configured the device when USB said it appeared (#221).
+        """
+        if self.device_config is None or self.usb_device is None:
+            return
+        self.logger.info("Headset came back on — replaying its settings")
+        self._send_device_init_sequence(context="settings replay")
+        self._replay_settings_missing_from_init()
+
+        # The custom curve lives in the headset too. Clearing the applied mode
+        # is what makes reconcile re-send it: it sends nothing while it
+        # believes the device already holds the right curve.
+        self._applied_eq_mode = None
+        try:
+            self.reconcile_hardware_eq_mode()
+        except Exception as e:  # noqa: BLE001 — the EQ is not worth losing the rest over
+            self.logger.warning("Could not restore the on-device EQ after power-on: %r", e)
+
+    def _replay_settings_missing_from_init(self) -> None:
+        """Push the user's choices that `device_init` happens not to cover.
+
+        Most profiles list every setting there, but not all: the Nova Pro Omni
+        leaves out sidetone and noise reduction, the Nova 7 family Bluetooth
+        power, the Nova Elite eleven of them. Those are settings the user set
+        and would watch revert, so they go out too — but only when the user
+        actually chose them, since for the rest whatever the headset came up
+        with is as good an answer as the profile default.
+        """
+        if self.device_config is None:
+            return
+        covered = {
+            b.split('.', 1)[1]
+            for seq in (self.device_config.device_init or [])
+            for b in seq
+            if isinstance(b, str) and b.startswith('settings.')
+        }
+        endpoint = self.get_command_endpoint_address()
+        for section in self.device_config.settings.keys():
+            for config in self.device_config.settings[section]:
+                if config.name in covered:
+                    continue
+                if not config.update_sequence:
+                    continue
+                if not self.device_settings.was_chosen_by_user(config.name):
+                    continue
+                value = self.device_settings.get(config.name, 0)
+                try:
+                    self.send_command(self._resolve_update_sequence(config, value), endpoint)
+                except Exception as e:  # noqa: BLE001 — one bad setting must not stop the others
+                    self.logger.warning(
+                        "Could not replay %s=%s after power-on: %r", config.name, value, e)
+        self._last_settings_push = time.monotonic()
 
     def _apply_stored_eq(self) -> bool:
         """Replay the saved custom curve at init, the way the sliders send it.
@@ -2648,6 +2774,9 @@ class CoreEngine:
         if self.device_config and self.device_config.online_status and key == self.device_config.online_status.status_variable:
             if self.is_device_online():
                 self.redirect_to_media_sink()
+                # The headset just came up on its firmware defaults — give it
+                # back what the user chose (#221).
+                self._schedule_settings_replay()
             else:
                 self.redirect_audio_on_disconnect()
 
