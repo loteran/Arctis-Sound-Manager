@@ -32,6 +32,7 @@ class CommandTransport(Enum):
 
 class StatusParseType(Enum):
     PERCENTAGE = 'percentage'
+    SIGNED_PERCENTAGE = 'signed_percentage'
     ON_OFF = 'on_off'
     INT_STR_MAPPING = 'int_str_mapping'
     INT_INT_MAPPING = 'int_int_mapping'

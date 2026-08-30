@@ -1,7 +1,9 @@
 # Copyright (C) 2026 loteran
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-from arctis_sound_manager.status_parser_fn import int_int_mapping, int_str_mapping, on_off, percentage
+from arctis_sound_manager.status_parser_fn import (
+    int_int_mapping, int_str_mapping, on_off, percentage, signed_percentage,
+)
 
 
 def test_percentage():
@@ -42,6 +44,24 @@ def test_percentage_clamps_out_of_range_values_regardless_of_round_to():
     assert fn(0, 100, 75) == 75
     assert fn(0, 8, 5, round_to=10) == 60
 
+
+def test_signed_percentage():
+    """#220: game_chat_status's game/chat bytes are a signed attenuation from
+    0x00 (full volume) counting down through 0xFF...0xC0 toward mute, not a
+    plain unsigned 0-100 level. A naive percentage(0, 100, ...) read the
+    loudest position as 0% and clamped every attenuated one to 100%."""
+    fn = signed_percentage
+    assert getattr(fn, '_status_type') == 'signed_percentage'
+
+    # 0x00 is the loudest position -> 100%.
+    assert fn(perc_min=-64, perc_max=0, value=0x00) == 100
+    # 0xC0 (signed -64) is the reporter's observed "off" end -> 0%.
+    assert fn(perc_min=-64, perc_max=0, value=0xC0) == 0
+    # Monotonic in between: closer to 0x00 reads louder than closer to 0xC0.
+    assert fn(perc_min=-64, perc_max=0, value=0xF0) > fn(perc_min=-64, perc_max=0, value=0xD0)
+    # Never negative or over 100 even for an unseen/out-of-range raw byte.
+    assert fn(perc_min=-64, perc_max=0, value=0x80) == 0
+    assert fn(perc_min=-64, perc_max=0, value=0x01) == 100
 
 def test_on_off():
     fn = on_off

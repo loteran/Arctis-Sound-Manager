@@ -80,11 +80,15 @@ device:
       type: percentage
       perc_min: 0
       perc_max: 100
+    # game/chat are a signed byte of attenuation, not a plain 0-100 level:
+    # 0x00 is full volume, and the dial counts down through 0xFF...0xC0 as it
+    # nears mute (reporter capture on #220). perc_min/perc_max are in the same
+    # signed terms; see signed_percentage()'s docstring for the full story.
     media_mix:
-      type: percentage
-      perc_min: 0
-      perc_max: 100
+      type: signed_percentage
+      perc_min: -64
+      perc_max: 0
     chat_mix:
-      type: percentage
-      perc_min: 0
-      perc_max: 100
+      type: signed_percentage
+      perc_min: -64
+      perc_max: 0

@@ -49,6 +49,22 @@ def percentage(perc_min: int, perc_max: int, value: int, round_to: int = 0) -> i
 
     return result
 
+@status_type("signed_percentage")
+def signed_percentage(perc_min: int, perc_max: int, value: int) -> int:
+    """Like percentage(), but *value* is a signed byte (two's complement).
+
+    The Arctis 7 2019's game_chat_status answers 0x00 for full volume and
+    counts *down* through 0xFF, 0xFE, ... to 0xC0 near mute — the same
+    signed-byte-of-attenuation convention hardware_eq.py already decodes for
+    EQ gain, not a plain unsigned level. A naive unsigned percentage(0, 100)
+    read the loudest position (0x00) as 0% and clamped every attenuated one
+    (0xC0-0xFF) to 100% — backwards (#220). perc_min/perc_max are given in
+    the same signed terms (e.g. -64..0).
+    """
+    if value >= 128:
+        value -= 256
+    return percentage(perc_min, perc_max, value)
+
 @status_type("on_off")
 def on_off(value: int, on: int, off: int) -> Literal['on', 'off']:
     return 'on' if value == on else 'off'
