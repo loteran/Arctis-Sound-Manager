@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [1.4.14] - 2 September 2026
+
+Media no longer pops at every track change with Spatial Audio enabled, the
+deps-checker works correctly inside containers, and three new Sonar presets
+arrive from SteelSeries GG 118.0.0. A weekly GitHub Action watches for new
+GG releases and delivers the presets automatically.
+
+### Fixed
+
+- **Audible pop/click on track change with Spatial Audio on Media.** The
+  Media HeSuVi convolver was losing its state every time the browser closed
+  and reopens its stream between tracks. Added
+  node.pause-on-idle = false to the Media channel playback props so the
+  chain stays warm across the gap. The property is Media-only — other
+  channels keep their idle-suspend behavior from issue #180. An in-place
+  repair in check_and_fix_stale_configs patches existing installs
+  without flattening the user EQ. ([#223](https://github.com/loteran/Arctis-Sound-Manager/issues/223))
+- **deps-checker false failures in containers.** The HOST/CONTAINER scope
+  checks ran on the host even inside distrobox, producing spurious errors.
+  The checker now respects the deployment context and only probes the
+  actual host or container it runs in.
+
+### Added
+
+- **3 new Sonar presets from SteelSeries GG 118.0.0.**
+- **Automated preset delivery via GitHub Actions.** A weekly workflow (Mondays
+  09:23 UTC) downloads and decrypts the latest Arctis specs from GG, detects
+  new Sonar presets, and pushes them to main where the preset sync
+  pipeline picks them up. New or changed specs also open a GitHub issue for
+  human review.
+
+
 
 ## [1.4.13] - 30 August 2026
 
