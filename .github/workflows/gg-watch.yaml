@@ -1,0 +1,63 @@
+name: SteelSeries GG watcher
+
+# gg-watch.yaml
+#
+# Watch for new SteelSeries GG releases and act on what changed:
+#   - new Sonar presets → commit to main (preset_sync reads from main)
+#   - new device files or changed Arctis specs → open an issue
+#
+# The back-merge workflow carries preset commits to develop.
+#
+# Trigger model:
+#   - schedule: weekly on Monday 09:23 UTC (off the hour to avoid rush)
+#   - workflow_dispatch: manual run with optional --since and --dry-run
+
+on:
+  schedule:
+    - cron: '23 9 * * 1'
+  workflow_dispatch:
+    inputs:
+      since:
+        description: 'Replay delta from this version (e.g. 117.0.0)'
+        required: false
+      dry_run:
+        description: 'Do not push or open issues'
+        type: boolean
+        default: false
+
+concurrency:
+  group: gg-watch
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Install 7z
+        run: sudo apt-get update && sudo apt-get install -y p7zip-full
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Run the watcher
+        env:
+          GG_WORKDIR: ${{ runner.temp }}/gg-watch
+          ASM_ROOT: ${{ github.workspace }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/reverse-engineering/gg-watch.py \
+            ${{ inputs.since && format('--since={0}', inputs.since) || '' }} \
+            ${{ inputs.dry_run == true && '--dry-run' || '' }}

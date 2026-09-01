@@ -119,3 +119,64 @@ Read-only: one query per pass, no setting written. Needs only pyusb, and is a
 single self-contained file — it can be downloaded on its own rather than
 cloning the repository. Adapting it to another opcode is a matter of changing
 `QUERY` and `PRODUCTS`.
+
+## 5. Automated SteelSeries GG watcher — `gg-watch.py`
+
+This script is the **automation backbone** for new GG releases. It runs on a
+GitHub Actions schedule (weekly, Monday 09:23 UTC) and:
+
+1. **Detects** a new GG version via a single HEAD request (no download).
+2. **Downloads** the installer (~430 MB) and extracts `deviceSpecifications/`,
+   `SteelSeriesEngine.exe`, and `apps/sonar/db-migrations/`.
+3. **Recovers** the OpenPGP passphrase from `SteelSeriesEngine.exe`
+   (`recover-key.py` — pure stdlib PE/Go pclntab parser, no Wine).
+4. **Decrypts** Arctis `.edevice` files (`decode-arctis-specs.sh` — gpg
+   loopback, deterministic).
+5. **Compares** against a committed fingerprint index in
+   `.github/gg-watch-state.json` (no decrypted specs ever leave the runner):
+   - new `.edevice` names → potential new hardware
+   - changed `.device` SHA-256 hashes → protocol changes
+   - missing Sonar presets → mechanical JSON commits
+6. **Acts**:
+   - Presets → writes JSON to `gui/presets/`, updates `presets_provenance.json`,
+     regenerates `presets_manifest.json`, commits to `main`. The back-merge
+     workflow carries it to `develop` — no cherry-pick needed.
+   - New/changed specs → opens a GitHub issue for human review.
+
+### Local usage (analysis only)
+
+```bash
+# Dry run against current main (needs the decoded-118.0.0/ directory locally)
+GG_WORKDIR=/tmp/ggw ASM_ROOT=/tmp/asm-clone \
+  python3 scripts/reverse-engineering/gg-watch.py --dry-run --since=117.0.0
+
+# With --no-push: writes files locally, regenerates manifest, leaves git alone
+GG_WORKDIR=~/steelseries-research ASM_ROOT=. \
+  python3 scripts/reverse-engineering/gg-watch.py --no-push --since=117.0.0
+```
+
+Environment variables:
+- `GG_WORKDIR` — temp workspace for downloads/extraction/decoding (default
+  `~/steelseries-research`).
+- `ASM_ROOT` — repo root (default `~/Arctis-Sound-Manager`).
+- `GH_TOKEN` — GitHub token for `gh` and git push (in CI: `secrets.GITHUB_TOKEN`).
+
+Flags:
+- `--dry-run` — all reads/comparisons, no writes to git or issues.
+- `--since=VERSION` — force the "known" version to replay a delta.
+- `--no-push` — write files and manifest locally, skip commit/push.
+
+### What is committed
+
+- `scripts/reverse-engineering/gg-watch.py` (the watcher)
+- `scripts/reverse-engineering/recover-key.py` (passphrase recovery)
+- `scripts/reverse-engineering/decode-arctis-specs.sh` (deterministic decryption)
+- `.github/workflows/gg-watch.yaml` (CI schedule + dispatch)
+- `.github/gg-watch-state.json` (fingerprint index, written by the first real run)
+
+### What is NOT committed
+
+- Decrypted `.device` files — SteelSeries' proprietary material, kept only in
+  the runner's temp dir and discarded.
+- The passphrase — written to a file read by the shell script, never logged.
+- The extracted installer — in `$GG_WORKDIR`, cleaned by the runner.
