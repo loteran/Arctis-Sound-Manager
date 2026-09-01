@@ -26,6 +26,7 @@ on:
       - "Update README stats"
       - "Create GitHub Release"
       - "Crowdin Sync"
+      - "SteelSeries GG watcher"
     types:
       - completed
 
