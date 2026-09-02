@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.4.15" date="2026-09-02">
+      <description>
+        <p>Steam Game Recording captured no game audio (issue #225). The router. Applications changed channel on their own after any EQ or profile change. The Linux test matrix never reached the install step. Every job on every.</p>
+      </description>
+    </release>
     <release version="1.4.14" date="2026-09-02">
       <description>
         <p>Audible pop/click on track change with Spatial Audio on Media. The. deps-checker false failures in containers. The HOST/CONTAINER scope. 3 new Sonar presets from SteelSeries GG 118.0.0.</p>
@@ -199,11 +204,6 @@
     <release version="1.2.22" date="2026-08-04">
       <description>
         <p>Switch the microphone the Sonar Micro EQ uses between your headset and a desktop mic — by hand or automatically. Picking the input by hand was already possible; this adds doing it on an event. Choose an alternate microphone and a trigger: switch to it when the headset disconnects or powers off (and back to the headset mic when it returns), or when you mute the headset mic (and back when you unmute). The change happens behind the Sonar Micro EQ, so an app — a Discord call — never sees its microphone disappear; it keeps recording from the same node while the source underneath it swaps. Manual switching works on every headset; the automatic triggers act on whatever a given headset actually reports, so one that never announces its mute state simply won't use that trigger rather than misbehaving. The update button no longer runs a command that can't do anything. When ASM was installed from a package you downloaded by hand — a .deb, .rpm or .pkg that no repository tracks — the in-app update ran your package manager's upgrade command, which found nothing to fetch, reported success, and left the version unchanged while the "update available" banner kept coming back. ASM now notices that case up front (on apt, dnf and pacman alike) and instead offers the one-line command to add its repository — after which updates apply normally — or a button to download the latest release. (#163).</p>
-      </description>
-    </release>
-    <release version="1.2.21" date="2026-08-03">
-      <description>
-        <p>Random audio dropouts on a healthy setup are gone. ASM reads the PipeWire graph with pw-dump, and once in a while — when a node appears or disappears at the exact moment it runs — pw-dump prints a second, tiny JSON fragment stuck onto the end of the real one. ASM took that as a parse error and concluded the entire graph had vanished, so its watchdog tore down and rebuilt the loopbacks and restarted the filter-chain — audible as a dropout every 15–25 minutes on hardware that was working perfectly the whole time. The graph is now read back even when pw-dump doubles up its output. Diagnosed on a Nova Pro Wireless by @relxek. (#164). Ubuntu 26.04: the app now starts after a clean install. On 26.04, PySide6 is split into separate per-module packages, and ASM's dependency on them was written in a way (… | python3-pip) that let the package manager consider it satisfied by python3-pip — which nearly everyone already has — and skip the actual Qt modules. asm-gui then died at launch with No module named 'PySide6.QtNetwork'. The Qt modules are now hard dependencies, so a plain install pulls them in. Traced to the exact missing submodules by @n6dlh. (#163).</p>
       </description>
     </release>
   </releases>
