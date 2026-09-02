@@ -1,3 +1,14 @@
+arctis-sound-manager (1.4.15-1) noble; urgency=medium
+
+  * Steam Game Recording captured no game audio (issue #225). The router
+  * Applications changed channel on their own after any EQ or profile
+    change.
+  * The Linux test matrix never reached the install step. Every job on every
+  * A preset was missing for anyone installing from a release tarball. The
+  * The bug report now lists playback and capture streams and where each one
+
+ -- loteran <axel.valadon@gmail.com>  Wed, 02 Sep 2026 00:00:00 +0000
+
 arctis-sound-manager (1.4.14-1) noble; urgency=medium
 
   * Audible pop/click on track change with Spatial Audio on Media. The
