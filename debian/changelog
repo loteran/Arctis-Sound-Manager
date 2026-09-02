@@ -1,5 +1,13 @@
+arctis-sound-manager (1.4.18-1) noble; urgency=medium
+
+  * Copy cmd / Copy command buttons ne copient pas sous Wayland
+    (Bazzite/KDE).
+
+ -- loteran <axel.valadon@gmail.com>  Wed, 02 Sep 2026 00:00:00 +0000
+
 arctis-sound-manager (1.4.17-1) noble; urgency=medium
 
+  * In-app update check lagged AUR helpers on Arch. The checker trusted
   * In-app update check lagged AUR helpers on Arch. The checker trusted
 
  -- loteran <axel.valadon@gmail.com>  Wed, 02 Sep 2026 00:00:00 +0000

@@ -5,7 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.18] - 2 September 2026
+
+### Fixed
+
+- **Copy cmd / Copy command buttons ne copient pas sous Wayland (Bazzite/KDE).**
+  Sous Wayland, le presse-papier n'accepte un `setText()` que pour une fenêtre
+  ayant le focus clavier. Le bouton copie revendique désormais le focus
+  avant d'écrire dans le presse-papier, ce qui permet à l'utilisateur de
+  récupérer la commande même si le presse-papier était refusé auparavant.
+
 ## [1.4.17] - 2 September 2026
+
+### Fixed
+
+- **In-app update check lagged AUR helpers on Arch.** The checker trusted
+  `pacman -Si`, which reads a local sync database that can sit hours behind the
+  GitHub `pacman-repo` asset, so paru/yay showed a new version while the
+  app still said "up to date". Pacman installs now take the newer of the
+  local repo metadata and the GitHub tag: `pacman -Syu` refreshes on upgrade,
+  so the tag is always installable. COPR and the PPA are unchanged — they
+  rebuild independently of the tag (discussion #140).
 
 ### Fixed
 

@@ -56,9 +56,14 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.4.18" date="2026-09-02">
+      <description>
+        <p>Copy cmd / Copy command buttons ne copient pas sous Wayland (Bazzite/KDE).</p>
+      </description>
+    </release>
     <release version="1.4.17" date="2026-09-02">
       <description>
-        <p>In-app update check lagged AUR helpers on Arch. The checker trusted</p>
+        <p>In-app update check lagged AUR helpers on Arch. The checker trusted. In-app update check lagged AUR helpers on Arch. The checker trusted.</p>
       </description>
     </release>
     <release version="1.4.16" date="2026-09-02">
@@ -199,11 +204,6 @@
     <release version="1.2.25" date="2026-08-09">
       <description>
         <p>The DAC's custom display now updates as you change its settings. Turning display elements on or off, changing their fonts or scroll speed, or editing the weather only *saved* the setting — the screen was redrawn just for the brightness slider and the Custom Display on/off switch, so every other change appeared only after toggling Custom Display off and on again. Those settings now apply live, the moment you change them — no toggle, and no Apply button needed. Reported by @jnunez2301. (#172). Two copies of the app could open at login. The single-instance guard waited briefly for a reply from an already-running instance and, on silence, concluded its socket was stale, deleted it and started a second full GUI — but a freshly-launched instance accepts connections for a few seconds before it finishes starting and can reply, and login (the systemd unit and the desktop entry a moment apart) lands squarely in that window. It now settles the question on the connection being *accepted* rather than answered, and never unlinks a socket that is still live, so exactly one instance runs. Contributed by @Denkiyaa. Clicking the tray icon could crash the whole app. The click arrived as a D-Bus call the tray host was still waiting on, and the handler built the main window inline; Qt processed events underneath it, a status update carrying no battery level hid the battery tray item, and hiding it destroyed the object whose click handler was still on the stack — a use-after-free that took the whole app down, which read as the app closing itself. The click now opens the window on the event loop instead of inline. Contributed by @Denkiyaa.</p>
-      </description>
-    </release>
-    <release version="1.2.24" date="2026-08-08">
-      <description>
-        <p>The Sonar equaliser now applies as you edit it — no Apply button, and no drop in the audio. Adding, removing or muting a band used to regenerate the channel's filter-chain and restart it, which tore down every EQ node and silenced the channel for several seconds; only dragging an existing band applied live. Bands now sit in a fixed-shape rack, so every edit — add, delete, mute, move — is a control change pushed straight into the running graph in tens of milliseconds instead of a restart. The Apply button is gone with the cost that justified it; Revert stays, and now returns to the curve the preset holds. Contributed by @Denkiyaa. (#170). The chat EQ could lose the output it was pointed at. The GUI regenerates a channel's filter-chain config on every EQ edit, but only the daemon knows which headset is attached — so the GUI wrote the chat channel's target out empty, and PipeWire's session manager then tried to route that output to the default sink (one of ASM's own loopbacks), failed on the resulting cycle, and retried on every graph change: 23 failed link attempts in three minutes on the machine it was caught on, audible as interruptions on whatever was actually playing. The GUI now keeps whatever target is already on disk when it can't resolve one itself, and the daemon repairs a config that was already written without one. Contributed by @Denkiyaa. (#170). A headset added by an update could still be refused USB access. If ~/.config/arctis_manager/devices/ held an old copy of a device profile — the pre-2026 asm-setup wrote one there on first run — it shadowed the packaged profile when the udev rules were generated, so a product id added in a later release (for example the Arctis Nova 7P Gen 2's 0x2298) never reached the rules file even after upgrading, and the headset was denied access. The rules generator now unions the product ids across your copy and the packaged profile, so a stale copy can no longer hide a newer PID — and a product id you add by hand is granted access too. Reported by @camperotactico. (#146).</p>
       </description>
     </release>
   </releases>
