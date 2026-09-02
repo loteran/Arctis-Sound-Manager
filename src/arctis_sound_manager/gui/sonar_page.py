@@ -401,40 +401,6 @@ class _ApplyWorker(QThread):
     # ── stream snapshot helpers ──────────────────────────────────────────
 
     @staticmethod
-    def _snapshot_sink_inputs(log) -> dict[str, list[str]]:
-        """Return sink-input IDs grouped by their current sink name.
-
-        Returns {sink_name: [sink_input_id, ...]} so streams can be
-        restored to the same Arctis channel after filter-chain restart.
-        """
-        result: dict[str, list[str]] = {}
-        try:
-            r = subprocess.run(
-                ["pactl", "list", "sink-inputs", "short"],
-                capture_output=True, text=True, timeout=3,
-            )
-            # Build sink index→name map
-            sr = subprocess.run(
-                ["pactl", "list", "sinks", "short"],
-                capture_output=True, text=True, timeout=3,
-            )
-            idx_to_name = {}
-            for line in sr.stdout.splitlines():
-                parts = line.split()
-                if len(parts) >= 2:
-                    idx_to_name[parts[0]] = parts[1]
-
-            for line in r.stdout.splitlines():
-                parts = line.split()
-                if len(parts) >= 2:
-                    si_id, sink_idx = parts[0], parts[1]
-                    sink_name = idx_to_name.get(sink_idx, "")
-                    result.setdefault(sink_name, []).append(si_id)
-        except Exception as e:
-            log.warning("Could not snapshot sink-inputs: %s", e)
-        return result
-
-    @staticmethod
     def _snapshot_source_outputs(log) -> list[str]:
         """Return list of source-output IDs before restart."""
         try:
@@ -656,8 +622,17 @@ class _ApplyWorker(QThread):
                 # preset switch, spatial/channel-count change, …) — fall
                 # through to the full restart path below.
 
-            # Snapshot active streams BEFORE restart so we can restore them
-            saved_sink_inputs = self._snapshot_sink_inputs(log)
+            # Snapshot active streams BEFORE restart so we can restore them.
+            #
+            # Keyed by application identity, not by PulseAudio index: an app
+            # that reconnects while the sinks are gone (Electron ones do)
+            # returns under a new index, and the saved one then names either
+            # nothing or an unrelated stream. Opening the window here also
+            # stops arctis-video-router recording the displacement as the
+            # user's own choice while the restart runs.
+            from arctis_sound_manager import audio_reconfig
+            saved_streams = audio_reconfig.snapshot_channel_streams()
+            audio_reconfig.begin()
             saved_source_outputs = self._snapshot_source_outputs(log)
 
             # Throttle restarts to avoid locking up the USB ALSA driver
@@ -696,15 +671,41 @@ class _ApplyWorker(QThread):
             else:
                 target_node = f"effect_input.sonar-{self._channel}-eq"
 
+            # Imported before the closure below, not after it: the import binds
+            # the name in run(), and _give_streams_back() reads it as a free
+            # variable. Leaving the import further down makes the closure depend
+            # on run() having reached line 690 first, which is one reordering
+            # away from an UnboundLocalError on the very failure paths this
+            # helper exists to cover.
+            from arctis_sound_manager.pw_utils import reapply_routing_overrides
+
+            def _give_streams_back() -> None:
+                """Put the apps back and let the router start listening again.
+
+                Called on the failure paths too: a restart that did not come
+                back up is precisely when streams are left stranded on whatever
+                sink PipeWire could find, and abandoning them there is what the
+                user experiences as the game silently changing channel.
+                """
+                try:
+                    audio_reconfig.restore_channel_streams(saved_streams)
+                    reapply_routing_overrides()
+                except Exception as exc:
+                    log.warning("could not restore streams: %s", exc)
+                finally:
+                    audio_reconfig.end()
+
             ok = sc.restart("filter-chain", timeout=15)
             if not ok:
                 log.error("audio restart failed")
+                _give_streams_back()
                 self.done.emit(False)
                 return
 
             # Wait for the recreated EQ node before recreating the loopbacks.
             if not self._wait_for_node(target_node, timeout_ms=8000):
                 log.warning("Sonar node %s did not appear within timeout", target_node)
+                _give_streams_back()
                 self.done.emit(False)
                 return
 
@@ -727,21 +728,9 @@ class _ApplyWorker(QThread):
                 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
                 DbusWrapper.recreate_loopback_single_sync(self._channel)
 
-            # Wait for any saved Arctis_* target sinks to come back before
-            # attempting move-sink-input (issue #22).
-            _restore_remap = {
-                "effect_input.sonar-game-eq":  "Arctis_Game",
-                "effect_input.sonar-chat-eq":  "Arctis_Chat",
-                "effect_input.sonar-media-eq": "Arctis_Media",
-            }
-            for sink_name in saved_sink_inputs.keys():
-                target = _restore_remap.get(sink_name, sink_name)
-                if target.startswith("Arctis_"):
-                    self._wait_for_node(target, timeout_ms=4000)
-
-            # After pipewire restart, stream IDs are invalid;
-            # asm-router re-applies overrides automatically.
-            # Only the micro default source needs explicit restore.
+            # Only the micro default source needs an explicit restore of its
+            # own; playback streams are handled by _give_streams_back() below,
+            # which waits for the channels to come back before moving anything.
             if self._channel == "micro":
                 source = "effect_output.sonar-micro-eq"
                 source_json = _json.dumps({"name": source})
@@ -761,35 +750,16 @@ class _ApplyWorker(QThread):
                 elif not source_idx:
                     log.warning("Sonar micro source not found in pactl, "
                                 "cannot restore mic streams")
-            else:
-                # Remap streams that were on effect_input nodes back to their
-                # Arctis_* virtual sink (the correct user-facing destination).
-                _effect_remap = {
-                    "effect_input.sonar-game-eq":  "Arctis_Game",
-                    "effect_input.sonar-chat-eq":  "Arctis_Chat",
-                    "effect_input.sonar-media-eq": "Arctis_Media",
-                }
-                if self._channel == "output":
-                    _effect_remap["effect_input.sonar-output-eq"] = "effect_input.sonar-output-eq"
-                for sink_name, si_ids in saved_sink_inputs.items():
-                    target = _effect_remap.get(sink_name, sink_name)
-                    target_idx = self._find_pactl_index(target, "sink", log)
-                    if target_idx:
-                        self._move_streams_with_retry(
-                            si_ids, target_idx, "sink", log,
-                        )
-                    else:
-                        log.warning("Sink %s not found, cannot restore streams", target)
 
-            # Re-apply saved routing overrides (e.g. Discord -> Arctis_Chat).
-            # Streams that were torn down during the restart — instead of merely
-            # moved — are not covered by the snapshot/restore above, and apps
-            # like Discord (Electron) do not re-enumerate their sink on their
-            # own. This waits for the virtual sinks to reappear, then moves each
-            # app's live sink-input back onto its intended channel.
-            if self._channel != "micro":
-                from arctis_sound_manager.pw_utils import reapply_routing_overrides
-                reapply_routing_overrides()
+            # Put every app back on the channel it was on, then re-apply the
+            # saved routing overrides on top (they are the standing decision and
+            # win over the snapshot). Both passes wait for the Arctis_* sinks to
+            # come back first (issue #22): a move to a sink that is not there
+            # yet fails outright and leaves the app where the restart put it.
+            # The micro path runs this too — a mic-only change still restarts
+            # the whole filter-chain, so playback streams are displaced by it
+            # exactly as they are on every other channel.
+            _give_streams_back()
 
             if self._channel in ("game", "media", "aux"):
                 # The freshly-recreated EQ node runs with node.autoconnect=false
@@ -900,27 +870,28 @@ class _ApplyAllWorker(QThread):
             # recreate the Arctis_* loopbacks fresh so they relink correctly.
             # Never restart pipewire / pipewire-pulse → connected apps (Discord)
             # keep their sink.
-            ok = sc.restart("filter-chain", timeout=15)
-            if not ok:
-                log.error("audio restart failed")
-                self.done.emit(False)
-                return
+            # A profile switch used to restore only the apps that had a saved
+            # routing override; anything the user had simply left on a channel
+            # was abandoned wherever PipeWire parked it. audio_reconfiguration()
+            # covers both, and holds the router off while it happens so the
+            # displacement is not written down as the user's own choice.
+            from arctis_sound_manager.audio_reconfig import audio_reconfiguration
 
-            for node in ("effect_input.sonar-game-eq",
-                         "effect_input.sonar-media-eq",
-                         "effect_input.sonar-chat-eq"):
-                if not _ApplyWorker._wait_for_node(node, timeout_ms=8000):
-                    log.warning("%s did not appear", node)
+            with audio_reconfiguration():
+                ok = sc.restart("filter-chain", timeout=15)
+                if not ok:
+                    log.error("audio restart failed")
+                    self.done.emit(False)
+                    return
 
-            from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
-            DbusWrapper.recreate_loopbacks_game_media_sync()
+                for node in ("effect_input.sonar-game-eq",
+                             "effect_input.sonar-media-eq",
+                             "effect_input.sonar-chat-eq"):
+                    if not _ApplyWorker._wait_for_node(node, timeout_ms=8000):
+                        log.warning("%s did not appear", node)
 
-            # Profile switches recreate the loopbacks but (unlike _ApplyWorker)
-            # do not snapshot/restore sink-inputs, so apps that fell off their
-            # channel during the restart — Discord especially — must be pulled
-            # back onto their override target explicitly.
-            from arctis_sound_manager.pw_utils import reapply_routing_overrides
-            reapply_routing_overrides()
+                from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
+                DbusWrapper.recreate_loopbacks_game_media_sync()
 
             # The freshly-recreated game/media EQ nodes run with
             # node.autoconnect=false (Phase 3, issue #100/#88) — establish
