@@ -1500,6 +1500,10 @@ class HomePage(QWidget):
             def _copy_cmd():
                 from PySide6.QtWidgets import QApplication
                 from PySide6.QtGui import QClipboard
+                # Under Wayland the clipboard belongs to the focused window;
+                # a compositor drops setText() from a window without focus
+                # (same fix as system_deps_dialog.py:427).
+                dlg.activateWindow()
                 QApplication.clipboard().setText(cmd, QClipboard.Mode.Clipboard)
                 copy_btn.setText("Copied!")
                 copy_btn.setEnabled(False)
