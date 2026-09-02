@@ -4,6 +4,51 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [1.4.15] - 2 September 2026
+
+Game recordings keep their audio, applications stay on their channel when the
+audio graph is rebuilt, and the Linux test matrix runs all the way through for
+the first time in several releases.
+
+### Fixed
+
+- **Steam Game Recording captured no game audio** (issue #225). The router
+  only ever looked at playback streams, so it had no visibility over any
+  capture stream at all. Steam's recorder was left wherever WirePlumber's
+  fallback put it, which was rarely the channel carrying the game, hence clips
+  with an intact video track and a silent audio one. Recording streams are now
+  pointed at the monitor of the channel they belong to, honouring
+  `routing_overrides.json` and defaulting to Game.
+
+  Only a stream already reading a monitor is ever moved. One reading a real
+  capture device is somebody's microphone, and pointing it at a monitor would
+  replace their voice with the game audio, so the microphone stays out of
+  reach of this pass entirely.
+
+- **Applications changed channel on their own after any EQ or profile change.**
+  Rebuilding the audio graph restarts `filter-chain`, the channel sinks vanish
+  for a few seconds and PipeWire parks whatever sat on them elsewhere. Two
+  things went wrong: the streams were not put back, since only apps with a
+  saved override were restored, and the router then mistook the accident for a
+  deliberate move and wrote it down as a permanent one. A momentary flicker
+  became a lasting reassignment. Both are fixed.
+
+- **The Linux test matrix never reached the install step.** Every job on every
+  distribution stopped at the runtime deps check, which refused an undeclared
+  binary. The wheel install has therefore not actually been exercised on any
+  distribution for several releases, including 1.4.14.
+
+- **A preset was missing for anyone installing from a release tarball.** The
+  macron in `MARVEL Tōkon_ Fighting Souls [Game].json` does not survive
+  extraction when `bsdtar` cannot set the locale (issue #132). The preset is
+  now named `MARVEL Tokon_ Fighting Souls [Game]`.
+
+### Changed
+
+- The bug report now lists playback and capture streams and where each one
+  sits. Issue #225 could not be seen in a report at all: it showed the devices
+  but never the streams on them.
+
 ## [1.4.14] - 2 September 2026
 
 Media no longer pops at every track change with Spatial Audio enabled, the

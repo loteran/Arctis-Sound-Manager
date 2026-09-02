@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pulsectl
 
+from arctis_sound_manager import audio_reconfig
 from arctis_sound_manager.constants import (DBUS_BUS_NAME,
                                             DBUS_STATUS_INTERFACE_NAME,
                                             DBUS_STATUS_OBJECT_PATH)
@@ -248,6 +249,24 @@ def _confirm_manual_move(
     if now is None:
         now = time.monotonic()
 
+    # ASM is rebuilding the audio graph right now (EQ change, profile switch,
+    # Sonar toggle, "restart the audio engine"). The Arctis_* sinks go away for
+    # several seconds and PipeWire parks whatever was on them elsewhere, which
+    # looks exactly like a deliberate move and comfortably outlasts
+    # _STABILITY_DELAY. Persisting it overwrote the user's channel with the
+    # accident, and the reapply pass that follows the restart then enforced the
+    # wrong channel for good: a momentary flicker turned into a permanent
+    # reassignment. Drop the candidate rather than hold it, so the stability
+    # timer restarts from zero once the window closes and a move the user
+    # really did make during it still lands on the next tick.
+    if audio_reconfig.in_progress():
+        log.debug(
+            "Audio reconfiguration in progress: ignoring move of '%s' -> %s",
+            app, save_name,
+        )
+        _pending_moves.pop(key, None)
+        return False
+
     pending = _pending_moves.get(key)
     if pending is not None and pending[0] == save_name:
         # Same candidate as the previous tick(s) — not a new move, just
@@ -471,6 +490,89 @@ def _explicit_pin_target(props: dict, sink_map: dict) -> str | None:
     if _is_physical_arctis(target):
         return None
     return target
+
+
+# ── Capture-direction streams (issue #225) ────────────────────────────────
+# Until now the router only ever looked at sink-inputs, so nothing in ASM had
+# any visibility over a capture stream. A recorder such as Steam's Game
+# Recording therefore landed wherever WirePlumber's own fallback put it —
+# typically a monitor carrying none of the game audio, which is why the clips
+# came back with a silent track, or with nothing but whatever happened to be
+# on Media (Steam's own clip-saved chime).
+#
+# One rule makes this pass safe: only ever move a stream that is ALREADY
+# reading a monitor. A stream reading a real capture device is somebody's
+# microphone, and pointing it at a monitor would replace their voice with the
+# game audio. That is not hypothetical here — it is the exact failure pinned
+# by tests/test_mic_never_fed_by_an_output.py, where a sink monitor ended up
+# feeding the mic chain and a browser tab went out over Discord as if the user
+# were speaking it. That file notes the failure is silent to whoever causes
+# it. Restricting this pass to monitor -> monitor means the microphone cannot
+# be caught by it even if an override names one.
+_MONITOR_SUFFIX = ".monitor"
+
+
+def _is_monitor_source(name: str) -> bool:
+    """Whether *name* is a sink's monitor rather than a real capture device."""
+    return name.endswith(_MONITOR_SUFFIX)
+
+
+def _capture_target_source(props: dict, sources, overrides: dict):
+    """The monitor a recording stream belongs on, or None if it is absent.
+
+    Honours routing_overrides.json, so a recorder can be pinned to Chat or
+    Media, and falls back to the Game channel — where the game audio lives,
+    and what a recorder wants in the overwhelming majority of cases.
+    """
+    app = props.get("application.name", "")
+    key = app_override_key(app, props.get("application.process.binary", ""))
+    channel_sink = _lookup_override(overrides, key, app) or _CHANNEL_SINKS["game"]
+    wanted = channel_sink + _MONITOR_SUFFIX
+    return next((s for s in sources if s.name == wanted), None)
+
+
+def _route_capture_streams(pulse: pulsectl.Pulse,
+                           headset_power: HeadsetPower,
+                           overrides: dict) -> None:
+    """Point recording streams at the monitor of the channel they belong to.
+
+    See the block comment above for the monitor-only rule that keeps the
+    microphone out of reach of this pass.
+    """
+    if headset_power == HeadsetPower.OFF:
+        # Every channel is equally silent with the headset off, so moving a
+        # recorder between them would only undo the user's placement.
+        return
+
+    try:
+        sources = pulse.source_list()
+        source_outputs = pulse.source_output_list()
+    except Exception as exc:                      # pragma: no cover - transport
+        log.debug("Capture pass skipped: %s", exc)
+        return
+
+    src_name = {s.index: s.name for s in sources}
+
+    for so in source_outputs:
+        props = getattr(so, "proplist", None) or {}
+        app = props.get("application.name", "")
+        if not app:
+            continue
+
+        current = src_name.get(so.source, "")
+        if not _is_monitor_source(current):
+            # A real capture device: this is a microphone feed, never ours.
+            continue
+
+        target = _capture_target_source(props, sources, overrides)
+        if target is None or so.source == target.index:
+            continue
+
+        log.info("Capture: '%s' -> %s (was %s)", app, target.name, current or "?")
+        try:
+            pulse.source_output_move(so.index, target.index)
+        except Exception as exc:
+            log.warning("Could not move capture stream '%s': %s", app, exc)
 
 
 def _subscribe(pulse: pulsectl.Pulse) -> None:
@@ -850,6 +952,11 @@ def _process_tick(pulse: pulsectl.Pulse) -> None:
             else:
                 _native_placed[key] = s["sink_name"]
             continue
+
+    # Recording streams, last: `overrides` is final by this point, so a
+    # recorder pinned by the passes above is sent to the same channel rather
+    # than to a stale one.
+    _route_capture_streams(pulse, headset_power, overrides)
 
     # A channel's output device is *not* enforced here, deliberately.
     #

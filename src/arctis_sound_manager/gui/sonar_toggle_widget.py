@@ -103,30 +103,36 @@ class _ToggleWorker(QThread):
         # daemon recreate the Arctis_* loopbacks with the new targets. We never
         # restart pipewire / pipewire-pulse / arctis-manager, so connected apps
         # (Discord) keep their sink and audio.
-        ok = sc.restart("filter-chain")
-        if not ok:
-            _apply_yaml(self._old_mode)  # rollback
-            STATE_FILE.write_text(self._old_mode)
-            self.done.emit(False, self._old_mode)
-            return
+        #
+        # A mode switch keeps every app on the channel it was on — only the
+        # node behind that channel changes — so the snapshot is taken in terms
+        # of channels and survives the swap. Without it, only apps with a saved
+        # override came back and the rest were left wherever the ~8 s of
+        # teardown had scattered them.
+        from arctis_sound_manager.audio_reconfig import audio_reconfiguration
 
-        # Let filter-chain recreate the EQ nodes, then recreate Game+Media
-        # loopbacks. Chat (always 2ch) auto-reconnects and is preserved.
-        self.msleep(1500)
-        DbusWrapper.recreate_loopbacks_game_media_sync()
+        with audio_reconfiguration():
+            ok = sc.restart("filter-chain")
+            if not ok:
+                _apply_yaml(self._old_mode)  # rollback
+                STATE_FILE.write_text(self._old_mode)
+                self.done.emit(False, self._old_mode)
+                return
 
-        for remaining in range(5, 0, -1):
-            self.countdown_tick.emit(remaining)
-            self.msleep(1000)
+            # Let filter-chain recreate the EQ nodes, then recreate Game+Media
+            # loopbacks. Chat (always 2ch) auto-reconnects and is preserved.
+            self.msleep(1500)
+            DbusWrapper.recreate_loopbacks_game_media_sync()
 
-        _update_routing_overrides(self._new_mode)
-        # Pull apps (Discord, …) back onto their override target now that the
-        # overrides have been remapped for the new mode.
-        try:
-            from arctis_sound_manager.pw_utils import reapply_routing_overrides
-            reapply_routing_overrides()
-        except Exception:
-            pass
+            for remaining in range(5, 0, -1):
+                self.countdown_tick.emit(remaining)
+                self.msleep(1000)
+
+            # Must happen before the context manager's override pass: it maps
+            # the saved sink names onto the new mode's nodes, and re-applying
+            # the old names would send apps to nodes that no longer exist.
+            _update_routing_overrides(self._new_mode)
+
         try:
             subprocess.run(
                 ['notify-send', '-a', 'Arctis EQ', 'Arctis EQ',

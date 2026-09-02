@@ -661,6 +661,28 @@ def _gh_authenticated() -> bool:
         return False
 
 
+def _host_bridge_available() -> bool:
+    """Whether ASM can reach the host when something has to be done there.
+
+    True on the host itself: there is nothing to bridge, so reporting the
+    missing binary would be raising an alarm about a machine that is fine.
+    Inside a container it comes down to distrobox-host-exec being present,
+    which is exactly what container.host_prefix() resolves before every
+    host-side call.
+    """
+    try:
+        from arctis_sound_manager import container
+        if not container.running_in_container():
+            return True
+        # _which(), not shutil.which(): check-deps-drift.py reads the registry
+        # by looking for _which("<name>") calls, so going through the helper is
+        # what actually declares the binary as known.
+        return _which("distrobox-host-exec")
+    except Exception as exc:
+        log.warning("host bridge check failed: %s", exc)
+        return False
+
+
 def _udev_rules_valid() -> bool:
     """Delegate to the existing udev_checker module (already battle-tested)."""
     try:
@@ -801,6 +823,36 @@ def _build_checks() -> list[DepCheck]:
                 "_internal": ["asm-cli", "udev", "write-rules", "--force", "--reload"],
             },
             scope=Scope.HOST,
+        ),
+        DepCheck(
+            # The bridge udev_checker and container.host_prefix() cross to reach
+            # the host from inside a container. Deliberately carries no
+            # install_commands: it is not a package. distrobox injects it into
+            # the containers it creates, so its absence means either that we are
+            # on the host (nothing to bridge, and detect() says ok) or that we
+            # are in a container that is not a distrobox, which no package
+            # manager can fix from in here.
+            #
+            # Registered all the same because check-deps-drift.py requires every
+            # externally-called binary to be declared, and that rule earns its
+            # keep: an undeclared dependency is invisible to the self-healing
+            # dialog, which is how issue #23 silently broke Spatial Audio on
+            # Fedora. Declaring it with no fix is honest; leaving it out would
+            # have kept the whole matrix red.
+            name="distrobox-host-exec",
+            severity=Severity.DEGRADED,
+            feature="reaching the host from inside a container (udev rules)",
+            detect=_host_bridge_available,
+            # No install_commands, but the user is not left without recourse:
+            # the recovery is to change where ASM runs, not to install anything.
+            # Saying so is the whole point of the row.
+            user_action=(
+                "This container has no bridge to the host, so ASM cannot write "
+                "udev rules from in here. Run ASM on the host itself, or "
+                "recreate the container with distrobox, which provides "
+                "distrobox-host-exec. There is no package to install for this."
+            ),
+            scope=Scope.CONTAINER,
         ),
         DepCheck(
             name="HRIR file (EAC_Default.wav)",
