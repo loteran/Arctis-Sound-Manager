@@ -281,8 +281,68 @@ install_asm() {
             echo "[arch-install] and report the output at https://github.com/loteran/Arctis-Sound-Manager/issues" >&2
             exit 1
         fi
+
+        # polkit is a hard dep on standard Arch/Bazzite hosts, but the base
+        # Arch container image ships without it. ASM dep-check runs inside
+        # the container and calls shutil.which("pkexec") — if polkit is absent
+        # the check reports BLOCKING even though Bazzite has pkexec on the
+        # host. Installing it here silences the false alarm; the actual
+        # privilege escalation is still routed to the host via
+        # distrobox-host-exec when a system-package install is requested.
+        echo "[arch-install] Installing polkit (for pkexec availability check)..."
+        sudo pacman -S --noconfirm --needed polkit \
+            || echo "[arch-install] WARN: polkit install failed — pkexec check may report missing" >&2
+
+        # noise-suppression-for-voice is an optdepend of arctis-sound-manager
+        # (declared as such because it comes from the ASM signed repo, not the
+        # official Arch repos, so it cannot be a hard depend). Install it
+        # explicitly so the rnnoise LADSPA plugin is available in the container
+        # and can be synced to ~/.ladspa for the host PipeWire (see
+        # sync_ladspa_to_home below).
+        echo "[arch-install] Installing rnnoise LADSPA plugin (noise-suppression-for-voice)..."
+        sudo pacman -S --noconfirm noise-suppression-for-voice \
+            || echo "[arch-install] WARN: rnnoise install failed — ClearCast mic NR unavailable" >&2
+
         echo "[arch-install] Done."
     '
+}
+
+# ---------------------------------------------------------------------------
+# Sync LADSPA plugins from the container to ~/.ladspa
+# ---------------------------------------------------------------------------
+# The rnnoise plugin is installed inside the Arch container, but the host's
+# PipeWire filter-chain loads plugins from the HOST's LADSPA search path —
+# it cannot see inside the container. ~/.ladspa is bind-mounted from the
+# host home into the container (Distrobox always shares HOME), so a file
+# written there from inside the container is immediately visible to the host's
+# pipewire. No root is needed, and no reboot is required (unlike rpm-ostree).
+#
+# This function is called after install_asm() and is idempotent: if the .so
+# already exists and is up to date it is overwritten with the same bytes.
+sync_ladspa_to_home() {
+    log_step "Syncing rnnoise LADSPA plugin to ~/.ladspa (visible to host PipeWire)..."
+    local dest_dir="$HOME/.ladspa"
+
+    # Locate the installed plugin inside the container (name varies by build:
+    # librnnoise_ladspa.so on Arch, librnnoise_ladspa_plugin.so on some AUR
+    # variants — the glob catches all of them).
+    local plugin
+    plugin="$(distrobox enter "$_CONTAINER" -- bash -lc \
+        "ls /usr/lib/ladspa/librnnoise*.so 2>/dev/null | head -1" 2>/dev/null || true)"
+
+    if [[ -z "$plugin" ]]; then
+        log_warn "rnnoise LADSPA plugin not found in container — skipping sync"
+        log_warn "(ClearCast mic noise suppression will report DEGRADED until resolved)"
+        return 0
+    fi
+
+    local basename_plugin
+    basename_plugin="$(basename "$plugin")"
+    mkdir -p "$dest_dir"
+    distrobox enter "$_CONTAINER" -- bash -lc \
+        "cp '$plugin' '$HOME/.ladspa/$basename_plugin'" 2>>"$_LOG" \
+        && log_ok "rnnoise synced: $dest_dir/$basename_plugin" \
+        || log_warn "Could not sync rnnoise LADSPA plugin to $dest_dir"
 }
 
 # ---------------------------------------------------------------------------
@@ -483,6 +543,7 @@ fi
 verify_container_health || exit 1
 verify_mount_access
 install_asm
+sync_ladspa_to_home
 export_binaries
 write_systemd_units
 install_udev_rules
