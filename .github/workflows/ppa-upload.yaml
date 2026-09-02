@@ -1,15 +1,31 @@
 name: Upload to Launchpad PPA
 
+# Called by release.yaml at the end of a release, exactly like pypi-publish and
+# pacman-repo. It used to trigger on `push: tags`, but the release tag is
+# created by softprops/action-gh-release through the GitHub API (release.yaml
+# itself runs on workflow_dispatch as often as on a tag push) — an API-created
+# tag raises no `push` event, so this job silently never ran for any release
+# cut that way. v1.4.15 shipped everywhere except the PPA for exactly this
+# reason (issue #226). Being a reusable workflow_call, like the other
+# channels, removes the dependency on how the tag came to exist.
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Release tag to build (e.g. v1.2.14)'
+        required: true
+        type: string
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build (e.g. v1.2.14); blank = current ref'
+        required: false
+        type: string
 
 jobs:
   ppa-upload:
     runs-on: ubuntu-24.04
-    if: "!contains(github.ref_name, 'b')"
+    if: "!contains(inputs.tag || github.ref_name, 'b')"
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     strategy:
@@ -26,6 +42,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
 
       - name: Install build tools
         run: |

@@ -380,3 +380,17 @@ jobs:
     with:
       tag: ${{ github.event.inputs.tag || github.ref_name }}
     secrets: inherit
+
+  # Called rather than triggered on `push: tags`, like pypi-publish and
+  # pacman-repo: a release cut via workflow_dispatch (as this one is) creates
+  # its tag through the GitHub API, which raises no `push` event — a tag-push
+  # trigger here would never fire for that path. That silent gap is exactly
+  # what left v1.4.15 off the PPA (issue #226).
+  ppa-upload:
+    needs: release
+    # Skip beta/pre-release tags, like aur-update and copr-build.
+    if: "!contains(github.event.inputs.tag || github.ref_name, 'b')"
+    uses: ./.github/workflows/ppa-upload.yaml
+    with:
+      tag: ${{ github.event.inputs.tag || github.ref_name }}
+    secrets: inherit
