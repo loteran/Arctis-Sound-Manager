@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.4.16" date="2026-09-02">
+      <description>
+        <p>Audio cuts out after a few seconds of silence on Game, Chat, and Aux.</p>
+      </description>
+    </release>
     <release version="1.4.15" date="2026-09-02">
       <description>
         <p>Steam Game Recording captured no game audio (issue #225). The router. Applications changed channel on their own after any EQ or profile change. The Linux test matrix never reached the install step. Every job on every.</p>
@@ -199,11 +204,6 @@
     <release version="1.2.23" date="2026-08-06">
       <description>
         <p>**Auto mic-switch can now trigger on disconnect *or* mute together. The microphone-switching feature added in 1.2.22 let you pick one trigger — headset disconnects, or headset mic muted. There is now a combined option: switch to your alternate microphone whenever the headset is either powered off or** muted, and back to the headset mic only once it is both connected and unmuted. Handy if you want the desk mic to take over the moment you step away *or* mute, without choosing between the two. The Spatial Audio Immersion and Distance sliders now actually do something — on both Game and Media. Moving a slider only ever wrote the new value to a settings file; the virtual-surround chain was never rebuilt, so the sound never changed unless you deleted the config by hand and restarted the daemon. The reason was subtle: the slider handler asked to regenerate the chain from the GUI process, which — unlike the background daemon — has no headset registered, so the request quietly did nothing. The daemon now rebuilds the chain when a slider moves and applies it live. On top of that, Game and Media each get their own independent Immersion/Distance instead of sharing one chain fed only by the Game values, so you can run, say, more reverb on Game and none on Media. Moving a slider briefly restarts the surround chain (a short audio glitch), which is the cost of applying it. Reported with a precise root-cause analysis by @cookiekiller. (#169). Nova Pro Wireless / GameDAC 2: the volume and ChatMix dial responds immediately again. Turning the dial only registered every few seconds, because the daemon's endpoint listener treated a normal "nothing to read yet" timeout as a fault and backed off for a full second before listening again — so most of the dial's rapid updates arrived during the back-off and were dropped. A routine read timeout is no longer treated as an error, so dial movements come through as you make them. Reported on Discord.</p>
-      </description>
-    </release>
-    <release version="1.2.22" date="2026-08-04">
-      <description>
-        <p>Switch the microphone the Sonar Micro EQ uses between your headset and a desktop mic — by hand or automatically. Picking the input by hand was already possible; this adds doing it on an event. Choose an alternate microphone and a trigger: switch to it when the headset disconnects or powers off (and back to the headset mic when it returns), or when you mute the headset mic (and back when you unmute). The change happens behind the Sonar Micro EQ, so an app — a Discord call — never sees its microphone disappear; it keeps recording from the same node while the source underneath it swaps. Manual switching works on every headset; the automatic triggers act on whatever a given headset actually reports, so one that never announces its mute state simply won't use that trigger rather than misbehaving. The update button no longer runs a command that can't do anything. When ASM was installed from a package you downloaded by hand — a .deb, .rpm or .pkg that no repository tracks — the in-app update ran your package manager's upgrade command, which found nothing to fetch, reported success, and left the version unchanged while the "update available" banner kept coming back. ASM now notices that case up front (on apt, dnf and pacman alike) and instead offers the one-line command to add its repository — after which updates apply normally — or a button to download the latest release. (#163).</p>
       </description>
     </release>
   </releases>

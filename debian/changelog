@@ -1,3 +1,9 @@
+arctis-sound-manager (1.4.16-1) noble; urgency=medium
+
+  * Audio cuts out after a few seconds of silence on Game, Chat, and Aux.
+
+ -- loteran <axel.valadon@gmail.com>  Wed, 02 Sep 2026 00:00:00 +0000
+
 arctis-sound-manager (1.4.15-1) noble; urgency=medium
 
   * Steam Game Recording captured no game audio (issue #225). The router
