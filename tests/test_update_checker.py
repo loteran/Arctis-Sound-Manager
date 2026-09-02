@@ -493,10 +493,11 @@ def test_repo_available_version_unsupported_method():
     assert uc.repo_available_version(InstallMethod.PIP, "arctis-sound-manager") is None
 
 
-def _offer(monkeypatch, current, repo_version, github=("9.9.9", "u", "w")):
+def _offer(monkeypatch, current, repo_version, github=("9.9.9", "u", "w"),
+            method=InstallMethod.RPM):
     """Drive UpdateCheckWorker._check without threads, capturing what it emits."""
     w = uc.UpdateCheckWorker(current)
-    monkeypatch.setattr(uc, "detect_all_install_methods", lambda: [InstallMethod.RPM])
+    monkeypatch.setattr(uc, "detect_all_install_methods", lambda: [method])
     monkeypatch.setattr(uc, "repo_available_version", lambda *a, **k: repo_version)
     monkeypatch.setattr(w, "_github_offer", lambda: github)
     emitted = []
@@ -524,3 +525,56 @@ def test_falls_back_to_github_when_no_repo_can_answer(monkeypatch):
     upstream tag is the right — and only — answer."""
     assert _offer(monkeypatch, "1.4.11", None, github=("1.4.12", "u", "w")) \
         == ("1.4.12", "u", "w")
+
+
+def test_pacman_banner_follows_github_when_sync_db_lags(monkeypatch):
+    """Sync database lags the GitHub pacman-repo asset (hours behind); paru/yay
+    already see the new version but the app should not say 'up to date'.
+    The upgrade command is 'pacman -Syu' which refreshes on the fly."""
+    version, url, wheel = _offer(
+        monkeypatch, "1.4.15", "1.4.15",
+        github=("1.4.16", "https://github.com/loteran/Arctis-Sound-Manager/releases/tag/v1.4.16", "w"),
+        method=InstallMethod.PACMAN,
+    )
+    assert version == "1.4.16"
+    assert url.endswith("/releases/tag/v1.4.16")
+    # pacman installs upgrade through package manager, never the wheel
+    assert wheel == ""
+
+
+def test_apt_banner_does_not_follow_github_while_ppa_lags(monkeypatch):
+    """PPA rebuild is independent of the tag (discussion #140). If apt-cache
+    still only offers the old version, the app must not advertise the tag —
+    'apt update' cannot conjure a package the PPA has not published yet."""
+    assert _offer(
+        monkeypatch, "1.4.11", "1.4.11",
+        github=("1.4.12", "https://github.com/loteran/Arctis-Sound-Manager/releases/tag/v1.4.12", "w"),
+        method=InstallMethod.APT,
+    ) == ("", "", "")
+
+
+def test_pacman_keeps_repo_when_it_is_newer_than_github(monkeypatch):
+    """Local pacman database already ahead of the GitHub tag (mirror synced
+    before the tag landed). The repo offer must win — no downgrade."""
+    version, url, wheel = _offer(
+        monkeypatch, "1.4.15", "1.4.17",
+        github=("1.4.16", "u", "w"),
+        method=InstallMethod.PACMAN,
+    )
+    assert version == "1.4.17"
+    assert wheel == ""
+
+
+def test_pacman_github_failure_does_not_hide_repo_offer(monkeypatch):
+    """Network failure fetching GitHub must not swallow a valid repo offer.
+    The repo version (1.4.16 > current 1.4.15) still produces the banner."""
+    def _github_raises():
+        raise RuntimeError("network down")
+    w = uc.UpdateCheckWorker("1.4.15")
+    monkeypatch.setattr(uc, "detect_all_install_methods", lambda: [InstallMethod.PACMAN])
+    monkeypatch.setattr(uc, "repo_available_version", lambda *a, **k: "1.4.16")
+    monkeypatch.setattr(w, "_github_offer", _github_raises)
+    emitted = []
+    monkeypatch.setattr(w, "result", SimpleNamespace(emit=lambda *a: emitted.append(a)))
+    w._check()
+    assert emitted[0] == ("1.4.16", "https://github.com/loteran/Arctis-Sound-Manager/releases/tag/v1.4.16", "")

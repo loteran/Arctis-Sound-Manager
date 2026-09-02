@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.4.17" date="2026-09-02">
+      <description>
+        <p>In-app update check lagged AUR helpers on Arch. The checker trusted</p>
+      </description>
+    </release>
     <release version="1.4.16" date="2026-09-02">
       <description>
         <p>Audio cuts out after a few seconds of silence on Game, Chat, and Aux.</p>
@@ -199,11 +204,6 @@
     <release version="1.2.24" date="2026-08-08">
       <description>
         <p>The Sonar equaliser now applies as you edit it — no Apply button, and no drop in the audio. Adding, removing or muting a band used to regenerate the channel's filter-chain and restart it, which tore down every EQ node and silenced the channel for several seconds; only dragging an existing band applied live. Bands now sit in a fixed-shape rack, so every edit — add, delete, mute, move — is a control change pushed straight into the running graph in tens of milliseconds instead of a restart. The Apply button is gone with the cost that justified it; Revert stays, and now returns to the curve the preset holds. Contributed by @Denkiyaa. (#170). The chat EQ could lose the output it was pointed at. The GUI regenerates a channel's filter-chain config on every EQ edit, but only the daemon knows which headset is attached — so the GUI wrote the chat channel's target out empty, and PipeWire's session manager then tried to route that output to the default sink (one of ASM's own loopbacks), failed on the resulting cycle, and retried on every graph change: 23 failed link attempts in three minutes on the machine it was caught on, audible as interruptions on whatever was actually playing. The GUI now keeps whatever target is already on disk when it can't resolve one itself, and the daemon repairs a config that was already written without one. Contributed by @Denkiyaa. (#170). A headset added by an update could still be refused USB access. If ~/.config/arctis_manager/devices/ held an old copy of a device profile — the pre-2026 asm-setup wrote one there on first run — it shadowed the packaged profile when the udev rules were generated, so a product id added in a later release (for example the Arctis Nova 7P Gen 2's 0x2298) never reached the rules file even after upgrading, and the headset was denied access. The rules generator now unions the product ids across your copy and the packaged profile, so a stale copy can no longer hide a newer PID — and a product id you add by hand is granted access too. Reported by @camperotactico. (#146).</p>
-      </description>
-    </release>
-    <release version="1.2.23" date="2026-08-06">
-      <description>
-        <p>**Auto mic-switch can now trigger on disconnect *or* mute together. The microphone-switching feature added in 1.2.22 let you pick one trigger — headset disconnects, or headset mic muted. There is now a combined option: switch to your alternate microphone whenever the headset is either powered off or** muted, and back to the headset mic only once it is both connected and unmuted. Handy if you want the desk mic to take over the moment you step away *or* mute, without choosing between the two. The Spatial Audio Immersion and Distance sliders now actually do something — on both Game and Media. Moving a slider only ever wrote the new value to a settings file; the virtual-surround chain was never rebuilt, so the sound never changed unless you deleted the config by hand and restarted the daemon. The reason was subtle: the slider handler asked to regenerate the chain from the GUI process, which — unlike the background daemon — has no headset registered, so the request quietly did nothing. The daemon now rebuilds the chain when a slider moves and applies it live. On top of that, Game and Media each get their own independent Immersion/Distance instead of sharing one chain fed only by the Game values, so you can run, say, more reverb on Game and none on Media. Moving a slider briefly restarts the surround chain (a short audio glitch), which is the cost of applying it. Reported with a precise root-cause analysis by @cookiekiller. (#169). Nova Pro Wireless / GameDAC 2: the volume and ChatMix dial responds immediately again. Turning the dial only registered every few seconds, because the daemon's endpoint listener treated a normal "nothing to read yet" timeout as a fault and backed off for a full second before listening again — so most of the dial's rapid updates arrived during the back-off and were dropped. A routine read timeout is no longer treated as an error, so dial movements come through as you make them. Reported on Discord.</p>
       </description>
     </release>
   </releases>

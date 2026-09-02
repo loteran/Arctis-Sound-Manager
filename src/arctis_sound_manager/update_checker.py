@@ -343,6 +343,13 @@ log = logging.getLogger(__name__)
 # right now is the only answer that is actionable, so it is the one ASM asks
 # for. GitHub stays the fallback for installs no distro repository tracks
 # (pipx, pip) and for the AUR, whose PKGBUILD builds from the tag itself.
+#
+# Exception — pacman: the signed Arch repository is the GitHub pacman-repo
+# asset, so a newer GitHub tag is always installable via ``pacman -Syu``
+# (which refreshes the sync db on upgrade). The only lag is the local sync
+# database, which can sit hours behind the asset. For pacman installs the
+# checker takes the newer of the repo metadata and the GitHub tag. COPR/PPA
+# are independent rebuilds and stay repo-only (#140).
 
 _REPO_QUERY_TIMEOUT = 10
 
@@ -509,6 +516,16 @@ class UpdateCheckWorker(QThread):
         offered, url, wheel_url = self._repo_offer()
         if offered is None:
             offered, url, wheel_url = self._github_offer()
+        elif InstallMethod.PACMAN in detect_all_install_methods():
+            # pacman: the repo is the GitHub pacman-repo asset; a newer tag is
+            # installable via "pacman -Syu" (which refreshes). Take the max.
+            try:
+                gh_version, gh_url, _ = self._github_offer()
+                if gh_version and _version_gt(gh_version, offered):
+                    offered, url = gh_version, gh_url
+                    # wheel_url stays "" — pacman upgrades through package manager
+            except Exception as exc:  # noqa: BLE001 — network failure, keep repo
+                log.debug("GitHub fetch failed during pacman max: %r", exc)
 
         if not offered:
             self.result.emit("", "", "")

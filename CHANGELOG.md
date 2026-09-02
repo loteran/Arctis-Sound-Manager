@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.17] - 2 September 2026
+
+### Fixed
+
+- **In-app update check lagged AUR helpers on Arch.** The checker trusted
+  `pacman -Si`, which reads a local sync database that can sit hours behind
+  the GitHub `pacman-repo` asset, so paru/yay showed a new version while the
+  app still said "up to date". Pacman installs now take the newer of the
+  local repo metadata and the GitHub tag: `pacman -Syu` refreshes on upgrade,
+  so the tag is always installable. COPR and the PPA are unchanged — they
+  rebuild independently of the tag (discussion #140).
+
 ## [1.4.16] - 2 September 2026
 
 ### Fixed

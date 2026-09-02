@@ -1,3 +1,9 @@
+arctis-sound-manager (1.4.17-1) noble; urgency=medium
+
+  * In-app update check lagged AUR helpers on Arch. The checker trusted
+
+ -- loteran <axel.valadon@gmail.com>  Wed, 02 Sep 2026 00:00:00 +0000
+
 arctis-sound-manager (1.4.16-1) noble; urgency=medium
 
   * Audio cuts out after a few seconds of silence on Game, Chat, and Aux.
