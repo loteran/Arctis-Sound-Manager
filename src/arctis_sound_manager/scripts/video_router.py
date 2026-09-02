@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pulsectl
 
+from arctis_sound_manager import audio_reconfig
 from arctis_sound_manager.constants import (DBUS_BUS_NAME,
                                             DBUS_STATUS_INTERFACE_NAME,
                                             DBUS_STATUS_OBJECT_PATH)
@@ -247,6 +248,24 @@ def _confirm_manual_move(
     """
     if now is None:
         now = time.monotonic()
+
+    # ASM is rebuilding the audio graph right now (EQ change, profile switch,
+    # Sonar toggle, "restart the audio engine"). The Arctis_* sinks go away for
+    # several seconds and PipeWire parks whatever was on them elsewhere, which
+    # looks exactly like a deliberate move and comfortably outlasts
+    # _STABILITY_DELAY. Persisting it overwrote the user's channel with the
+    # accident, and the reapply pass that follows the restart then enforced the
+    # wrong channel for good: a momentary flicker turned into a permanent
+    # reassignment. Drop the candidate rather than hold it, so the stability
+    # timer restarts from zero once the window closes and a move the user
+    # really did make during it still lands on the next tick.
+    if audio_reconfig.in_progress():
+        log.debug(
+            "Audio reconfiguration in progress: ignoring move of '%s' -> %s",
+            app, save_name,
+        )
+        _pending_moves.pop(key, None)
+        return False
 
     pending = _pending_moves.get(key)
     if pending is not None and pending[0] == save_name:

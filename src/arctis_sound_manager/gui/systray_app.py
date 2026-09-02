@@ -651,8 +651,17 @@ class QSystrayApp(QBaseDesktopApp):
     def _on_restart_audio_engine(self) -> None:
         # The common case: apply a regenerated filter-chain config without
         # touching the daemon or pipewire itself.
+        def _do() -> bool:
+            # Restarting the engine still tears the channels down for a few
+            # seconds. Put the apps back afterwards rather than leaving them
+            # wherever PipeWire parked them, which is how a maintenance action
+            # ended up silently moving the user's game to another channel.
+            from arctis_sound_manager.audio_reconfig import audio_reconfiguration
+            with audio_reconfiguration():
+                return sc.restart("filter-chain", timeout=20)
+
         self._run_maintenance_action(
-            lambda: sc.restart("filter-chain", timeout=20),
+            _do,
             'restart_audio_engine_progress', 'restart_audio_engine_done', 'restart_audio_engine_failed',
         )
 
@@ -664,7 +673,12 @@ class QSystrayApp(QBaseDesktopApp):
             # enabled would be a surprise side effect.
             if sc.is_active("arctis-video-router"):
                 services.append("arctis-video-router")
-            return sc.restart(*services, timeout=20)
+            # Restarting arctis-manager destroys and recreates the Arctis_*
+            # loopbacks, so this displaces streams exactly like a filter-chain
+            # restart does and needs the same put-them-back pass.
+            from arctis_sound_manager.audio_reconfig import audio_reconfiguration
+            with audio_reconfiguration():
+                return sc.restart(*services, timeout=20)
 
         self._run_maintenance_action(
             _do, 'restart_asm_progress', 'restart_asm_done', 'restart_asm_failed',
@@ -691,7 +705,9 @@ class QSystrayApp(QBaseDesktopApp):
             from arctis_sound_manager.sonar_to_pipewire import \
                 check_and_fix_stale_configs
             check_and_fix_stale_configs()
-            return sc.restart("filter-chain", timeout=20)
+            from arctis_sound_manager.audio_reconfig import audio_reconfiguration
+            with audio_reconfiguration():
+                return sc.restart("filter-chain", timeout=20)
 
         self._run_maintenance_action(
             _do, 'regenerate_audio_configs_progress', 'regenerate_audio_configs_done',

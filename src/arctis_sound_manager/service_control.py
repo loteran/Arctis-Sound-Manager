@@ -191,9 +191,36 @@ def _action(verb: str, services: tuple[str, ...], timeout: float | None, capture
     return ok
 
 
+# Restarting any of these tears down the Arctis_* sinks and the filter-chain EQ
+# nodes, so every stream sitting on a channel is displaced for a few seconds.
+_GRAPH_REBUILDING = {
+    "filter-chain", "pipewire", "pipewire-pulse", "wireplumber", "arctis-manager",
+}
+
+
 def restart(*services: str, timeout: float | None = None, capture: bool = False) -> bool:
     """Restart services. Use this to (re)apply a new config — never ``start``,
-    which is a no-op if the service is already running."""
+    which is a no-op if the service is already running.
+
+    Restarting an audio service opens a reconfiguration window
+    (:mod:`arctis_sound_manager.audio_reconfig`) so ``arctis-video-router`` does
+    not mistake the streams PipeWire displaces during the restart for moves the
+    user made, and save the displacement as their routing override. It is opened
+    here rather than at each call site because every path that rebuilds the
+    graph goes through this function, and the ones that did not open it (the
+    tray's "restart the audio engine", the daemon's stale-config repair) are
+    exactly the ones where the reassignment went unnoticed. Callers that also
+    restore streams afterwards should use
+    :func:`~arctis_sound_manager.audio_reconfig.audio_reconfiguration`, which
+    closes the window once the graph has settled instead of waiting for it to
+    expire.
+    """
+    if _GRAPH_REBUILDING.intersection(services):
+        try:
+            from arctis_sound_manager import audio_reconfig
+            audio_reconfig.begin()
+        except Exception as exc:  # never let this block a restart
+            logger.warning("service_control: could not open the reconfig window: %s", exc)
     return _action("restart", services, timeout, capture)
 
 
