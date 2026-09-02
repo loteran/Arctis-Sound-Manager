@@ -281,6 +281,20 @@ def _section_pipewire_runtime() -> str:
                           if any(p in l.lower() for p in _ARCTIS_PATTERNS)]
         out.write('\n'.join(arctis_sources) or '(no Arctis source)')
 
+    # Where the streams actually sit, both directions. Devices alone cannot
+    # answer "why is my game on the wrong channel" or "why is my recording
+    # silent" — the answer is which sink each app plays into and which source
+    # each recorder reads from. Issue #225 was diagnosed blind for exactly this
+    # reason: nothing in the report showed a capture stream, so nobody could
+    # see that Steam's recorder was reading a monitor with no game audio on it.
+    # Not filtered to Arctis: a stream parked on some *other* sink is precisely
+    # the symptom being reported.
+    out.write('\n\n--- pactl list sink-inputs short (playback streams) ---\n')
+    out.write(_run(['pactl', 'list', 'sink-inputs', 'short']) or '(none)')
+
+    out.write('\n\n--- pactl list source-outputs short (capture streams) ---\n')
+    out.write(_run(['pactl', 'list', 'source-outputs', 'short']) or '(none)')
+
     out.write('\n\n--- pactl list sinks (Arctis only, full) ---\n')
     full_sinks = _run(['pactl', 'list', 'sinks'])
     out.write(full_sinks if 'skipped' in full_sinks
