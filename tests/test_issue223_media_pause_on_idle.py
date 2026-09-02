@@ -1,19 +1,19 @@
 # Copyright (C) 2026 loteran
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Issue #223 — the Media convolver must not be torn down between tracks.
+"""Issue #223 — passive EQ and HeSuVi chains must not be torn down between tracks.
 
-A browser closes and reopens its stream on every track change. With the Media
-chain allowed to pause on idle, PipeWire drops the HeSuVi convolver's state in
-that gap and rebuilds it on the next stream — the reset is audible as a pop at
-the start of every track.
+A browser or VoIP client closes and reopens its stream during normal use. With a
+passive chain allowed to pause on idle, WirePlumber suspends the downstream
+nodes after a few seconds of silence, and audio disappears until something else
+wakes it — which on Game and Chat means the sound cuts out entirely (#223,
+#NNN).
 
-``node.pause-on-idle = false`` in the *playback* block of the Media confs keeps
-the convolver warm across the gap. The scope is deliberately Media-only: it is
-the one channel whose source stops and restarts constantly, and the property
-costs the chain its ability to idle, which issue #180 went to some trouble to
-give it. So the tests below assert both halves — the line is there for media,
-and it is *not* there for game, chat or output.
+``node.pause-on-idle = false`` in the *playback* block of every passive chain
+(Game, Chat, Media, Aux, and the corresponding HeSuVi chains) keeps the
+downstream nodes running across stream gaps. The Output channel is the only
+exception: it is Audio/Sink (not Internal) and carries a user fallback, so it
+must still be allowed to idle for headset power-off to work (#180).
 """
 
 from pathlib import Path
@@ -50,33 +50,33 @@ def _one_band() -> tuple[list[tuple[str, EqBand]], list[EqBand]]:
 # ── the generators ────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("channel", ["game", "media", "chat", "output"])
-def test_active_8ch_conf_pauses_on_idle_only_for_media(channel: str) -> None:
+def test_active_8ch_conf_pauses_on_idle_for_all_except_output(channel: str) -> None:
     all_filters, band_slots = _one_band()
     conf = _s2p._active_conf_8ch(
         channel, f"effect_input.sonar-{channel}-eq", "alsa_output.test",
         "FL FR FC LFE RL RR SL SR", all_filters, band_slots, [], 0.0,
     )
-    assert (_PAUSE_ON_IDLE in _playback_block(conf)) is (channel == "media")
+    assert (_PAUSE_ON_IDLE in _playback_block(conf)) is (channel != "output")
 
 
 @pytest.mark.parametrize("channel", ["game", "media", "chat", "output"])
-def test_active_2ch_conf_pauses_on_idle_only_for_media(channel: str) -> None:
+def test_active_2ch_conf_pauses_on_idle_for_all_except_output(channel: str) -> None:
     all_filters, band_slots = _one_band()
     conf = _s2p._active_conf_2ch(
         channel, f"effect_input.sonar-{channel}-eq", "alsa_output.test",
         "FL FR", all_filters, band_slots, [], 0.0,
     )
-    assert (_PAUSE_ON_IDLE in _playback_block(conf)) is (channel == "media")
+    assert (_PAUSE_ON_IDLE in _playback_block(conf)) is (channel != "output")
 
 
 @pytest.mark.parametrize("channel", ["game", "media"])
-def test_hesuvi_conf_pauses_on_idle_only_for_media(channel: str, monkeypatch) -> None:
+def test_hesuvi_conf_pauses_on_idle_for_all_except_output(channel: str, monkeypatch) -> None:
     monkeypatch.setattr(_s2p, "_device_attached", lambda: True)
     monkeypatch.setattr(_s2p, "_get_physical_out_game", lambda: "alsa_output.test-game")
     monkeypatch.setattr(_s2p, "_write_conf", lambda path, text: None)
     monkeypatch.setattr(_s2p, "_ladspa_plugin_ref", lambda name: None)
     conf = _s2p.generate_hesuvi_conf(output_path=Path("/dev/null"), channel=channel)
-    assert (_PAUSE_ON_IDLE in _playback_block(conf)) is (channel == "media")
+    assert (_PAUSE_ON_IDLE in _playback_block(conf)) is (channel != "output")
 
 
 @pytest.mark.parametrize(
@@ -215,13 +215,35 @@ def test_repair_is_idempotent(tmp_path: Path) -> None:
 
 
 def test_repair_leaves_other_channels_alone(tmp_path: Path) -> None:
-    """Media-only is a product decision, not an oversight: every other channel
-    keeps the ability to idle that issue #180 gave it."""
-    conf = tmp_path / "sonar-game-eq.conf"
-    conf.write_text(_OLD_MEDIA_EQ_CONF.replace("media", "game"))
+    """The Output channel is the only one that must NOT get pause-on-idle,
+    because it is Audio/Sink (not Internal) and must be allowed to suspend
+    for headset power-off to work (#180)."""
+    conf = tmp_path / "sonar-output-eq.conf"
+    conf.write_text(_OLD_MEDIA_EQ_CONF.replace("media", "output"))
     before = conf.read_text()
     assert _s2p._ensure_media_pause_on_idle(conf) is False
     assert conf.read_text() == before
+
+
+@pytest.mark.parametrize(
+    ("name", "text"),
+    [
+        ("sonar-game-eq.conf", _OLD_MEDIA_EQ_CONF.replace("media", "game")),
+        ("sonar-chat-eq.conf", _OLD_MEDIA_EQ_CONF.replace("media", "chat")),
+        ("sink-virtual-surround-7.1-hesuvi.conf",
+         _OLD_HESUVI_MEDIA_CONF.replace("-media", "")),
+    ],
+)
+def test_repair_adds_pause_on_idle_to_game_and_chat(
+    name: str, text: str, tmp_path: Path,
+) -> None:
+    """Game, Chat, and their HeSuVi chains need the property just as much as
+    Media does: any passive chain suspended by WirePlumber after a few seconds
+    of silence will cut audio until something else wakes it."""
+    conf = tmp_path / name
+    conf.write_text(text)
+    assert _s2p._ensure_media_pause_on_idle(conf) is True
+    assert _PAUSE_ON_IDLE in _playback_block(conf.read_text())
 
 
 def test_repair_on_missing_file_is_harmless(tmp_path: Path) -> None:
@@ -294,23 +316,37 @@ def test_repair_inserts_into_playback_even_when_capture_is_passive_too(
 
 # ── the caller that carries the repair to existing installs ───────────────────
 
-def test_check_and_fix_stale_configs_repairs_the_media_confs(
+def test_check_and_fix_stale_configs_repairs_all_passive_confs(
     tmp_path: Path, monkeypatch,
 ) -> None:
-    """Nothing else carries this fix forward: sonar-media-eq.conf is not
+    """Nothing else carries this fix forward: sonar-*-eq.conf files are not
     regenerated by a version bump alone (that would flatten the user's EQ), so
     the daemon's startup sweep is the only path that reaches an existing
     install."""
     monkeypatch.setattr(_s2p, "_CONF_DIR", tmp_path)
     monkeypatch.setattr(_s2p, "_SINKS_CONF_DIR", tmp_path / "pipewire.conf.d")
     monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
-    eq_conf = tmp_path / "sonar-media-eq.conf"
-    hesuvi_conf = tmp_path / "sink-virtual-surround-7.1-hesuvi-media.conf"
-    eq_conf.write_text(_OLD_MEDIA_EQ_CONF)
-    hesuvi_conf.write_text(_OLD_HESUVI_MEDIA_CONF)
+    # Game, Chat, Media EQ + Game, Media HeSuVi — all need the property.
+    for _name, _template in (
+        ("sonar-game-eq.conf", _OLD_MEDIA_EQ_CONF.replace("media", "game")),
+        ("sonar-chat-eq.conf", _OLD_MEDIA_EQ_CONF.replace("media", "chat")),
+        ("sonar-media-eq.conf", _OLD_MEDIA_EQ_CONF),
+        ("sink-virtual-surround-7.1-hesuvi.conf",
+         _OLD_HESUVI_MEDIA_CONF.replace("-media", "")),
+        ("sink-virtual-surround-7.1-hesuvi-media.conf",
+         _OLD_HESUVI_MEDIA_CONF),
+    ):
+        (tmp_path / _name).write_text(_template)
 
     fixed, _needs_pw_restart = check_and_fix_stale_configs()
 
     assert fixed is True
-    assert _PAUSE_ON_IDLE in _playback_block(eq_conf.read_text())
-    assert _PAUSE_ON_IDLE in _playback_block(hesuvi_conf.read_text())
+    for _name in (
+        "sonar-game-eq.conf",
+        "sonar-chat-eq.conf",
+        "sonar-media-eq.conf",
+        "sink-virtual-surround-7.1-hesuvi.conf",
+        "sink-virtual-surround-7.1-hesuvi-media.conf",
+    ):
+        assert _PAUSE_ON_IDLE in _playback_block(
+            (tmp_path / _name).read_text()), _name

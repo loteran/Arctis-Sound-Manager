@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.4.16] - 2 September 2026
+
+### Fixed
+
+- **Audio cuts out after a few seconds of silence on Game, Chat, and Aux.**
+  Every passive EQ and HeSuVi chain now carries `node.pause-on-idle = false`,
+  so the downstream nodes stay running across stream gaps.  Without it,
+  WirePlumber suspended the chain after a short silence and audio disappeared
+  until something else woke it — which on Game and Chat meant the sound cut out
+  entirely during VoIP pauses or between tracks.  Media was already fixed in
+  issue #223; this extends the same fix to every other passive chain and
+  back-patches existing installs at startup.
+
 ## [1.4.15] - 2 September 2026
 
 Game recordings keep their audio, applications stay on their channel when the
