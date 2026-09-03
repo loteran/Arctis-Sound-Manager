@@ -252,7 +252,7 @@ It detects your distribution, installs the matching native package (pacman repos
 Or install manually for your distribution below. All native packages (AUR / COPR / PPA) pull in every dependency automatically. After installing, run `asm-setup` once — it configures udev rules, systemd services, PipeWire and downloads the HRIR file.
 
 > [!IMPORTANT]
-> **Arch users — use the signed pacman repository, not the AUR, for now.** The AUR is temporarily behind: `aur.archlinux.org` is under a security lockdown (following the recent malware wave) that freezes package pushes, so `arctis-sound-manager` on the AUR is stuck on an old version. The **signed pacman repository below is independent of the AUR and always carries the latest release** — it's the recommended way to install and update ASM on Arch until the lockdown lifts.
+> **Arch users — use the signed pacman repository, not the AUR, for now.** The AUR package is behind the latest release: our release automation stopped being able to push to it (issue #229), and the fix has to reach the AUR through that same automation. The **signed pacman repository below is independent of the AUR and always carries the latest release** — it's the recommended way to install and update ASM on Arch until the AUR catches up.
 
 <details open>
 <summary><strong>Arch Linux / CachyOS / Manjaro (signed repository — recommended)</strong></summary>
@@ -297,7 +297,7 @@ already provides them (CachyOS does), its own versions keep priority.
 <summary><strong>Arch Linux / CachyOS / Manjaro (AUR)</strong></summary>
 
 > [!NOTE]
-> The AUR package is currently **behind the latest release** while `aur.archlinux.org` is under a security lockdown that blocks pushes (see the note above). Use the signed pacman repository for the current version until it clears; the AUR will catch up automatically.
+> The AUR package is currently **behind the latest release** (see the note above): the release automation could no longer push to it, which is fixed but has yet to land there. If `yay` or `paru` fails with `fatal: No current branch`, remove the cached clone (`rm -rf ~/.cache/yay/arctis-sound-manager`) and use the signed pacman repository meanwhile.
 
 ```bash
 paru -S arctis-sound-manager
