@@ -77,7 +77,13 @@ jobs:
             exit 0
           fi
 
+          # Pin the branch rather than follow the remote HEAD (issue #229): the
+          # AUR repo's HEAD drifted onto an orphaned commit, so a plain clone
+          # lands detached, the commit below is made on no branch, and the push
+          # fails. That is what stopped this retry job from being able to repair
+          # anything, including the drift itself.
           git clone ssh://aur@aur.archlinux.org/arctis-sound-manager.git /tmp/aur
+          git -C /tmp/aur checkout -B master origin/master
           CUR=$(grep '^pkgver=' /tmp/aur/PKGBUILD | cut -d= -f2 || echo "")
           if [ "$CUR" = "$VERSION" ]; then
             echo "::notice::AUR already at ${VERSION} — nothing to push."
@@ -102,7 +108,7 @@ jobs:
             echo "::notice::No changes to push."
           else
             git commit -m "Update to v${VERSION}"
-            git push
+            git push origin HEAD:refs/heads/master
             echo "::notice::Pushed v${VERSION} to AUR."
           fi
           echo "done=true" >> "$GITHUB_OUTPUT"

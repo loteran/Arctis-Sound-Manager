@@ -43,9 +43,16 @@ optdepends=(
     # would abort on an unresolvable dependency (#175, and the #96 rule that this
     # must never be a Depends). It stays optional — the mic noise-cancel toggle
     # degrades gracefully when it's missing (and DeepFilterNet is an alternative
-    # engine). The signed pacman repo ships a build of it, so it's one
-    # `pacman -S noise-suppression-for-voice` away; on the AUR, paru offers it.
-    'noise-suppression-for-voice: RNNoise mic noise cancellation (ClearCast)'
+    # engine). The signed pacman repo ships a build of it under that exact name,
+    # so from there it is one `pacman -S noise-suppression-for-voice` away.
+    #
+    # Both names are listed on purpose (issue #229): on the AUR the only package
+    # that exists is the -git one, so naming just the plain package pointed users
+    # of this very PKGBUILD at something they could not install. Listing both is
+    # harmless, since pacman only ever suggests an optdepend and never resolves
+    # it — and either one provides the same LADSPA plugin.
+    'noise-suppression-for-voice: RNNoise mic noise cancellation (ClearCast), from the signed pacman repo'
+    'noise-suppression-for-voice-git: RNNoise mic noise cancellation (ClearCast), from the AUR'
     # ── Clips (opt-in) ───────────────────────────────────────────────────
     # Deliberately not in depends(), unlike swh-plugins above. Clips ships
     # off, and the toggle that turns it on (Settings → Clips) installs these

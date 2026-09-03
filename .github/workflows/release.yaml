@@ -193,7 +193,17 @@ jobs:
 
       - name: Clone AUR repository
         if: steps.aur_up.outputs.up == 'true'
-        run: git clone ssh://aur@aur.archlinux.org/arctis-sound-manager.git /tmp/aur-repo
+        run: |
+          # `git clone` alone follows the remote HEAD, and the AUR repo's HEAD
+          # drifted off master once (issue #229): the clone then lands detached,
+          # the commit below is made on no branch, and `git push` fails with
+          # "You are not currently on a branch" — silently blocking every AUR
+          # update, including the one that would repair it. Pinning the branch
+          # makes this step work regardless of what the remote HEAD says.
+          git clone ssh://aur@aur.archlinux.org/arctis-sound-manager.git /tmp/aur-repo
+          cd /tmp/aur-repo
+          git checkout -B master origin/master
+          git rev-parse --abbrev-ref HEAD | grep -qx master
 
       - name: Patch PKGBUILD and regenerate .SRCINFO
         if: steps.aur_up.outputs.up == 'true'
@@ -224,7 +234,11 @@ jobs:
           git add PKGBUILD .SRCINFO arctis-sound-manager.install
           git diff --cached --quiet && echo "No changes to push" && exit 0
           git commit -m "Update to v${{ needs.release.outputs.version }}"
-          git push
+          # Explicit refspec, never a bare `git push`: it is what guarantees the
+          # commit lands on master even if anything upstream left this checkout
+          # in an odd state. A commit pushed onto no branch is exactly how the
+          # AUR repo ended up with an orphaned HEAD (issue #229).
+          git push origin HEAD:refs/heads/master
 
       - name: Verify and self-heal AUR
         if: steps.aur_up.outputs.up == 'true'
@@ -235,6 +249,11 @@ jobs:
           # 1 — Verify what was actually committed to AUR git (not the RPC index,
           #     which can lag several minutes). Re-clone to get the latest state.
           git clone ssh://aur@aur.archlinux.org/arctis-sound-manager.git /tmp/aur-verify
+          # Same branch pinning as the clone above (issue #229): read the state of
+          # master, not of whatever commit the remote HEAD happens to name. Without
+          # this, the self-heal step could compare against an orphaned commit and
+          # conclude the push worked when it did not.
+          git -C /tmp/aur-verify checkout -B master origin/master
           ACTUAL_VER=$(grep "^pkgver=" /tmp/aur-verify/PKGBUILD | cut -d= -f2)
           echo "AUR git pkgver: '${ACTUAL_VER}' (expected '${VERSION}')"
 
@@ -252,7 +271,7 @@ jobs:
             git config user.name "loteran"
             git config user.email "29098776+loteran@users.noreply.github.com"
             git add PKGBUILD .SRCINFO arctis-sound-manager.install
-            git diff --cached --quiet && echo "Nothing to fix." || git commit -m "Fix: update to v${VERSION}" && git push
+            git diff --cached --quiet && echo "Nothing to fix." || git commit -m "Fix: update to v${VERSION}" && git push origin HEAD:refs/heads/master
             cd -
           fi
 
@@ -296,6 +315,21 @@ jobs:
           git diff --cached --quiet && echo "No changes to sync" && exit 0
           git commit -m "chore: sync packaging + generated files to v${VERSION} [skip ci]"
           git push origin HEAD:main
+
+      # The poller was only ever re-armed when the AUR was unreachable, so any
+      # other failure left it disabled and nothing retried. That is how the AUR
+      # sat two releases behind unnoticed (issue #229): the 1.4.16 publish went
+      # wrong, aur-retry had switched itself off after its last successful push
+      # weeks earlier, and no later release turned it back on. Re-arm on every
+      # failed publish, whatever the cause.
+      - name: Re-arm the AUR retry poller after a failed publish
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow enable aur-retry.yaml --repo "$GITHUB_REPOSITORY" \
+            && echo "::warning::AUR publish failed — aur-retry re-armed, it will retry every 30 min." \
+            || echo "::warning::AUR publish failed and aur-retry could not be re-armed; enable it by hand in the Actions tab."
 
   copr-build:
     runs-on: ubuntu-latest
