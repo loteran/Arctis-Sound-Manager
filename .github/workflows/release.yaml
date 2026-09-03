@@ -316,6 +316,21 @@ jobs:
           git commit -m "chore: sync packaging + generated files to v${VERSION} [skip ci]"
           git push origin HEAD:main
 
+      # The poller was only ever re-armed when the AUR was unreachable, so any
+      # other failure left it disabled and nothing retried. That is how the AUR
+      # sat two releases behind unnoticed (issue #229): the 1.4.16 publish went
+      # wrong, aur-retry had switched itself off after its last successful push
+      # weeks earlier, and no later release turned it back on. Re-arm on every
+      # failed publish, whatever the cause.
+      - name: Re-arm the AUR retry poller after a failed publish
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow enable aur-retry.yaml --repo "$GITHUB_REPOSITORY" \
+            && echo "::warning::AUR publish failed — aur-retry re-armed, it will retry every 30 min." \
+            || echo "::warning::AUR publish failed and aur-retry could not be re-armed; enable it by hand in the Actions tab."
+
   copr-build:
     runs-on: ubuntu-latest
     needs: release
