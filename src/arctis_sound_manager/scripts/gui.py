@@ -415,18 +415,22 @@ def main():
 
     # -- Preset sync (new Sonar presets added since install) ------------------
     def _announce_new_presets(filenames: list, versions: list) -> None:
-        """Say what arrived, and where it came from.
+        """Say what arrived, and where it came from, without stealing focus.
 
         A silent download leaves people wondering whether the list grew or they
-        misremembered it, so this names the presets and the SteelSeries GG
-        release they were taken from. Informational only — they are already
-        installed by the time this runs.
+        misremembered it, so this still names the presets and the SteelSeries GG
+        release they came from. It does so through a tray notification rather
+        than a dialog (issue #228): the presets are already installed by the time
+        this runs, so there is nothing to accept, decide or dismiss. A window
+        that raises itself over whatever the user is doing, on launch, for an app
+        that otherwise lives in the tray, costs more attention than the news is
+        worth.
+
+        The full list goes to the log, which is where it belongs when it is too
+        long to show.
         """
         from arctis_sound_manager.i18n import I18n
-        from PySide6.QtCore import Qt
-        from PySide6.QtWidgets import QMessageBox
-
-        log.info("Preset sync: %d new preset(s) available.", len(filenames))
+        from PySide6.QtWidgets import QSystemTrayIcon
 
         def _pretty(f: str) -> str:
             # "Halo_ Campaign Evolved [Game].json" → "Halo_ Campaign Evolved"
@@ -434,38 +438,32 @@ def main():
             return stem.rsplit(" [", 1)[0]
 
         names = sorted(_pretty(f) for f in filenames)
-        shown = names[:15]
-        body = "\n".join(f"  • {n}" for n in shown)
+        log.info("Preset sync: %d new preset(s) available: %s",
+                 len(names), ", ".join(names))
+
+        title = I18n.translate("ui", "preset_sync_title")
+        body = I18n.translate("ui", "preset_sync_body").format(count=len(names))
+        if versions:
+            body += "\n" + I18n.translate("ui", "preset_sync_from_gg").format(
+                versions=", ".join(versions))
+
+        # A balloon holds far less than the dialog did, and a truncated wall of
+        # names reads worse than a count. Name a few, leave the rest to the log.
+        shown = names[:5]
+        body += "\n" + "\n".join(f"  • {n}" for n in shown)
         if len(names) > len(shown):
             body += "\n  " + I18n.translate("ui", "preset_sync_and_more").format(
                 count=len(names) - len(shown))
 
-        title = I18n.translate("ui", "preset_sync_title")
-        header = I18n.translate("ui", "preset_sync_body").format(count=len(names))
-        if versions:
-            header += "\n" + I18n.translate("ui", "preset_sync_from_gg").format(
-                versions=", ".join(versions))
-
         def _show() -> None:
-            box = QMessageBox()
-            box.setWindowTitle(title)
-            box.setText(header)
-            box.setInformativeText(body)
-            box.setIcon(QMessageBox.Information)
-            box.setStandardButtons(QMessageBox.Ok)
-            # show() does not block, so the local name is the only thing holding
-            # the dialog: without this it is garbage-collected on return and the
-            # window vanishes before anyone sees it. Qt frees it on close.
-            box.setAttribute(Qt.WA_DeleteOnClose)
-            _announce_new_presets._box = box
-            box.show()
-            box.raise_()
-            box.activateWindow()
+            q_object.tray_icon.showMessage(
+                title, body, QSystemTrayIcon.MessageIcon.Information, 6000,
+            )
 
         # The signal is emitted from PresetSyncWorker's thread, and this is a
         # plain function rather than a QObject slot — so Qt would run it right
-        # there, building a widget outside the GUI thread. Hand it back to the
-        # GUI thread by giving singleShot a context object that lives in it.
+        # there, touching the tray icon outside the GUI thread. Hand it back to
+        # the GUI thread by giving singleShot a context object that lives in it.
         QTimer.singleShot(0, q_object, _show)
 
     def _sync_presets():
