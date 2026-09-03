@@ -414,23 +414,45 @@ def main():
     _queue_dialog(2500, _check_deps)
 
     # -- Preset sync (new Sonar presets added since install) ------------------
+    def _announce_new_presets_enabled() -> bool:
+        """Whether to show the preset-sync dialog (setting, default True).
+
+        The GUI process reads the shared settings file directly, the same way
+        the tray reads ``systray_show_battery``: this runs before any settings
+        object is around, and holding one just for a boolean is not worth it.
+
+        Defaults to True on any error, including a missing or unreadable file.
+        An announcement nobody asked to silence is a smaller problem than a
+        silent one somebody did.
+        """
+        try:
+            from arctis_sound_manager.constants import SETTINGS_FOLDER
+            from ruamel.yaml import YAML
+            f = SETTINGS_FOLDER / 'general_settings.yaml'
+            if f.is_file():
+                data = YAML(typ='safe').load(f.read_text(encoding='utf-8')) or {}
+                return bool(data.get('preset_sync_announce', True))
+        except Exception:
+            pass
+        return True
+
     def _announce_new_presets(filenames: list, versions: list) -> None:
-        """Say what arrived, and where it came from, without stealing focus.
+        """Say what arrived, and where it came from.
 
         A silent download leaves people wondering whether the list grew or they
-        misremembered it, so this still names the presets and the SteelSeries GG
-        release they came from. It does so through a tray notification rather
-        than a dialog (issue #228): the presets are already installed by the time
-        this runs, so there is nothing to accept, decide or dismiss. A window
-        that raises itself over whatever the user is doing, on launch, for an app
-        that otherwise lives in the tray, costs more attention than the news is
-        worth.
+        misremembered it, so this names the presets and the SteelSeries GG
+        release they were taken from. Informational only — they are already
+        installed by the time this runs.
 
-        The full list goes to the log, which is where it belongs when it is too
-        long to show.
+        Can be turned off with the ``preset_sync_announce`` setting (issue #228),
+        for people who would rather a tray app never opened a window at them.
+        The log line below is written either way, so switching the dialog off
+        loses nothing: it is the only record of *which* presets arrived, since
+        the dialog itself shows at most fifteen of them.
         """
         from arctis_sound_manager.i18n import I18n
-        from PySide6.QtWidgets import QSystemTrayIcon
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QMessageBox
 
         def _pretty(f: str) -> str:
             # "Halo_ Campaign Evolved [Game].json" → "Halo_ Campaign Evolved"
@@ -441,29 +463,42 @@ def main():
         log.info("Preset sync: %d new preset(s) available: %s",
                  len(names), ", ".join(names))
 
-        title = I18n.translate("ui", "preset_sync_title")
-        body = I18n.translate("ui", "preset_sync_body").format(count=len(names))
-        if versions:
-            body += "\n" + I18n.translate("ui", "preset_sync_from_gg").format(
-                versions=", ".join(versions))
+        if not _announce_new_presets_enabled():
+            log.info("Preset sync: announcement disabled by preset_sync_announce.")
+            return
 
-        # A balloon holds far less than the dialog did, and a truncated wall of
-        # names reads worse than a count. Name a few, leave the rest to the log.
-        shown = names[:5]
-        body += "\n" + "\n".join(f"  • {n}" for n in shown)
+        shown = names[:15]
+        body = "\n".join(f"  • {n}" for n in shown)
         if len(names) > len(shown):
             body += "\n  " + I18n.translate("ui", "preset_sync_and_more").format(
                 count=len(names) - len(shown))
 
+        title = I18n.translate("ui", "preset_sync_title")
+        header = I18n.translate("ui", "preset_sync_body").format(count=len(names))
+        if versions:
+            header += "\n" + I18n.translate("ui", "preset_sync_from_gg").format(
+                versions=", ".join(versions))
+
         def _show() -> None:
-            q_object.tray_icon.showMessage(
-                title, body, QSystemTrayIcon.MessageIcon.Information, 6000,
-            )
+            box = QMessageBox()
+            box.setWindowTitle(title)
+            box.setText(header)
+            box.setInformativeText(body)
+            box.setIcon(QMessageBox.Information)
+            box.setStandardButtons(QMessageBox.Ok)
+            # show() does not block, so the local name is the only thing holding
+            # the dialog: without this it is garbage-collected on return and the
+            # window vanishes before anyone sees it. Qt frees it on close.
+            box.setAttribute(Qt.WA_DeleteOnClose)
+            _announce_new_presets._box = box
+            box.show()
+            box.raise_()
+            box.activateWindow()
 
         # The signal is emitted from PresetSyncWorker's thread, and this is a
         # plain function rather than a QObject slot — so Qt would run it right
-        # there, touching the tray icon outside the GUI thread. Hand it back to
-        # the GUI thread by giving singleShot a context object that lives in it.
+        # there, building a widget outside the GUI thread. Hand it back to the
+        # GUI thread by giving singleShot a context object that lives in it.
         QTimer.singleShot(0, q_object, _show)
 
     def _sync_presets():

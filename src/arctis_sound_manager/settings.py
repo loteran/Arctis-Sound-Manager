@@ -464,6 +464,13 @@ class GeneralSettings(JsonSerializable):
         ConfigSetting('pipewire_quantum', SettingType.BUTTON_GROUP, 0, values_mapping={0: 'pipewire_quantum_auto', 1024: 'pipewire_quantum_1024', 2048: 'pipewire_quantum_2048'}),
         ConfigSetting('systray_show_battery', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('systray_icon_color', SettingType.BUTTON_GROUP, 0, values_mapping={0: 'systray_icon_color_auto', 1: 'systray_icon_color_white', 2: 'systray_icon_color_black'}),
+        # On by default (issue #228): a preset library that grows on its own is
+        # worth saying out loud once, otherwise people wonder whether the list
+        # changed or they misremembered it. Off is for those who would rather a
+        # tray app never opened a window at them. Turning it off never loses the
+        # information: the names are logged either way, and the dialog only ever
+        # showed the first fifteen anyway.
+        ConfigSetting('preset_sync_announce', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
     ]
 
     dac_settings_config: list[ConfigSetting] = [
