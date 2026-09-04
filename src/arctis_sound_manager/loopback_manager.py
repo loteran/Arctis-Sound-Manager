@@ -318,6 +318,23 @@ def _build_pw_loopback_argv(spec: LoopbackSpec) -> list[str]:
         # the chain keeps every node downstream of it — and the headset —
         # awake, which is exactly why fixing only one half changed nothing.
         f" node.passive=true"
+        # A passive loopback suspends the moment the chain goes idle. That is
+        # the point (issue #180: let the device fall asleep). But a suspend
+        # after the *input* half drops to idle is exactly what a suspend after
+        # an application stops is — and here is the trap: node.passive alone
+        # lets WirePlumber suspend this node on idle, even though an
+        # application is still playing into it. When the capture chain then
+        # restarts (e.g. shortly after the last application that kept the
+        # mixer awake stops, or after the watchdog re-creates a sibling
+        # loopback), the playback node comes back suspended and never resumes.
+        # The result is a channel that only works while something *else* in
+        # the chain is actively pushing audio — for example Chat only having
+        # sound while a YouTube video plays in Media. pause-on-idle=false
+        # pins the loopback so a suspend can only originate from a suspension
+        # of the nodes it connects to, never from a momentary idle in its own
+        # capture side. This mirrors the same property on the filter-chain
+        # playback nodes (sonar_to_pipewire / #223).
+        f" node.pause-on-idle=false"
         f" latency.msec=50"
     )
     return [
