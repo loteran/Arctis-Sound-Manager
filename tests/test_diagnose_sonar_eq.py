@@ -275,3 +275,78 @@ def test_extract_unit_version_marker_present():
 
 def test_extract_unit_version_marker_absent():
     assert diag.extract_unit_version_marker("[Unit]\nDescription=x\n") is None
+
+
+# ---------------------------------------------------------------------------
+# _downstream_of — check 6's core. Checks 1-5 all stop at the EQ's input side,
+# so a chain can be green on every one of them and still deliver audio
+# nowhere: that is what issue #181 looked like for weeks, five PASSes and
+# silence. This is the traversal that names the hop where it stops.
+# ---------------------------------------------------------------------------
+
+def _graph(nodes, links):
+    """(names, name_to_id, link_pairs) as check 6 consumes them."""
+    names = dict(nodes)
+    return names, {v: k for k, v in names.items()}, list(links)
+
+
+def test_downstream_of_reports_the_node_a_chain_feeds():
+    names, name_to_id, links = _graph(
+        {10: "effect_output.sonar-game-eq", 20: "effect_input.virtual-surround-7.1-hesuvi"},
+        [(10, 20)],
+    )
+    assert diag._downstream_of("effect_output.sonar-game-eq", name_to_id, names, links) == [
+        "effect_input.virtual-surround-7.1-hesuvi"
+    ]
+
+
+def test_downstream_of_a_dead_end_is_empty():
+    """The #181 shape: the node exists, upstream is linked, nothing comes out."""
+    names, name_to_id, links = _graph(
+        {10: "effect_output.sonar-game-eq", 5: "Arctis_Game_sink_out"},
+        [(5, 99)],  # something feeds INTO the chain, nothing leaves the EQ
+    )
+    assert diag._downstream_of("effect_output.sonar-game-eq", name_to_id, names, links) == []
+
+
+def test_downstream_of_an_absent_node_is_empty():
+    names, name_to_id, links = _graph({10: "effect_output.sonar-chat-eq"}, [])
+    assert diag._downstream_of("effect_output.sonar-media-eq", name_to_id, names, links) == []
+
+
+def test_downstream_of_lists_every_destination_sorted():
+    names, name_to_id, links = _graph(
+        {10: "effect_output.sonar-media-eq", 20: "zzz_sink", 30: "aaa_sink"},
+        [(10, 20), (10, 30)],
+    )
+    assert diag._downstream_of("effect_output.sonar-media-eq", name_to_id, names, links) == [
+        "aaa_sink", "zzz_sink"
+    ]
+
+
+def test_downstream_of_deduplicates_multichannel_links():
+    """One link per channel pair (FL, FR, …) is still one destination."""
+    names, name_to_id, links = _graph(
+        {10: "effect_output.sonar-game-eq", 20: "alsa_output.usb-SteelSeries"},
+        [(10, 20), (10, 20), (10, 20)],
+    )
+    assert diag._downstream_of("effect_output.sonar-game-eq", name_to_id, names, links) == [
+        "alsa_output.usb-SteelSeries"
+    ]
+
+
+def test_downstream_of_ignores_links_that_only_arrive():
+    """Direction matters: a node fed by many things still feeds nothing."""
+    names, name_to_id, links = _graph(
+        {10: "effect_output.sonar-game-eq", 5: "Arctis_Game_sink_out"},
+        [(5, 10)],
+    )
+    assert diag._downstream_of("effect_output.sonar-game-eq", name_to_id, names, links) == []
+
+
+def test_downstream_of_names_an_unknown_destination_by_id():
+    """A link to a node that vanished between dump and traversal still reports."""
+    names, name_to_id, links = _graph({10: "effect_output.sonar-chat-eq"}, [(10, 77)])
+    assert diag._downstream_of("effect_output.sonar-chat-eq", name_to_id, names, links) == [
+        "<id 77>"
+    ]

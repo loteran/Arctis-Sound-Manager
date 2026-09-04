@@ -8,7 +8,7 @@ Answers one question for a user whose EQ presets seem to do nothing (issue
 #181, root-caused with measurements in issue #203): where, between a preset
 click and the headset's speaker, does the signal chain stop carrying the EQ?
 
-The five things this checks, in the order they can mask each other:
+The things this checks, in the order they can mask each other:
 
   1. Safe mode          — ASM set the EQ configs aside after a filter-chain
                            crash-loop. Everything below is expected to look
@@ -29,6 +29,12 @@ The five things this checks, in the order they can mask each other:
   5. Bypass detection    — whether a channel's conf carries real filters or
                            is a flat passthrough, which explains "presets
                            change nothing" outright.
+  6. Downstream reach    — whether anything comes out the far end: EQ →
+                           HeSuVi → physical device. Checks 1-5 all stop at
+                           the EQ's INPUT side, so every one of them can pass
+                           on a chain that is completely silent (issue #181).
+                           This walks the remaining hops and names the one
+                           where the audio stops.
 
 Strictly read-only: no service is restarted, no config is edited, no link is
 touched. Every external command is a query (systemctl show/is-active,
@@ -317,7 +323,7 @@ def container_env() -> str:
 
 
 # ===========================================================================
-# The five checks.
+# The checks.
 # ===========================================================================
 
 _SAFE_MODE_MARKER = Path.home() / ".config" / "arctis_manager" / "filter_chain_safe_mode.json"
@@ -346,6 +352,26 @@ _HESUVI_NODE = {
     "game": "effect_input.virtual-surround-7.1-hesuvi",
     "media": "effect_input.virtual-surround-7.1-hesuvi-media",
 }
+
+# Everything downstream of the EQ, which checks 1-5 never looked at. A chain
+# can be green on every one of them and still be inaudible, because "the EQ
+# node exists and something feeds it" says nothing about whether anything
+# comes out the far end (issue #181: five PASSes, no sound). The hops:
+#
+#   Arctis_<Ch>_sink_out -> effect_input.sonar-<ch>-eq   (checked above)
+#   effect_output.sonar-<ch>-eq -> HeSuVi | physical out (spatial on/off)
+#   effect_output.virtual-surround-…    -> physical out
+#   effect_output.sonar-output-eq       -> external sink
+_CHANNEL_EQ_OUT = {
+    "game": "effect_output.sonar-game-eq",
+    "chat": "effect_output.sonar-chat-eq",
+    "media": "effect_output.sonar-media-eq",
+}
+_HESUVI_OUT = {
+    "game": "effect_output.virtual-surround-7.1-hesuvi",
+    "media": "effect_output.virtual-surround-7.1-hesuvi-media",
+}
+_OUTPUT_EQ_OUT = "effect_output.sonar-output-eq"
 
 
 def check_safe_mode(r: Reporter) -> bool:
@@ -756,6 +782,99 @@ def check_filter_counts(r: Reporter) -> None:
                "report.")
 
 
+def _downstream_of(node_name: str, name_to_id: dict, names: dict,
+                   link_pairs: list) -> list:
+    """Every node *node_name* currently feeds, by name."""
+    node_id = name_to_id.get(node_name)
+    if node_id is None:
+        return []
+    return sorted({names.get(i, f"<id {i}>") for o, i in link_pairs if o == node_id})
+
+
+def check_downstream(r: Reporter) -> None:
+    """Check 6. Does anything come out the far end of the chain?
+
+    Checks 1-5 stop at the EQ's input side. That is only the first of three
+    hops, so all five can pass on a system that is completely silent — which
+    is exactly what issue #181 looked like for weeks. This one walks the rest
+    of the path and names the hop where the audio stops.
+    """
+    r.header("6. Downstream: does the chain reach an output?")
+
+    dump = pw_dump()
+    if dump is None:
+        r.verdict(SKIP, "pw-dump not available or PipeWire not reachable", "")
+        return
+
+    names = _node_names_by_id(dump)
+    name_to_id = {v: k for k, v in names.items()}
+    link_pairs = _links(dump)
+
+    # A sink that is not one of ours is a real destination: the headset, an
+    # HDMI output, speakers. Reaching one of those is what "the chain works"
+    # means; reaching only our own nodes means the audio is still in transit.
+    def _is_terminal(name: str) -> bool:
+        return not name.startswith(("effect_input.", "effect_output.", "Arctis_"))
+
+    for channel, eq_out in _CHANNEL_EQ_OUT.items():
+        if not (_CONF_DIR / _CHANNEL_CONF[channel]).exists():
+            r.verdict(SKIP, f"{channel}: not configured, skipping", "")
+            continue
+        if eq_out not in name_to_id:
+            r.verdict(FAIL, f"{channel}: '{eq_out}' is absent from the graph",
+                      "The EQ's output side never instantiated. Its input side may well "
+                      "exist and be linked (check 4), which is why this can look healthy "
+                      "from upstream while nothing at all comes out.")
+            continue
+
+        dests = _downstream_of(eq_out, name_to_id, names, link_pairs)
+        if not dests:
+            r.verdict(FAIL, f"{channel}: '{eq_out}' feeds NOTHING",
+                      "This is a dead end: applications play in, the EQ processes, and the "
+                      "audio stops here. Every check above can still pass — they only look "
+                      "at the input side. ASM's watchdog owns this hop "
+                      "(ensure_spatial_eq_links) and should recreate it within ~16s; if it "
+                      "stays empty, that pass is failing or the target node is absent.")
+            continue
+
+        terminal = [d for d in dests if _is_terminal(d)]
+        r.verdict(PASS, f"{channel}: {eq_out} -> {', '.join(dests)}",
+                  "" if terminal else
+                  "Reaches an ASM node rather than a real output — follow that node's own "
+                  "row below to see whether the path terminates.")
+
+    for channel, hes_out in _HESUVI_OUT.items():
+        if hes_out not in name_to_id:
+            r.verdict(SKIP, f"hesuvi ({channel}): '{hes_out}' not in graph "
+                            "(spatial off, or chain not generated)", "")
+            continue
+        dests = _downstream_of(hes_out, name_to_id, names, link_pairs)
+        if dests:
+            r.verdict(PASS, f"hesuvi ({channel}): {hes_out} -> {', '.join(dests)}", "")
+        else:
+            r.verdict(FAIL, f"hesuvi ({channel}): '{hes_out}' feeds NOTHING",
+                      "Spatial audio is on and the convolver runs, but its output reaches "
+                      "no device: silence on this channel with every upstream check green. "
+                      "ensure_physical_output_links owns this hop.")
+
+    if _OUTPUT_EQ_OUT in name_to_id:
+        dests = _downstream_of(_OUTPUT_EQ_OUT, name_to_id, names, link_pairs)
+        if dests:
+            r.verdict(PASS, f"output: {_OUTPUT_EQ_OUT} -> {', '.join(dests)}", "")
+        else:
+            r.verdict(FAIL, f"output: '{_OUTPUT_EQ_OUT}' feeds NOTHING",
+                      "The Output channel's external sink (HDMI, TV, speakers) is either "
+                      "not configured or switched off. ASM falls back to the headset when "
+                      "the configured sink is absent from the graph — if this is empty, "
+                      "neither the sink nor the fallback is currently reachable.")
+
+    r.detail_only("--- every link between ASM nodes, as the graph has them ---")
+    for out_id, in_id in sorted(link_pairs):
+        o, i = names.get(out_id, ""), names.get(in_id, "")
+        if any(p in o or p in i for p in ("sonar", "hesuvi", "Arctis_")):
+            r.detail_only(f"  {o} -> {i}")
+
+
 # ===========================================================================
 # Main
 # ===========================================================================
@@ -788,6 +907,7 @@ def main() -> int:
     check_ladspa_plugins(r, cenv, unit_info)
     check_graph(r)
     check_filter_counts(r)
+    check_downstream(r)
 
     # ------------------------------------------------------------------
     # Verdict + paste-into-issue summary
@@ -803,12 +923,12 @@ def main() -> int:
                      f"see their detail)" if total_warn else "")
         r.note(f"No check failed{warn_note}. This rules out: safe mode, a "
                "stale/misconfigured filter-chain unit, a LADSPA plugin failing to load, a "
-               "missing or unlinked EQ node, and an accidental bypass conf. If the EQ still "
-               "audibly does nothing with everything above green, the break is downstream "
-               "of this chain (the HeSuVi convolver's own routing, the physical output "
-               "device, or the headset itself) rather than in the EQ chain this script "
-               "checks — worth attaching this report to the issue as evidence of what has "
-               "been ruled out.")
+               "missing or unlinked EQ node, an accidental bypass conf, and — via check 6 "
+               "— a chain that processes audio but delivers it nowhere. If the EQ still "
+               "audibly does nothing with all of that green, what remains is the physical "
+               "device itself: the wrong PCM selected on a dual-PCM headset, or volume "
+               "muted at the device. Check 6's link listing shows exactly which node each "
+               "channel ends on — worth attaching this report to the issue.")
     else:
         first_fail = next((label for level, _, label in r.verdicts if level == FAIL), None)
         r.note(f"{total_fail} check(s) failed, {total_warn} warning(s). First failure: {first_fail}")
