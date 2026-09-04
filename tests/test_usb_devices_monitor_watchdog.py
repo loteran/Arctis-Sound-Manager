@@ -148,7 +148,8 @@ def test_after_fallback_the_polling_loop_delivers_events_exactly_once(monkeypatc
     monkeypatch.setattr(mod.time, 'sleep', lambda _s: None)
 
     connected = []
-    obj._on_connect_callbacks.append(lambda vid, pid: connected.append((vid, pid)))
+    obj._on_connect_callbacks.append(
+        lambda vid, pid, name='': connected.append((vid, pid)))
 
     calls = {'n': 0}
 
@@ -157,7 +158,7 @@ def test_after_fallback_the_polling_loop_delivers_events_exactly_once(monkeypatc
         if calls['n'] == 1:
             return []  # seed snapshot: nothing plugged in yet
         obj._stopping = True  # stop the poll loop after this one diff
-        return [types.SimpleNamespace(idVendor=0x1038, idProduct=0x12ad)]
+        return [types.SimpleNamespace(idVendor=0x1038, idProduct=0x12ad, product='')]
 
     fake_usb_core = types.SimpleNamespace(find=fake_find)
     monkeypatch.setitem(sys.modules, 'usb.core', fake_usb_core)
