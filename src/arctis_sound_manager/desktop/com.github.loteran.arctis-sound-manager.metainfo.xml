@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.4.19" date="2026-09-04">
+      <description>
+        <p>Switching output device could crash the filter-chain (SIGSEGV). The. **A channel could go silent until something else in the chain was. **Clips dependencies were flagged missing on Fedora/Nobara even when a.</p>
+      </description>
+    </release>
     <release version="1.4.18" date="2026-09-02">
       <description>
         <p>Copy cmd / Copy command buttons ne copient pas sous Wayland (Bazzite/KDE).</p>
@@ -199,11 +204,6 @@
     <release version="1.2.26" date="2026-08-10">
       <description>
         <p>A second microphone noise-cancellation engine: DeepFilterNet. Next to the existing RNNoise (ClearCast), the mic noise-cancel card now lets you choose DeepFilterNet — a deep-learning suppressor many find cleaner across different microphones. It isn't packaged by distributions, so if you switch to it (or turn noise cancellation on) without the plugin installed, ASM offers to download the prebuilt LADSPA plugin with one click, into ~/.ladspa; if you install a newer version yourself later, ASM uses that instead. Works on glibc x86_64/aarch64/armv7 Linux, including immutable distros via the bind-mounted ~/.ladspa. Suggested by the community. SteamOS: the app crashed on launch, and couldn't reinstall its dependencies, after a system update. A SteamOS update replaces the whole root filesystem — which wipes the pacman-installed ASM package and its Python dependencies (like pulsectl) — and pacman can't write them back because the filesystem is read-only. Three separate problems came out of that, all fixed. The GUI no longer crashes when pulsectl is missing: it opens with external-output routing disabled instead of dying on an unguarded import. The in-app dependency installer now installs pure-Python modules (pulsectl, dbus-next, ruamel.yaml, pyusb, Pillow) with pip install --user into your home directory — root-less, and surviving the next OS update — so its Install button actually resolves them on SteamOS, and the copied command no longer carries a pointless sudo. And pacman -S arctis-sound-manager from the signed repository now completes, where before it aborted on noise-suppression-for-voice — an AUR-only plugin that was wrongly a hard dependency and wasn't in the repo; it's now optional (the mic noise-cancel toggle degrades gracefully without it, and DeepFilterNet is an alternative) and shipped in the repo for those who want it. Reported by @baccatuesday. (#175).</p>
-      </description>
-    </release>
-    <release version="1.2.25" date="2026-08-09">
-      <description>
-        <p>The DAC's custom display now updates as you change its settings. Turning display elements on or off, changing their fonts or scroll speed, or editing the weather only *saved* the setting — the screen was redrawn just for the brightness slider and the Custom Display on/off switch, so every other change appeared only after toggling Custom Display off and on again. Those settings now apply live, the moment you change them — no toggle, and no Apply button needed. Reported by @jnunez2301. (#172). Two copies of the app could open at login. The single-instance guard waited briefly for a reply from an already-running instance and, on silence, concluded its socket was stale, deleted it and started a second full GUI — but a freshly-launched instance accepts connections for a few seconds before it finishes starting and can reply, and login (the systemd unit and the desktop entry a moment apart) lands squarely in that window. It now settles the question on the connection being *accepted* rather than answered, and never unlinks a socket that is still live, so exactly one instance runs. Contributed by @Denkiyaa. Clicking the tray icon could crash the whole app. The click arrived as a D-Bus call the tray host was still waiting on, and the handler built the main window inline; Qt processed events underneath it, a status update carrying no battery level hid the battery tray item, and hiding it destroyed the object whose click handler was still on the stack — a use-after-free that took the whole app down, which read as the app closing itself. The click now opens the window on the event loop instead of inline. Contributed by @Denkiyaa.</p>
       </description>
     </release>
   </releases>

@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.19] - 4 September 2026
+
+### Fixed
+
+- **Switching output device could crash the filter-chain (SIGSEGV).** The
+  daemon's loopback watchdog and the GUI's device-switch path both rewrite
+  links on the same filter-chain nodes, from different processes. When a
+  switch landed on a watchdog tick, one side tore a link down while the
+  other created one on the same node, and PipeWire's convolver renegotiated
+  buffers mid-cycle underneath it. `ensure_loopback_link` and
+  `ensure_capture_link` now serialize across processes with an flock on a
+  shared file, reentrant for the daemon's own threads.
+  ([#230](https://github.com/loteran/Arctis-Sound-Manager/issues/230))
+- **A channel could go silent until something else in the chain was
+  playing** — reported as Chat only having sound while a YouTube video
+  played on Media. Issue #223 pinned the filter-chain playback nodes with
+  `node.pause-on-idle=false` so a passive chain survives a momentary idle;
+  the `pw-loopback` nodes (`Arctis_*_sink_out`) were left with
+  `node.passive=true` only, so a loopback whose own capture side idled for
+  a moment suspended itself and never resumed. Every loopback channel
+  (Game/Chat/Media/Aux) now carries the same pin on its playback side; the
+  capture side is left alone so headset auto-off (#180) still works.
+- **Clips dependencies were flagged missing on Fedora/Nobara even when a
+  usable H.264 encoder was installed.** ASM only checked for `x264enc`
+  (RPM Fusion's ugly-free set); Fedora/Nobara ship `openh264enc` via
+  `gstreamer1-plugin-openh264` instead. ASM now accepts whichever H.264
+  encoder is present, and installs `gstreamer1-plugin-openh264` alongside
+  the ugly-free set on Fedora.
+  ([#231](https://github.com/loteran/Arctis-Sound-Manager/issues/231))
+- **The new-preset announcement stays a dialog by default**, with a
+  `preset_sync_announce` toggle to switch it to a tray balloon instead.
+  ([#228](https://github.com/loteran/Arctis-Sound-Manager/issues/228))
+- **The AUR package could sit releases behind GitHub with nothing retrying.**
+  Our own publish automation was pushing to a detached HEAD on the AUR
+  remote, which failed silently, and the retry poller had disabled itself
+  after its last successful push and only re-armed on an AUR outage — not
+  on this kind of failure. Publishing now pins the branch explicitly, and
+  the poller re-arms on any failed publish.
+  ([#229](https://github.com/loteran/Arctis-Sound-Manager/issues/229))
+- **Bazzite/immutable-host container setup could leave `pkexec` and the
+  noise-suppression LADSPA plugin missing.** polkit and
+  `noise-suppression-for-voice` are now installed during container setup,
+  with the plugin synced to `~/.ladspa` for the host PipeWire to load.
+
+### Added
+
+- **A sixth diagnostic check** in `diagnose-sonar-eq.py`, walking the chain
+  downstream of the EQ output — through the HeSuVi convolver, when Spatial
+  is on, to whatever physical sink it actually reaches — for the case where
+  every check upstream passes and there is still no sound.
+  ([#181](https://github.com/loteran/Arctis-Sound-Manager/issues/181))
+
 ## [1.4.18] - 2 September 2026
 
 ### Fixed

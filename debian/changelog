@@ -1,3 +1,15 @@
+arctis-sound-manager (1.4.19-1) noble; urgency=medium
+
+  * Switching output device could crash the filter-chain (SIGSEGV). The
+  * **A channel could go silent until something else in the chain was
+  * **Clips dependencies were flagged missing on Fedora/Nobara even when a
+  * The new-preset announcement stays a dialog by default, with a
+  * The AUR package could sit releases behind GitHub with nothing retrying.
+  * **Bazzite/immutable-host container setup could leave pkexec and the
+  * A sixth diagnostic check in diagnose-sonar-eq.py, walking the chain
+
+ -- loteran <axel.valadon@gmail.com>  Fri, 04 Sep 2026 00:00:00 +0000
+
 arctis-sound-manager (1.4.18-1) noble; urgency=medium
 
   * Copy cmd / Copy command buttons ne copient pas sous Wayland
