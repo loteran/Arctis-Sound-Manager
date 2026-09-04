@@ -38,6 +38,7 @@ class _FakeLoopbackManager:
         self.recreated: list[str] = []
         self._specs = {
             "game": SimpleNamespace(
+                capture_name="Arctis_Game",
                 playback_name="Arctis_Game_sink_out",
                 target="effect_input.sonar-game-eq",
             ),

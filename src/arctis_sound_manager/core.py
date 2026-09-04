@@ -218,6 +218,44 @@ def sanitise_eq_bands(bands, logger) -> list[int] | None:
     return cleaned
 
 
+# ── pw-dump state helpers ────────────────────────────────────────────────
+# Pure functions over pw-dump JSON, extracted so the watchdog's
+# per-tick logic can be unit-tested without spinning up a CoreEngine.
+
+def _is_suspended_abnormally(
+    pw_data: list, capture_name: str, playback_name: str,
+) -> bool:
+    """Is a loopback playback node SUSPENDED while its capture side is active?
+
+    With ``node.pause-on-idle=false`` the playback node drops to *idle* on a
+    momentary gap, never to *suspended*.  If it reaches *suspended* while the
+    capture side is running/idle (something is playing into the sink), the
+    audio path is broken — the exact silent failure of #223.
+
+    Returns ``False`` when either node is absent from the dump (the
+    dead-process or link pass already handles that case).
+    """
+    capture_state: str | None = None
+    playback_state: str | None = None
+    for obj in pw_data:
+        if obj.get("type") != "PipeWire:Interface:Node":
+            continue
+        info = obj.get("info") or {}
+        props = info.get("props") or {}
+        name = props.get("node.name", "")
+        if name == capture_name:
+            capture_state = info.get("state")
+        elif name == playback_name:
+            playback_state = info.get("state")
+    # Both nodes absent → not our problem (dead-process pass handles it).
+    if capture_state is None and playback_state is None:
+        return False
+    return (
+        playback_state == "suspended"
+        and capture_state in ("running", "idle", None)
+    )
+
+
 class CoreEngine:
     logger: logging.Logger
     device_configurations: list[DeviceConfiguration]
@@ -852,9 +890,20 @@ class CoreEngine:
         # Recreating an orphan when the target doesn't exist is pointless; after
         # enough such ticks we call ensure_filter_chain_healthy() instead.
         _target_absent_ticks: dict[str, int] = {}
+        # Per-channel count of consecutive ticks where the loopback's playback
+        # node was SUSPENDED while its capture side was active.  Reset to 0 as
+        # soon as the node is back to running/idle or the loopback is recreated.
+        _suspended_ticks: dict[str, int] = {}
         # How many consecutive "orphan + target absent" ticks before we escalate
         # to ensure_filter_chain_healthy().  Each tick = _WATCHDOG_INTERVAL s.
         _TARGET_ABSENT_TICKS: int = 3
+        # Consecutive ticks a loopback's playback node may stay SUSPENDED while
+        # its capture side is active before we recreate the loopback.  Same
+        # 15 s grace as the orphan counter ("3 ticks × 5 s"): a single transient
+        # graph cycle is ignored, and a channel that self-suspended and will not
+        # re-pull (the #223 regression class) is rebuilt once the state is
+        # settled rather than on the first tick it appears.
+        _SUSPENDED_GRACE_TICKS: int = 3
 
         # ── PipeWire socket tracking (issue #90) ─────────────────────────────
         # Last-known PipeWire socket path seen by the watchdog.  ``None`` means
@@ -1260,6 +1309,48 @@ class CoreEngine:
                     self.logger.error(
                         "_loopback_watchdog: unexpected error in mislink check: %r", exc
                     )
+
+                # ── Suspended-loopback detection (#223 class) ─────────────────
+                # The dead-process and link passes prove the loopback is alive
+                # and linked — but not that it is *processing* audio. A playback
+                # node carrying node.pause-on-idle=false drops to "idle" on a
+                # momentary gap, never to "suspended"; if it nonetheless sits at
+                # "suspended" while its capture side is active, it self-suspended
+                # and is not re-pulling — the exact silent failure of #223 (a
+                # Chat channel that only came back while another channel's audio
+                # kept the downstream awake). Nothing catches that today: the
+                # process lives, the link is intact, and the user is just silent.
+                # Reuses link_data from the pass above — no extra pw-dump.
+                if link_data is not None:
+                    for channel, spec in self.loopback_manager.specs().items():
+                        if channel in cooled_channels or channel in restarted:
+                            _suspended_ticks.pop(channel, None)
+                            continue
+                        if not self.loopback_manager.is_running(channel):
+                            _suspended_ticks.pop(channel, None)
+                            continue
+                        # Normal: playback suspended while the capture side is
+                        # also idle is how an unwoken passive node rests — fine.
+                        # Abnormal: something plays into the capture side but
+                        # the playback side stays suspended = the pipe is broken.
+                        if _is_suspended_abnormally(
+                            link_data, spec.capture_name, spec.playback_name
+                        ):
+                            count = _suspended_ticks.get(channel, 0) + 1
+                            _suspended_ticks[channel] = count
+                            if count >= _SUSPENDED_GRACE_TICKS:
+                                _suspended_ticks.pop(channel, None)
+                                self.logger.warning(
+                                    "_loopback_watchdog: loopback '%s' playback node "
+                                    "SUSPENDED while capture is %s for %d ticks — "
+                                    "recreating (node.pause-on-idle regression class)",
+                                    channel, capture_state, count,
+                                )
+                                self.loopback_manager.recreate(spec)
+                                _record_intervention(channel)
+                                _overrides_needed = True
+                        else:
+                            _suspended_ticks.pop(channel, None)
 
                 # ── Spatial EQ output link-enforcement (Phase 3, #100/#88) ───
                 # effect_output.sonar-{game,media}-eq run with
@@ -1854,7 +1945,7 @@ class CoreEngine:
         finally:
             self._rescan_in_flight = False
 
-    def on_device_connected(self, vendor_id: int, product_id: int) -> None:
+    def on_device_connected(self, vendor_id: int, product_id: int, product_name: str = '') -> None:
         for device_config in self.device_configurations:
             if device_config.vendor_id == vendor_id and product_id in device_config.product_ids:
                 if self._detect_lock.locked():
@@ -1895,11 +1986,14 @@ class CoreEngine:
                 return
 
         self.logger.warning(
-            f"USB device {vendor_id:04x}:{product_id:04x} appeared but no device YAML matches. "
-            "If this is a SteelSeries Arctis headset, please open an issue with this PID so support can be added."
+            f"USB device {vendor_id:04x}:{product_id:04x}"
+            + (f" (iProduct: {product_name!r})" if product_name else "")
+            + " appeared but no device YAML matches. "
+            "If this is a SteelSeries Arctis headset, please open an issue "
+            "with this PID and product name so support can be added."
         )
     
-    def on_device_disconnected(self, vendor_id: int, product_id: int) -> None:
+    def on_device_disconnected(self, vendor_id: int, product_id: int, product_name: str = '') -> None:
         # vendor_id and product_id are not available. Check if the current device is still plugged in.
 
         if self.usb_device is None or self.device_config is None:
