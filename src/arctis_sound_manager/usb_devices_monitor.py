@@ -45,8 +45,8 @@ class USBDevicesMonitor:
         self.logger = logging.getLogger('USBDevicesMonitor')
 
         self._stopping = False
-        self._on_connect_callbacks: list[Callable[[int, int], None]] = []
-        self._on_disconnect_callbacks: list[Callable[[int, int], None]] = []
+        self._on_connect_callbacks: list[Callable[[int, int, str], None]] = []
+        self._on_disconnect_callbacks: list[Callable[[int, int, str], None]] = []
 
         self._backend: str = 'none'
         self.context = None
@@ -54,7 +54,7 @@ class USBDevicesMonitor:
         self._poll_thread: threading.Thread | None = None
         self._observer: 'pyudev.MonitorObserver | None' = None
         self._watchdog_thread: threading.Thread | None = None
-        self._known_devices: set[tuple[int, int]] = set()
+        self._known_devices: dict[tuple[int, int], str] = {}
 
         if _PYUDEV_AVAILABLE:
             try:
@@ -75,11 +75,11 @@ class USBDevicesMonitor:
             )
             self._backend = 'polling'
 
-    def register_on_connect(self, callback: Callable[[int, int], None]):
+    def register_on_connect(self, callback: Callable[[int, int, str], None]):
         if callback not in self._on_connect_callbacks:
             self._on_connect_callbacks.append(callback)
 
-    def register_on_disconnect(self, callback: Callable[[int, int], None]):
+    def register_on_disconnect(self, callback: Callable[[int, int, str], None]):
         if callback not in self._on_disconnect_callbacks:
             self._on_disconnect_callbacks.append(callback)
 
@@ -176,10 +176,15 @@ class USBDevicesMonitor:
         except ValueError:
             return
 
+        # udev's ID_MODEL is the USB iProduct string with spaces replaced by
+        # underscores (kernel convention).  Expose it raw so callers can log
+        # it for diagnostics when a PID matches no YAML.
+        product_name: str = device.get('ID_MODEL', '')
+
         if device.action == 'add':
-            self._on_connect(vid, pid)
+            self._on_connect(vid, pid, product_name)
         elif device.action == 'remove':
-            self._on_disconnect(vid, pid)
+            self._on_disconnect(vid, pid, product_name)
 
     def _poll_loop(self):
         """Polling fallback: enumerate USB devices every _POLL_INTERVAL_SECONDS
@@ -197,32 +202,35 @@ class USBDevicesMonitor:
         while not self._stopping:
             time.sleep(_POLL_INTERVAL_SECONDS)
             current = self._snapshot(usb.core)
-            for vid, pid in current - self._known_devices:
-                self._on_connect(vid, pid)
-            for vid, pid in self._known_devices - current:
-                self._on_disconnect(vid, pid)
+            for vid, pid in current.keys() - self._known_devices.keys():
+                self._on_connect(vid, pid, current[(vid, pid)])
+            for vid, pid in self._known_devices.keys() - current.keys():
+                self._on_disconnect(vid, pid, self._known_devices[(vid, pid)])
             self._known_devices = current
 
-    def _snapshot(self, usb_core) -> set[tuple[int, int]]:
-        """Return the set of (vid, pid) currently present for the SteelSeries vendor.
+    def _snapshot(self, usb_core) -> dict[tuple[int, int], str]:
+        """Return {(vid, pid): product_name} for the SteelSeries vendor.
         We only watch our vendor to keep polling cheap."""
         try:
             devices = usb_core.find(find_all=True, idVendor=_STEELSERIES_VENDOR_ID)
-            return {(int(d.idVendor), int(d.idProduct)) for d in devices}
+            return {
+                (int(d.idVendor), int(d.idProduct)): (d.product or '')
+                for d in devices
+            }
         except Exception as e:
             self.logger.debug(f"USB snapshot failed: {e!r}")
             return self._known_devices  # keep last good snapshot
 
-    def _on_connect(self, vendor_id: int, product_id: int):
+    def _on_connect(self, vendor_id: int, product_id: int, product_name: str = ''):
         for callback in self._on_connect_callbacks:
             try:
-                callback(vendor_id, product_id)
+                callback(vendor_id, product_id, product_name)
             except Exception as e:
                 self.logger.exception(f"on_connect callback raised: {e!r}")
 
-    def _on_disconnect(self, vendor_id: int, product_id: int):
+    def _on_disconnect(self, vendor_id: int, product_id: int, product_name: str = ''):
         for callback in self._on_disconnect_callbacks:
             try:
-                callback(vendor_id, product_id)
+                callback(vendor_id, product_id, product_name)
             except Exception as e:
                 self.logger.exception(f"on_disconnect callback raised: {e!r}")
