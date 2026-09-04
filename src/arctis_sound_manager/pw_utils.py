@@ -5,16 +5,91 @@
 PipeWire utilities for native (non-PulseAudio) stream management.
 Used to detect and move apps like mpv/haruna that bypass PulseAudio.
 """
+import fcntl
 import json
 import logging
 import shutil
 import subprocess
+import threading
 import time
+from contextlib import contextmanager
+from functools import wraps
 from pathlib import Path
 
 logger = logging.getLogger("pw_utils")
 
 OVERRIDES_FILE = Path.home() / ".config" / "arctis_manager" / "routing_overrides.json"
+
+# --- Cross-process lock for the link-mutating passes (issue #230) ---------
+# Rewriting the same PipeWire links from two places at once crashes
+# pipewire-filter-chain 1.6.x with a SIGSEGV: the daemon's loopback watchdog
+# tears a link down for the same node the GUI's retarget_output is linking,
+# and the graph is re-negotiated underneath a running cycle. The two live in
+# different processes, so a plain in-process lock is not enough — an flock on
+# a shared file is what actually serialises them.
+_LOOPBACK_LOCK_FILE = Path.home() / ".config" / "arctis_manager" / "loopback.lock"
+
+# The daemon runs several of these passes from different threads, and the
+# helpers compose (ensure_physical_output_links → ensure_loopback_link), so the
+# lock has to be reentrant on both axes: an RLock for threads of this process,
+# a depth counter so only the outermost holder takes and releases the flock
+# (flock is per-fd — a second open() in the same process would deadlock on it).
+_loopback_lock_local = threading.local()
+_loopback_lock_thread = threading.RLock()
+
+
+@contextmanager
+def _loopback_link_lock():
+    """Serialize link-mutating passes across the daemon and the GUI (#230).
+
+    Advisory by design: when the config dir cannot be written the pass runs
+    unlocked rather than failing the link — a possible race is a better outcome
+    than no audio at all.
+    """
+    if getattr(_loopback_lock_local, "depth", 0):
+        # Already held by this thread — a composed call, not a competing one.
+        _loopback_lock_local.depth += 1
+        try:
+            yield
+        finally:
+            _loopback_lock_local.depth -= 1
+        return
+
+    handle = None
+    _loopback_lock_thread.acquire()
+    try:
+        try:
+            _LOOPBACK_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+            handle = open(_LOOPBACK_LOCK_FILE, "a+")
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        except OSError as exc:
+            logger.debug("loopback lock unavailable: %s — proceeding unlocked", exc)
+            if handle is not None:
+                handle.close()
+                handle = None
+        _loopback_lock_local.depth = 1
+        try:
+            yield
+        finally:
+            _loopback_lock_local.depth = 0
+            if handle is not None:
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                except OSError:
+                    pass
+                handle.close()
+    finally:
+        _loopback_lock_thread.release()
+
+
+def _serialized_links(func):
+    """Run *func* under :func:`_loopback_link_lock`."""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        with _loopback_link_lock():
+            return func(*args, **kwargs)
+    return wrapper
+
 
 # --- Safe subprocess spawning (issue #123) --------------------------------
 # The daemon runs libusb device I/O and these PipeWire CLI spawns in the same
@@ -1211,6 +1286,7 @@ def _resolve_unique_node_id(
     return ids[0] if ids else None
 
 
+@_serialized_links
 def ensure_loopback_link(
     playback_name: str, target_name: str, data: list | None = None,
     outcome: dict | None = None,
@@ -1225,6 +1301,10 @@ def ensure_loopback_link(
     idempotent: correct links already present are left untouched, missing ones
     are created, and any link from the playback node to a node *other* than
     *target_name* is torn down.
+
+    Serialized across processes (issue #230): the daemon watchdog and the
+    GUI's retarget_output both call this, and concurrent pw-link/pw-link -d
+    on an active filter-chain node SIGSEGVs pipewire 1.6.x.
 
     Parameters
     ----------
@@ -1378,6 +1458,7 @@ def ensure_loopback_link(
         return False
 
 
+@_serialized_links
 def ensure_capture_link(
     source_name: str, capture_name: str, data: list | None = None,
 ) -> bool:
