@@ -543,6 +543,25 @@ def _pip_user(pkg: str) -> list[str]:
     Runs as the invoking user (never via pkexec) — see the deps dialog.
     """
     return ["python3", "-m", "pip", "install", "--user", pkg]
+def _gst_element_available(element: str) -> bool:
+    """True when the named GStreamer element is registered.
+
+    See :func:`_gst_elements` for why we use ``gst-inspect-1.0`` rather
+    than importing Gst.
+    """
+    inspect = shutil.which("gst-inspect-1.0")
+    if inspect is None:
+        return False
+    try:
+        proc = subprocess.run([inspect, element], capture_output=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return proc.returncode == 0
+
+# Candidates for the "any H.264 encoder" check — order is preference.
+_GST_CANDIDATES = ["x264enc", "openh264enc", "nvh264enc", "vah264enc",
+                   "vah264lpenc", "vaapih264enc", "rkmpph264enc"]
+
 def _gst_elements(*elements: str) -> bool:
     """True when every named GStreamer element is registered.
 
@@ -556,13 +575,19 @@ def _gst_elements(*elements: str) -> bool:
     if inspect is None:
         return False
     for element in elements:
-        try:
-            proc = subprocess.run([inspect, element], capture_output=True, timeout=10)
-        except (OSError, subprocess.SubprocessError):
-            return False
-        if proc.returncode != 0:
+        if not _gst_element_available(element):
             return False
     return True
+
+def _any_h264_encoder_available() -> bool:
+    """True when at least one H.264 encoder element is registered.
+
+    Fedora/Nobara ship the openh264 encoder in `gstreamer1-plugin-openh264`
+    rather than `x264enc` in `gstreamer1-plugins-ugly-free` (the patent-
+    encumbered half lives in RPM Fusion). We accept either one — the clip
+    capture pipeline picks the best available encoder at runtime.
+    """
+    return any(_gst_element_available(e) for e in _GST_CANDIDATES)
 
 
 def clips_enabled() -> bool:
@@ -1281,26 +1306,31 @@ def clip_dep_checks() -> list[DepCheck]:
         ),
         DepCheck(
             # One row for the encode/mux chain: appsrc and opusenc (base),
-            # pulsesrc and matroskamux (good), x264enc (ugly). x264enc is the
-            # fallback every machine without a hardware encoder lands on, so it
-            # is required rather than optional despite living in "ugly".
+            # pulsesrc and matroskamux (good), and an H.264 encoder. The
+            # encoder varies by distro: Fedora/Nobara ship `openh264enc`
+            # in gstreamer1-plugin-openh264 rather than x264enc (the latter
+            # is in RPM Fusion's ugly). We accept whichever is present and
+            # install both on Fedora so the user gets the best encoder.
             name="GStreamer: encoding and muxing",
             severity=Severity.BLOCKING,
             feature="clip capture",
             detect=lambda: _gst_elements("appsrc", "opusenc", "pulsesrc",
-                                         "matroskamux", "x264enc"),
+                                         "matroskamux")
+                           and _any_h264_encoder_available(),
             install_commands={
-                # -ugly-free is the Fedora repos' build; the patent-encumbered
-                # half lives in RPM Fusion and holds nothing the capture uses.
                 "fedora": ["dnf", "install", "-y", "gstreamer1-plugins-base",
-                           "gstreamer1-plugins-good", "gstreamer1-plugins-ugly-free"],
+                           "gstreamer1-plugins-good",
+                           "gstreamer1-plugins-ugly-free",
+                           "gstreamer1-plugin-openh264"],
                 "debian": ["apt-get", "install", "-y", "gstreamer1.0-plugins-base",
                            "gstreamer1.0-plugins-good", "gstreamer1.0-plugins-ugly"],
                 "arch":   ["pacman", "-S", "--noconfirm", "gst-plugins-base",
                            "gst-plugins-good", "gst-plugins-ugly"],
             },
             remove_commands={
-                "fedora": ["dnf", "remove", "-y", "gstreamer1-plugins-ugly-free"],
+                "fedora": ["dnf", "remove", "-y",
+                           "gstreamer1-plugins-ugly-free",
+                           "gstreamer1-plugin-openh264"],
                 "debian": ["apt-get", "remove", "-y", "gstreamer1.0-plugins-ugly"],
                 "arch":   ["pacman", "-Rs", "--noconfirm", "gst-plugins-ugly"],
             },

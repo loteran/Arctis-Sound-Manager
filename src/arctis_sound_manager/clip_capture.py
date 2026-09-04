@@ -63,12 +63,14 @@ SCREENCAST = "org.freedesktop.portal.ScreenCast"
 
 # Encoders in preference order: (element, extra props, needs GL upload).
 # The GL forms keep the frame on the GPU; x264enc is the portable last resort
-# and the only one that costs real CPU.
+# and the only one that costs real CPU. openh264enc is available on Fedora
+# (fedora-cisco-openh264 repo) as a fallback when x264enc is not installed.
 ENCODERS = [
     ("nvh264enc", "preset=low-latency-hq gop-size={gop} bitrate={kbps}", True),
     ("vah264enc", "key-int-max={gop} bitrate={kbps}", False),
     ("vah264lpenc", "key-int-max={gop} bitrate={kbps}", False),
     ("x264enc", "speed-preset=veryfast tune=zerolatency key-int-max={gop} bitrate={kbps}", False),
+    ("openh264enc", "key-int-max={gop} bitrate={kbps}", False),
 ]
 
 # Apps that play audio but are never what a clip is about, as the *words* their
