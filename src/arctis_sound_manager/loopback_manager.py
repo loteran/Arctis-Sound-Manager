@@ -318,8 +318,21 @@ def _build_pw_loopback_argv(spec: LoopbackSpec) -> list[str]:
         # the chain keeps every node downstream of it — and the headset —
         # awake, which is exactly why fixing only one half changed nothing.
         f" node.passive=true"
-        f" latency.msec=50"
     )
+    if spec.channel == "chat":
+        # Chat only, not Game/Media (#223 vs #230 trade-off): pinning every
+        # channel's playback node awake with node.pause-on-idle=false (as
+        # 1.4.19 did) measurably raised how often pipewire-filter-chain's
+        # convolver hits the concurrent-link-mutation SIGSEGV tracked in
+        # #230, because Game/Media see far more graph churn than Chat.
+        # Reverting it everywhere (1.4.20) reopened #223's silent-until-
+        # nudged symptom for all three channels — worst for Chat, since a
+        # voice call has no natural "something else plays" moment to wake
+        # it back up. Pinning Chat alone keeps that specific case fixed
+        # without reintroducing anywhere near the same amount of extra
+        # graph activity Game/Media would add.
+        playback_props += " node.pause-on-idle=false"
+    playback_props += f" latency.msec=50"
     return [
         _pw_loopback_exe(),
         f"--capture-props={capture_props}",
