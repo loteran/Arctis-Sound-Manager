@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.20] - 5 September 2026
+
+### Fixed
+
+- **Reverted the #223 and #230 fixes from 1.4.19: they made filter-chain
+  crashes more frequent on some hardware, not less.** #223 pinned
+  `node.pause-on-idle=false` on the Game/Chat/Media loopback playback nodes
+  so a channel could not go silent while idle; #230 added a cross-process
+  lock around the daemon's and the GUI's link rewrites. Individually sound,
+  together they raised how often pipewire-filter-chain's convolver hits an
+  underlying PipeWire concurrency bug: keeping the loopback/EQ/HeSuVi chain
+  continuously active (rather than letting it suspend on idle, as before
+  1.4.19) gives that bug far more chances to trigger, and locking closed
+  only two of the writers that can race into it — confirmed live on
+  affected hardware, where the crash recurred even after two more writers
+  (asm-router's stream moves, the Discord screen-share guard) were locked
+  the same way. `node.pause-on-idle=false` and the lock are removed, along
+  with the watchdog safety net added on top of #223 (which would have
+  misfired against the restored normal idle-suspend). This reopens #223's
+  original symptom — a channel can go silent until something else in the
+  chain is actively playing — as the accepted trade-off: intermittent
+  silence beats a crash loop. #230 stays open for a proper fix.
+
 ## [1.4.19] - 4 September 2026
 
 ### Fixed
