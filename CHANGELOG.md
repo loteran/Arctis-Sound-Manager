@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.21] - 5 September 2026
+
+### Fixed
+
+- **Reverted `node.passive` everywhere: it kept causing the very channel it
+  was meant to protect to go silent.** #180 (v1.4.1) made every ASM-built
+  playback node passive so the headset's own auto-off timer could see the
+  device go idle — but that meant each channel's audio depended on some
+  *other* channel actively driving the shared downstream chain to stay
+  awake. That dependency is the root cause of #223 (a channel goes silent
+  until something else plays, which recurred twice despite two prior
+  targeted fixes) and a major contributor to #230 (pipewire-filter-chain
+  SIGSEGV from the resulting suspend/resume graph churn — reproducible
+  even with 1.4.20's cross-process locking, a settle delay, and this
+  release's own Chat-only pin and physical-sink no-suspend quirk, none of
+  which were sufficient on their own). `node.passive` is removed from
+  every loopback and output-chain template, and from the self-heal that
+  silently reinserted it into existing configs. **Trade-off, accepted:
+  the headset will not auto-power off from inactivity while ASM is
+  running — #180 is reopened.** #230 itself (the underlying PipeWire
+  robustness bug) stays open; this removes a major trigger for it, not
+  the bug.
+
 ## [1.4.20] - 5 September 2026
 
 ### Fixed
