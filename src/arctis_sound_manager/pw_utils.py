@@ -1739,8 +1739,15 @@ def reclaim_misrouted_streams() -> tuple[int, list[str]]:
     return moved, names
 
 
+@_serialized_links
 def move_native_stream(stream_node_id: int, target_sink_name: str, data: list | None = None) -> bool:
-    """Move a native PipeWire stream to target_sink_name using pw-metadata."""
+    """Move a native PipeWire stream to target_sink_name using pw-metadata.
+
+    Called from asm-router, a separate process from the daemon — without this
+    lock its ``pw-metadata`` retarget races the daemon's loopback watchdog on
+    the same filter-chain nodes exactly like #230, just with a third writer
+    the original fix didn't cover.
+    """
     if data is None:
         data = _pw_dump()
 

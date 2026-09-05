@@ -728,6 +728,16 @@ class LoopbackManager:
         """
         # Stop all first so the old nodes are torn down before new ones come up.
         self.stop_all()
+        # stop_all() only waits for the pw-loopback *processes* to exit; the
+        # filter-chain process it was feeding still has to process the
+        # resulting port/link removals on its own main loop before it is safe
+        # to hand it a fresh set of links for the same nodes. Recreating
+        # immediately churns the graph while that teardown is still being
+        # digested, which is the "teardown-then-create ordering inside a
+        # single call" GitHub issue #230 flagged as a still-open trigger for
+        # pipewire-filter-chain's convolver SIGSEGV, distinct from (and still
+        # possible after fixing) the cross-process race #230 was filed for.
+        time.sleep(0.15)
         for spec in specs:
             self.start(spec)
 

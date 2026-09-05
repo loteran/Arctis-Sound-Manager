@@ -30,7 +30,8 @@ import time
 from pathlib import Path
 
 from arctis_sound_manager.log_setup import configure_logging
-from arctis_sound_manager.pw_utils import _abs_exe, _pw_run, _parse_pw_dump_output
+from arctis_sound_manager.pw_utils import (_abs_exe, _loopback_link_lock,
+                                           _pw_run, _parse_pw_dump_output)
 from arctis_sound_manager.stream_guard import (CONFIG_FILE,
                                                DEFAULT_CAPTURE_NODES,
                                                GuardConfig, describe_cut,
@@ -120,19 +121,26 @@ def _destroy_links(dump: list, link_ids: list[int]) -> int:
     *dump* first, and destruction goes through ``pw-link -d out in``, which
     is content-addressed: it only ever removes the link presently connecting
     those two exact ports.
+
+    Runs under the same cross-process lock as the daemon's loopback watchdog
+    and asm-router's stream moves (#230): this guard runs in its own process,
+    reacting to every graph change, and an unlocked ``pw-link -d`` racing one
+    of those passes on a busy graph (many streams appearing/disappearing at
+    once) crashes pipewire-filter-chain with the same SIGSEGV.
     """
     destroyed = 0
-    for out_port, in_port in link_ports(dump, link_ids):
-        try:
-            r = _pw_run(["pw-link", "-d", str(out_port), str(in_port)],
-                        capture_output=True, text=True, timeout=3)
-            if r.returncode == 0:
-                destroyed += 1
-            else:
-                log.debug("destroy %d->%d failed: %s", out_port, in_port,
-                          (r.stderr or "").strip())
-        except Exception as exc:
-            log.debug("destroy %d->%d raised: %s", out_port, in_port, exc)
+    with _loopback_link_lock():
+        for out_port, in_port in link_ports(dump, link_ids):
+            try:
+                r = _pw_run(["pw-link", "-d", str(out_port), str(in_port)],
+                            capture_output=True, text=True, timeout=3)
+                if r.returncode == 0:
+                    destroyed += 1
+                else:
+                    log.debug("destroy %d->%d failed: %s", out_port, in_port,
+                              (r.stderr or "").strip())
+            except Exception as exc:
+                log.debug("destroy %d->%d raised: %s", out_port, in_port, exc)
     return destroyed
 
 
