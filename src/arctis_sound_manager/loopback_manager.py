@@ -306,33 +306,17 @@ def _build_pw_loopback_argv(spec: LoopbackSpec) -> list[str]:
         # tug-of-war anymore.
         f" node.autoconnect=false"
         f" node.linger=true"
-        # A loopback with no application playing into it is still a node that
-        # actively pushes silence down the chain, all the way to the headset —
-        # which never sees an idle moment and so never starts its auto-off
-        # timer (issue #180). node.passive makes it follow rather than drive:
-        # it cannot wake the device on its own, so once the applications stop,
-        # the whole chain (loopback → EQ → HeSuVi → headset) suspends. An
-        # application starting playback is an active node and wakes it back up.
-        # This must be paired with the same property on the filter-chain
-        # playback nodes (sonar_to_pipewire): ONE non-passive link anywhere in
-        # the chain keeps every node downstream of it — and the headset —
-        # awake, which is exactly why fixing only one half changed nothing.
-        f" node.passive=true"
+        # node.passive removed (was issue #180: let an idle chain suspend so
+        # the headset's own auto-off timer could start). It made every
+        # channel's audio depend on some other channel actively playing to
+        # keep the shared downstream chain awake — the root cause of #223 (a
+        # channel goes silent until something else plays) and a major
+        # contributor to #230 (filter-chain SIGSEGV from the resulting
+        # suspend/resume graph churn). #180 is reopened as the accepted
+        # trade-off: the headset will not auto-power-off from inactivity
+        # while ASM is running. See memory project_asm_passive_suspend_saga.
+        f" latency.msec=50"
     )
-    if spec.channel == "chat":
-        # Chat only, not Game/Media (#223 vs #230 trade-off): pinning every
-        # channel's playback node awake with node.pause-on-idle=false (as
-        # 1.4.19 did) measurably raised how often pipewire-filter-chain's
-        # convolver hits the concurrent-link-mutation SIGSEGV tracked in
-        # #230, because Game/Media see far more graph churn than Chat.
-        # Reverting it everywhere (1.4.20) reopened #223's silent-until-
-        # nudged symptom for all three channels — worst for Chat, since a
-        # voice call has no natural "something else plays" moment to wake
-        # it back up. Pinning Chat alone keeps that specific case fixed
-        # without reintroducing anywhere near the same amount of extra
-        # graph activity Game/Media would add.
-        playback_props += " node.pause-on-idle=false"
-    playback_props += f" latency.msec=50"
     return [
         _pw_loopback_exe(),
         f"--capture-props={capture_props}",
