@@ -2154,6 +2154,16 @@ class CoreEngine:
             except Exception as e:
                 self.logger.warning(f"Failed to apply WirePlumber ALSA headroom quirk: {e!r}")
 
+            # No-suspend quirk (#223/#230 class): stop the physical ALSA sink
+            # shared by every channel from suspending on its own, so one
+            # channel's idle timeout cannot glitch/silence another channel
+            # that never went idle. See pw_quirks.apply_no_suspend_quirk.
+            try:
+                from arctis_sound_manager.pw_quirks import apply_no_suspend_quirk
+                apply_no_suspend_quirk()
+            except Exception as e:
+                self.logger.warning(f"Failed to apply WirePlumber no-suspend quirk: {e!r}")
+
             # Load defaults
             for _, section in self.device_config.settings.items():
                 for setting in section:
