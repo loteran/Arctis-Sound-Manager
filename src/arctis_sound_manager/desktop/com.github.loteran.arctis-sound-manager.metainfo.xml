@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.4.22" date="2026-09-06">
+      <description>
+        <p>**filter-chain.service restart storm could segfault PipeWire's convolver. Raised api.alsa.period-size to 128 in the physical-sink no-suspend. **The headset's hardware auto-off timer works again (#180), without.</p>
+      </description>
+    </release>
     <release version="1.4.21" date="2026-09-05">
       <description>
         <p>**Reverted node.passive everywhere: it kept causing the very channel it</p>
@@ -199,11 +204,6 @@
     <release version="1.2.29" date="2026-08-12">
       <description>
         <p>ASM now tells you when the surround processing can't keep up. Spatial Audio missing its deadline sounds like random crackling, and until now nothing in the app explained where it came from — leaving you to blame the headset, the cable or the drivers. If the surround chain drops frames steadily, you get a notification saying so and pointing at the stability setting that fixes it. It deliberately stays quiet about one-off glitches: a single burst while a game loads a level or a build finishes is normal and not worth interrupting you for, so it only speaks when the problem persists for a few minutes, and only once per session. Suggested by @nobodys-tools. (#183). The Spatial Audio profile picker now shows how much CPU each profile costs. The bundled profiles range from tiny to nearly a megabyte, and the larger ones cost proportionally more processing — enough that on a busy machine the choice decides whether the audio stays clean. Each entry is now marked *light on CPU*, *moderate CPU* or *heavy on CPU*, so the trade-off is visible while you choose instead of discovered afterwards. This says nothing about sound quality: a heavier profile is not a better one, just a more demanding one. Suggested by @nobodys-tools. (#183). The Discord invite on the README and website works again. The previous invite had expired, so anyone following the "Join the Discord" badge — the first thing shown at the top of the project page — landed on an error. The replacement is set never to expire. Reported by @nobodys-tools. (#184).</p>
-      </description>
-    </release>
-    <release version="1.2.28" date="2026-08-12">
-      <description>
-        <p>A stability setting for when the surround chain crackles. Spatial Audio runs fourteen convolvers per channel, and with a large HRIR that processing can miss its deadline under ordinary desktop load — heard as random crackling, with nothing in the app to explain where it comes from. Settings now offers Audio stability (buffer size): leave it on *Automatic* (the default, unchanged behaviour) or pick a larger buffer, which gives the surround processing more time per cycle and stops the glitches. Reported with measurements showing the crackling disappear at the larger size. Worth knowing before you turn it on: this is a system-wide PipeWire setting, so the extra buffering applies to every application, not only ASM — comfortable for music and films, less so for competitive play, which is why it is off by default and left to you. ASM releases it when it exits, and restores your choice when it starts. Suggested by @nobodys-tools. (#183). The app kept scanning your audio system after you closed its window. The Channels page started a twice-a-second refresh when it was first shown and never stopped it, so once the main window had been opened the work carried on for as long as the tray icon was there — with nothing on screen to show for it. Each pass inspected the whole PipeWire graph, which on a busy system was enough to keep a core noticeably occupied and to disturb the Spatial Audio processing, heard as crackling. The refresh now runs only while the page is actually visible, and the expensive part of it runs less often, so nothing changes on screen. Found and diagnosed precisely by @nobodys-tools. (#182).</p>
       </description>
     </release>
   </releases>

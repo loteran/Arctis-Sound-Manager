@@ -1,3 +1,11 @@
+arctis-sound-manager (1.4.22-1) noble; urgency=medium
+
+  * **filter-chain.service restart storm could segfault PipeWire's convolver
+  * Raised api.alsa.period-size to 128 in the physical-sink no-suspend
+  * **The headset's hardware auto-off timer works again (#180), without
+
+ -- loteran <axel.valadon@gmail.com>  Sun, 06 Sep 2026 00:00:00 +0000
+
 arctis-sound-manager (1.4.21-1) noble; urgency=medium
 
   * **Reverted node.passive everywhere: it kept causing the very channel it
