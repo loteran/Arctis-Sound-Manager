@@ -30,16 +30,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Groundwork for restoring the headset's hardware auto-off timer (#180) without
-  reintroducing #223/#230: a new whole-graph activity observer
-  (`idle_detect.py`) logs what an idle/active detector would decide, without
-  acting on it yet — no link is cut. Deliberately not built on the existing
-  native-stream helper, which excludes `pipewire-pulse` clients (Discord, most
-  browsers); this one does not, precisely to avoid repeating the #223 mistake
-  of treating an app ASM cannot see as "not there". Verified live against real
-  usage (idle, Discord calls, paused/playing video) — no false positive so far.
+- **The headset's hardware auto-off timer works again (#180), without
+  reintroducing #223/#230 — opt-in, disabled by default.** A new whole-graph
+  activity observer (`idle_detect.py`) watches every channel for a genuinely
+  playing (not paused/corked) stream — including Discord and browser tabs,
+  deliberately not built on the existing native-stream helper, which excludes
+  `pipewire-pulse` clients and would repeat the #223 mistake of treating an
+  app ASM cannot see as "not there". Once the whole graph has been idle long
+  enough, ASM itself releases the last hop into the headset's own physical
+  output — never by marking a node `node.passive` again — and restores it
+  the instant any channel becomes active. New setting
+  `headset_idle_off_minutes` (`0` = disabled, the previous behaviour; no GUI
+  control yet). Verified live against real usage: idle, Discord calls,
+  paused vs. playing video, a game routed to an external output, and the
+  full cut/restore cycle.
 
-
+## [1.4.21] - 5 September 2026
 
 ### Fixed
 
