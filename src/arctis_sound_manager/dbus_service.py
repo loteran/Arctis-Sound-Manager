@@ -6,6 +6,7 @@ import asyncio
 import itertools
 import json
 import logging
+import re
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -26,6 +27,33 @@ from arctis_sound_manager.core import CoreEngine
 from arctis_sound_manager.pactl import TypedPulseSinkInfo
 from arctis_sound_manager.settings import validate_config_setting_value
 from arctis_sound_manager import device_state
+
+_MINUTES_LABEL_RE = re.compile(r"^(\d+)_minutes?$")
+
+
+def _pm_shutdown_minutes(config, raw_value) -> int | None:
+    """Translate a ``pm_shutdown`` slider/button-group raw value to minutes.
+
+    Every device profile that declares ``pm_shutdown`` uses its own raw
+    domain (Nova Pro Wireless: 0-6 on a slider; Arctis 7+: seconds*60 on a
+    button group; other families differ again — see the device YAMLs), but
+    they all label each value through ``values_mapping`` with either
+    ``"never"`` or ``"<N>_minute(s)"``. Reading that label instead of the raw
+    value is what makes this work across every profile without a per-device
+    table here.
+
+    Returns ``None`` when the value or its label cannot be interpreted —
+    the caller must leave ``headset_idle_off_minutes`` untouched rather than
+    guess.
+    """
+    mapping = getattr(config, "values_mapping", None) or {}
+    label = mapping.get(raw_value)
+    if label is None:
+        return None
+    if label == "never":
+        return 0
+    m = _MINUTES_LABEL_RE.match(str(label))
+    return int(m.group(1)) if m else None
 
 
 class ArctisManagerDbusConfigService(ServiceInterface):
@@ -564,6 +592,28 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
 
                 self.core_engine.device_settings.settings[setting] = value
                 self.core_engine.device_settings.write_to_file()
+
+                if setting == 'pm_shutdown':
+                    # #180: the hardware auto-off timer can only fire once ASM
+                    # stops feeding the device (idle_detect.py) — link this
+                    # slider to that too, so one control sets both instead of
+                    # requiring the settings file to be edited by hand.
+                    # "Never" (0 minutes) disables ASM's own cutdown as well;
+                    # no device profile's raw value domain matches minutes
+                    # directly (see _pm_shutdown_minutes), so the label in
+                    # values_mapping is what actually carries the meaning.
+                    minutes = _pm_shutdown_minutes(config, value)
+                    if minutes is None:
+                        self.logger.warning(
+                            "SetSetting pm_shutdown: could not read a minutes "
+                            "value from %r for device %r — leaving "
+                            "headset_idle_off_minutes untouched",
+                            value, getattr(self.core_engine.device_config, 'name', '?'),
+                        )
+                    else:
+                        gs = self.core_engine.general_settings
+                        gs.headset_idle_off_minutes = minutes
+                        gs.write_to_file()
 
                 return True
 

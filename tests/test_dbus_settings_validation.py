@@ -140,3 +140,74 @@ def test_set_setting_accepts_catalogue_hrir_id(tmp_path):
     assert ok is True
     assert svc.core_engine.general_settings.hrir_id == "ssc_hu"
     apply_hrir.assert_called_once_with("ssc_hu")
+
+
+# ── #180: pm_shutdown links headset_idle_off_minutes on the same slider ─────
+#
+# Every device profile that declares pm_shutdown uses its own raw domain (a
+# 0-6 slider on the Nova Pro Wireless, seconds*60 on a button group on the
+# Arctis 7+, ...), but all of them label each value through values_mapping
+# with either "never" or "<N>_minute(s)". That label, not the raw value, is
+# what decides headset_idle_off_minutes — see _pm_shutdown_minutes.
+
+def _with_pm_shutdown_device(svc, values_mapping, default_value=0):
+    from arctis_sound_manager.config import ConfigSetting
+
+    config = ConfigSetting(
+        name="pm_shutdown", type="slider", default_value=default_value,
+        values_mapping=values_mapping,
+    )
+    svc.core_engine.device_config = MagicMock(
+        settings={"power_management": [config]}, name="Test Device")
+    svc.core_engine.device_settings = MagicMock(settings={"pm_shutdown": default_value})
+    return config
+
+
+def test_pm_shutdown_slider_sets_headset_idle_off_minutes(tmp_path):
+    svc = _make_service(tmp_path)
+    _with_pm_shutdown_device(svc, {0: "never", 1: "1_minutes", 2: "5_minutes",
+                                    3: "10_minutes"})
+
+    with patch("arctis_sound_manager.settings.SETTINGS_FOLDER", tmp_path):
+        ok = _set_setting(svc, "pm_shutdown", json.dumps(3))
+
+    assert ok is True
+    assert svc.core_engine.device_settings.settings["pm_shutdown"] == 3
+    assert svc.core_engine.general_settings.headset_idle_off_minutes == 10
+
+
+def test_pm_shutdown_never_disables_headset_idle_off_minutes(tmp_path):
+    svc = _make_service(tmp_path)
+    svc.core_engine.general_settings.headset_idle_off_minutes = 10  # was on
+    _with_pm_shutdown_device(svc, {0: "never", 1: "1_minutes"})
+
+    with patch("arctis_sound_manager.settings.SETTINGS_FOLDER", tmp_path):
+        ok = _set_setting(svc, "pm_shutdown", json.dumps(0))
+
+    assert ok is True
+    assert svc.core_engine.general_settings.headset_idle_off_minutes == 0
+
+
+def test_pm_shutdown_button_group_domain_also_maps_by_label(tmp_path):
+    """Arctis 7+-style domain (raw value = seconds, not a small index) —
+    proves the mapping goes through the label, not the raw number."""
+    svc = _make_service(tmp_path)
+    _with_pm_shutdown_device(svc, {0x00: "never", 0x0a: "10_minutes", 0x3c: "60_minutes"})
+
+    with patch("arctis_sound_manager.settings.SETTINGS_FOLDER", tmp_path):
+        ok = _set_setting(svc, "pm_shutdown", json.dumps(0x3c))
+
+    assert ok is True
+    assert svc.core_engine.general_settings.headset_idle_off_minutes == 60
+
+
+def test_pm_shutdown_unparseable_label_leaves_general_setting_untouched(tmp_path):
+    svc = _make_service(tmp_path)
+    svc.core_engine.general_settings.headset_idle_off_minutes = 5
+    _with_pm_shutdown_device(svc, {0: "never", 1: "not_a_minutes_label"})
+
+    with patch("arctis_sound_manager.settings.SETTINGS_FOLDER", tmp_path):
+        ok = _set_setting(svc, "pm_shutdown", json.dumps(1))
+
+    assert ok is True  # the device write itself still succeeds
+    assert svc.core_engine.general_settings.headset_idle_off_minutes == 5

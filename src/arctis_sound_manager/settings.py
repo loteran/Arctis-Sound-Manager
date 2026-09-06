@@ -354,9 +354,13 @@ class GeneralSettings(JsonSerializable):
     # so it can suspend and the hardware auto-off timer can engage — see
     # sonar_to_pipewire.release_physical_output_links. 0 disables the feature
     # entirely (the graph behaves exactly as before, #180 stays reopened).
-    # No GUI control yet: opt-in via this settings file only, while the
-    # detector is validated against real usage (this class of change has
-    # regressed audio reliability twice already — #223, #230).
+    # No control of its own in the GUI: it follows the device's own "Auto
+    # Power Off" slider (pm_shutdown) one-for-one — the hardware timer can
+    # only fire once ASM stops feeding the device, so both need to agree on
+    # the same number of minutes, and dbus_service.set_setting keeps them in
+    # sync whenever pm_shutdown changes (see _pm_shutdown_minutes). Editing
+    # this file directly still works, e.g. for a device profile that does
+    # not declare pm_shutdown at all.
     headset_idle_off_minutes: int = 0
 
     clips_enabled: bool = False
