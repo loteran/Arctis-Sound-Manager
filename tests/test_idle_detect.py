@@ -25,14 +25,14 @@ def _sink(node_id: int, name: str) -> dict:
     }
 
 
-def _stream(node_id: int, name: str, state: str) -> dict:
+def _stream(node_id: int, name: str, state: str, virtual: bool = False) -> dict:
+    props = {"node.name": name, "media.class": "Stream/Output/Audio"}
+    if virtual:
+        props["node.virtual"] = True
     return {
         "id": node_id,
         "type": "PipeWire:Interface:Node",
-        "info": {
-            "state": state,
-            "props": {"node.name": name, "media.class": "Stream/Output/Audio"},
-        },
+        "info": {"state": state, "props": props},
     }
 
 
@@ -109,6 +109,31 @@ def test_stream_linked_to_something_else_is_ignored():
             _stream(CHROME, "Google Chrome", "running"),
             _link(1, CHROME, 999)]  # not a channel sink
     assert active_channels(dump) == set()
+
+
+def test_sink_own_companion_stream_is_not_active():
+    """Regression, found live on 2026-09-06: each Arctis_* sink's own
+    PipeWire-generated companion stream (Arctis_Game_sink_out and siblings,
+    feeding the EQ input) is media.class Stream/Output/Audio and sits
+    permanently in state "running" now that nothing is passive (v1.4.21) —
+    with no filter this made every channel look active 100% of the time,
+    forever, regardless of any real content. It is marked node.virtual=true;
+    a real client stream never is (checked against a live paplay)."""
+    dump = [*_sinks(),
+            _stream(303, "Arctis_Game_sink_out", "running", virtual=True),
+            _link(1, 303, GAME_EQ)]
+    assert active_channels(dump) == set()
+
+
+def test_real_app_still_counts_alongside_the_sink_companion():
+    """The exclusion must be specific to the virtual companion — a genuine
+    app on the same channel must still be seen."""
+    dump = [*_sinks(),
+            _stream(303, "Arctis_Game_sink_out", "running", virtual=True),
+            _link(1, 303, GAME_EQ),
+            _stream(CHROME, "Google Chrome", "running"),
+            _link(2, CHROME, GAME_EQ)]
+    assert active_channels(dump) == {"game"}
 
 
 # ── IdleTracker ───────────────────────────────────────────────────────────

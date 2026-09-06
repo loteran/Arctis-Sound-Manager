@@ -23,6 +23,14 @@ and most browsers. Treating those as "absent" is exactly the #223-class mistake 
 a channel going silent while something the detector could not see was still using
 it — so :func:`active_channels` reimplements the presence check straight off
 ``pw-dump``, counting every client stream regardless of API.
+
+Verified live on 2026-09-06 against the real graph: each ``Arctis_*`` sink's own
+PipeWire-generated companion stream (``Arctis_Game_sink_out`` and siblings, which
+feed the EQ input) reports ``media.class == "Stream/Output/Audio"`` and sits in
+state ``"running"`` permanently now that nothing is passive (v1.4.21) — with no
+filter, every channel looked active 100% of the time, always. These carry
+``node.virtual: true``; a real client stream (checked against a live ``paplay``)
+never does. :func:`active_channels` excludes them on that property.
 """
 from __future__ import annotations
 
@@ -72,7 +80,15 @@ def active_channels(dump: list) -> set[str]:
         if name:
             node_name[node_id] = name
         node_state[node_id] = info.get("state")
-        if props.get("media.class") == _STREAM_CLASS:
+        # node.virtual=true marks PipeWire's own auto-generated companion
+        # stream for a sink (here: each Arctis_*_sink_out feeding the EQ
+        # input) — confirmed live on 2026-09-06: with node.passive gone
+        # (v1.4.21) these sit permanently in state "running" regardless of
+        # real content, which made every channel look active 100% of the
+        # time. A real client stream (verified against a live `paplay`, and
+        # against Discord/browsers via client.api=="pipewire-pulse") never
+        # carries this property.
+        if props.get("media.class") == _STREAM_CLASS and not props.get("node.virtual"):
             stream_ids.add(node_id)
 
     active: set[str] = set()
