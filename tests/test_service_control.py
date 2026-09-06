@@ -51,6 +51,7 @@ class RestartSystemd(unittest.TestCase):
     def test_single_call_with_all_units(self):
         with mock.patch.object(sc, "detect_init", return_value="systemd"), \
              mock.patch.object(sc, "manager_available", return_value=True), \
+             mock.patch("arctis_sound_manager.pw_utils.quiesce_filter_chain"), \
              mock.patch("subprocess.run", return_value=_ok()) as run:
             self.assertTrue(sc.restart("pipewire", "filter-chain", "arctis-manager"))
             # Absolute path + close_fds=False pin the posix_spawn (vfork) path so
@@ -66,6 +67,7 @@ class RestartDinit(unittest.TestCase):
     def test_one_call_per_service_and_filterchain_mapped(self):
         with mock.patch.object(sc, "detect_init", return_value="dinit"), \
              mock.patch.object(sc, "manager_available", return_value=True), \
+             mock.patch("arctis_sound_manager.pw_utils.quiesce_filter_chain"), \
              mock.patch("subprocess.run", return_value=_ok()) as run:
             self.assertTrue(sc.restart("filter-chain", "arctis-manager"))
         calls = [c.args[0] for c in run.call_args_list]
@@ -77,8 +79,27 @@ class RestartDinit(unittest.TestCase):
     def test_failure_propagates_as_false(self):
         with mock.patch.object(sc, "detect_init", return_value="dinit"), \
              mock.patch.object(sc, "manager_available", return_value=True), \
+             mock.patch("arctis_sound_manager.pw_utils.quiesce_filter_chain"), \
              mock.patch("subprocess.run", side_effect=[_ok(), _ok(returncode=1)]):
             self.assertFalse(sc.restart("filter-chain", "arctis-manager"))
+
+    def test_restart_quiesces_filter_chain_first(self):
+        """#233: restarting filter-chain must park its graph first, for every
+        caller — not just the one call site that remembered to do it."""
+        with mock.patch.object(sc, "detect_init", return_value="dinit"), \
+             mock.patch.object(sc, "manager_available", return_value=True), \
+             mock.patch("arctis_sound_manager.pw_utils.quiesce_filter_chain") as quiesce, \
+             mock.patch("subprocess.run", return_value=_ok()):
+            sc.restart("filter-chain")
+        quiesce.assert_called_once()
+
+    def test_restart_skips_quiesce_for_unrelated_services(self):
+        with mock.patch.object(sc, "detect_init", return_value="dinit"), \
+             mock.patch.object(sc, "manager_available", return_value=True), \
+             mock.patch("arctis_sound_manager.pw_utils.quiesce_filter_chain") as quiesce, \
+             mock.patch("subprocess.run", return_value=_ok()):
+            sc.restart("pipewire", "arctis-manager")
+        quiesce.assert_not_called()
 
 
 class GuiSkippedOnDinit(unittest.TestCase):

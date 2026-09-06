@@ -1178,16 +1178,9 @@ def _restart_filter_chain() -> None:
             "after a prior crash-loop). Change a setting to re-enable.")
         return
 
-    # Park the graph before the SIGTERM: PipeWire 1.6.7 segfaults when the
-    # filter-chain is killed mid-cycle (issue #100). Most settings are applied
-    # live since v1.1.95 and never come through here, but changing the HRIR
-    # profile must reload the convolver, so this path still exists.
-    try:
-        from arctis_sound_manager.pw_utils import quiesce_filter_chain
-        quiesce_filter_chain()
-    except Exception as exc:  # never block the restart on this
-        _log.debug("quiesce_filter_chain failed (continuing): %s", exc)
-
+    # Parking the graph before the SIGTERM (issue #100: PipeWire 1.6.7 segfaults
+    # when filter-chain is killed mid-cycle) is now sc.restart's job for every
+    # "filter-chain" caller (#233), not just this one — see service_control.restart.
     sc.restart("filter-chain", timeout=15)
 
     if not _poll_filter_chain_stable():

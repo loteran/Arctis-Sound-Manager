@@ -214,6 +214,13 @@ def restart(*services: str, timeout: float | None = None, capture: bool = False)
     :func:`~arctis_sound_manager.audio_reconfig.audio_reconfiguration`, which
     closes the window once the graph has settled instead of waiting for it to
     expire.
+
+    Restarting ``filter-chain`` always parks its graph first
+    (:func:`~arctis_sound_manager.pw_utils.quiesce_filter_chain`), for the same
+    reason it is centralized here rather than at each call site (#233): PipeWire
+    1.6.7+ segfaults when the filter-chain process is killed mid-cycle (issue
+    #100), and most call sites restarted it directly, bypassing the one helper
+    (``sonar_to_pipewire._restart_filter_chain``) that already did this.
     """
     if _GRAPH_REBUILDING.intersection(services):
         try:
@@ -221,6 +228,12 @@ def restart(*services: str, timeout: float | None = None, capture: bool = False)
             audio_reconfig.begin()
         except Exception as exc:  # never let this block a restart
             logger.warning("service_control: could not open the reconfig window: %s", exc)
+    if "filter-chain" in services and manager_available():
+        try:
+            from arctis_sound_manager.pw_utils import quiesce_filter_chain
+            quiesce_filter_chain()
+        except Exception as exc:  # never let this block a restart
+            logger.warning("service_control: could not quiesce filter-chain: %s", exc)
     return _action("restart", services, timeout, capture)
 
 
