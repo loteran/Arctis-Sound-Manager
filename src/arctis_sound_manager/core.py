@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import asyncio
+import functools
 import json
 import logging
 import threading
@@ -1285,14 +1286,33 @@ class CoreEngine:
                 # nothing linked into it yet. Reuses link_data from the pass
                 # above when available; best-effort otherwise (a fresh
                 # pw-dump is cheap and this call never restarts anything).
-                async def _enforce_hop(hop: str, fn, *lead_args) -> None:
+                async def _enforce_hop(hop: str, fn, *lead_args, skip_targets=None) -> None:
                     await self._enforce_link_hop(
                         hop, fn, lead_args, link_data,
                         _hop_fail_ticks, _HOP_FAIL_TICKS,
+                        skip_targets=skip_targets,
                     )
 
+                # While #180 idle detection has voluntarily cut the last hop
+                # into the physical output (below), the two hops below must
+                # not fight that decision: left alone they would see the
+                # missing link as a fault, retry every tick, and eventually
+                # escalate to ensure_filter_chain_healthy() — a restart the
+                # graph does not need, over a link ASM itself removed on
+                # purpose. _physical_skip_targets (only the headset's own
+                # outputs — never a configured external destination, whose
+                # power state is not ASM's to manage) tells each hop's
+                # function to leave a matching target alone rather than
+                # report it as failed, so the fail-tick counter never
+                # escalates over it (B3, #180).
+                _physical_skip_targets = (
+                    {device_state.get_physical_out_game(), device_state.get_physical_out_chat()}
+                    if _idle_tracker.state == "idle" else None
+                )
+
                 from arctis_sound_manager.sonar_to_pipewire import ensure_spatial_eq_links
-                await _enforce_hop("spatial EQ", ensure_spatial_eq_links, ("game", "media"))
+                await _enforce_hop("spatial EQ", ensure_spatial_eq_links, ("game", "media"),
+                                   skip_targets=_physical_skip_targets)
 
                 # ── Physical output link-enforcement (headset power-cycle) ───
                 # effect_output.sonar-chat-eq and effect_output.virtual-
@@ -1310,7 +1330,8 @@ class CoreEngine:
                 # (headset off) — it self-heals on the tick after the
                 # headset reappears.
                 from arctis_sound_manager.sonar_to_pipewire import ensure_physical_output_links
-                await _enforce_hop("physical output", ensure_physical_output_links)
+                await _enforce_hop("physical output", ensure_physical_output_links,
+                                   skip_targets=_physical_skip_targets)
 
                 # ── Micro EQ capture link-enforcement (issue #127) ────────────
                 # effect_input.sonar-micro-eq runs with node.autoconnect=false /
@@ -1364,33 +1385,70 @@ class CoreEngine:
                             "_loopback_watchdog: error reapplying routing overrides: %r", exc
                         )
 
-                # ── #180 idle detection (observation only — B1) ──────────────
+                # ── #180 idle detection (B1 observation + B4 action) ─────────
                 # Reuses this tick's pw-dump (already fetched above for the
-                # link-enforcement passes). Only logs what the detector would
-                # do; nothing is cut yet.
+                # link-enforcement passes). headset_idle_off_minutes == 0
+                # (default) keeps this pure observation, exactly as B1
+                # shipped it: log only, nothing is cut. > 0 opts into actually
+                # cutting the last hop — no GUI control yet, opt-in via the
+                # settings file only while this is validated against real
+                # usage (settings.GeneralSettings.headset_idle_off_minutes).
                 try:
+                    idle_off_minutes = int(getattr(
+                        getattr(self, "general_settings", None),
+                        "headset_idle_off_minutes", 0) or 0)
+                    if idle_off_minutes > 0:
+                        _idle_tracker.idle_after_s = idle_off_minutes * 60
+
                     active = idle_detect.active_channels(link_data)
                     transition = _idle_tracker.feed(now, bool(active))
                     if transition == "cut":
-                        self.logger.info(
-                            "idle_detect: would CUT now — no channel active for "
-                            "%ds (#180, observation only, not acted on)",
-                            int(_idle_tracker.idle_after_s),
-                        )
+                        if idle_off_minutes > 0:
+                            from arctis_sound_manager.sonar_to_pipewire import (
+                                release_physical_output_links)
+                            cut = await asyncio.get_running_loop().run_in_executor(
+                                None, release_physical_output_links, link_data)
+                            self.logger.info(
+                                "idle_detect: CUT — no channel active for %ds, "
+                                "released %d link(s) into the physical output (#180)",
+                                int(_idle_tracker.idle_after_s), cut,
+                            )
+                        else:
+                            self.logger.info(
+                                "idle_detect: would CUT now — no channel active for "
+                                "%ds (#180, observation only, not acted on)",
+                                int(_idle_tracker.idle_after_s),
+                            )
                     elif transition == "restore":
-                        self.logger.info(
-                            "idle_detect: would RESTORE now — %s active again "
-                            "(#180, observation only, not acted on)",
-                            sorted(active),
-                        )
+                        if idle_off_minutes > 0:
+                            from arctis_sound_manager.sonar_to_pipewire import (
+                                ensure_spatial_eq_links, ensure_physical_output_links)
+                            loop = asyncio.get_running_loop()
+                            await loop.run_in_executor(
+                                None, functools.partial(ensure_spatial_eq_links,
+                                                         ("game", "media"), link_data))
+                            await loop.run_in_executor(
+                                None, functools.partial(ensure_physical_output_links,
+                                                         link_data))
+                            self.logger.info(
+                                "idle_detect: RESTORE — %s active again, relinked the "
+                                "physical output (#180)", sorted(active),
+                            )
+                        else:
+                            self.logger.info(
+                                "idle_detect: would RESTORE now — %s active again "
+                                "(#180, observation only, not acted on)",
+                                sorted(active),
+                            )
                     elif _idle_tracker.disarmed and not _idle_disarmed_logged:
                         _idle_disarmed_logged = True
                         self.logger.warning(
                             "idle_detect: disarmed for this session — too many "
-                            "transitions in the last hour (#180, observation only)",
+                            "transitions in the last hour (#180%s)",
+                            "" if idle_off_minutes > 0 else ", observation only",
                         )
                 except Exception as exc:
-                    self.logger.debug("idle_detect: observation failed this tick: %r", exc)
+                    self.logger.error("idle_detect: tick failed: %r", exc)
         except asyncio.CancelledError:
             raise
 
@@ -1480,6 +1538,7 @@ class CoreEngine:
     async def _enforce_link_hop(
         self, hop: str, fn, lead_args: tuple, data,
         fail_ticks: dict[str, int], max_fail_ticks: int,
+        skip_targets: set[str] | None = None,
     ) -> None:
         """Run a last-hop link-enforcement pass, retrying once on a fresh snapshot.
 
@@ -1496,10 +1555,20 @@ class CoreEngine:
         they logged and retried forever. After *max_fail_ticks* consecutive
         failed ticks this calls ``ensure_filter_chain_healthy()`` once, then
         clears the counter so escalation cannot loop.
+
+        *skip_targets* (#180), only forwarded to *fn* when given — not every
+        hop's function accepts it (``ensure_micro_capture_link`` does not) —
+        as a keyword argument via ``functools.partial``, since
+        ``loop.run_in_executor`` only accepts positional args. A hop whose
+        target was cut on purpose during an idle period is thus excluded from
+        *fn*'s result rather than reported as a failure that would eventually
+        escalate.
         """
         loop = asyncio.get_running_loop()
+        extra_kwargs = {"skip_targets": skip_targets} if skip_targets is not None else {}
         try:
-            result = await loop.run_in_executor(None, fn, *lead_args, data)
+            call = functools.partial(fn, *lead_args, data, **extra_kwargs)
+            result = await loop.run_in_executor(None, call)
             if self._hop_result_ok(result):
                 fail_ticks.pop(hop, None)
                 return
@@ -1510,7 +1579,8 @@ class CoreEngine:
                 # Unreadable graph: the retry proves nothing, so do not let it
                 # count towards the escalation that restarts the chain (CHA-11).
                 return
-            result = await loop.run_in_executor(None, fn, *lead_args, fresh)
+            call = functools.partial(fn, *lead_args, fresh, **extra_kwargs)
+            result = await loop.run_in_executor(None, call)
             if self._hop_result_ok(result):
                 self.logger.info(
                     "_loopback_watchdog: %s hop recovered on a fresh pw-dump "

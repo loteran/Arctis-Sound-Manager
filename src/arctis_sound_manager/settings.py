@@ -349,6 +349,16 @@ class GeneralSettings(JsonSerializable):
     # output list, and one more filter stage running for nothing.
     aux_enabled: bool = False
 
+    # #180: minutes of whole-graph inactivity (idle_detect.IdleTracker) before
+    # ASM voluntarily cuts the last hop into the headset's own physical output
+    # so it can suspend and the hardware auto-off timer can engage — see
+    # sonar_to_pipewire.release_physical_output_links. 0 disables the feature
+    # entirely (the graph behaves exactly as before, #180 stays reopened).
+    # No GUI control yet: opt-in via this settings file only, while the
+    # detector is validated against real usage (this class of change has
+    # regressed audio reliability twice already — #223, #230).
+    headset_idle_off_minutes: int = 0
+
     clips_enabled: bool = False
 
     # Arm the rolling buffer while a game is running, and let it go when the

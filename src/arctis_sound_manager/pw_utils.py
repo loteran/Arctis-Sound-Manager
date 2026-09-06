@@ -677,6 +677,78 @@ def quiesce_filter_chain() -> int:
     return destroyed
 
 
+def unlink_last_hop_into(target_names: set[str], data: list | None = None) -> int:
+    """Destroy every link whose *input* side is one of *target_names* (#180).
+
+    Used to voluntarily park the last hop into the headset's physical output
+    when the whole graph has been idle for a while (:mod:`idle_detect`), so
+    the physical ALSA sink stops receiving anything and can suspend on its
+    own — restoring the hardware auto-off timer without ever marking a node
+    ``node.passive`` (the #223/#230 root cause: a per-node passive flag made
+    each channel's wake state depend on some other channel, and PipeWire's own
+    suspend/resume churn under that crashed the filter-chain convolver). This
+    is the opposite direction: one explicit, application-level decision, made
+    once, that cuts every channel's path to the physical sink at the same
+    time — never a per-channel suspend that could leave channels
+    inconsistent with each other.
+
+    Everything upstream of the cut (the loopbacks, the EQ chains, HeSuVi) is
+    left running exactly as it was — only the last hop is removed. Restoring
+    it is a matter of calling the same idempotent ``ensure_*`` functions that
+    already own these links (:func:`~arctis_sound_manager.sonar_to_pipewire.
+    ensure_spatial_eq_links`, :func:`~arctis_sound_manager.sonar_to_pipewire.
+    ensure_physical_output_links`) — nothing needs to remember what was cut.
+
+    *target_names* should be exactly the physical output node names (the
+    headset's own ALSA sinks) — never an external destination (HDMI/TV/
+    Bluetooth speaker): those are not ASM's to manage the power state of, and
+    cutting them would silence audio nothing asked to have silenced.
+
+    Parameters
+    ----------
+    data:
+        Optional pre-fetched ``pw-dump`` payload, so a caller that already
+        fetched one this tick does not pay for a second ``pw-dump`` subprocess.
+
+    Returns the number of links destroyed.
+    """
+    data = data if data is not None else _pw_dump()
+    if not data:
+        return 0
+
+    target_names = {n for n in target_names if n}
+    if not target_names:
+        return 0
+
+    target_ids = {
+        o["id"]
+        for o in data
+        if o.get("type") == "PipeWire:Interface:Node"
+        and (o.get("info", {}).get("props") or {}).get("node.name") in target_names
+    }
+    if not target_ids:
+        return 0
+
+    destroyed = 0
+    for o in data:
+        if o.get("type") != "PipeWire:Interface:Link":
+            continue
+        info = o.get("info", {}) or {}
+        if info.get("input-node-id") in target_ids:
+            try:
+                _pw_run(["pw-cli", "destroy", str(o["id"])], capture_output=True, timeout=2)
+                destroyed += 1
+            except Exception as exc:  # link may already be gone — harmless
+                logger.debug("unlink_last_hop_into: destroy %s failed: %s", o["id"], exc)
+
+    if destroyed:
+        logger.info(
+            "unlink_last_hop_into: cut %d link(s) into %s (#180 idle)",
+            destroyed, sorted(target_names),
+        )
+    return destroyed
+
+
 def set_filter_controls(node_name: str, controls: dict[str, float]) -> bool:
     """Live-apply filter-chain control values in one shot, no restart required.
 

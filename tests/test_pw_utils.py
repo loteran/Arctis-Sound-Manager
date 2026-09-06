@@ -719,6 +719,41 @@ class TestParsePwDumpOutput:
         assert result == []
 
 
+def test_unlink_last_hop_into_destroys_only_links_into_the_target(monkeypatch):
+    """#180: only links whose INPUT side is one of target_names are
+    destroyed — everything else in the graph is left alone."""
+    import arctis_sound_manager.pw_utils as pw_utils
+
+    dump = _make_pw_dump(
+        sinks={10: "alsa_output.headset-game", 20: "alsa_output.headset-chat",
+               30: "some-other-sink"},
+        streams={},
+        links=[(100, 10), (200, 20), (300, 30)],
+    )
+    destroyed = []
+    monkeypatch.setattr(pw_utils, "_pw_run", lambda cmd, **kw: destroyed.append(cmd))
+
+    count = pw_utils.unlink_last_hop_into(
+        {"alsa_output.headset-game", "alsa_output.headset-chat"}, data=dump)
+
+    assert count == 2
+    destroyed_ids = {cmd[2] for cmd in destroyed}
+    # Link ids follow _make_pw_dump's "9000 + output-node-id" convention.
+    assert destroyed_ids == {str(9100), str(9200)}
+
+
+def test_unlink_last_hop_into_empty_target_names_is_a_noop(monkeypatch):
+    import arctis_sound_manager.pw_utils as pw_utils
+
+    dump = _make_pw_dump(sinks={10: "x"}, streams={}, links=[(100, 10)])
+    called = []
+    monkeypatch.setattr(pw_utils, "_pw_run", lambda cmd, **kw: called.append(cmd))
+
+    assert pw_utils.unlink_last_hop_into(set(), data=dump) == 0
+    assert pw_utils.unlink_last_hop_into({""}, data=dump) == 0
+    assert called == []
+
+
 def test_relink_refuses_a_duplicated_target_name(monkeypatch):
     """CHA-1, third site: relink_loopback_playback writes target.object *by
     name* into WirePlumber metadata, so an impostor picked here outlives the

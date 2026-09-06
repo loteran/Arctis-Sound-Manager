@@ -1886,6 +1886,23 @@ def test_ensure_spatial_eq_links_ignores_non_toggle_channels(monkeypatch):
     assert result == {}
 
 
+def test_ensure_spatial_eq_links_skips_a_target_in_skip_targets(monkeypatch):
+    """#180: a channel whose resolved target was voluntarily cut (idle) must
+    not be re-linked here, and must not appear in the result as a failure —
+    only left out entirely, exactly like an unresolved target already is."""
+    monkeypatch.setattr(_s2p_p3, "_spatial_enabled", lambda ch: False)
+    monkeypatch.setattr(_s2p_p3, "_get_physical_out_game", lambda: "alsa_output.test-headset")
+    called = []
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.ensure_loopback_link",
+        lambda *a, **kw: called.append(a) or True,
+    )
+    result = _s2p_p3.ensure_spatial_eq_links(
+        ("game",), skip_targets={"alsa_output.test-headset"})
+    assert result == {}
+    assert called == []
+
+
 # ── ensure_physical_output_links (headset power-cycle final-hop fix) ─────────
 #
 # effect_output.sonar-chat-eq and effect_output.virtual-surround-7.1-hesuvi
@@ -2028,6 +2045,61 @@ def test_ensure_physical_output_links_skips_output_when_no_external_sink(
 
     assert _s2p_p3.ensure_physical_output_links() == {}
     assert called == []
+
+
+def test_ensure_physical_output_links_skips_targets_in_skip_targets(monkeypatch):
+    """#180: chat and hesuvi both resolve to the headset's own physical
+    outputs here — with both in skip_targets (an idle cutdown), neither may
+    be re-linked, and neither is reported as a failure."""
+    monkeypatch.setattr(_s2p_p3, "_get_physical_out_chat", lambda: "alsa_output.test-chat")
+    monkeypatch.setattr(_s2p_p3, "_get_physical_out_game", lambda: "alsa_output.test-game")
+    called = []
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.ensure_loopback_link",
+        lambda *a, **kw: called.append(a) or True,
+    )
+    result = _s2p_p3.ensure_physical_output_links(
+        skip_targets={"alsa_output.test-chat", "alsa_output.test-game"})
+    assert result == {}
+    assert called == []
+
+
+def test_ensure_physical_output_links_output_fallback_respects_skip_targets(
+    monkeypatch, tmp_path
+):
+    """The Output channel's fallback-to-headset path (external sink absent)
+    resolves to the same physical game output — it must honour skip_targets
+    too, not just the primary chat/hesuvi hops."""
+    monkeypatch.setattr(_s2p_p3, "_get_physical_out_chat", lambda: "")
+    monkeypatch.setattr(_s2p_p3, "_get_physical_out_game", lambda: "alsa_output.test-game")
+    monkeypatch.setattr(_s2p_p3, "_CONF_DIR", tmp_path)
+    _write_output_conf(tmp_path, "alsa_output.absent-external-sink")
+    monkeypatch.setattr(_s2p_p3, "_node_in_graph", lambda data, name: False)
+
+    called = []
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.ensure_loopback_link",
+        lambda *a, **kw: called.append(a) or True,
+    )
+    result = _s2p_p3.ensure_physical_output_links(skip_targets={"alsa_output.test-game"})
+    assert result == {}
+    assert called == []
+
+
+def test_release_physical_output_links_cuts_the_headset_targets_only(monkeypatch):
+    """release_physical_output_links must target exactly the headset's own
+    physical outputs (game + chat) — never an external destination, whose
+    power state is not ASM's to manage."""
+    monkeypatch.setattr(_s2p_p3, "_get_physical_out_game", lambda: "alsa_output.test-game")
+    monkeypatch.setattr(_s2p_p3, "_get_physical_out_chat", lambda: "alsa_output.test-chat")
+    calls = []
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.unlink_last_hop_into",
+        lambda targets, data=None: calls.append((targets, data)) or 3,
+    )
+    result = _s2p_p3.release_physical_output_links(data=["sentinel"])
+    assert result == 3
+    assert calls == [({"alsa_output.test-game", "alsa_output.test-chat"}, ["sentinel"])]
 
 
 def test_output_target_follows_the_conf_without_querying_pulse(monkeypatch, tmp_path):

@@ -3528,6 +3528,7 @@ def _spatial_enabled(channel: str) -> bool:
 def ensure_spatial_eq_links(
     channels: tuple[str, ...] | None = None,
     data: list | None = None,
+    skip_targets: set[str] | None = None,
 ) -> dict[str, bool]:
     """Move each EQ's live output link to match its Spatial Audio toggle.
 
@@ -3574,6 +3575,15 @@ def ensure_spatial_eq_links(
         Optional pre-fetched ``pw-dump`` payload, so a caller that already
         fetched one this tick (e.g. the daemon's loopback watchdog) does not
         pay for a second ``pw-dump`` subprocess.
+    skip_targets:
+        Node names to leave alone rather than link into (#180): when Spatial
+        is off a channel targets the physical output directly, and during a
+        voluntary idle cutdown (:func:`~arctis_sound_manager.pw_utils.
+        unlink_last_hop_into`) re-linking it here would immediately undo that
+        cut. A channel whose resolved target is in this set is simply
+        excluded from the result — not reported as failed — the same way an
+        unknown target already is, so the watchdog's fail-tick counter never
+        escalates over a link ASM removed on purpose.
 
     Returns
     -------
@@ -3624,6 +3634,8 @@ def ensure_spatial_eq_links(
         if not target:
             # No device attached yet — nothing to link to.
             results[channel] = False
+            continue
+        if skip_targets and target in skip_targets:
             continue
         playback_name = f"effect_output.sonar-{channel}-eq"
         results[channel] = ensure_loopback_link(playback_name, target, data=data)
@@ -3737,7 +3749,9 @@ def _note_output_fallback(absent_target: str | None) -> None:
         _log.info("Output channel: configured sink is back — routing restored")
 
 
-def ensure_physical_output_links(data: list | None = None) -> dict[str, bool]:
+def ensure_physical_output_links(
+    data: list | None = None, skip_targets: set[str] | None = None,
+) -> dict[str, bool]:
     """Ensure the LAST hop into the physical Arctis output(s) is linked.
 
     Issue observed twice on hardware: the headset powers off and back on, the
@@ -3785,6 +3799,15 @@ def ensure_physical_output_links(data: list | None = None) -> dict[str, bool]:
         Optional pre-fetched ``pw-dump`` payload, so a caller that already
         fetched one this tick (the daemon's loopback watchdog) does not pay
         for a second ``pw-dump`` subprocess.
+    skip_targets:
+        Node names to leave alone rather than link into (#180): during a
+        voluntary idle cutdown (:func:`~arctis_sound_manager.pw_utils.
+        unlink_last_hop_into`) that cut the physical output's last hop on
+        purpose, re-linking it back here on the very next tick would undo it.
+        Any of chat/hesuvi/hesuvi_media/output whose resolved target is in
+        this set is simply excluded from the result, not reported as failed
+        — the fallback ``output`` path (line below) resolves to the physical
+        game output too and is covered by the same check.
 
     Returns
     -------
@@ -3795,10 +3818,11 @@ def ensure_physical_output_links(data: list | None = None) -> dict[str, bool]:
     """
     from arctis_sound_manager.pw_utils import ensure_loopback_link
 
+    skip_targets = skip_targets or set()
     results: dict[str, bool] = {}
 
     chat_target = channel_destination("chat", data)
-    if chat_target:
+    if chat_target and chat_target not in skip_targets:
         results["chat"] = ensure_loopback_link(_CHAT_OUTPUT_NAME, chat_target, data=data)
 
     # Each channel's HeSuVi stage reaches that channel's OWN device: #169 gave
@@ -3810,7 +3834,7 @@ def ensure_physical_output_links(data: list | None = None) -> dict[str, bool]:
     # inertness described for Media two comments up (#209).
     for _ch, _hes_node in ((c, _hesuvi_output_node(c)) for c in spatial_channels()):
         _dest = channel_destination(_ch, data)
-        if not _dest:
+        if not _dest or _dest in skip_targets:
             continue
         # "hesuvi" stays the game key so existing callers keep working; media
         # is additive. ensure_loopback_link already reports False when the node
@@ -3850,13 +3874,39 @@ def ensure_physical_output_links(data: list | None = None) -> dict[str, bool]:
         # the user's, so the channel returns to the external sink on its own as
         # soon as it comes back. This is a link-level fallback, not a decision.
         fallback = _get_physical_out_game()
-        if fallback and _node_in_graph(data, fallback):
+        if fallback and fallback not in skip_targets and _node_in_graph(data, fallback):
             _note_output_fallback(output_target)
             results["output"] = ensure_loopback_link(
                 _OUTPUT_EQ_OUTPUT_NAME, fallback, data=data
             )
 
     return results
+
+
+def release_physical_output_links(data: list | None = None) -> int:
+    """Cut the last hop into the headset's own physical output(s) (#180).
+
+    Mirror of :func:`ensure_physical_output_links`, in the other direction:
+    called once the whole graph has been idle long enough
+    (:mod:`idle_detect`) to voluntarily let the physical ALSA sink go quiet,
+    so its own suspend timeout — and the headset's hardware auto-off timer
+    behind it — can engage. Everything upstream (loopbacks, EQ, HeSuVi) keeps
+    running; :func:`ensure_spatial_eq_links` and
+    :func:`ensure_physical_output_links` restore this hop exactly the way
+    they already self-heal it, so nothing here needs to remember what was cut.
+
+    Deliberately only the headset's own outputs
+    (:func:`_get_physical_out_game`, :func:`_get_physical_out_chat`) — never
+    a configured external destination (HDMI/TV/Bluetooth speaker): that
+    device's power state is not ASM's to manage, and cutting it would silence
+    audio nothing asked to have silenced.
+
+    Returns the number of links destroyed.
+    """
+    from arctis_sound_manager.pw_utils import unlink_last_hop_into
+
+    targets = {_get_physical_out_game(), _get_physical_out_chat()}
+    return unlink_last_hop_into(targets, data=data)
 
 
 _MICRO_CAPTURE_NAME = "effect_input.sonar-micro-eq"
