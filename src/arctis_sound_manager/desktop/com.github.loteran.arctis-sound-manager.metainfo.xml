@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.4.23" date="2026-09-06">
+      <description>
+        <p>The auto power-off feature added in 1.4.22 (#180) is now reachable from the</p>
+      </description>
+    </release>
     <release version="1.4.22" date="2026-09-06">
       <description>
         <p>**filter-chain.service restart storm could segfault PipeWire's convolver. Raised api.alsa.period-size to 128 in the physical-sink no-suspend. **The headset's hardware auto-off timer works again (#180), without.</p>
@@ -199,11 +204,6 @@
     <release version="1.2.30" date="2026-08-14">
       <description>
         <p>Installing on Bazzite, SteamOS or Silverblue could leave you with nothing installed. The installer created its container, then stopped partway without saying so: the application entry appeared, but opening it landed in a plain terminal where asm-gui was not found. This was a regression introduced in 1.2.27, when the installers switched to the signed package repository: if registering that repository failed for any reason (no network for the signing key, a keyring it could not sign into), the script aborted right there, after creating the container and before installing anything. Registering the repository can no longer interrupt the installation, and if the install itself fails you now get the reason and the commands to investigate instead of a silent stop. Reported on Discord by binx9612 on Bazzite. Audio from another app's virtual microphone is no longer hijacked. A stream that an application deliberately pins to its own virtual device, such as a soundboard feeding a virtual microphone, was being pulled onto an Arctis channel like any other audio. That did not merely move the sound somewhere else, it broke the other application's feature outright, and it happened to soundboards whose ordinary playback you had assigned to a channel, since both streams share one application name. Such streams are now left where their application put them, and one that had already been moved is returned. Streams pinned to real outputs are untouched, so pulling audio from other speakers onto your headset still works as before. Contributed by @nobodys-tools. (#185).</p>
-      </description>
-    </release>
-    <release version="1.2.29" date="2026-08-12">
-      <description>
-        <p>ASM now tells you when the surround processing can't keep up. Spatial Audio missing its deadline sounds like random crackling, and until now nothing in the app explained where it came from — leaving you to blame the headset, the cable or the drivers. If the surround chain drops frames steadily, you get a notification saying so and pointing at the stability setting that fixes it. It deliberately stays quiet about one-off glitches: a single burst while a game loads a level or a build finishes is normal and not worth interrupting you for, so it only speaks when the problem persists for a few minutes, and only once per session. Suggested by @nobodys-tools. (#183). The Spatial Audio profile picker now shows how much CPU each profile costs. The bundled profiles range from tiny to nearly a megabyte, and the larger ones cost proportionally more processing — enough that on a busy machine the choice decides whether the audio stays clean. Each entry is now marked *light on CPU*, *moderate CPU* or *heavy on CPU*, so the trade-off is visible while you choose instead of discovered afterwards. This says nothing about sound quality: a heavier profile is not a better one, just a more demanding one. Suggested by @nobodys-tools. (#183). The Discord invite on the README and website works again. The previous invite had expired, so anyone following the "Join the Discord" badge — the first thing shown at the top of the project page — landed on an error. The replacement is set never to expire. Reported by @nobodys-tools. (#184).</p>
       </description>
     </release>
   </releases>

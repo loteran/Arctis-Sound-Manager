@@ -1,3 +1,10 @@
+arctis-sound-manager (1.4.23-1) noble; urgency=medium
+
+  * The auto power-off feature added in 1.4.22 (#180) is now reachable from
+    the
+
+ -- loteran <axel.valadon@gmail.com>  Sun, 06 Sep 2026 00:00:00 +0000
+
 arctis-sound-manager (1.4.22-1) noble; urgency=medium
 
   * **filter-chain.service restart storm could segfault PipeWire's convolver
