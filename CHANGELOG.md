@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.23] - 6 September 2026
+
+### Added
+
+- The auto power-off feature added in 1.4.22 (#180) is now reachable from the
+  app: it follows the headset's own **Auto Power Off** slider (renamed from
+  the unclear "PM Shutdown") instead of requiring the settings file to be
+  edited by hand. Setting it to a delay also tells ASM to stop feeding the
+  device after that much silence, so the hardware timer can actually fire;
+  setting it to "Never" disables both. Existing installs: touch the slider
+  once (reselecting the same value works) to pick this up — it is not
+  applied retroactively at startup.
+
 ## [1.4.22] - 6 September 2026
 
 ### Fixed
