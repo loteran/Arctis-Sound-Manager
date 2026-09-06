@@ -5,7 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.4.21] - 5 September 2026
+## [1.4.22] - 6 September 2026
+
+### Fixed
+
+- **`filter-chain.service` restart storm could segfault PipeWire's convolver
+  (#233).** Only one call site parked the filter-chain graph
+  (`quiesce_filter_chain`) before restarting it — every other one (EQ apply,
+  tray actions, device-init repair) restarted it directly, racing PipeWire's
+  realtime thread against the graph it was mid-teardown/rebuild on. Centralized
+  in `service_control.restart()`: every "filter-chain" restart now quiesces
+  first, and a standalone restart is additionally coalesced across processes
+  (a burst of near-simultaneous calls — e.g. the GUI and the daemon reacting to
+  the same preset/surround change — now reaches the service manager exactly
+  once, not once per call). Verified live: a 10-call concurrent burst that
+  previously would have produced 10 stop/start cycles now produces exactly one,
+  with no coredump.
+- Raised `api.alsa.period-size` to 128 in the physical-sink no-suspend
+  WirePlumber quirk (`pw_quirks.py`): keeping that sink permanently open
+  (#223/#230 class) had it issuing USB isochronous transfers continuously,
+  which measurably delayed a DualSense/DS5Dongle gamepad's HID reports on a
+  shared USB controller. Doubling the period halves this sink's USB transfer
+  frequency and frees bus time for the gamepad's polling.
+
+### Added
+
+- Groundwork for restoring the headset's hardware auto-off timer (#180) without
+  reintroducing #223/#230: a new whole-graph activity observer
+  (`idle_detect.py`) logs what an idle/active detector would decide, without
+  acting on it yet — no link is cut. Deliberately not built on the existing
+  native-stream helper, which excludes `pipewire-pulse` clients (Discord, most
+  browsers); this one does not, precisely to avoid repeating the #223 mistake
+  of treating an app ASM cannot see as "not there". Verified live against real
+  usage (idle, Discord calls, paused/playing video) — no false positive so far.
+
+
 
 ### Fixed
 
