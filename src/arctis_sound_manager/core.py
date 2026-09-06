@@ -788,6 +788,7 @@ class CoreEngine:
         never crash the daemon.
         """
         from arctis_sound_manager.pw_utils import ensure_loopback_link, pw_dump_or_none
+        from arctis_sound_manager import idle_detect
 
         _WATCHDOG_INTERVAL: float = 5.0
         # Number of consecutive ticks a loopback may be None-linked before we
@@ -887,6 +888,16 @@ class CoreEngine:
         _hop_fail_ticks: dict[str, int] = {}
         _HOP_FAIL_TICKS: int = 6  # ~30 s at the 5 s watchdog cadence
 
+        # ── #180 idle detection (observation only — B1) ──────────────────────
+        # Logs what a whole-graph idle/active detector would decide, without
+        # acting on it: no link is cut yet. This is step one of restoring the
+        # headset's auto-off timer without reintroducing #223/#230 — see the
+        # 2026-09 pw_quirks/no-suspend saga notes. Reset alongside the other
+        # per-session state below: a new device session's graph starts fresh,
+        # it did not inherit idle time from whatever existed before it.
+        _idle_tracker = idle_detect.IdleTracker()
+        _idle_disarmed_logged = False
+
         try:
             while not self._stopping:
                 await asyncio.sleep(_WATCHDOG_INTERVAL)
@@ -921,6 +932,8 @@ class CoreEngine:
                     _cooldown_dur.clear()
                     _cooldown_logged.clear()
                     _target_absent_ticks.clear()
+                    _idle_tracker = idle_detect.IdleTracker()
+                    _idle_disarmed_logged = False
 
                 # Channels currently in cooldown — passed to restart_dead so that
                 # a dead process in cooldown is NOT revived this tick.
@@ -1350,6 +1363,34 @@ class CoreEngine:
                         self.logger.error(
                             "_loopback_watchdog: error reapplying routing overrides: %r", exc
                         )
+
+                # ── #180 idle detection (observation only — B1) ──────────────
+                # Reuses this tick's pw-dump (already fetched above for the
+                # link-enforcement passes). Only logs what the detector would
+                # do; nothing is cut yet.
+                try:
+                    active = idle_detect.active_channels(link_data)
+                    transition = _idle_tracker.feed(now, bool(active))
+                    if transition == "cut":
+                        self.logger.info(
+                            "idle_detect: would CUT now — no channel active for "
+                            "%ds (#180, observation only, not acted on)",
+                            int(_idle_tracker.idle_after_s),
+                        )
+                    elif transition == "restore":
+                        self.logger.info(
+                            "idle_detect: would RESTORE now — %s active again "
+                            "(#180, observation only, not acted on)",
+                            sorted(active),
+                        )
+                    elif _idle_tracker.disarmed and not _idle_disarmed_logged:
+                        _idle_disarmed_logged = True
+                        self.logger.warning(
+                            "idle_detect: disarmed for this session — too many "
+                            "transitions in the last hour (#180, observation only)",
+                        )
+                except Exception as exc:
+                    self.logger.debug("idle_detect: observation failed this tick: %r", exc)
         except asyncio.CancelledError:
             raise
 
