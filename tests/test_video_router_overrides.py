@@ -149,6 +149,9 @@ class _FakePulse:
     def server_info(self):
         return _FakeServerInfo(self._default_sink_name)
 
+    def card_list(self):
+        return []
+
     def sink_input_move(self, si_index, target_index):
         self.moves.append((si_index, target_index))
 

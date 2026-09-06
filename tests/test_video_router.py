@@ -304,14 +304,29 @@ class _FakeServerInfo:
         self.default_sink_name = default_sink_name
 
 
+class _FakeCardProfile:
+    def __init__(self, name: str):
+        self.name = name
+
+
+class _FakeCard:
+    def __init__(self, name: str, active_profile: str | None, available_profiles: list[str]):
+        self.name = name
+        self.profile_active = _FakeCardProfile(active_profile) if active_profile else None
+        self.profile_list = [_FakeCardProfile(p) for p in available_profiles]
+
+
 class _FakePulse:
     """Minimal stand-in for pulsectl.Pulse covering what _process_tick uses."""
 
-    def __init__(self, sinks: list, sink_inputs: list, default_sink_name: str):
+    def __init__(self, sinks: list, sink_inputs: list, default_sink_name: str,
+                 cards: list | None = None):
         self._sinks = sinks
         self._sink_inputs = sink_inputs
         self._default_sink_name = default_sink_name
+        self._cards = cards if cards is not None else []
         self.moves: list[tuple[int, int]] = []
+        self.card_profile_sets: list[tuple[str, str]] = []
 
     def sink_list(self):
         return self._sinks
@@ -321,6 +336,13 @@ class _FakePulse:
 
     def server_info(self):
         return _FakeServerInfo(self._default_sink_name)
+
+    def card_list(self):
+        return self._cards
+
+    def card_profile_set(self, card, profile):
+        self.card_profile_sets.append((card.name, profile))
+        card.profile_active = _FakeCardProfile(profile)
 
     def sink_input_move(self, si_index: int, target_index: int):
         self.moves.append((si_index, target_index))
@@ -859,4 +881,108 @@ def test_adoption_guard_and_pin_guard_agree_on_the_hardware():
     headset = "alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.analog-stereo"
     assert _is_physical_arctis(headset)
     assert not _is_asm_channel(headset)
+
+
+# ── ensure_card_profile — sound-settings UIs changing the card profile ───────
+#
+# ASM's own WirePlumber config disables api.acp.auto-profile/auto-port on the
+# Arctis card (routing/profile selection is meant to live entirely in ASM's
+# logic). But nothing else ever restores the profile either — if a system
+# sound-settings UI (Cinnamon's sound applet, GNOME Settings, KDE's Audio
+# Volume applet) changes the card's active profile directly, that change
+# sticks forever: the analog output/input sinks vanish from the graph
+# entirely and the headset goes silent with no error anywhere. Every other
+# watchdog pass only checks whether streams are linked to the sinks it
+# expects, never whether the card exposing those sinks is even in the
+# right profile.
+
+from arctis_sound_manager.scripts.video_router import (
+    ensure_card_profile,
+    _ARCTIS_CARD_PROFILE,
+)
+
+
+def test_ensure_card_profile_restores_wrong_profile():
+    card = _FakeCard(
+        "alsa_card.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00",
+        active_profile="off",
+        available_profiles=["off", _ARCTIS_CARD_PROFILE, "pro-audio"],
+    )
+    pulse = _FakePulse([], [], "", cards=[card])
+
+    assert ensure_card_profile(pulse) is True
+    assert pulse.card_profile_sets == [(card.name, _ARCTIS_CARD_PROFILE)]
+    assert card.profile_active.name == _ARCTIS_CARD_PROFILE
+
+
+def test_ensure_card_profile_noop_when_already_correct():
+    card = _FakeCard(
+        "alsa_card.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00",
+        active_profile=_ARCTIS_CARD_PROFILE,
+        available_profiles=["off", _ARCTIS_CARD_PROFILE, "pro-audio"],
+    )
+    pulse = _FakePulse([], [], "", cards=[card])
+
+    assert ensure_card_profile(pulse) is False
+    assert pulse.card_profile_sets == []
+
+
+def test_ensure_card_profile_noop_when_card_absent():
+    """Headset unplugged/off — nothing to restore a profile on."""
+    pulse = _FakePulse([], [], "", cards=[])
+    assert ensure_card_profile(pulse) is False
+    assert pulse.card_profile_sets == []
+
+
+def test_ensure_card_profile_leaves_alone_when_expected_profile_unavailable():
+    """The expected profile isn't even in this card's profile list — nothing
+    sane to set, must not guess or crash."""
+    card = _FakeCard(
+        "alsa_card.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00",
+        active_profile="off",
+        available_profiles=["off", "pro-audio"],
+    )
+    pulse = _FakePulse([], [], "", cards=[card])
+
+    assert ensure_card_profile(pulse) is False
+    assert pulse.card_profile_sets == []
+    assert card.profile_active.name == "off"
+
+
+def test_ensure_card_profile_ignores_other_cards():
+    other_card = _FakeCard(
+        "alsa_card.usb-Generic_USB_Audio-00",
+        active_profile="off",
+        available_profiles=["off", "output:analog-stereo"],
+    )
+    pulse = _FakePulse([], [], "", cards=[other_card])
+
+    assert ensure_card_profile(pulse) is False
+    assert pulse.card_profile_sets == []
+
+
+def test_tick_restores_card_profile_then_sees_the_recovered_sink():
+    """Integration: _process_tick must restore a wrong profile BEFORE doing
+    anything else this tick, so a saved override enforced later in the same
+    pass can actually see the physical sink the profile fix just brought
+    back — not a stale sink list missing it entirely."""
+    card = _FakeCard(
+        "alsa_card.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00",
+        active_profile="off",
+        available_profiles=["off", _ARCTIS_CARD_PROFILE],
+    )
+    chat = _FakeSink(1, "Arctis_Chat")
+    si = _FakeSinkInput(10, sink=chat.index, proplist={"application.name": "Discord"})
+    pulse = _FakePulse([chat], [si], default_sink_name=chat.name, cards=[card])
+
+    with patch("arctis_sound_manager.scripts.video_router.get_headset_power",
+               return_value=HeadsetPower.ON), \
+         patch("arctis_sound_manager.scripts.video_router.load_overrides",
+               return_value={"Discord": "Arctis_Chat"}), \
+         patch("arctis_sound_manager.scripts.video_router.save_overrides"):
+        _process_tick(pulse)
+
+    assert pulse.card_profile_sets == [(card.name, _ARCTIS_CARD_PROFILE)]
+    assert card.profile_active.name == _ARCTIS_CARD_PROFILE
+
 
