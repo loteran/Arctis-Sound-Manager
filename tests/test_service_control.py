@@ -16,6 +16,7 @@ import fcntl
 import os
 import sys
 import tempfile
+import threading
 import time
 import types
 import unittest
@@ -156,6 +157,46 @@ class FilterChainCoalescing(unittest.TestCase):
         self.addCleanup(os.close, fd)
         fcntl.flock(fd, fcntl.LOCK_EX)
         self.assertFalse(sc._should_restart_filter_chain_now())
+
+    def test_concurrent_burst_collapses_to_one_restart(self):
+        """End-to-end regression for #233: a burst of near-simultaneous
+        restart("filter-chain") calls — as the GUI and the daemon can both
+        fire for the same preset/surround change — must reach the actual
+        service manager exactly once, not once per call.
+
+        Manually verified live against the real filter-chain.service on
+        2026-09-06: 10 concurrent calls (2 processes x 5 threads) produced
+        exactly one Stopped/Started cycle in journalctl and no coredump.
+        This locks the same behaviour in under the real service_control
+        code path (not just _should_restart_filter_chain_now in isolation),
+        with subprocess.run mocked so it never touches real services.
+        """
+        with mock.patch.object(sc, "detect_init", return_value="dinit"), \
+             mock.patch.object(sc, "manager_available", return_value=True), \
+             mock.patch("arctis_sound_manager.pw_utils.quiesce_filter_chain"), \
+             mock.patch("subprocess.run", return_value=_ok()) as run:
+            results = []
+            results_lock = threading.Lock()
+
+            def call():
+                ok = sc.restart("filter-chain", timeout=15)
+                with results_lock:
+                    results.append(ok)
+
+            threads = [threading.Thread(target=call) for _ in range(10)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=5)
+
+        self.assertEqual(results, [True] * 10, "every caller should see success")
+        # Exactly one real dinitctl invocation reached the service manager.
+        run.assert_called_once_with(
+            [sc._abs_exe("dinitctl"), "restart", "pipewire-filter-chain"],
+            check=False,
+            close_fds=False,
+            timeout=15,
+        )
 
 
 class GuiSkippedOnDinit(unittest.TestCase):
