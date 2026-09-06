@@ -168,13 +168,27 @@ def test_restores_on_activity_after_a_cut():
     assert tracker.state == "active"
 
 
-def test_anti_flap_floor_absorbs_a_transition_too_soon():
-    tracker = IdleTracker(idle_after_s=10.0, min_transition_interval_s=60.0)
+def test_anti_flap_floor_absorbs_a_cut_too_soon_after_the_last_transition():
+    tracker = IdleTracker(idle_after_s=1.0, min_transition_interval_s=60.0)
     tracker.feed(0.0, any_active=False)
-    assert tracker.feed(10.0, any_active=False) == "cut"
-    # Comes back and goes idle again almost immediately — must be absorbed.
-    tracker.feed(11.0, any_active=True)
-    assert tracker.feed(15.0, any_active=False) == "none"
+    assert tracker.feed(1.0, any_active=False) == "cut"
+    tracker.feed(1.5, any_active=True)  # comes back almost immediately
+    # A second cut this soon after the first transition must be absorbed —
+    # this is what the floor is for: no rapid cut/restore oscillation.
+    assert tracker.feed(2.5, any_active=False) == "none"
+
+
+def test_restore_is_never_held_back_by_the_anti_flap_floor():
+    """Found live on 2026-09-06: gating restore the same way as cut held
+    real audio silent for up to a full min_transition_interval after the
+    user resumed activity — a full minute of silence after starting a video
+    seconds after a cut. Restoring quickly is never the wrong call."""
+    tracker = IdleTracker(idle_after_s=1.0, min_transition_interval_s=60.0)
+    tracker.feed(0.0, any_active=False)
+    assert tracker.feed(1.0, any_active=False) == "cut"
+    # Activity resumes a fraction of a second later — must restore
+    # immediately, not wait out the 60s floor.
+    assert tracker.feed(1.1, any_active=True) == "restore"
 
 
 def test_disarms_after_too_many_transitions_per_hour():

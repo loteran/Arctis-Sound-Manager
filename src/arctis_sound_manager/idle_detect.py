@@ -160,7 +160,14 @@ class IdleTracker:
         return "none"
 
     def _transition(self, now: float, new_state: str, kind: str) -> str:
-        if now - self._last_transition_at < self._min_transition_interval_s:
+        # The anti-flap floor only ever holds back a CUT. Restoring quickly
+        # is never wrong — the worst case is the physical sink stays awake a
+        # little longer, exactly what it already does before this feature
+        # exists at all. Found live (2026-09-06): gating restore the same
+        # way held real audio silent for up to a full min_transition_interval
+        # after the user resumed activity, which is the opposite of what the
+        # floor is for.
+        if kind == "cut" and now - self._last_transition_at < self._min_transition_interval_s:
             return "none"  # anti-flap floor
 
         self._recent_transitions = [t for t in self._recent_transitions if now - t < 3600.0]
