@@ -32,6 +32,18 @@ def test_render_headroom_conf_contains_value_and_matcher():
     assert "SteelSeries" in text
 
 
+def test_render_no_suspend_conf_keeps_period_size_drops_suspend_override():
+    """#180: the suspend-timeout override was removed once node.passive was
+    gone everywhere (v1.4.21) made it pointless — and it was blocking #180
+    outright. The DS5Dongle USB-contention fix (period-size) is unrelated and
+    must survive."""
+    text = pw_quirks._render_no_suspend_conf()
+    assert "api.alsa.period-size = 128" in text
+    # The historical comment may still mention the old property by name — only
+    # the functional assignment (inside update-props) must be gone.
+    assert "suspend-timeout-seconds = 0" not in text
+
+
 # ── Write path ───────────────────────────────────────────────────────────────
 
 
