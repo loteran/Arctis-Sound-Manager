@@ -21,9 +21,13 @@ instead of calling ``systemctl``/``dinitctl`` directly. This:
 All functions accept *logical* names. Use :func:`restart` to apply new configs.
 """
 
+import fcntl
 import logging
+import os
 import shutil
 import subprocess
+import time
+from pathlib import Path
 from typing import Literal
 
 from arctis_sound_manager.init_system import detect_init
@@ -197,6 +201,75 @@ _GRAPH_REBUILDING = {
     "filter-chain", "pipewire", "pipewire-pulse", "wireplumber", "arctis-manager",
 }
 
+# #233: a burst of standalone filter-chain restarts fired within the same
+# second — one per config fragment written during a multi-fragment preset
+# change, sometimes from both the GUI and the daemon for the same user
+# action — races PipeWire's realtime data-loop thread against the graph
+# teardown/rebuild and can segfault the convolver, even with A1's quiesce
+# step (that only prevents killing it *mid-cycle*, not a second restart
+# landing moments after the first). This coalesces same-second requests down
+# to one restart, cross-process.
+_FC_RUNTIME_DIR = Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp")
+_FC_LOCK_PATH = _FC_RUNTIME_DIR / "asm-filter-chain-restart.lock"
+_FC_STAMP_PATH = _FC_RUNTIME_DIR / "asm-filter-chain-restart.stamp"
+_FC_COALESCE_WINDOW_S = 0.3
+_FC_MIN_INTERVAL_S = 2.0
+
+
+def _should_restart_filter_chain_now() -> bool:
+    """Cross-process debounce for a standalone filter-chain restart (#233).
+
+    Returns True if this call should go ahead and restart filter-chain
+    itself, False if its intent has been absorbed by a concurrent or very
+    recent restart from another call (elsewhere in this process, or in
+    another process — the GUI and the daemon both restart filter-chain
+    independently) and it should skip its own restart entirely.
+
+    Uses a non-blocking ``flock`` on a lock file in ``XDG_RUNTIME_DIR``, so a
+    crashed holder can never leave a stale lock (the kernel releases it when
+    the process exits). This is deliberately narrower than the cross-process
+    lock removed in 1.4.20 (:mod:`stream_guard` link rewrites, held across a
+    5s-tick hot path from multiple threads with reentrancy requirements that
+    made it unmanageable): a service restart happens at most a few times per
+    session, this acquisition is non-blocking, and it is never held across
+    another lock.
+    """
+    try:
+        _FC_RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+        lock_fd = os.open(_FC_LOCK_PATH, os.O_CREAT | os.O_RDWR, 0o600)
+    except OSError as exc:
+        logger.warning("service_control: could not open filter-chain coalescing lock: %s", exc)
+        return True  # fail open — never block a restart on bookkeeping
+
+    try:
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return False  # another restart is already in flight — absorbed
+
+        try:
+            last = float(_FC_STAMP_PATH.read_text())
+        except (OSError, ValueError):
+            last = 0.0
+        if time.time() - last < _FC_MIN_INTERVAL_S:
+            return False  # a restart landed moments ago — absorbed
+
+        # Hold the lock through the coalescing window so any request that
+        # arrives in the next moment (e.g. the GUI and the daemon reacting
+        # to the same preset change) finds it held and is absorbed above,
+        # instead of racing this one.
+        time.sleep(_FC_COALESCE_WINDOW_S)
+        try:
+            _FC_STAMP_PATH.write_text(str(time.time()))
+        except OSError as exc:
+            logger.debug("service_control: could not update filter-chain restart stamp: %s", exc)
+        return True
+    finally:
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        finally:
+            os.close(lock_fd)
+
 
 def restart(*services: str, timeout: float | None = None, capture: bool = False) -> bool:
     """Restart services. Use this to (re)apply a new config — never ``start``,
@@ -221,6 +294,15 @@ def restart(*services: str, timeout: float | None = None, capture: bool = False)
     1.6.7+ segfaults when the filter-chain process is killed mid-cycle (issue
     #100), and most call sites restarted it directly, bypassing the one helper
     (``sonar_to_pipewire._restart_filter_chain``) that already did this.
+
+    A standalone ``restart("filter-chain")`` — the hot path (EQ/preset apply,
+    virtual-surround toggle) — is additionally coalesced across processes
+    (:func:`_should_restart_filter_chain_now`, #233): repeated calls within
+    ~2s collapse into the first one and return ``True`` without restarting
+    again, since that first restart already covers them. A restart bundled
+    with other services (full-stack config-migration repair) is rare enough
+    not to need this and is left alone so it never skips restarting the
+    other requested services.
     """
     if _GRAPH_REBUILDING.intersection(services):
         try:
@@ -228,6 +310,14 @@ def restart(*services: str, timeout: float | None = None, capture: bool = False)
             audio_reconfig.begin()
         except Exception as exc:  # never let this block a restart
             logger.warning("service_control: could not open the reconfig window: %s", exc)
+    if services == ("filter-chain",) and manager_available():
+        try:
+            if not _should_restart_filter_chain_now():
+                logger.info("service_control: filter-chain restart absorbed by a "
+                            "concurrent/recent one (#233)")
+                return True
+        except Exception as exc:  # never let coalescing bookkeeping block a restart
+            logger.warning("service_control: filter-chain coalescing check failed: %s", exc)
     if "filter-chain" in services and manager_available():
         try:
             from arctis_sound_manager.pw_utils import quiesce_filter_chain

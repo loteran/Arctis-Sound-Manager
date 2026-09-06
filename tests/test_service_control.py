@@ -12,7 +12,11 @@ These lock the behaviour that prevents issue #25 from regressing:
 * graceful no-op (no FileNotFoundError) when the init manager is absent.
 """
 
+import fcntl
+import os
 import sys
+import tempfile
+import time
 import types
 import unittest
 from pathlib import Path
@@ -88,6 +92,7 @@ class RestartDinit(unittest.TestCase):
         caller — not just the one call site that remembered to do it."""
         with mock.patch.object(sc, "detect_init", return_value="dinit"), \
              mock.patch.object(sc, "manager_available", return_value=True), \
+             mock.patch.object(sc, "_should_restart_filter_chain_now", return_value=True), \
              mock.patch("arctis_sound_manager.pw_utils.quiesce_filter_chain") as quiesce, \
              mock.patch("subprocess.run", return_value=_ok()):
             sc.restart("filter-chain")
@@ -100,6 +105,57 @@ class RestartDinit(unittest.TestCase):
              mock.patch("subprocess.run", return_value=_ok()):
             sc.restart("pipewire", "arctis-manager")
         quiesce.assert_not_called()
+
+    def test_restart_skips_entirely_when_coalescing_absorbs_it(self):
+        with mock.patch.object(sc, "detect_init", return_value="dinit"), \
+             mock.patch.object(sc, "manager_available", return_value=True), \
+             mock.patch.object(sc, "_should_restart_filter_chain_now", return_value=False), \
+             mock.patch("arctis_sound_manager.pw_utils.quiesce_filter_chain") as quiesce, \
+             mock.patch("subprocess.run") as run:
+            self.assertTrue(sc.restart("filter-chain"))
+        quiesce.assert_not_called()
+        run.assert_not_called()
+
+
+class FilterChainCoalescing(unittest.TestCase):
+    """#233: cross-process debounce for standalone filter-chain restarts.
+
+    Uses a scratch dir for the lock/stamp files (never the real
+    XDG_RUNTIME_DIR) and a zeroed coalescing window so these run instantly.
+    """
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        tmp = Path(self._tmpdir.name)
+        patches = [
+            mock.patch.object(sc, "_FC_LOCK_PATH", tmp / "restart.lock"),
+            mock.patch.object(sc, "_FC_STAMP_PATH", tmp / "restart.stamp"),
+            mock.patch.object(sc, "_FC_COALESCE_WINDOW_S", 0.0),
+        ]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_first_call_proceeds(self):
+        self.assertTrue(sc._should_restart_filter_chain_now())
+
+    def test_second_call_within_min_interval_is_absorbed(self):
+        self.assertTrue(sc._should_restart_filter_chain_now())
+        self.assertFalse(sc._should_restart_filter_chain_now())
+
+    def test_call_after_min_interval_proceeds_again(self):
+        self.assertTrue(sc._should_restart_filter_chain_now())
+        sc._FC_STAMP_PATH.write_text(str(time.time() - sc._FC_MIN_INTERVAL_S - 1))
+        self.assertTrue(sc._should_restart_filter_chain_now())
+
+    def test_held_lock_absorbs_a_concurrent_caller(self):
+        # Simulate a second process/thread already holding the lock: open our
+        # own fd on the same path and flock it, as the real holder would.
+        fd = os.open(sc._FC_LOCK_PATH, os.O_CREAT | os.O_RDWR, 0o600)
+        self.addCleanup(os.close, fd)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        self.assertFalse(sc._should_restart_filter_chain_now())
 
 
 class GuiSkippedOnDinit(unittest.TestCase):
@@ -123,6 +179,8 @@ class NoManagerNeverCrashes(unittest.TestCase):
         # Even if manager_available lies, _run must swallow FileNotFoundError.
         with mock.patch.object(sc, "detect_init", return_value="systemd"), \
              mock.patch.object(sc, "manager_available", return_value=True), \
+             mock.patch.object(sc, "_should_restart_filter_chain_now", return_value=True), \
+             mock.patch("arctis_sound_manager.pw_utils.quiesce_filter_chain"), \
              mock.patch("subprocess.run", side_effect=FileNotFoundError):
             self.assertFalse(sc.restart("filter-chain"))
 
