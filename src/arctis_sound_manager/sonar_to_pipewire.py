@@ -3851,7 +3851,17 @@ def ensure_physical_output_links(
     # routed to the Output channel then played into a dead end: no sound, no
     # error. Same idempotent treatment as the two hops above.
     output_target = _get_configured_external_output()
-    if output_target and _node_in_graph(data, output_target):
+    if output_target and output_target in skip_targets:
+        # #180: the user can point the Output channel AT the headset itself
+        # (external_output_device == the headset), in which case this
+        # "external" target IS one of the physical outputs an idle cutdown
+        # just released — re-linking it here would undo that on the very
+        # next tick. Only this specific case is skipped; a genuinely
+        # external destination is never in skip_targets and keeps being
+        # maintained exactly as before, since its power state is not what
+        # this cutdown is about.
+        pass
+    elif output_target and _node_in_graph(data, output_target):
         # Only counted as a hop at all when the external sink is actually in
         # the graph. A configured-but-absent target is the normal state of a
         # TV or monitor that is switched off: reporting it as a failure would

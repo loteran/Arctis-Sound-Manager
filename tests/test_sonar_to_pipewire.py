@@ -2064,6 +2064,32 @@ def test_ensure_physical_output_links_skips_targets_in_skip_targets(monkeypatch)
     assert called == []
 
 
+def test_ensure_physical_output_links_output_targeting_headset_respects_skip_targets(
+    monkeypatch, tmp_path
+):
+    """Found live on 2026-09-06, minutes after B4 first fired: a user can
+    point the Output channel's external_output_device AT the headset itself
+    (not a genuinely external device) — the PRIMARY branch (external sink
+    present in the graph) then resolves to the exact node an idle cutdown
+    just released, and re-links it back on the very next tick, defeating the
+    cutdown entirely. Only the fallback branch was guarded before this test;
+    the primary branch must be too."""
+    monkeypatch.setattr(_s2p_p3, "_get_physical_out_chat", lambda: "")
+    monkeypatch.setattr(_s2p_p3, "_get_physical_out_game", lambda: "alsa_output.test-game")
+    monkeypatch.setattr(_s2p_p3, "_CONF_DIR", tmp_path)
+    _write_output_conf(tmp_path, "alsa_output.test-game")  # Output -> the headset itself
+    monkeypatch.setattr(_s2p_p3, "_node_in_graph", lambda data, name: True)
+
+    called = []
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.ensure_loopback_link",
+        lambda *a, **kw: called.append(a) or True,
+    )
+    result = _s2p_p3.ensure_physical_output_links(skip_targets={"alsa_output.test-game"})
+    assert result == {}
+    assert called == []
+
+
 def test_ensure_physical_output_links_output_fallback_respects_skip_targets(
     monkeypatch, tmp_path
 ):
