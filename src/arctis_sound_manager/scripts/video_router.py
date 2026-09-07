@@ -458,6 +458,71 @@ def _is_physical_arctis(sink_name: str) -> bool:
     return "SteelSeries_Arctis" in sink_name and not sink_name.startswith("Arctis_")
 
 
+def _best_card_profile(card) -> object | None:
+    """The profile PulseAudio/ACP's own priority ranking says this card should
+    be on — whichever offers at least one sink (an input-only or fully-off
+    profile is never useful to ASM) and the highest ``priority`` among the
+    ones the card currently reports ``available``.
+
+    No per-headset-model hardcoding: ACP already computes ``priority`` to
+    reflect exactly "the richest profile this card's ports currently
+    support" (e.g. an analog+mono-mic combo outranks analog-only, which
+    outranks digital, which outranks ``pro-audio``), the same ranking its own
+    auto-profile logic would pick on fresh discovery. Reading it back here
+    means this works unmodified across every Arctis family ASM supports,
+    not just the one profile string a single model happened to be tested on.
+    """
+    candidates = [p for p in card.profile_list if p.available and p.n_sinks > 0]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda p: p.priority)
+
+
+def ensure_card_profile(pulse: pulsectl.Pulse) -> bool:
+    """Detect and restore the Arctis card's profile if something changed it.
+
+    System sound-settings UIs (GNOME Settings, Cinnamon's sound applet, KDE's
+    Audio Volume applet) can and do change a card's active profile directly
+    when the user merely clicks the device in a dropdown — not just the
+    default sink. Nothing in PipeWire/WirePlumber proactively reverts an
+    explicit profile change like that (auto-profile only acts on a card's
+    initial discovery, not against a later explicit pick), so it sticks: the
+    card is left on some other profile (``off``, ``pro-audio``, an S/PDIF
+    profile), its analog output/input sinks disappear from the graph
+    entirely, and the headset goes silent with no error anywhere — every
+    loopback and EQ link ASM already manages was pointed at a sink that no
+    longer exists, and every other watchdog pass only checks whether
+    *streams* are linked to the sinks it expects, never whether the card
+    exposing those sinks is even in the right profile to begin with.
+
+    Idempotent and cheap: a no-op read (``card_list()``) on every tick, and a
+    single ``card_profile_set`` call only on the rare tick where the profile
+    is actually wrong. Skipped entirely when the card is not present (headset
+    unplugged/off) or when nothing on it looks like a usable profile at all.
+
+    Returns True if the profile was corrected this tick.
+    """
+    card = next(
+        (c for c in pulse.card_list() if "SteelSeries_Arctis" in c.name), None,
+    )
+    if card is None:
+        return False
+    best = _best_card_profile(card)
+    if best is None:
+        return False
+    active = card.profile_active.name if card.profile_active else None
+    if active == best.name:
+        return False
+    log.warning(
+        "Arctis card profile was '%s' (expected '%s') — restoring it. "
+        "This usually means a system sound-settings UI changed the "
+        "device's profile directly.",
+        active, best.name,
+    )
+    pulse.card_profile_set(card, best.name)
+    return True
+
+
 def _explicit_pin_target(props: dict, sink_map: dict) -> str | None:
     """Return the foreign virtual sink a stream is explicitly pinned to, or None.
 
@@ -637,6 +702,13 @@ def _process_tick(pulse: pulsectl.Pulse) -> None:
     global _last_native_check
 
     sinks = pulse.sink_list()
+
+    # Card profile sovereignty check (R1-adjacent): must run before anything
+    # else touches `sinks`, since a corrected profile changes which physical
+    # sinks actually exist this tick — every check below has to see the
+    # post-restore graph, not a stale one missing the analog sink entirely.
+    if ensure_card_profile(pulse):
+        sinks = pulse.sink_list()
 
     server_info = pulse.server_info()
     default_sink_name = server_info.default_sink_name or ""
