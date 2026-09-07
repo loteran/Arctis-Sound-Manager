@@ -313,6 +313,13 @@ _CONF_VERSION_RE = re.compile(r"^\s*#\s*ASM-CONF-VERSION:\s*(\d+)\s*$", re.MULTI
 # into the conf on disk — the drift trigger that makes the sliders live (#169).
 _HESUVI_HEADER_RE = re.compile(r"Immersion:\s*(\d+)%\s*\|\s*Distance:\s*(\d+)%")
 
+# Optional trailing header segment "…  |  Boost: N.N dB" (issue #237) — absent
+# on any conf baked with boost_db == 0, which is every conf on disk before
+# this fix and every channel where the user never touched the slider. Kept
+# separate from _HESUVI_HEADER_RE so a boost-less conf's header still matches
+# that regex unchanged.
+_HESUVI_BOOST_RE = re.compile(r"Boost:\s*([\d.]+)\s*dB")
+
 
 def _channel_node_description(channel: str) -> str:
     """Label shown in system audio pickers for a channel's EQ node.
@@ -388,6 +395,35 @@ def _hesuvi_conf_has_spatial_drift(
         int(match.group(1)) != int(immersion_pct)
         or int(match.group(2)) != int(distance_pct)
     )
+
+
+def _hesuvi_boost_db(channel: str) -> float:
+    """Read the channel's saved Volume Boost, clamped to what the limiter's
+    "Input gain (dB)" port accepts ([-20, 20], see generate_hesuvi_conf).
+
+    Same source _save_eq_state()/_load_eq_state() write for the EQ conf's own
+    ``boost`` node, so the HeSuVi chain's compensation can never disagree with
+    what is actually baked into that channel's EQ (issue #237) — reading a
+    separately-cached value here could otherwise go stale for the interval
+    between an Apply and the next EQ regeneration.
+    """
+    state = _load_eq_state(channel)
+    boost_db = float(state["boost_db"]) if state else 0.0
+    return max(-12.0, min(12.0, boost_db))
+
+
+def _hesuvi_conf_has_boost_drift(content: str, boost_db: float) -> bool:
+    """True if the conf's baked Boost differs from the channel's saved EQ state.
+
+    No ``Boost:`` header segment means the conf was baked with boost_db == 0
+    (every conf before issue #237's fix, and every channel the user never
+    boosted) — so its absence is only drift when the current boost is
+    non-zero, not the "older conf shape" case _hesuvi_conf_has_spatial_drift
+    treats as automatically stale.
+    """
+    match = _HESUVI_BOOST_RE.search(content)
+    baked = float(match.group(1)) if match else 0.0
+    return abs(baked - boost_db) > 0.01
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -3244,6 +3280,11 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
                 # but the conf on disk still bakes the old percentages. This is
                 # the trigger that finally makes the sliders do something (#169).
                 _reason = "Immersion/Distance changed (issue #169)"
+            elif _hesuvi_conf_has_boost_drift(hesuvi_content, _hesuvi_boost_db(_hz_channel)):
+                # The user changed Volume Boost while this channel's HeSuVi
+                # chain wasn't live to pick it up (e.g. headset unplugged) —
+                # catches it the same way a slider-move drift does (issue #237).
+                _reason = "Volume Boost changed (issue #237)"
 
             if _reason is None:
                 continue  # conf is current — no needless regen/restart.
@@ -4083,6 +4124,12 @@ def generate_hesuvi_conf(
         so the two channels carry independent Immersion/Distance (issue #169).
         Both chains target the same physical GAME output.
 
+    Volume Boost (issue #237): read internally via :func:`_hesuvi_boost_db`
+    rather than taken as a parameter, from the same per-channel EQ state
+    :func:`generate_sonar_eq_conf` already writes — so this chain's shape
+    never depends on the Spatial Audio toggle itself, only on that state. See
+    the "Output limiter" node comment below for why it needs compensating.
+
     Returns
     -------
     str
@@ -4114,6 +4161,11 @@ def generate_hesuvi_conf(
 
     immersion_db = immersion_pct / 100.0 * 12.0
     distance_wet = distance_pct / 100.0
+    # Volume Boost (issue #237): the channel's own EQ conf already bakes this
+    # into its "boost" node (see generate_sonar_eq_conf), upstream of this
+    # whole HeSuVi chain. Read here only to compensate the limiter below —
+    # this chain's *shape* stays independent of the Spatial Audio toggle.
+    boost_db = _hesuvi_boost_db(channel)
 
     # ── Nodes ────────────────────────────────────────────────────────────
     node_lines: list[str] = []
@@ -4170,13 +4222,42 @@ def generate_hesuvi_conf(
     #    — graceful fallback, exactly like the reverb. _ladspa_plugin_ref stages
     #    the plugin into ~/.ladspa so it also loads on the host under Distrobox
     #    (issue #100).
+    #
+    #    Issue #237: this limiter's 0.1s release makes it a de-facto permanent
+    #    compressor on Immersion-heavy content, not just an occasional
+    #    clipping guard — it reabsorbs Volume Boost's upstream gain about as
+    #    fast as the EQ's "boost" node (see generate_sonar_eq_conf) adds it,
+    #    silently capping every channel with Spatial Audio on at this fixed
+    #    -1 dBFS ceiling regardless of how far the user raises Boost. Fix:
+    #    the limiter's "Input gain (dB)" cancels Boost out (so it engages on
+    #    exactly the same programme it always has — the anti-clip protection
+    #    is unchanged), and a pair of boostL/boostR nodes re-applies that same
+    #    gain *after* the ceiling, so Boost has the same audible effect here
+    #    that it already has with Spatial Audio off. Emitted only when
+    #    boost_db is actually non-zero, so every existing install's Game/Media
+    #    chain — Boost defaults to 0 — stays byte-identical.
     _limiter_ref = _ladspa_plugin_ref("fast_lookahead_limiter_1913.so")
     use_limiter = _limiter_ref is not None
+    use_boost_makeup = use_limiter and boost_db > 0.01
     if use_limiter:
+        # -0.0 (Python formats -boost_db as "-0.0" when boost_db is exactly
+        # 0.0) would break byte-identity with every conf already on disk —
+        # only negate once make-up is actually in play.
+        _limiter_input_gain = -boost_db if use_boost_makeup else 0.0
         node_lines.append(f"{I}# output limiter (LADSPA fast lookahead — requires swh-plugins)")
         node_lines.append(
             f'{I}{{ type = ladspa  name = limiter  plugin = {_limiter_ref}  label = fastLookaheadLimiter'
-            f'  control = {{ "Input gain (dB)" = 0.0  "Limit (dB)" = -1.0  "Release time (s)" = 0.1 }} }}'
+            f'  control = {{ "Input gain (dB)" = {_limiter_input_gain:.1f}  "Limit (dB)" = -1.0  "Release time (s)" = 0.1 }} }}'
+        )
+    if use_boost_makeup:
+        node_lines.append(f"{I}# Volume Boost make-up gain, reapplied after the limiter (issue #237)")
+        node_lines.append(
+            f'{I}{{ type = builtin  name = boostL  label = bq_highshelf'
+            f'  control = {{ Freq = 10.0  Q = 0.7071  Gain = {boost_db:.1f} }} }}'
+        )
+        node_lines.append(
+            f'{I}{{ type = builtin  name = boostR  label = bq_highshelf'
+            f'  control = {{ Freq = 10.0  Q = 0.7071  Gain = {boost_db:.1f} }} }}'
         )
 
     # ── Links ────────────────────────────────────────────────────────────
@@ -4225,6 +4306,12 @@ def generate_hesuvi_conf(
     else:
         out_l, out_r = pre_out_l, pre_out_r
 
+    if use_boost_makeup:
+        link_lines.append(f"{L}# limiter -> Volume Boost make-up gain")
+        link_lines.append(f'{L}{{ output = "{out_l}"  input = "boostL:In" }}')
+        link_lines.append(f'{L}{{ output = "{out_r}"  input = "boostR:In" }}')
+        out_l, out_r = "boostL:Out", "boostR:Out"
+
     nodes_text = "\n".join(node_lines)
     links_text = "\n".join(link_lines)
     outputs_line = f'        outputs = [ "{out_l}" "{out_r}" ]'
@@ -4250,10 +4337,19 @@ def generate_hesuvi_conf(
         '        node.pause-on-idle = false\n'
     ) if channel != "output" else ''
 
+    # Tracks boost_db itself, not use_boost_makeup: even without a limiter
+    # (no swh-plugins) the header must still reflect the current boost, or
+    # _hesuvi_conf_has_boost_drift would see permanent drift and regenerate
+    # this conf on every reconciliation tick for no reason — there are no
+    # make-up nodes to add in that case, just nothing to compensate for.
+    # Absent segment reads as "baked with boost 0", matching every conf on
+    # disk before this fix (issue #237).
+    _boost_header_segment = f"  |  Boost: {boost_db:.1f} dB" if boost_db > 0.01 else ""
+
     text = f"""\
 # Auto-generated by Arctis Sound Manager — DO NOT EDIT
 {_conf_version_header()}
-# HeSuVi 7.1 Virtual Surround  |  Immersion: {immersion_pct}%  |  Distance: {distance_pct}%
+# HeSuVi 7.1 Virtual Surround  |  Immersion: {immersion_pct}%  |  Distance: {distance_pct}%{_boost_header_segment}
 context.modules = [
   {{ name = libpipewire-module-filter-chain
     flags = [ nofail ]

@@ -550,3 +550,36 @@ class DbusWrapper(QObject):
         DbusWrapper._executor.submit(
             lambda: asyncio.run(DbusWrapper._apply_spatial_audio_async())
         )
+
+    @staticmethod
+    async def _regenerate_hesuvi_async() -> None:
+        dbus_bus = None
+        try:
+            dbus_bus = await MessageBus().connect()
+            await dbus_bus.call(Message(
+                destination=DBUS_BUS_NAME,
+                path=DBUS_CONFIG_OBJECT_PATH,
+                interface=DBUS_CONFIG_INTERFACE_NAME,
+                member='RegenerateHesuvi',
+                message_type=MessageType.METHOD_CALL,
+            ))
+        except Exception as e:
+            DbusWrapper.logger.error('Error in regenerate_hesuvi: %s', e)
+        finally:
+            if dbus_bus is not None:
+                dbus_bus.disconnect()
+
+    @staticmethod
+    def regenerate_hesuvi_sync() -> bool:
+        """Ask the daemon to rewrite the HeSuVi conf(s) from saved state —
+        picking up e.g. a new Volume Boost — without restarting anything (#237).
+
+        MUST be called off the Qt UI thread. Blocking but restart-free: the
+        caller (an Apply-All worker) restarts the filter-chain itself right
+        after writing the EQ confs, and that one restart reloads both."""
+        try:
+            asyncio.run(DbusWrapper._regenerate_hesuvi_async())
+            return True
+        except Exception as e:
+            DbusWrapper.logger.error('Error in regenerate_hesuvi_sync: %s', e)
+            return False

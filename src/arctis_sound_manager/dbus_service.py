@@ -156,6 +156,19 @@ class ArctisManagerDbusConfigService(ServiceInterface):
         )
         return True
 
+    @method('RegenerateHesuvi')
+    async def regenerate_hesuvi(self) -> 'b':  # type: ignore
+        """Rewrite the HeSuVi conf(s) from saved state, without restarting
+        the filter-chain (issue #237).
+
+        Used by an Apply-All (profile switch, or a Volume Boost change) that
+        is about to restart the filter-chain itself right after — regenerating
+        via ApplySpatialAudio there would restart it a second, racing time.
+        """
+        return await asyncio.get_running_loop().run_in_executor(
+            None, self.core_engine.regenerate_hesuvi
+        )
+
 class ArctisManagerDbusStatusService(ServiceInterface):
     def __init__(self, core: CoreEngine):
         super().__init__(DBUS_STATUS_INTERFACE_NAME)

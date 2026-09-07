@@ -853,16 +853,17 @@ class _ApplyAllWorker(QThread):
                 noise_reduction=micro_proc,
             )
 
-            # Regenerate HeSuVi (Phase 3, issue #100/#88): always present now,
-            # independent of either channel's Spatial Audio toggle — the node
-            # stays idle when nothing links into it. Game's immersion/distance
-            # values are authoritative (same precedence _ApplyWorker already
-            # uses for a single-channel apply).
-            from arctis_sound_manager.sonar_to_pipewire import generate_hesuvi_conf
-            generate_hesuvi_conf(
-                immersion_pct=game_spatial.get("immersion", 50),
-                distance_pct=game_spatial.get("distance", 50),
-            )
+            # Regenerate HeSuVi (Phase 3, issue #100/#88; make-up fixed #237):
+            # calling generate_hesuvi_conf() directly here always no-op'd — no
+            # device is registered in the GUI process (see _ApplyWorker's own
+            # comment on this above) — so neither Immersion/Distance nor Volume
+            # Boost ever reached the on-disk HeSuVi conf(s) from an Apply-All.
+            # DbusWrapper.regenerate_hesuvi_sync() has the daemon (device
+            # attached) rewrite them instead, restart-free — the filter-chain
+            # restart a few lines below reloads them fresh, in the same pass as
+            # the EQ confs just written above.
+            from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
+            DbusWrapper.regenerate_hesuvi_sync()
 
             # Profile-switch path (apply_all_from_files). Same Discord-safe
             # strategy as _ApplyWorker: restart filter-chain only (recreates all
