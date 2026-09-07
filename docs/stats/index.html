@@ -292,13 +292,6 @@
         }
         return 0;
       });
-      // The API only returns the top 20 versions by user count, so the bars
-      // above never sum to `data.total` on their own — ASM has shipped far
-      // more than 20 distinct versions over its history. Fold everyone else
-      // into a trailing "Older" bucket so the chart accounts for the full
-      // unique-user total instead of silently dropping the long tail.
-      const olderCount = data.total - data.versions.reduce((s, r) => s + r.nb, 0);
-      if (olderCount > 0) versionsByNumber.push({ label: "Older", nb: olderCount });
       mkChart("chart-versions",
         versionsByNumber.map(r => r.label), versionsByNumber.map(r => r.nb));
     })
