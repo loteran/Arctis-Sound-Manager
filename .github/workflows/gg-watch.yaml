@@ -5,6 +5,9 @@ name: SteelSeries GG watcher
 # Watch for new SteelSeries GG releases and act on what changed:
 #   - new Sonar presets → commit to main (preset_sync reads from main)
 #   - new device files or changed Arctis specs → open an issue
+#   - decoded specs, regardless → mirrored to the private
+#     loteran/steelseries-research repo (RESEARCH_REPO_TOKEN secret; skipped
+#     if unset), never to this repo
 #
 # The back-merge workflow carries preset commits to develop.
 #
@@ -57,6 +60,11 @@ jobs:
           GG_WORKDIR: ${{ runner.temp }}/gg-watch
           ASM_ROOT: ${{ github.workspace }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Separate, narrowly-scoped token (contents:write on
+          # loteran/steelseries-research only) — GITHUB_TOKEN above has no
+          # write access outside this repo. Mirrors decoded specs there so
+          # they're cloneable from any machine. Missing secret = step skips.
+          RESEARCH_REPO_TOKEN: ${{ secrets.RESEARCH_REPO_TOKEN }}
         run: |
           python3 scripts/reverse-engineering/gg-watch.py \
             ${{ inputs.since && format('--since={0}', inputs.since) || '' }} \

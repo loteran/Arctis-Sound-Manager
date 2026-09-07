@@ -26,9 +26,11 @@ can be added mechanically. A spec change is a question — "does this opcode
 mean what I think" — and answering it wrong writes silent garbage to somebody's
 headset. So that half stops at "here is what changed, go look".
 
-Nothing SteelSeries ships is committed anywhere: the decrypted specs stay in
-the temp workdir, which is deliberately discarded after the run. Only the
-preset JSON — the same data ASM already carries — reaches git.
+Nothing SteelSeries ships is committed to *this* repository: the decrypted
+specs reach git only in the private loteran/steelseries-research repo (a
+separate destination, its own token — see push_specs_to_research_repo), kept
+there so any machine can clone the specs instead of re-running the extraction.
+Only the preset JSON — the same data ASM already carries — reaches this repo.
 
 Copyright (C) 2026 loteran — SPDX-License-Identifier: GPL-3.0-or-later
 """
@@ -57,6 +59,7 @@ MANIFEST    = ASM_ROOT / "presets_manifest.json"
 GENERATE_MANIFEST = ASM_ROOT / "scripts/generate_presets_manifest.py"
 
 REPO = "loteran/Arctis-Sound-Manager"
+RESEARCH_REPO = "loteran/steelseries-research"
 
 LATEST_URL = "https://steelseries.com/gg/downloads/gg/latest/windows"
 VERSION_RE = re.compile(r"SteelSeriesGG([\d.]+)Setup\.exe")
@@ -366,6 +369,52 @@ def add_presets(new: dict[str, dict], version: str) -> list[str]:
     return written
 
 
+def push_specs_to_research_repo(decoded: Path, version: str) -> bool:
+    """Mirror this version's decrypted specs into the private research repo.
+
+    Separate destination from ASM's own repo on purpose (see the module
+    docstring: nothing SteelSeries ships reaches *this* repository) —
+    steelseries-research is where the decoded-<version>/ trees actually live,
+    cloneable from any machine instead of re-running the extraction there.
+    Needs its own token: ASM's GITHUB_TOKEN has no write access outside ASM,
+    and deliberately shouldn't — RESEARCH_REPO_TOKEN is a separate,
+    narrowly-scoped secret (contents:write on steelseries-research only).
+    """
+    if DRY_RUN or NO_PUSH:
+        log(f"  [dry-run/no-push] would push decoded-{version} to {RESEARCH_REPO}")
+        return False
+    token = os.environ.get("RESEARCH_REPO_TOKEN")
+    if not token:
+        log("  RESEARCH_REPO_TOKEN not set — skipping steelseries-research push")
+        return False
+
+    clone_dir = GG_WORKDIR / "steelseries-research-clone"
+    if clone_dir.is_dir():
+        shutil.rmtree(clone_dir)
+    url = f"https://x-access-token:{token}@github.com/{RESEARCH_REPO}.git"
+    run(["git", "clone", "--depth", "1", url, str(clone_dir)])
+
+    dest = clone_dir / f"decoded-{version}"
+    if dest.is_dir():
+        shutil.rmtree(dest)
+    shutil.copytree(decoded, dest)
+
+    git = ["git", "-C", str(clone_dir)]
+    run(git + ["config", "user.name", "github-actions[bot]"])
+    run(git + ["config", "user.email", "github-actions[bot]@users.noreply.github.com"])
+    run(git + ["add", f"decoded-{version}"])
+    status = subprocess.run(git + ["status", "--porcelain"],
+                             text=True, capture_output=True).stdout
+    if not status.strip():
+        log(f"  {RESEARCH_REPO} already has decoded-{version} — nothing to push")
+        return False
+    run(git + ["commit", "-m", f"feat: add decoded Arctis specs for GG {version}\n\n"
+               "Automated by ASM's gg-watch (scripts/reverse-engineering/gg-watch.py)."])
+    run(git + ["push", "origin", "HEAD"])
+    log(f"  decoded-{version} pushed to {RESEARCH_REPO}")
+    return True
+
+
 def open_issue(version: str, new_files: list[str], changed: list[str]) -> str | None:
     if not new_files and not changed:
         return None
@@ -432,6 +481,7 @@ def main() -> int:
     log(f"new version: {known} → {version}")
     root = extract(fetch(version, url), version)
     decoded = decode(root, version)
+    push_specs_to_research_repo(decoded, version)
 
     edevice_files, spec_hashes = build_index(root, decoded)
     new_files, changed = compare_to_state(edevice_files, spec_hashes, state)
