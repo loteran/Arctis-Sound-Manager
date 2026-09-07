@@ -458,39 +458,47 @@ def _is_physical_arctis(sink_name: str) -> bool:
     return "SteelSeries_Arctis" in sink_name and not sink_name.startswith("Arctis_")
 
 
-# The profile ASM's own headset card needs to expose analog output/input at
-# all. Anything else (off, pro-audio, iec958-*) leaves the physical sink
-# entirely absent from the PipeWire graph — every virtual channel routes
-# into a target that no longer exists, and nothing else in the daemon
-# notices, because every other watchdog pass only ever asks "is this stream
-# on the sink I expect", never "does that sink's card still expose it".
-_ARCTIS_CARD_PROFILE = "output:analog-stereo+input:mono-fallback"
+def _best_card_profile(card) -> object | None:
+    """The profile PulseAudio/ACP's own priority ranking says this card should
+    be on — whichever offers at least one sink (an input-only or fully-off
+    profile is never useful to ASM) and the highest ``priority`` among the
+    ones the card currently reports ``available``.
+
+    No per-headset-model hardcoding: ACP already computes ``priority`` to
+    reflect exactly "the richest profile this card's ports currently
+    support" (e.g. an analog+mono-mic combo outranks analog-only, which
+    outranks digital, which outranks ``pro-audio``), the same ranking its own
+    auto-profile logic would pick on fresh discovery. Reading it back here
+    means this works unmodified across every Arctis family ASM supports,
+    not just the one profile string a single model happened to be tested on.
+    """
+    candidates = [p for p in card.profile_list if p.available and p.n_sinks > 0]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda p: p.priority)
 
 
 def ensure_card_profile(pulse: pulsectl.Pulse) -> bool:
     """Detect and restore the Arctis card's profile if something changed it.
 
-    ASM's own WirePlumber config sets ``api.acp.auto-profile = false`` and
-    ``api.acp.auto-port = false`` on this card, on purpose — profile/port
-    selection is meant to live entirely in ASM's own routing logic instead
-    of WirePlumber silently switching to whatever port most recently saw a
-    plug event. That is correct for a headset whose "port" never changes.
-    But it has a gap: nothing *else* ever restores the profile either, and
-    system sound-settings UIs (GNOME Settings, Cinnamon's sound applet, KDE's
+    System sound-settings UIs (GNOME Settings, Cinnamon's sound applet, KDE's
     Audio Volume applet) can and do change a card's active profile directly
     when the user merely clicks the device in a dropdown — not just the
-    default sink. Because auto-profile is disabled, that change sticks
-    forever: the card is left on some other profile (``off``, ``pro-audio``,
-    an S/PDIF profile), its analog output/input sinks disappear from the
-    graph entirely, and the headset goes silent with no error anywhere —
-    every loopback and EQ link ASM already manages was pointed at a sink
-    that still doesn't exist, and every other watchdog pass only checks
-    whether *streams* are linked to the sinks it expects, never whether the
-    card exposing those sinks is even in the right profile to begin with.
-    Idempotent and cheap: a no-op read (``card_list()``) on every tick,
-    and a single ``card_profile_set`` call only on the rare tick where the
-    profile is actually wrong. Skipped entirely when the card is not present
-    (headset unplugged/off — nothing to restore a profile on).
+    default sink. Nothing in PipeWire/WirePlumber proactively reverts an
+    explicit profile change like that (auto-profile only acts on a card's
+    initial discovery, not against a later explicit pick), so it sticks: the
+    card is left on some other profile (``off``, ``pro-audio``, an S/PDIF
+    profile), its analog output/input sinks disappear from the graph
+    entirely, and the headset goes silent with no error anywhere — every
+    loopback and EQ link ASM already manages was pointed at a sink that no
+    longer exists, and every other watchdog pass only checks whether
+    *streams* are linked to the sinks it expects, never whether the card
+    exposing those sinks is even in the right profile to begin with.
+
+    Idempotent and cheap: a no-op read (``card_list()``) on every tick, and a
+    single ``card_profile_set`` call only on the rare tick where the profile
+    is actually wrong. Skipped entirely when the card is not present (headset
+    unplugged/off) or when nothing on it looks like a usable profile at all.
 
     Returns True if the profile was corrected this tick.
     """
@@ -499,26 +507,19 @@ def ensure_card_profile(pulse: pulsectl.Pulse) -> bool:
     )
     if card is None:
         return False
-    active = card.profile_active.name if card.profile_active else None
-    if active == _ARCTIS_CARD_PROFILE:
+    best = _best_card_profile(card)
+    if best is None:
         return False
-    available = {p.name for p in card.profile_list}
-    if _ARCTIS_CARD_PROFILE not in available:
-        # Unexpected hardware/profile-set change (e.g. a different device
-        # profile shipped by a future ASM version) — nothing sane to set.
-        log.warning(
-            "Arctis card profile is '%s' but the expected profile '%s' isn't "
-            "in its profile list (%s) — leaving it alone.",
-            active, _ARCTIS_CARD_PROFILE, sorted(available),
-        )
+    active = card.profile_active.name if card.profile_active else None
+    if active == best.name:
         return False
     log.warning(
         "Arctis card profile was '%s' (expected '%s') — restoring it. "
         "This usually means a system sound-settings UI changed the "
         "device's profile directly.",
-        active, _ARCTIS_CARD_PROFILE,
+        active, best.name,
     )
-    pulse.card_profile_set(card, _ARCTIS_CARD_PROFILE)
+    pulse.card_profile_set(card, best.name)
     return True
 
 
