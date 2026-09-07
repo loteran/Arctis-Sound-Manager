@@ -156,16 +156,20 @@ def test_game_8ch_channels():
     assert "FL FR FC LFE RL RR SL SR" in text
 
 
-def _gen_hesuvi(monkeypatch, *, limiter_available, distance_pct):
+def _gen_hesuvi(monkeypatch, *, limiter_available, distance_pct, boost_db=0.0):
     """Generate a HeSuVi conf with the environment stubbed out.
 
     ``_write_conf`` is neutered so the test never touches the filesystem (and
     avoids the non-ASCII arrows in the conf tripping a cp1252 locale on Windows
-    dev boxes); the returned text is what matters.
+    dev boxes); the returned text is what matters. ``boost_db`` defaults to
+    0.0 — matching every install that has never touched Volume Boost — so
+    every caller that doesn't pass it exercises the byte-identical,
+    no-make-up-gain path (issue #237).
     """
     monkeypatch.setattr(_s2p, "_device_attached", lambda: True)
     monkeypatch.setattr(_s2p, "_get_physical_out_game", lambda: "alsa_output.test-game")
     monkeypatch.setattr(_s2p, "_write_conf", lambda path, text: None)
+    monkeypatch.setattr(_s2p, "_hesuvi_boost_db", lambda channel: boost_db)
     monkeypatch.setattr(
         _s2p, "_ladspa_plugin_ref",
         (lambda name: "/usr/lib/ladspa/" + name) if limiter_available else (lambda name: None),
@@ -203,6 +207,121 @@ def test_hesuvi_limiter_graceful_fallback_when_absent(monkeypatch):
     assert "fastLookaheadLimiter" not in text
     assert "limiter:" not in text
     assert 'outputs = [ "mixL:Out" "mixR:Out" ]' in text
+
+
+def test_hesuvi_boost_zero_stays_byte_identical_to_no_boost(monkeypatch):
+    """boost_db == 0.0 (every install before #237, and any channel the user
+    never boosted) must not change the limiter control or add any node —
+    non-regression companion to the two limiter tests above."""
+    text = _gen_hesuvi(monkeypatch, limiter_available=True, distance_pct=0, boost_db=0.0)
+    assert '"Input gain (dB)" = 0.0' in text
+    assert "boostL" not in text and "boostR" not in text
+    assert "Boost:" not in text
+    assert 'outputs = [ "limiter:Output 1" "limiter:Output 2" ]' in text
+
+
+def test_hesuvi_boost_makeup_gain_after_limiter(monkeypatch):
+    """Issue #237: a non-zero Volume Boost cancels itself out of the limiter's
+    input (so the limiter still engages on the unboosted programme, same as
+    always) and is re-applied by boostL/boostR *after* the limiter's output,
+    so it has the same audible effect it already has with Spatial Audio off."""
+    text = _gen_hesuvi(monkeypatch, limiter_available=True, distance_pct=0, boost_db=6.0)
+    assert '"Input gain (dB)" = -6.0' in text
+    assert '"Limit (dB)" = -1.0' in text  # ceiling itself is untouched
+    assert 'name = boostL  label = bq_highshelf' in text
+    assert 'name = boostR  label = bq_highshelf' in text
+    assert 'Gain = 6.0' in text
+    assert '{ output = "limiter:Output 1"  input = "boostL:In" }' in text
+    assert '{ output = "limiter:Output 2"  input = "boostR:In" }' in text
+    assert 'outputs = [ "boostL:Out" "boostR:Out" ]' in text
+    assert "Boost: 6.0 dB" in text
+
+
+def test_hesuvi_boost_without_limiter_passes_through_unboosted(monkeypatch):
+    """No swh-plugins → no limiter → nothing to compensate for. The upstream
+    EQ boost already reaches the sink unmodified, so no make-up nodes must be
+    added here (that would double the gain) — the existing graceful-fallback
+    shape stays exactly as it is."""
+    text = _gen_hesuvi(monkeypatch, limiter_available=False, distance_pct=0, boost_db=6.0)
+    assert "fastLookaheadLimiter" not in text
+    assert "boostL" not in text and "boostR" not in text
+    assert 'outputs = [ "mixL:Out" "mixR:Out" ]' in text
+    # Header still records the current boost so _hesuvi_conf_has_boost_drift
+    # doesn't see permanent drift and regenerate this conf on every tick.
+    assert "Boost: 6.0 dB" in text
+
+
+def test_hesuvi_boost_db_reads_and_clamps_eq_state(tmp_path, monkeypatch):
+    """_hesuvi_boost_db reads the channel's saved EQ state (the same one
+    generate_sonar_eq_conf writes its "boost" node from) and clamps to what
+    the limiter's Input gain port accepts."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    home = tmp_path / "home"
+    (home / ".config" / "arctis_manager").mkdir(parents=True)
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    # No state file at all → 0.0, same as an install that never touched Boost.
+    assert stp._hesuvi_boost_db("game") == 0.0
+
+    state_path = home / ".config" / "arctis_manager" / "sonar_eq_state_game.json"
+    state_path.write_text('{"bands": [], "boost_db": 9.5}')
+    assert stp._hesuvi_boost_db("game") == 9.5
+
+    # Corrupt/out-of-range value never reaches the LADSPA port unclamped.
+    state_path.write_text('{"bands": [], "boost_db": 999}')
+    assert stp._hesuvi_boost_db("game") == 12.0
+
+
+def test_hesuvi_conf_has_boost_drift(monkeypatch):
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    # No header segment at all (every conf before #237) is only drift once
+    # the channel's current boost is actually non-zero.
+    assert stp._hesuvi_conf_has_boost_drift("# no boost marker here", 0.0) is False
+    assert stp._hesuvi_conf_has_boost_drift("# no boost marker here", 6.0) is True
+    # Header present and matching current boost → no drift.
+    assert stp._hesuvi_conf_has_boost_drift("Boost: 6.0 dB", 6.0) is False
+    # Header present but stale → drift.
+    assert stp._hesuvi_conf_has_boost_drift("Boost: 3.0 dB", 6.0) is True
+
+
+def test_regenerate_hesuvi_if_changed_on_boost_drift(tmp_path, monkeypatch):
+    """A Volume Boost change reaches the on-disk HeSuVi conf the same way an
+    Immersion/Distance slider move does (issue #237)."""
+    import arctis_sound_manager.sonar_to_pipewire as stp
+    monkeypatch.setattr(stp, "_CONF_DIR", tmp_path)
+    monkeypatch.setattr(stp, "_SINKS_CONF_DIR", tmp_path / "pipewire.conf.d")
+    (tmp_path / "pipewire.conf.d").mkdir()
+    monkeypatch.setattr(stp, "_device_attached", lambda: True)
+    monkeypatch.setattr(stp.device_state, "is_device_set", lambda: True)
+    monkeypatch.setattr(stp, "_get_physical_out_game", lambda: "alsa_output.test-game")
+    monkeypatch.setattr(stp, "_ladspa_plugin_ref",
+                         lambda name: "/usr/lib/ladspa/" + name)
+    hrir = tmp_path / "hrir.wav"
+    hrir.write_bytes(b"RIFFWAVE-stub")
+    monkeypatch.setattr(stp, "_HRIR_DEST", hrir)
+    monkeypatch.setattr(stp, "ensure_hrir_materialized", lambda *a, **kw: False)
+
+    home = tmp_path / "home"
+    (home / ".config" / "arctis_manager").mkdir(parents=True)
+    monkeypatch.setattr(Path, "home", lambda: home)
+    (home / ".config" / "arctis_manager" / "sonar_spatial_audio.json").write_text(
+        '{"immersion": 50, "distance": 50}'
+    )
+    state_path = home / ".config" / "arctis_manager" / "sonar_eq_state_game.json"
+    state_path.write_text('{"bands": [], "boost_db": 0.0}')
+
+    assert stp.regenerate_hesuvi_if_changed() is True
+    game_conf = tmp_path / "sink-virtual-surround-7.1-hesuvi.conf"
+    assert "Boost:" not in game_conf.read_text()
+    assert stp.regenerate_hesuvi_if_changed() is False
+
+    # Boost slider moves → drift → rewritten, reported True.
+    state_path.write_text('{"bands": [], "boost_db": 8.0}')
+    assert stp.regenerate_hesuvi_if_changed() is True
+    text = game_conf.read_text()
+    assert "Boost: 8.0 dB" in text
+    assert '"Input gain (dB)" = -8.0' in text
+    assert stp.regenerate_hesuvi_if_changed() is False
 
 
 def test_chat_targets_physical_output():

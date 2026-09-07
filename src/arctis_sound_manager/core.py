@@ -742,6 +742,30 @@ class CoreEngine:
         finally:
             self._spatial_apply_lock.release()
 
+    def regenerate_hesuvi(self) -> bool:
+        """Rewrite the HeSuVi conf(s) from their saved state, without restarting.
+
+        Issue #237: an Apply-All (profile switch, or the Boost slider — which
+        also goes through _ApplyAllWorker) already restarts filter-chain itself
+        right after writing the EQ confs. Calling apply_spatial_audio() here
+        too would restart it a second time, racing that first restart. This
+        just rewrites the on-disk HeSuVi conf(s) (picking up the new Volume
+        Boost) so the caller's own restart reloads them fresh — reusing
+        regenerate_hesuvi_if_changed(), the same regen-without-restart half
+        apply_spatial_audio_change() already builds on.
+
+        No-op when no device is attached. Returns whether anything changed
+        (informational only — the caller restarts unconditionally either way).
+        """
+        if not device_state.is_device_set():
+            return False
+        try:
+            from arctis_sound_manager.sonar_to_pipewire import regenerate_hesuvi_if_changed
+            return regenerate_hesuvi_if_changed()
+        except Exception as exc:
+            self.logger.warning("regenerate_hesuvi failed: %r", exc)
+            return False
+
     async def _loopback_watchdog(self) -> None:
         """Periodically check for dead or mislinked loopback processes.
 
