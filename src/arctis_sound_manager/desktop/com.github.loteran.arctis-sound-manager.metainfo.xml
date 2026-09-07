@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.4.24" date="2026-09-08">
+      <description>
+        <p>Volume Boost had no audible effect with Spatial Audio on. The HeSuVi. **A system sound-settings UI (GNOME Settings, Cinnamon's sound applet,.</p>
+      </description>
+    </release>
     <release version="1.4.23" date="2026-09-06">
       <description>
         <p>The auto power-off feature added in 1.4.22 (#180) is now reachable from the</p>
@@ -199,11 +204,6 @@
     <release version="1.2.31" date="2026-08-14">
       <description>
         <p>Bug reports now describe what your audio is actually doing, not just what exists. Until now a report listed your audio devices and their names, but not whether each one was playing, idle or asleep, nor what was connected to what. That is the difference between "something is keeping the headset busy" and "the surround processing is keeping it busy", and chasing the gap has cost real back-and-forth with people who took the time to report a problem. Reports now include every audio node with its live state, every connection between them, which ones are actually processing sound (with the glitch counters behind crackling), how each of ASM's own pieces is configured at that moment, and the kernel's own view of the sound card. Applications that pin their audio to a specific device show that too, which is what explains cases where another program's feature stops working. Nothing extra is asked of you: it is the same button and the same command as before, and the report stays a plain text file you can read in full before sending it.</p>
-      </description>
-    </release>
-    <release version="1.2.30" date="2026-08-14">
-      <description>
-        <p>Installing on Bazzite, SteamOS or Silverblue could leave you with nothing installed. The installer created its container, then stopped partway without saying so: the application entry appeared, but opening it landed in a plain terminal where asm-gui was not found. This was a regression introduced in 1.2.27, when the installers switched to the signed package repository: if registering that repository failed for any reason (no network for the signing key, a keyring it could not sign into), the script aborted right there, after creating the container and before installing anything. Registering the repository can no longer interrupt the installation, and if the install itself fails you now get the reason and the commands to investigate instead of a silent stop. Reported on Discord by binx9612 on Bazzite. Audio from another app's virtual microphone is no longer hijacked. A stream that an application deliberately pins to its own virtual device, such as a soundboard feeding a virtual microphone, was being pulled onto an Arctis channel like any other audio. That did not merely move the sound somewhere else, it broke the other application's feature outright, and it happened to soundboards whose ordinary playback you had assigned to a channel, since both streams share one application name. Such streams are now left where their application put them, and one that had already been moved is returned. Streams pinned to real outputs are untouched, so pulling audio from other speakers onto your headset still works as before. Contributed by @nobodys-tools. (#185).</p>
       </description>
     </release>
   </releases>

@@ -1,3 +1,10 @@
+arctis-sound-manager (1.4.24-1) noble; urgency=medium
+
+  * Volume Boost had no audible effect with Spatial Audio on. The HeSuVi
+  * **A system sound-settings UI (GNOME Settings, Cinnamon's sound applet,
+
+ -- loteran <axel.valadon@gmail.com>  Tue, 08 Sep 2026 00:00:00 +0000
+
 arctis-sound-manager (1.4.23-1) noble; urgency=medium
 
   * The auto power-off feature added in 1.4.22 (#180) is now reachable from
