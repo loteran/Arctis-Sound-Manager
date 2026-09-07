@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.24] - 8 September 2026
+
+### Fixed
+
+- **Volume Boost had no audible effect with Spatial Audio on.** The HeSuVi
+  virtual-surround chain's anti-clip limiter sits downstream of the channel's
+  own EQ "boost" node whenever Spatial Audio is enabled, and its fast (0.1s)
+  release makes it behave like a permanent compressor on Immersion-heavy
+  content rather than an occasional clipping guard — it reabsorbed Boost's
+  gain about as fast as it was added, silently capping the channel at the
+  limiter's fixed ceiling no matter how far the slider was raised. The
+  limiter's input gain now cancels Boost out before the ceiling (so the
+  anti-clip protection engages exactly as before) and reapplies that same
+  gain right after it, so Boost now sounds the same with Spatial Audio on as
+  it already did with it off. Also fixes a related dead code path: applying
+  all channels at once (a profile switch, or the live path a Boost slider
+  move actually takes) never reached the on-disk HeSuVi conf in the first
+  place, so neither Boost nor a moved Immersion/Distance slider from that
+  path took effect until something else happened to regenerate it. (#237)
+
+- **A system sound-settings UI (GNOME Settings, Cinnamon's sound applet,
+  KDE's Audio Volume applet) changing the headset's ALSA card profile could
+  silently kill all audio through it, with no error anywhere.** Clicking the
+  device in one of those UIs — even reselecting the one already active —
+  can flip the card's active profile directly, not just the default sink;
+  once that happens the analog output/input sinks disappear from the
+  PipeWire graph entirely, and every channel ASM manages was pointed at a
+  sink that no longer exists. Restarting `arctis-manager.service` used to
+  be the only fix. A new watchdog check now detects a wrong profile and
+  restores the best one the card itself advertises (by the same priority
+  ranking PipeWire's own profile logic uses), so this self-heals within one
+  tick regardless of headset model. Contributed by @relxek. (#234)
+
 ## [1.4.23] - 6 September 2026
 
 ### Added
