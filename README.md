@@ -16,7 +16,8 @@
 [![ASM Themes](https://img.shields.io/badge/Themes-Community%20site-8B5CF6)](https://loteran.github.io/asm-presets/#themes)
 
 > [!WARNING]
-> **Pacman repository users** (Arch, CachyOS, EndeavourOS, Manjaro): the signing key was rotated on 2026-09-09. Your next `sudo pacman -Syu` will fail with an `unknown trust` signature error until you trust the new key. Fix with either:
+> ## ⚠️ WARNING — Pacman repository users
+> (Arch, CachyOS, EndeavourOS, Manjaro): the signing key was rotated on 2026-09-09. Your next `sudo pacman -Syu` will fail with an `unknown trust` signature error until you trust the new key. Fix with either:
 > - `curl -fsSL https://loteran.github.io/Arctis-Sound-Manager/install.sh | bash -s -- --force`
 > - or the manual commands in **[issue #239](https://github.com/loteran/Arctis-Sound-Manager/issues/239)**
 >
