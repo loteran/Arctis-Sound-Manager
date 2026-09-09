@@ -16,7 +16,11 @@
 [![ASM Themes](https://img.shields.io/badge/Themes-Community%20site-8B5CF6)](https://loteran.github.io/asm-presets/#themes)
 
 > [!WARNING]
-> **Pacman repository users** (Arch, CachyOS, EndeavourOS, Manjaro): the signing key was rotated on 2026-09-09. Your next `sudo pacman -Syu` will fail with an `unknown trust` signature error until you trust the new key — see **[issue #239](https://github.com/loteran/Arctis-Sound-Manager/issues/239)** for the one-line fix. Not affected: AUR, COPR, PPA, PyPI users.
+> **Pacman repository users** (Arch, CachyOS, EndeavourOS, Manjaro): the signing key was rotated on 2026-09-09. Your next `sudo pacman -Syu` will fail with an `unknown trust` signature error until you trust the new key. Fix with either:
+> - `curl -fsSL https://loteran.github.io/Arctis-Sound-Manager/install.sh | bash -s -- --force`
+> - or the manual commands in **[issue #239](https://github.com/loteran/Arctis-Sound-Manager/issues/239)**
+>
+> Not affected: AUR, COPR, PPA, PyPI users.
 
 A Linux GUI for SteelSeries Arctis headsets — device settings, 4-channel audio mixer (Game / Chat / Media / Output), automatic media routing, and a full **Sonar EQ** system powered by PipeWire filter-chain.
 
