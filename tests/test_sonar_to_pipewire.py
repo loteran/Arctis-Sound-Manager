@@ -102,8 +102,8 @@ def test_boost_clamped_to_12db():
     text = generate_sonar_eq_conf("game", bands, 0.0, 0.0, 0.0,
                                   output_path=Path("/dev/null"),
                                   boost_db=50.0)
-    # Should be clamped to 12.0
-    assert "Gain = 12.0" in text
+    # Clamped to 12.0, then lowered by the curve's 1 dB of headroom.
+    assert "Gain = 11.0" in text
 
 
 def test_macro_sliders_game_single_nodes():
@@ -1701,6 +1701,7 @@ def test_the_rack_has_room_above_a_preset_that_uses_every_filter():
     )
     assert diff_filter_conf(old_text, new_text) == {
         "bq10": {"Freq": 2500.0, "Q": 0.7, "Gain": 2.0},
+        "boost": {"Gain": -2.0},        # headroom follows the largest boost
     }
 
 
@@ -1795,7 +1796,8 @@ def test_diff_filter_conf_detects_gain_only_change():
     new_text = generate_sonar_eq_conf("game", bands, basses_db=3.0, voix_db=0.0,
                                        aigus_db=0.0, output_path=Path("/dev/null"))
     diff = diff_filter_conf(old_text, new_text)
-    assert diff == {"macro_basses": {"Gain": 3.0}}
+    # The basses macro is now the largest boost, so the headroom follows it.
+    assert diff == {"macro_basses": {"Gain": 3.0}, "boost": {"Gain": -3.0}}
 
 
 def test_diff_filter_conf_detects_band_freq_and_gain_change():
@@ -1808,9 +1810,12 @@ def test_diff_filter_conf_detects_band_freq_and_gain_change():
     new_text = generate_sonar_eq_conf("chat", bands_b, 0.0, 0.0, 0.0,
                                        output_path=Path("/dev/null"))
     diff = diff_filter_conf(old_text, new_text)
+    # The boost stage follows the curve's headroom (largest boost 2 -> 5 dB).
     assert diff == {
         "bq0_L": {"Freq": 150.0, "Gain": 5.0},
         "bq0_R": {"Freq": 150.0, "Gain": 5.0},
+        "boost_L": {"Gain": -5.0},
+        "boost_R": {"Gain": -5.0},
     }
 
 
@@ -3272,7 +3277,7 @@ def test_corrupt_conf_regenerates_from_saved_eq_state_not_a_bypass(tmp_path, mon
     assert "Gain = 1.0" in repaired    # basses macro
     assert "Gain = -1.0" in repaired   # voix macro
     assert "Gain = 0.5" in repaired    # aigus macro
-    assert "Gain = 2.0" in repaired    # boost
+    assert "Gain = -2.5" in repaired   # boost 2.0 minus 4.5 dB of headroom
     assert "label = copy" not in repaired, "must not have fallen back to a flat bypass"
     assert "audio.channels = 8" in repaired
 
@@ -4089,3 +4094,34 @@ def test_removing_anything_asks_for_the_restart(tmp_path, monkeypatch):
 
     assert needs_pw_restart is True
     assert not (bad / "sonar-output-eq.conf").exists()
+
+
+# ── EQ headroom ───────────────────────────────────────────────────────────────
+#
+# A band at +5 dB pushed any source already near full scale over it; through
+# the HeSuVi limiter that came out as a garbled, pumping file that was fine on
+# a phone. The curve is lowered by its largest boost at the boost stage.
+
+def test_eq_headroom_is_the_largest_positive_gain():
+    from arctis_sound_manager.sonar_to_pipewire import EqBand, eq_headroom_db
+    bands = [EqBand(freq=100, gain=5.0, q=1.0, type="peakingEQ", enabled=True),
+             EqBand(freq=1000, gain=-2.5, q=1.0, type="peakingEQ", enabled=True),
+             EqBand(freq=8000, gain=9.0, q=1.0, type="peakingEQ", enabled=False)]
+    assert eq_headroom_db(bands, {"basses": 2.0, "voix": 0.0, "aigus": -1.0}) == 5.0
+
+
+def test_a_curve_of_cuts_needs_no_headroom():
+    from arctis_sound_manager.sonar_to_pipewire import EqBand, eq_headroom_db
+    bands = [EqBand(freq=100, gain=-3.0, q=1.0, type="peakingEQ", enabled=True)]
+    assert eq_headroom_db(bands, {"basses": -1.0, "voix": 0.0, "aigus": 0.0}) == 0.0
+
+
+def test_the_boost_stage_carries_the_headroom(tmp_path, monkeypatch):
+    from arctis_sound_manager import sonar_to_pipewire as s2p
+    from arctis_sound_manager.sonar_to_pipewire import EqBand
+    monkeypatch.setattr(s2p, "_write_conf", lambda path, text: None)
+    monkeypatch.setattr(s2p, "_save_eq_state", lambda *a, **k: None)
+    bands = [EqBand(freq=100, gain=5.0, q=1.0, type="peakingEQ", enabled=True)]
+    text = s2p.generate_sonar_eq_conf("media", bands, 0.0, 0.0, 0.0, boost_db=2.0)
+    assert "name = boost  label = bq_highshelf" in text
+    assert "Gain = -3.0 }" in text          # 2 dB of Boost minus 5 dB of headroom

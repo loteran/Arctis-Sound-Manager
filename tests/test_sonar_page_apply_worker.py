@@ -85,7 +85,8 @@ def test_apply_worker_gain_only_change_skips_restart(monkeypatch, tmp_path):
     assert ("effect_input.sonar-chat-eq", "macro_basses_R:Gain", 3.0) in set_gain_calls
     # Only the basses macro changed — voix/aigus/bq0/boost must not be touched.
     touched = {control.split(":")[0] for _, control, _ in set_gain_calls}
-    assert touched == {"macro_basses_L", "macro_basses_R"}
+    # The boost stage follows the headroom of the largest boost (now basses).
+    assert touched == {"macro_basses_L", "macro_basses_R", "boost_L", "boost_R"}
 
 
 def test_apply_worker_micro_gain_only_change_skips_restart(monkeypatch, tmp_path):

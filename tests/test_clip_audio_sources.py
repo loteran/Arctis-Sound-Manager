@@ -195,3 +195,88 @@ def test_two_sinks_running_the_same_app_do_not_collide():
 def test_the_mic_is_its_own_track():
     tracks = _resolve(SONAR_SINKS, [], mic="alsa_input.usb-HyperX")
     assert tracks[-1] == ("mic", "alsa_input.usb-HyperX")
+
+
+# ── no Sonar at all ───────────────────────────────────────────────────────────
+#
+# Seen in a clip: game, chat and media byte-identical. The capture had started
+# at login, before the daemon built the Sonar sinks, and fell back to asking
+# for the three monitors by name. PipeWire does not refuse a source that does
+# not exist — it hands over the default one — so all three recorded the
+# headset's full mix, and the editor then summed the copies: +9.5 dB.
+
+def test_no_sonar_records_the_system_output_once():
+    tracks = _resolve([_sink(9, "alsa_output.headset")], [])
+    assert tracks == [("game", "@DEFAULT_MONITOR@")]
+
+
+def test_no_sonar_never_asks_for_monitors_that_do_not_exist():
+    tracks = _resolve([], [], mic="mic_source")
+    assert [src for _, src in tracks] == ["@DEFAULT_MONITOR@", "mic_source"]
+
+
+def test_a_pulse_failure_does_not_invent_sonar_monitors():
+    from arctis_sound_manager import clip_capture
+    with patch("pulsectl.Pulse", side_effect=RuntimeError("no server")):
+        tracks = clip_capture.resolve_audio_sources()
+    assert tracks == [("game", "@DEFAULT_MONITOR@")]
+
+
+def test_capture_knows_when_it_started_without_sonar():
+    from arctis_sound_manager.clip_capture import ClipCapture
+    capture = ClipCapture.__new__(ClipCapture)
+    capture.audio_tracks = [("game", "@DEFAULT_MONITOR@"), ("mic", "m")]
+    assert capture.recording_without_sonar is True
+    capture.audio_tracks = [("game", "Arctis_Game.monitor"), ("mic", "m")]
+    assert capture.recording_without_sonar is False
+
+
+def test_capture_notices_its_sources_being_recreated(monkeypatch):
+    """The daemon rebuilds the channel loopbacks (on a device event, a
+    settings change, a GUI start). A pulsesrc bound to the old monitor is
+    left recording silence; the capture has to notice and rebuild."""
+    from arctis_sound_manager import clip_capture
+    from arctis_sound_manager.clip_capture import ClipCapture
+    capture = ClipCapture.__new__(ClipCapture)
+    capture.audio_tracks = [("game", "Arctis_Game.monitor"), ("mic", "mic_src")]
+    capture._source_ids = {"Arctis_Game.monitor": 41, "mic_src": 7}
+
+    monkeypatch.setattr(clip_capture, "audio_source_ids",
+                        lambda names: {"Arctis_Game.monitor": 41, "mic_src": 7})
+    assert capture.audio_sources_changed() is False
+
+    monkeypatch.setattr(clip_capture, "audio_source_ids",
+                        lambda names: {"Arctis_Game.monitor": 99, "mic_src": 7})
+    assert capture.audio_sources_changed() is True
+
+
+def test_a_source_that_was_never_there_does_not_count_as_changed(monkeypatch):
+    from arctis_sound_manager import clip_capture
+    from arctis_sound_manager.clip_capture import ClipCapture
+    capture = ClipCapture.__new__(ClipCapture)
+    capture.audio_tracks = [("game", "@DEFAULT_MONITOR@")]
+    capture._source_ids = {"@DEFAULT_MONITOR@": None}
+    monkeypatch.setattr(clip_capture, "audio_source_ids", lambda names: {"@DEFAULT_MONITOR@": None})
+    assert capture.audio_sources_changed() is False
+
+
+def test_the_processed_microphone_chain_is_preferred_over_the_raw_input():
+    """What every app hears is the Micro EQ / noise-suppression output; the
+    raw capture behind it carried the room and the fans into every clip."""
+    pulse = _Pulse([
+        _source("alsa_input.usb-HyperX.analog-stereo"),
+        _source("effect_output.sonar-micro-eq"),
+    ], default="effect_output.sonar-micro-eq")
+    with patch("arctis_sound_manager.settings.GeneralSettings.read_from_file",
+               return_value=SimpleNamespace(
+                   micro_input_source="alsa_input.usb-HyperX.analog-stereo")):
+        assert _default_microphone(pulse) == "effect_output.sonar-micro-eq"
+
+
+def test_without_the_chain_the_chosen_raw_input_still_wins():
+    pulse = _Pulse([_source("alsa_input.usb-HyperX.analog-stereo"),
+                    _source("alsa_input.other")], default="alsa_input.other")
+    with patch("arctis_sound_manager.settings.GeneralSettings.read_from_file",
+               return_value=SimpleNamespace(
+                   micro_input_source="alsa_input.usb-HyperX.analog-stereo")):
+        assert _default_microphone(pulse) == "alsa_input.usb-HyperX.analog-stereo"

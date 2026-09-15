@@ -2,11 +2,15 @@
 Description=Arctis Sound Manager — Media Router (auto-route browsers/video to Arctis_Media)
 After=pipewire.service arctis-manager.service
 Requires=pipewire.service
+# See arctis-stream-guard.service for the reasoning: the default start limit
+# converts a transient startup problem into a unit that stays dead until
+# somebody thinks to look at it, and nobody does.
+StartLimitIntervalSec=0
 
 [Service]
 ExecStart=/usr/bin/asm-router
 Restart=always
-RestartSec=3
+RestartSec=5
 
 [Install]
 WantedBy=default.target

@@ -131,3 +131,22 @@ def test_a_failing_service_restart_is_not_fatal(monkeypatch):
     monkeypatch.setattr(rs.sc, "restart", lambda *names, **kw: False)
 
     rs.restart_user_services()  # must not raise
+
+
+def test_a_rebuild_of_the_same_version_is_still_an_upgrade(monkeypatch):
+    """A local package with a bumped release, or a distro's -2: the version
+    string matches, the files under us do not. That used to be invisible, and
+    the GUI ran the old code with no banner until the next reboot."""
+    monkeypatch.setattr(rs, "RUNNING_VERSION", "1.4.26")
+    monkeypatch.setattr(rs, "installed_version", lambda: "1.4.26")
+    monkeypatch.setattr(rs, "RUNNING_STAMP", 1000.0)
+    monkeypatch.setattr(rs, "_package_stamp", lambda: 2000.0)
+    assert rs.upgraded_under_us() == "1.4.26"
+
+
+def test_same_version_and_same_files_is_not_an_upgrade(monkeypatch):
+    monkeypatch.setattr(rs, "RUNNING_VERSION", "1.4.26")
+    monkeypatch.setattr(rs, "installed_version", lambda: "1.4.26")
+    monkeypatch.setattr(rs, "RUNNING_STAMP", 1000.0)
+    monkeypatch.setattr(rs, "_package_stamp", lambda: 1000.0)
+    assert rs.upgraded_under_us() is None

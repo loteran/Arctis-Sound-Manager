@@ -42,8 +42,12 @@ def main() -> int:
                         help=f"capture rate ceiling (default: {DEFAULT_FPS}); "
                              "the screencast decides the real rate")
     parser.add_argument("--bitrate", type=int, default=20000, help="kbit/s")
-    parser.add_argument("--window", action="store_true",
-                        help="capture a single window instead of a screen")
+    # default=None, not False: the flag has to be distinguishable from its own
+    # absence, or passing nothing would silently override the GUI's setting
+    # with "screen" every time the daemon starts.
+    parser.add_argument("--window", action="store_true", default=None,
+                        help="capture a single window instead of a screen "
+                             "(default: whatever the Clips page is set to)")
     parser.add_argument("--save-after", type=float, metavar="S",
                         help="save one clip after S seconds, then exit")
     parser.add_argument("--forget", action="store_true",
@@ -64,9 +68,18 @@ def main() -> int:
         log.info("Saved screen choice forgotten — the picker will appear next run.")
         return 0
 
+    window = args.window
+    if window is None:
+        try:
+            from arctis_sound_manager.settings import GeneralSettings
+            window = bool(GeneralSettings.read_from_file().clips_capture_window)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("could not read clips_capture_window (%s) — capturing a screen", exc)
+            window = False
+
     try:
         capture = ClipCapture(history_s=args.history, fps=args.fps,
-                              bitrate_kbps=args.bitrate, window=args.window)
+                              bitrate_kbps=args.bitrate, window=window)
         capture.start()
     except ClipCaptureUnavailable as exc:
         log.error("Clip capture unavailable: %s", exc)

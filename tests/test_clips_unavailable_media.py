@@ -60,6 +60,7 @@ def _page(capture_starts: bool):
     """A ClipsPage stub exercising only _poll_game's autostart branch."""
     page = mock.MagicMock()
     page._closing = False
+    page._starting = False
     page._autostart.isChecked.return_value = True
     page._capture = None
     page._autostart_failed_for = None

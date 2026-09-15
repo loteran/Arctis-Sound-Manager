@@ -144,7 +144,12 @@ def build_command(plan: ExportPlan) -> list[str]:
         parts = [f"[0:a:{i}]volume={t.gain:.3f}[a{i}]"
                  for i, t in enumerate(plan.tracks) if t.gain > 0]
         inputs = "".join(f"[a{i}]" for i, t in enumerate(plan.tracks) if t.gain > 0)
-        parts.append(f"{inputs}amix=inputs={len(audible)}:normalize=0[aout]")
+        # The sum is not normalised — a quiet chat track must not turn the
+        # game down — so it can exceed full scale, and a limiter is what
+        # keeps that from coming out as distortion. level=false: the limiter
+        # only catches peaks, it does not raise a quiet clip to meet them.
+        parts.append(f"{inputs}amix=inputs={len(audible)}:normalize=0,"
+                     f"alimiter=limit=0.97:level=false:attack=5:release=60[aout]")
         cmd += ["-filter_complex", ";".join(parts), "-map", "0:v:0", "-map", "[aout]"]
     else:
         # Every track muted is a deliberate choice: ship a silent clip rather

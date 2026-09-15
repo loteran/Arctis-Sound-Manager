@@ -63,6 +63,7 @@ def test_the_game_poll_records_what_it_saw_even_with_autostart_off():
     that is what lets _update_status stop probing on its own."""
     page = MagicMock()
     page._closing = False
+    page._starting = False
     page._autostart.isChecked.return_value = False
 
     import arctis_sound_manager.clip_capture as cc

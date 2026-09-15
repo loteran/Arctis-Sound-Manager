@@ -380,6 +380,23 @@ class GeneralSettings(JsonSerializable):
     # whoever wants the buffer armed without thinking about it.
     clips_autostart: bool = False
 
+    # Ask the portal for a single window instead of a whole screen. On by
+    # default: a clip is of the game, and a whole-screen capture takes
+    # whatever is in front of it — a chat, a browser, a notification — into
+    # a file that is about to be shared. The cost is that a window token
+    # names *that* window: it dies with the game and the next game is a
+    # different window, so the picker is asked again. A screen token would
+    # survive both; the people who want that can switch it off.
+    clips_capture_window: bool = True
+
+    # The most the capture will record, in frames per second — one of
+    # clip_capture.FPS_CHOICES. It was a combo box with no memory: every
+    # start of the tray, and therefore every autostarted capture, recorded at
+    # the default no matter what had been picked, and the choice could not
+    # be changed while a capture ran. 0 (or anything not offered) means the
+    # default.
+    clips_fps: int = 0
+
     # Where clips are written. None means "wherever the desktop says videos
     # go" — see clip_library.clip_dir(), which owns the whole resolution
     # order. Stored as a plain string rather than a Path because this file is

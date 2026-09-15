@@ -161,17 +161,18 @@ def test_no_init_manager_is_not_fatal_and_says_why(fakebin, tmp_path):
     assert "no usable init manager" in result.stderr.lower()
 
 
-def test_systemd_branch_restarts_the_current_tray_unit_name():
-    """The tray unit was renamed to app-ArctisManager.service in v1.3.0 so
-    xdg-desktop-portal can derive an app id from the cgroup (ENV-1's native
-    counterpart). This script kept restarting the old name only, so on
-    systemd the tray stayed on the pre-upgrade code after every package
-    update. The legacy name is kept alongside it: an upgrade can land before
-    the GUI has migrated its own unit."""
+def test_systemd_branch_never_restarts_the_tray():
+    """A package scriptlet runs as root with no idea what the user is doing.
+    Restarting the tray from it ran the *old* GUI's exit path mid-upgrade,
+    which (before 1.4.27) bounced the whole audio server and took
+    plasmashell down with it. The headless daemons are restarted; the GUI
+    notices the upgrade itself (runtime_staleness.py)."""
     script = (Path(__file__).resolve().parents[1]
               / "scripts" / "restart-user-services.sh").read_text()
 
     services = next(line for line in script.splitlines()
                     if line.startswith("SYSTEMD_SERVICES="))
 
-    assert "app-ArctisManager.service" in services
+    assert "arctis-manager.service" in services
+    assert "app-ArctisManager" not in services
+    assert "arctis-gui" not in services

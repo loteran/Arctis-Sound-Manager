@@ -521,6 +521,14 @@ def main():
         QTimer.singleShot(500, lambda: q_object.import_preset_url(_url_to_handle))
     elif not args.systray:
         QTimer.singleShot(0, q_object.open_main_window)
+    else:
+        # Tray-only start (the autostart path). The Clips page is what binds
+        # the global shortcut and arms the rolling capture, and it only
+        # existed once the window had been opened — so after every login
+        # Alt+F did nothing and no clip was buffered until the user happened
+        # to click the tray icon. Build the window without showing it when
+        # Clips is on; a second later so the tray comes up first.
+        QTimer.singleShot(1000, q_object.arm_background_pages)
 
     if not args.no_enforce_systemd:
         ensure_systemd_unit(True)
@@ -540,6 +548,16 @@ def main():
     signal.signal(signal.SIGTERM, stop_app)
 
     asyncio.run(q_object.start())
+
+    # Leave without running the interpreter's teardown. Everything that
+    # matters was closed by sig_stop (capture, portal session, D-Bus, the
+    # single-instance server); what remains is GObject state — GStreamer,
+    # Gio proxies — whose GLib signals kept firing into Python objects
+    # mid-finalisation and crashed the process in _gi on every Exit. A
+    # crash there is not cosmetic: the tray icon stays registered with
+    # nobody behind it, and the compositor's end of the screencast is cut.
+    logging.shutdown()
+    os._exit(0)
 
 
 if __name__ == '__main__':

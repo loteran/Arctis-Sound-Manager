@@ -37,6 +37,25 @@ RUNNING_VERSION: str = project_version()
 
 _UNKNOWN = ("", "dev")
 
+
+def _package_stamp() -> float | None:
+    """When the installed package's own code last changed on disk.
+
+    The modification time of this module's directory, which every package
+    manager rewrites when it lays the new files down. Version alone missed
+    a rebuild of the same version (a local package with a bumped release, a
+    distro's -2), so the GUI kept running the old code with no banner.
+    None for anything that is not an installed package worth watching.
+    """
+    try:
+        return os.stat(os.path.dirname(os.path.abspath(__file__))).st_mtime
+    except OSError:
+        return None
+
+
+#: The package's on-disk stamp at startup — before any upgrade can land.
+RUNNING_STAMP: float | None = _package_stamp()
+
 # Logical names, resolved per init system by service_control (systemd or
 # dinit — see service_control._SERVICE_MAP). Restarting user services used to
 # be hand-rolled here with a bare `shutil.which("systemctl")` check, which
@@ -70,9 +89,16 @@ def upgraded_under_us() -> str | None:
     if RUNNING_VERSION in _UNKNOWN:
         return None
     on_disk = installed_version()
-    if on_disk in _UNKNOWN or on_disk == RUNNING_VERSION:
+    if on_disk in _UNKNOWN:
         return None
-    return on_disk
+    if on_disk != RUNNING_VERSION:
+        return on_disk
+    # Same version string, but the files under us were replaced: a rebuild
+    # of the same release. Just as stale, and just as invisible before.
+    stamp = _package_stamp()
+    if RUNNING_STAMP is not None and stamp is not None and stamp != RUNNING_STAMP:
+        return on_disk
+    return None
 
 
 def restart_user_services() -> None:
