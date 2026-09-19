@@ -1022,6 +1022,22 @@ def _build_checks() -> list[DepCheck]:
                 "arch":   ["pacman", "-S", "--noconfirm", "pipewire"],
             },
         ),
+        DepCheck(
+            # Only used to reconnect a Bluetooth output that dropped out from
+            # under a channel (bt_reconnect). Without it the earbuds have to be
+            # reconnected by hand, as before — nothing else changes, and a
+            # machine with no Bluetooth device saved as an output never calls
+            # it, hence OPTIONAL.
+            name="bluetoothctl (BlueZ CLI)",
+            severity=Severity.OPTIONAL,
+            feature="reconnecting a Bluetooth channel output that dropped",
+            detect=lambda: _which("bluetoothctl"),
+            install_commands={
+                "fedora": ["dnf", "install", "-y", "bluez"],
+                "debian": ["apt-get", "install", "-y", "bluez"],
+                "arch":   ["pacman", "-S", "--noconfirm", "bluez-utils"],
+            },
+        ),
 
         # USB stack
         DepCheck(

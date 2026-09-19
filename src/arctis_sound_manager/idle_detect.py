@@ -173,7 +173,12 @@ class IdleTracker:
         self._recent_transitions = [t for t in self._recent_transitions if now - t < 3600.0]
         self._recent_transitions.append(now)
         if len(self._recent_transitions) > self._max_transitions_per_hour:
+            # A disarmed tracker must not keep claiming "idle": the state is
+            # what gates the physical-hop repair, and freezing it here left
+            # that repair off for the whole session once the refused
+            # transition happened to be a restore.
             self.disarmed = True
+            self.state = "active"
             return "none"
 
         self.state = new_state

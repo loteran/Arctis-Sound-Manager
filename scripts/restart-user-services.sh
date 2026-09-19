@@ -25,13 +25,14 @@
 # Copyright (C) 2026 loteran — SPDX-License-Identifier: GPL-3.0-or-later
 set -u
 
-# systemd unit names (as shipped: *.service). The tray unit is
-# app-ArctisManager.service since v1.3.0 (service_control._SERVICE_MAP maps
-# "arctis-gui" to it, so xdg-desktop-portal can derive an app id from the
-# cgroup). The legacy name stays in the list because an upgrade can land
-# before the GUI has migrated its own unit, and try-restart is a no-op on a
-# unit that is not running.
-SYSTEMD_SERVICES="arctis-manager.service arctis-video-router.service arctis-stream-guard.service app-ArctisManager.service arctis-gui.service"
+# systemd unit names (as shipped: *.service). Headless daemons only. The
+# tray GUI is deliberately not here: a package scriptlet runs as root with no
+# idea what the user is doing, and killing their tray app from it meant the
+# old GUI's exit path ran mid-upgrade — which, before 1.4.27, bounced the
+# whole audio server and took plasmashell down with it. The GUI notices the
+# upgrade itself (runtime_staleness.py) and offers the restart in its own
+# time.
+SYSTEMD_SERVICES="arctis-manager.service arctis-video-router.service arctis-stream-guard.service"
 # dinit service names have no suffix, and there is no dinit unit for the GUI —
 # it autostarts via an XDG .desktop entry there instead (service_control.py's
 # _SERVICE_MAP maps "arctis-gui" to None on dinit; mirrored here).

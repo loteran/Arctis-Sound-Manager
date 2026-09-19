@@ -91,8 +91,82 @@ TRIM_SUFFIX = ".trim.json"
 # judgement about *this* recording — the mic was hot in this one, not always.
 MIX_SUFFIX = ".mix.json"
 
-# Written next to a clip by the capture (channel names per audio track).
+# Every sidecar kind there has ever been. ".tracks.json" is no longer
+# written — the container carries the track titles — but older clips still
+# have one beside them, and it is swept with the rest.
 _SIDECAR_SUFFIXES = (TRIM_SUFFIX, MIX_SUFFIX, ".tracks.json")
+
+
+def sidecar_dir() -> Path:
+    """Where a clip's remembered trim and mix live: the state directory, not
+    the clips folder.
+
+    They used to sit beside the clip — two or three small JSON files per
+    recording — and a folder of a hundred clips became a folder of four
+    hundred files, in which the recordings were the hard part to find. The
+    clips folder is the user's; it holds recordings and the Shared/ exports
+    and nothing else. State goes where state goes."""
+    base = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
+    return Path(base) / "arctis_manager" / "clips"
+
+
+def _sidecar_name(clip: Path, suffix: str) -> str:
+    """``<stem>.<8 hex of the folder>.trim.json`` — the folder goes into the
+    name so two clips called the same thing in two folders (a library on a
+    second disk, a test's temporary one) never share a sidecar."""
+    import hashlib
+    folder = hashlib.sha1(str(clip.resolve().parent).encode()).hexdigest()[:8]
+    return f"{clip.stem}.{folder}{suffix}"
+
+
+def _sidecar(clip: Path, suffix: str) -> Path:
+    """The sidecar for *clip* — in the state directory, after moving one
+    found beside the clip there. Reading and writing both go through this,
+    so a library of old clips migrates one clip at a time, as touched."""
+    new = sidecar_dir() / _sidecar_name(clip, suffix)
+    old = clip.with_suffix(suffix)
+    try:
+        new.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        log.debug("cannot create %s: %s — keeping sidecars beside the clip", new.parent, exc)
+        return old
+    if old.exists() and not new.exists():
+        try:
+            old.rename(new)
+        except OSError as exc:
+            log.debug("could not move %s aside: %s", old.name, exc)
+            return old
+    return new
+
+
+def sweep_sidecars(directory: Path) -> int:
+    """Move every sidecar left in *directory* into the state directory,
+    and drop the ones nothing reads any more. Returns how many were moved."""
+    moved = 0
+    try:
+        entries = list(directory.iterdir())
+    except OSError:
+        return 0
+    for entry in entries:
+        name = entry.name
+        suffix = next((s for s in _SIDECAR_SUFFIXES if name.endswith(s)), None)
+        if suffix is None or not entry.is_file():
+            continue
+        try:
+            if suffix == ".tracks.json":
+                entry.unlink()          # the container has the titles
+                continue
+            clip = entry.with_name(name[:-len(suffix)] + CLIP_SUFFIXES[0])
+            target = sidecar_dir() / _sidecar_name(clip, suffix)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if target.exists():
+                entry.unlink()
+            else:
+                entry.rename(target)
+            moved += 1
+        except OSError as exc:
+            log.debug("could not move %s aside: %s", name, exc)
+    return moved
 
 
 def configured_clip_dir() -> Path | None:
@@ -191,6 +265,8 @@ def list_clips(directory: Path | None = None) -> list[Path]:
     except OSError as exc:
         log.warning("cannot read the clips folder %s: %s — showing none", root, exc)
         return []
+    if sweep_sidecars(root):
+        entries = list(root.iterdir())
 
     clips: list[tuple[float, Path]] = []
     for entry in entries:
@@ -234,7 +310,8 @@ def sidecars(clip: Path) -> list[Path]:
     its remembered trim with it instead of leaving them to rot beside a file
     that no longer exists.
     """
-    return [clip.with_suffix(suffix) for suffix in _SIDECAR_SUFFIXES]
+    return ([sidecar_dir() / _sidecar_name(clip, suffix) for suffix in _SIDECAR_SUFFIXES]
+            + [clip.with_suffix(suffix) for suffix in _SIDECAR_SUFFIXES])
 
 
 # ── remembered trim ───────────────────────────────────────────────────────────
@@ -246,7 +323,7 @@ def trim_sidecar(clip: Path) -> Path:
     exporter already use for ``.tracks.json``: one rule for sidecars means
     deleting or renaming a clip finds all of them.
     """
-    return clip.with_suffix(TRIM_SUFFIX)
+    return _sidecar(clip, TRIM_SUFFIX)
 
 
 def read_trim(clip: Path) -> tuple[float, float] | None:
@@ -287,7 +364,7 @@ def write_trim(clip: Path, start_s: float, end_s: float) -> bool:
 # ── remembered channel levels ─────────────────────────────────────────────────
 
 def mix_sidecar(clip: Path) -> Path:
-    return clip.with_suffix(MIX_SUFFIX)
+    return _sidecar(clip, MIX_SUFFIX)
 
 
 def read_mix(clip: Path) -> dict[str, tuple[float, bool]]:

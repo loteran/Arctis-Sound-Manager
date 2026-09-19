@@ -380,6 +380,26 @@ class GeneralSettings(JsonSerializable):
     # whoever wants the buffer armed without thinking about it.
     clips_autostart: bool = False
 
+    # Ask the portal for a single window instead of a whole screen. Off: a
+    # screen token is granted once and then restores silently for ever, so
+    # the capture arms itself the moment a game is detected and no one is
+    # ever asked anything — which is the whole point of a rolling buffer.
+    # A window token names *that* window, so it dies with the game and the
+    # next launch shows the picker again; and a picker that appears while
+    # no game is running (the buffer arms on detection) leaves the user
+    # with nothing sensible to pick. The window mode is kept for the people
+    # who would rather answer once per game than have a panel or a chat
+    # drawn over a clip.
+    clips_capture_window: bool = False
+
+    # The most the capture will record, in frames per second — one of
+    # clip_capture.FPS_CHOICES. It was a combo box with no memory: every
+    # start of the tray, and therefore every autostarted capture, recorded at
+    # the default no matter what had been picked, and the choice could not
+    # be changed while a capture ran. 0 (or anything not offered) means the
+    # default.
+    clips_fps: int = 0
+
     # Where clips are written. None means "wherever the desktop says videos
     # go" — see clip_library.clip_dir(), which owns the whole resolution
     # order. Stored as a plain string rather than a Path because this file is

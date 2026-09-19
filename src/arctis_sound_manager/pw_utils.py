@@ -888,6 +888,32 @@ def pw_node_exists(name: str, data: list | None = None) -> bool:
     return False
 
 
+# ASM's own PipeWire nodes that are, structurally, output streams: the
+# filter-chain outputs (effect_output.sonar-*-eq, effect_output.virtual-
+# surround-*) and the playback half of each channel loopback
+# (Arctis_<Channel>_sink_out). None of them carries application.name.
+_ASM_STREAM_PREFIXES = ("effect_output.", "effect_input.")
+_ASM_STREAM_NAMES = frozenset(
+    f"Arctis_{ch}_sink_out" for ch in ("Game", "Chat", "Media", "Aux"))
+
+
+def is_asm_internal_stream(node_name: str) -> bool:
+    """Whether *node_name* is one of ASM's own chain nodes, not an app.
+
+    They must never be treated as applications. The media router learns
+    "manual moves" from where a stream sits and writes them back as
+    overrides, and on a machine with a Bluetooth headset it learned
+    ``effect_output.sonar-chat-eq -> bluez_output…`` the moment WirePlumber
+    moved everything to the new default — and, worse, ``effect_output.sonar-
+    output-eq -> Arctis_Media``: the end of the chain fed back into its own
+    start. Every clip and every game then stuttered, and cleaning the
+    override file was the only way out. Mirrors home_page's
+    ``_is_asm_internal_node`` for the mixer cards.
+    """
+    return (node_name.startswith(_ASM_STREAM_PREFIXES)
+            or node_name in _ASM_STREAM_NAMES)
+
+
 def get_native_streams(data: list | None = None) -> list[dict]:
     """
     Return native PipeWire audio output streams (not PulseAudio clients).
@@ -922,6 +948,11 @@ def get_native_streams(data: list | None = None) -> list[dict]:
             # application.name silently dropped the stream from every
             # channel card: it kept playing (whatever sink WirePlumber
             # picked), just invisible and undraggable in the mixer.
+            # Never ASM's own chain nodes, whatever names they carry: the
+            # node.name fallback below is exactly what turned them into
+            # "apps" the router would route (see is_asm_internal_stream).
+            if is_asm_internal_stream(props.get("node.name", "")):
+                continue
             app = (
                 props.get("application.name")
                 or props.get("application.process.binary")

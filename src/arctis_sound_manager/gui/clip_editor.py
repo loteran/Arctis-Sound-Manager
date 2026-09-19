@@ -24,12 +24,12 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, QThread, QUrl, Signal
+from PySide6.QtCore import QSize, Qt, QThread, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QDialog,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -172,6 +172,30 @@ class _TrackPrepWorker(QThread):
         self.done.emit(files, flags)
 
 
+def preview_output_device():
+    """The output the preview plays through: ASM's Media channel when it
+    exists, else whatever the system default is.
+
+    The players used to take the default, and the default on an ASM machine
+    is the headset's own device — which is exactly the one that is off when
+    the user has pointed the channels at earbuds or speakers. Every clip
+    then previewed in silence while its tracks were fine. The Media channel
+    goes wherever the user routed it, and it is where a video belongs.
+    """
+    try:
+        from PySide6.QtMultimedia import QMediaDevices
+    except ImportError:                              # pragma: no cover - env dependent
+        return None
+    try:
+        outputs = list(QMediaDevices.audioOutputs())
+    except Exception:  # noqa: BLE001
+        return None
+    for dev in outputs:
+        if bytes(dev.id()).startswith(b"Arctis_Media") or dev.description().endswith(" Media"):
+            return dev
+    return None
+
+
 class _ChannelMixer:
     """Every channel playing at once, one player each, driven together.
 
@@ -190,6 +214,7 @@ class _ChannelMixer:
         self._parent = parent
         self._players: list = []
         self._outputs: list = []
+        self._positions: list[int] = []
 
     @property
     def ready(self) -> bool:
@@ -203,13 +228,20 @@ class _ChannelMixer:
             return False
 
         self.release()
-        for path in files:
+        device = preview_output_device()
+        for index, path in enumerate(files):
             player = QMediaPlayer(self._parent)
             output = QAudioOutput(self._parent)
+            if device is not None:
+                output.setDevice(device)
             player.setAudioOutput(output)
             player.setSource(QUrl.fromLocalFile(str(path)))
+            # Remembered from the signal rather than read back: see resync.
+            player.positionChanged.connect(
+                lambda ms, i=index: self._positions.__setitem__(i, ms))
             self._players.append(player)
             self._outputs.append(output)
+            self._positions.append(0)
         return bool(self._players)
 
     def set_level(self, index: int, volume: float, muted: bool) -> None:
@@ -234,9 +266,18 @@ class _ChannelMixer:
             player.stop()
 
     def resync(self, ms: int) -> None:
-        """Pull back any channel that has wandered away from the video."""
-        for player in self._players:
-            if abs(player.position() - ms) > _SYNC_TOLERANCE_MS:
+        """Pull back any channel that has wandered away from the video.
+
+        The positions compared are the ones the players last reported, not
+        `player.position()`: on the ffmpeg backend every such call is a
+        blocking round trip into the playback thread, made here on every
+        position tick of the video — and with the audio device stalled
+        underneath (a Bluetooth sink in error, a channel sink being rebuilt)
+        that thread never answers and the whole GUI hangs on it. Reading the
+        cached value costs nothing and only seeks when a channel has drifted.
+        """
+        for index, player in enumerate(self._players):
+            if abs(self._positions[index] - ms) > _SYNC_TOLERANCE_MS:
                 player.setPosition(ms)
 
     def release(self) -> None:
@@ -245,6 +286,100 @@ class _ChannelMixer:
             player.setSource(QUrl())
         self._players.clear()
         self._outputs.clear()
+        self._positions.clear()
+
+
+# ── channel strips ────────────────────────────────────────────────────────────
+
+# Which colour a channel strip takes, by track name. The mic is grey — it is
+# not one of the coloured channels on the Home page — and anything else (an
+# app recorded off its own sink) gets the accent.
+_CHANNEL_COLOURS = {
+    "game": "COLOR_GAME",
+    "chat": "COLOR_CHAT",
+    "media": "COLOR_AUX",
+    "aux": "COLOR_AUX2",
+    "mic": "TEXT_SECONDARY",
+}
+
+
+def slider_gain(position: int) -> float:
+    """Linear gain for a fader position in 0–100.
+
+    Not ``position / 100``. Loudness is logarithmic, so a linear fader spends
+    its whole top half on a change the ear barely notices — 50 was −6 dB,
+    "a little quieter", and the bottom quarter held everything from "half"
+    to silence. The range above 100 that used to be offered went nowhere
+    either: the player clamps at 1.0, so 100 to 150 did nothing at all.
+
+    A squared taper puts the useful range where the hand is: 50 is −12 dB,
+    71 is −6 dB, 25 is −24 dB, 0 is off. The export applies the same gain,
+    so the preview stays the export.
+    """
+    p = max(0, min(100, int(position))) / 100.0
+    return round(p * p, 4)
+
+
+def slider_position(gain: float) -> int:
+    """The fader position for a linear gain — the inverse of slider_gain.
+
+    Sidecars written before the taper existed hold 1.0 for "untouched" and
+    plain fractions below it; those land in the right place too (0.5 → 71,
+    which is the −6 dB that 0.5 always was). Gains above 1.0 clamp to 100."""
+    return int(round(100 * (max(0.0, min(1.0, float(gain))) ** 0.5)))
+
+
+def _channel_row(name: str, position: int, muted: bool):
+    """Build one channel's row: (widgets in column order, slider, mute
+    button, level label, silent label)."""
+    colour = _theme.c(_CHANNEL_COLOURS.get(name, "ACCENT"))
+    secondary = _theme.c("TEXT_SECONDARY")
+
+    label = QLabel(f'<span style="color:{colour}">●</span>&nbsp; {name}')
+    label.setStyleSheet("font-weight: 600; background: transparent;")
+
+    slider = QSlider(Qt.Orientation.Horizontal)
+    slider.setRange(0, 100)
+    slider.setValue(position)
+    slider.setFixedWidth(300)
+    slider.setStyleSheet(f"""
+        QSlider::groove:horizontal {{
+            height: 4px; background: {_theme.c('BG_BUTTON')}; border-radius: 2px;
+        }}
+        QSlider::sub-page:horizontal {{
+            background: {colour}; border-radius: 2px;
+        }}
+        QSlider::handle:horizontal {{
+            background: white; border: none; width: 12px; height: 12px;
+            margin: -4px 0; border-radius: 6px;
+        }}
+    """)
+
+    level = QLabel(_tr("clip_muted", "muted") if muted else f"{position}%")
+    level.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+    level.setFixedWidth(48)
+    level.setStyleSheet(f"color: {secondary}; font-size: 9pt; background: transparent;")
+
+    mute = QPushButton(_tr("clip_mute", "Mute"))
+    mute.setCheckable(True)
+    mute.setChecked(muted)
+    mute.setCursor(Qt.CursorShape.PointingHandCursor)
+    mute.setFixedSize(64, 22)
+    mute.setStyleSheet(f"""
+        QPushButton {{
+            font-size: 8pt; border-radius: 11px;
+            background: {_theme.c('BG_BUTTON')}; color: {secondary};
+        }}
+        QPushButton:hover {{ background: {_theme.c('BG_BUTTON_HOVER')}; }}
+        QPushButton:checked {{
+            background: {_theme.c('ACCENT')}; color: {_theme.c('TEXT_PRIMARY')};
+        }}
+    """)
+
+    silent = QLabel("")
+    silent.setStyleSheet(f"color: {secondary}; font-size: 8pt; background: transparent;")
+
+    return (label, slider, level, mute, silent), slider, mute, level, silent
 
 
 class ClipEditor(QDialog):
@@ -343,6 +478,8 @@ class ClipEditor(QDialog):
         # played separately and mixing its copy back in would make the first
         # channel unmutable.
         self._video_audio = QAudioOutput(self)
+        if (device := preview_output_device()) is not None:
+            self._video_audio.setDevice(device)
         self._video_audio.setVolume(0.0)
         self._player.setAudioOutput(self._video_audio)
         self._player.setVideoOutput(video)
@@ -354,6 +491,11 @@ class ClipEditor(QDialog):
         # the first frame without the clip starting up on its own.
         self._player.play()
         self._player.pause()
+        # Kept from the signal so _on_position never asks the player — see
+        # _ChannelMixer.resync for why a query per tick is a hang waiting to
+        # happen.
+        self._playing = False
+        self._player.playbackStateChanged.connect(self._on_playback_state)
         self._player.positionChanged.connect(self._on_position)
         self._player.durationChanged.connect(self._on_media_duration)
         return video
@@ -399,11 +541,12 @@ class ClipEditor(QDialog):
             self._mixer.pause()
             self._seek(band.start_s)
 
-    def _is_playing(self) -> bool:
+    def _on_playback_state(self, state) -> None:
         from PySide6.QtMultimedia import QMediaPlayer as _QMP
-        player = getattr(self, "_player", None)
-        return (player is not None
-                and player.playbackState() == _QMP.PlaybackState.PlayingState)
+        self._playing = state == _QMP.PlaybackState.PlayingState
+
+    def _is_playing(self) -> bool:
+        return getattr(self, "_playing", False)
 
     # ── trim ──────────────────────────────────────────────────────────────────
 
@@ -525,17 +668,20 @@ class ClipEditor(QDialog):
         box = QWidget()
         col = QVBoxLayout(box)
         col.setContentsMargins(0, 0, 0, 0)
-        col.setSpacing(4)
+        col.setSpacing(6)
 
         names = probe_tracks(self._path)
-        self._track_rows: list[tuple[str, QSlider, QCheckBox]] = []
+        self._track_rows: list[tuple[str, QSlider, QPushButton]] = []
         self._silent_labels: list[QLabel] = []
+        self._level_labels: list[QLabel] = []
         if not names:
             col.addWidget(QLabel(_tr("clip_no_tracks", "No audio tracks found.")))
             return box
 
         header = QHBoxLayout()
-        header.addWidget(QLabel(_tr("clip_tracks", "Audio channels:")))
+        title = QLabel(_tr("clip_tracks", "Audio channels"))
+        title.setStyleSheet("font-weight: 600;")
+        header.addWidget(title)
         header.addStretch(1)
         hint = QLabel(_tr("clip_channels_hint",
                           "All channels play together — mute the ones you do "
@@ -544,43 +690,51 @@ class ClipEditor(QDialog):
         header.addWidget(hint)
         col.addLayout(header)
 
+        # One row per channel, in aligned columns — name, fader, level,
+        # mute — inside a single card. The fader is a fixed width rather
+        # than the width of the dialog: a 900 px bar says nothing a 300 px
+        # one does not, and the mute column stays where the eye expects it.
+        card = QWidget()
+        card.setObjectName("clipChannelCard")
+        card.setStyleSheet(
+            f"QWidget#clipChannelCard {{ background: {_theme.c('BG_CARD')}; "
+            f"border-radius: 10px; }}")
+        grid = QGridLayout(card)
+        grid.setContentsMargins(14, 10, 14, 10)
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(8)
+        grid.setColumnMinimumWidth(0, 120)
+        grid.setColumnStretch(4, 1)     # slack goes to the right, not the fader
         remembered = read_mix(self._path)
         for index, name in enumerate(names):
-            row = QHBoxLayout()
-            label = QLabel(name)
-            label.setMinimumWidth(110)
-
-            slider = QSlider(Qt.Orientation.Horizontal)
-            slider.setRange(0, 150)
-            mute = QCheckBox(_tr("clip_mute", "Mute"))
             volume, muted = remembered.get(name, (1.0, False))
-            slider.setValue(int(round(volume * 100)))
-            mute.setChecked(muted)
+            widgets, slider, mute, level, silent = _channel_row(
+                name, slider_position(volume), muted)
             slider.valueChanged.connect(self._on_levels_changed)
             mute.toggled.connect(self._on_levels_changed)
-
-            silent = QLabel("")
-            silent.setStyleSheet(f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 8pt;")
+            for column, widget in enumerate(widgets):
+                grid.addWidget(widget, index, column)
+            self._level_labels.append(level)
             self._silent_labels.append(silent)
-
-            row.addWidget(label)
-            row.addWidget(slider, stretch=1)
-            row.addWidget(silent)
-            row.addWidget(mute)
-            col.addLayout(row)
             self._track_rows.append((name, slider, mute))
+        col.addWidget(card)
 
         self._start_track_prep(len(names))
         return box
 
     def _tracks(self) -> list[TrackMix]:
-        return [TrackMix(name=n, volume=s.value() / 100.0, muted=m.isChecked())
+        return [TrackMix(name=n, volume=slider_gain(s.value()), muted=m.isChecked())
                 for n, s, m in getattr(self, "_track_rows", [])]
 
     def _on_levels_changed(self) -> None:
         """A slider or a mute moved: hear it now, and remember it."""
         for index, track in enumerate(self._tracks()):
             self._mixer.set_level(index, track.volume, track.muted)
+            if index < len(self._level_labels):
+                _, slider, mute = self._track_rows[index]
+                self._level_labels[index].setText(
+                    _tr("clip_muted", "muted") if mute.isChecked()
+                    else f"{slider.value()}%")
         self._update_estimate()
 
     def _start_track_prep(self, count: int) -> None:
@@ -770,13 +924,36 @@ class ClipEditor(QDialog):
 
     def closeEvent(self, event) -> None:
         self._remember()
+        # Only pause here. stop() on the ffmpeg backend is a blocking call
+        # into the playback thread, and made from inside the window's close
+        # handling it has deadlocked — the GUI thread waiting on a latch the
+        # playback thread will only release once the GUI thread renders the
+        # frame it is holding — and the app had to be killed. The window is
+        # let go of first; the players are torn down on the next turn of the
+        # event loop, in _release_players, with nothing else on the stack.
         player = getattr(self, "_player", None)
         if player is not None:
-            player.stop()
-        self._mixer.release()
+            player.pause()
+        self._mixer.pause()
         for worker in (self._worker, self._prep_worker):
             if worker is not None and worker.isRunning():
                 worker.wait(2000)
+        super().closeEvent(event)
+        QTimer.singleShot(0, self._release_players)
+
+    def _release_players(self) -> None:
+        """Stop and unload the players once the window is gone."""
+        player = getattr(self, "_player", None)
+        if player is not None:
+            try:
+                player.setVideoOutput(None)
+                player.stop()
+                player.setSource(QUrl())
+            except Exception:  # noqa: BLE001 — the window is already closed
+                logger.debug("video player did not release cleanly", exc_info=True)
+        try:
+            self._mixer.release()
+        except Exception:  # noqa: BLE001
+            logger.debug("mixer did not release cleanly", exc_info=True)
         # The split channels are only good for this dialog's lifetime.
         shutil.rmtree(self._workdir, ignore_errors=True)
-        super().closeEvent(event)

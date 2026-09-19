@@ -60,6 +60,7 @@ def _page(capture_starts: bool):
     """A ClipsPage stub exercising only _poll_game's autostart branch."""
     page = mock.MagicMock()
     page._closing = False
+    page._starting = False
     page._autostart.isChecked.return_value = True
     page._capture = None
     page._autostart_failed_for = None
@@ -78,7 +79,7 @@ def _page(capture_starts: bool):
 def _run_ticks(page, game: str, ticks: int):
     import arctis_sound_manager.clip_capture as cc
     original = cc.detect_game
-    cc.detect_game = lambda: game
+    cc.detect_game = lambda strict=False: game
     try:
         for _ in range(ticks):
             ClipsPage._poll_game(page)

@@ -57,6 +57,12 @@ TOKEN_FILE = CONFIG_DIR / "clip_screencast_token.json"
 # imported at ASM start-up.
 from arctis_sound_manager.clip_library import clip_dir
 
+# How long a portal request may wait for its Response — long enough for a
+# person to find the window in the picker, short enough that a dismissed
+# picker does not hold the capture start (and the page's start guard) for
+# the rest of the session.
+PORTAL_RESPONSE_TIMEOUT_S = 120
+
 PORTAL = "org.freedesktop.portal.Desktop"
 PORTAL_PATH = "/org/freedesktop/portal/desktop"
 SCREENCAST = "org.freedesktop.portal.ScreenCast"
@@ -88,6 +94,7 @@ _NOT_A_GAME = {
     "webrtc voiceengine",
     # The rest of the desktop's own noise, which is never the subject of a clip.
     "asm", "arctis", "notification", "notifications", "canberra", "libcanberra",
+    "kded", "kded6", "kwin", "kwin_wayland", "xdg-desktop-portal",
 }
 
 
@@ -141,6 +148,15 @@ SONAR_MONITORS = [
     ("chat", "Arctis_Chat.monitor"),
     ("media", "Arctis_Media.monitor"),
 ]
+
+# What is recorded when no Sonar channel exists: the system output, once.
+# PulseAudio's own alias for "the default sink's monitor", so it follows the
+# default rather than naming a device that may be gone by the next login.
+NO_SONAR_TRACKS = [("game", "@DEFAULT_MONITOR@")]
+
+# The output of ASM's microphone chain (Micro EQ + noise suppression) — what
+# every application hears as "the microphone" while the daemon runs.
+PROCESSED_MIC_SOURCE = "effect_output.sonar-micro-eq"
 
 
 class ClipCaptureUnavailable(RuntimeError):
@@ -309,8 +325,32 @@ def _process_environ(pid: int) -> str:
         return ""       # not ours to read; only a hint is lost
 
 
-def detect_game() -> str | None:
+# PulseAudio's "no sink": a stream that exists but is connected to nothing.
+_PA_INVALID_INDEX = 0xFFFFFFFF
+
+
+def _is_audible(si) -> bool:
+    """Whether a stream is actually delivering audio somewhere.
+
+    Corked streams and streams with no sink are apps that opened a playback
+    connection and are not using it — a slicer, a launcher, a paused player.
+    They used to count, and the capture armed itself (picker and all) for a
+    3D-printing app that had never made a sound.
+    """
+    if getattr(si, "corked", False):
+        return False
+    return getattr(si, "sink", _PA_INVALID_INDEX) != _PA_INVALID_INDEX
+
+
+def detect_game(strict: bool = False) -> str | None:
     """Name the app a clip is most likely about, for labelling it.
+
+    With ``strict`` only the positive rules answer — a stream the user put on
+    the Game channel, or one running under a game runtime. The last-resort
+    guess ("a playback stream that is not obviously not a game") is fine for
+    naming a clip, where a wrong word costs nothing, and wrong for arming the
+    capture, where it costs a portal picker in the user's face for whatever
+    unlisted app happened to open an audio stream.
 
     This is a *name for the clip*, not the screen being captured. What is on
     screen was chosen in the portal picker and Wayland never tells us what it
@@ -349,7 +389,7 @@ def detect_game() -> str | None:
 
     try:
         with pulsectl.Pulse("asm-clip-detect") as pulse:
-            streams = pulse.sink_input_list()
+            streams = [si for si in pulse.sink_input_list() if _is_audible(si)]
 
             # 0. Whatever the user routed to the Game channel.
             game_sinks = {
@@ -375,6 +415,8 @@ def detect_game() -> str | None:
                         return name
 
             # 2. Fall back to "a playback stream that is not obviously not a game".
+            if strict:
+                return None
             for si in streams:
                 name = label(si)
                 if name and not _is_not_a_game(name):
@@ -400,11 +442,20 @@ def resolve_audio_sources() -> list[tuple[str, str]]:
 
     The non-Sonar sinks are what covers a game left on the headset directly or
     on a Bluetooth headset, where the Sonar monitors would genuinely be silent.
+
+    When none of the Sonar channels exist yet — the daemon has not built them,
+    which is the normal state of a capture autostarted at login — the answer
+    is one track on whatever the system is playing through, never the Sonar
+    names on faith. A monitor that does not exist is not an error to
+    PipeWire: ``pulsesrc device=Arctis_Game.monitor`` quietly opens the
+    default source instead, so "game", "chat" and "media" came out as three
+    byte-identical copies of the headset's full mix. Summed back together in
+    the editor and on export, three copies is +9.5 dB — every clip clipped.
     """
     try:
         import pulsectl
     except ImportError:
-        return list(SONAR_MONITORS)
+        return list(NO_SONAR_TRACKS)
 
     sonar = {name for _, m in SONAR_MONITORS for name in (m.removesuffix(".monitor"),)}
     tracks: list[tuple[str, str]] = []
@@ -429,6 +480,9 @@ def resolve_audio_sources() -> list[tuple[str, str]]:
                 tracks.append((_track_label(sorted(set(names))[0]),
                                sink.name + ".monitor"))
 
+            if not tracks:
+                tracks += list(NO_SONAR_TRACKS)
+
             # The microphone is always its own track. Per-channel game/chat
             # separation depends on those apps being routed through the Sonar
             # channels, which a user listening on Bluetooth earbuds is not doing
@@ -440,9 +494,33 @@ def resolve_audio_sources() -> list[tuple[str, str]]:
                 tracks.append(("mic", mic))
     except Exception as exc:
         log.warning("could not resolve audio sources: %s", exc)
-        return list(SONAR_MONITORS)
+        return list(NO_SONAR_TRACKS)
 
-    return _unique_tracks(tracks) or list(SONAR_MONITORS)
+    return _unique_tracks(tracks) or list(NO_SONAR_TRACKS)
+
+
+def audio_source_ids(names: list[str]) -> dict[str, int | None]:
+    """PipeWire node id per source name — the thing that changes when a
+    monitor is torn down and built again under the same name. None for a
+    name that is not there (or an alias like @DEFAULT_MONITOR@)."""
+    try:
+        import pulsectl
+        with pulsectl.Pulse("asm-clip-source-ids") as pulse:
+            by_name = {s.name: s.index for s in pulse.source_list()}
+    except Exception:  # noqa: BLE001 — no answer is "unchanged"
+        return {n: None for n in names}
+    return {n: by_name.get(n) for n in names}
+
+
+def sonar_sinks_present() -> bool:
+    """Whether any of the Sonar channels exist right now."""
+    try:
+        import pulsectl
+        with pulsectl.Pulse("asm-clip-sonar-check") as pulse:
+            present = {s.name for s in pulse.sink_list()}
+    except Exception:  # noqa: BLE001 — no answer is "no"
+        return False
+    return any(m.removesuffix(".monitor") in present for _, m in SONAR_MONITORS)
 
 
 def _track_label(app_name: str) -> str:
@@ -505,7 +583,18 @@ def _default_microphone(pulse) -> str | None:
     except Exception:
         chosen = None
 
-    sources = [s for s in pulse.source_list()
+    all_sources = list(pulse.source_list())
+    # ASM's own microphone chain comes first. Its output — Micro EQ, noise
+    # suppression, DeepFilterNet when enabled — is what Discord and every
+    # other app hear; recording the raw capture behind it put the room, the
+    # fans and the mic's own floor into every clip (a −47 dBFS floor on a
+    # DuoCast, heard as "an engine running") while the voice everyone else
+    # got was clean. The chain only exists while the daemon has a device,
+    # so the raw input stays as the fallback.
+    for source in all_sources:
+        if source.name == PROCESSED_MIC_SOURCE:
+            return source.name
+    sources = [s for s in all_sources
                if not s.name.endswith(".monitor")
                and s.proplist.get("device.class", "") != "monitor"
                and not s.name.startswith("effect_")]
@@ -661,6 +750,13 @@ class ScreenCastPortal:
             PORTAL, "org.freedesktop.portal.Request", "Response", req_path, None,
             Gio.DBusSignalFlags.NONE,
             lambda *a: (setattr(self, "_result", a[-1].unpack()), loop.quit()))
+        # A Response that never comes must not hold the page for ever. The
+        # picker can be dismissed in ways that emit nothing, and while this
+        # loop runs the page's start guard is up: every Start press and
+        # every autostart is refused, with the window looking perfectly
+        # alive. Give up after the window a person needs to pick, and let
+        # the caller report a failed start.
+        GLib.timeout_add_seconds(PORTAL_RESPONSE_TIMEOUT_S, lambda: (loop.quit(), False)[1])
         try:
             # handle_token must go in with the other options: an a{sv} needs
             # every value to be a GLib.Variant, and patching it in afterwards
@@ -674,6 +770,10 @@ class ScreenCastPortal:
         finally:
             self.bus.signal_unsubscribe(sub)
 
+        if self._result is None:
+            raise ClipCaptureUnavailable(
+                f"{method}: no answer from the portal in {PORTAL_RESPONSE_TIMEOUT_S}s "
+                "(picker dismissed?)")
         code, results = self._result  # type: ignore[misc]
         if code != 0:
             raise ClipCaptureUnavailable(
@@ -705,14 +805,14 @@ class ScreenCastPortal:
             "cursor_mode": GLib.Variant("u", 2),
             "persist_mode": GLib.Variant("u", 2),
         }
-        if (saved := self._load_token()):
+        if (saved := self._load_token(window)):
             select["restore_token"] = GLib.Variant("s", saved)
 
         self._call("SelectSources", "(oa{sv})", (self.session,), select)
         res = self._call("Start", "(osa{sv})", (self.session, ""), {})
 
         if res.get("restore_token"):
-            self._save_token(res["restore_token"])
+            self._save_token(res["restore_token"], window)
 
         streams = res.get("streams") or []
         if not streams:
@@ -769,17 +869,34 @@ class ScreenCastPortal:
         TOKEN_FILE.unlink(missing_ok=True)
 
     @staticmethod
-    def _load_token() -> str | None:
+    def _load_token(window: bool = False) -> str | None:
+        """The saved token, if it was granted for the kind of source asked for.
+
+        A token names what was picked, and the portal restores *that* — a
+        token from a window pick replayed in screen mode brings back the
+        window, not a screen, and once that window is gone the picker comes
+        up on every game launch. That is how switching the default back to
+        screen capture left a window token on disk still being replayed:
+        forget() only runs when the setting is changed from the page. So the
+        kind is stored beside the token, and a token for the other kind is
+        ignored (and the picker asked once, for the right thing).
+        """
         try:
-            return json.loads(TOKEN_FILE.read_text()).get("restore_token")
+            saved = json.loads(TOKEN_FILE.read_text())
         except Exception:
             return None
+        # A file with no kind was written by a build that could have minted
+        # it for either; it is not trusted, at the cost of one picker.
+        if "window" not in saved or bool(saved["window"]) != bool(window):
+            return None
+        return saved.get("restore_token")
 
     @staticmethod
-    def _save_token(token: str) -> None:
+    def _save_token(token: str, window: bool = False) -> None:
         try:
             CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-            TOKEN_FILE.write_text(json.dumps({"restore_token": token}))
+            TOKEN_FILE.write_text(json.dumps(
+                {"restore_token": token, "window": bool(window)}))
         except OSError as exc:
             log.warning("could not persist the screencast token: %s", exc)
 
@@ -922,6 +1039,7 @@ class ClipCapture:
         convert = self._convert_chain[self._convert_index]
 
         self.audio_tracks = resolve_audio_sources()
+        self._source_ids = audio_source_ids([src for _, src in self.audio_tracks])
         log.info("audio tracks: %s", ", ".join(n for n, _ in self.audio_tracks) or "none")
 
         # No `video/x-raw` filter and no forced framerate here. Naming plain
@@ -1126,10 +1244,8 @@ class ClipCapture:
         The buffer is cleared because its timestamps belong to the pipeline
         that produced them.
         """
-        Gst = self._Gst
         if self.pipeline is not None:
-            self.pipeline.set_state(Gst.State.NULL)
-            self.pipeline = None
+            self._release_pipeline()
         self.buffer.clear()
         self.caps.clear()
         self._pts_offset.clear()
@@ -1138,10 +1254,29 @@ class ClipCapture:
         self.portal = None
         self.start()
 
+    def _release_pipeline(self) -> None:
+        """Take the pipeline down without hearing from it on the way.
+
+        The bus watch comes off first. Tearing a pipeline down emits bus
+        messages, and with the watch still attached those reached
+        _on_bus_message *during* the teardown — an ERROR there calls
+        restart(), which builds a new capture inside stop(), and at process
+        exit the callback fired from GLib into Python objects already being
+        finalised: a SIGSEGV in _gi on every Exit, which also left the tray
+        icon registered with nobody behind it.
+        """
+        pipeline, self.pipeline = self.pipeline, None
+        try:
+            bus = pipeline.get_bus()
+            if bus is not None:
+                bus.remove_signal_watch()
+        except Exception:  # noqa: BLE001 — a bus we cannot detach still gets NULL'd
+            log.debug("could not detach the bus watch", exc_info=True)
+        pipeline.set_state(self._Gst.State.NULL)
+
     def stop(self) -> None:
         if self.pipeline is not None:
-            self.pipeline.set_state(self._Gst.State.NULL)
-            self.pipeline = None
+            self._release_pipeline()
         if self.portal is not None:
             # Closed, not just dropped — otherwise the session outlives the
             # capture and the compositor keeps showing it as recording.
@@ -1151,6 +1286,31 @@ class ClipCapture:
     @property
     def ready_s(self) -> float:
         return self.buffer.ready_s()
+
+    def audio_sources_changed(self) -> bool:
+        """Whether any source this capture records from has been recreated.
+
+        The Sonar channels are pw-loopback nodes the daemon tears down and
+        builds again — on a device event, a settings change, and (as it
+        turns out) whenever the GUI starts. A pulsesrc bound to the old
+        monitor is not moved to the new one: it stays connected to nothing
+        and records silence, and the clip comes out with the mic and
+        nothing else. Compared by node id, which is what changes.
+        """
+        current = audio_source_ids([src for _, src in self.audio_tracks])
+        return any(current.get(name) != node
+                   for name, node in self._source_ids.items() if node is not None)
+
+    @property
+    def recording_without_sonar(self) -> bool:
+        """True when no Sonar channel was there to record when this started.
+
+        The page polls this: a capture autostarted at login is built before
+        the daemon has its channels up, and the only way to get game/chat/
+        media as separate tracks is to build it again once they exist.
+        """
+        sources = {source for _, source in self.audio_tracks}
+        return not any(monitor in sources for _, monitor in SONAR_MONITORS)
 
     @property
     def fps(self) -> float:
@@ -1366,19 +1526,6 @@ class ClipCapture:
         log.info("clip saved: %s (%.1fs, %d tracks, %.1f MB%s)",
                  path, actual, len(order), size / (1024 * 1024),
                  f", {game}" if game else "")
-        # Track names beside the clip as well as inside it. The container now
-        # carries them (see _finish_matroska), but the sidecar is what the
-        # editor reads first: it also holds the game and the measured duration,
-        # it needs no ffprobe to read, and it survives an export or a re-encode
-        # by some other tool dropping the tags.
-        try:
-            path.with_suffix(".tracks.json").write_text(json.dumps({
-                "tracks": order,
-                "game": game,
-                "seconds": round(actual, 2),
-            }, indent=2))
-        except OSError as exc:
-            log.debug("could not write the track sidecar: %s", exc)
 
         announce_clip(path, actual, game)
         return path
