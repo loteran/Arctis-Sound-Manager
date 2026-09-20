@@ -1593,7 +1593,13 @@ class SonarChannelWidget(QWidget):
 
         root = QVBoxLayout(self)
         self._root_layout = root   # exposed for subclasses
-        root.setContentsMargins(0, 0, 0, 0)
+        # 8px of headroom, not 0: whatever sits at index 0 (the output-device
+        # selector on every channel that has one) had its rounded top border
+        # clipped flush against the tab's edge on some tabs but not others —
+        # a QTabWidget quirk, not anything about the selector itself. Fixed
+        # here, once, so every channel tab gets identical spacing rather than
+        # padding each selector separately and hoping they end up matching.
+        root.setContentsMargins(0, 8, 0, 0)
         root.setSpacing(16)
 
         # ── Preset bar card ───────────────────────────────────────────────────

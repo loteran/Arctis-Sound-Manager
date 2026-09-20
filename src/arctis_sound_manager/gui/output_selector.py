@@ -19,7 +19,9 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QWidget
+from PySide6.QtWidgets import (
+    QComboBox, QHBoxLayout, QLabel, QSizePolicy, QWidget,
+)
 
 import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.i18n import I18n
@@ -68,6 +70,14 @@ class OutputSelector(QWidget):
         self._pending_ticks = 0
         self._synced = False
         self._suppress = False
+
+        # Fixed, not Preferred (the QWidget default): the Output tab's
+        # settings card ends in an addStretch that already claims any
+        # leftover vertical space, so this happened to render at its
+        # natural height there — but relying on a sibling card to win that
+        # race is fragile. Fixed makes it explicit and keeps this row's
+        # height independent of whatever else is on the tab.
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)

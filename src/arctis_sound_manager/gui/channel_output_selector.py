@@ -22,7 +22,9 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QWidget
+from PySide6.QtWidgets import (
+    QComboBox, QHBoxLayout, QLabel, QSizePolicy, QWidget,
+)
 
 import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.gui.channel_outputs import (
@@ -52,6 +54,15 @@ class ChannelOutputSelector(QWidget):
         self._devices: list[tuple[str, str]] = []
         self._current = ""
         self._suppress = False
+
+        # Fixed, not Preferred (the QWidget default): whichever channel tab
+        # has no trailing addStretch below to soak up leftover vertical
+        # space hands it to the first item in its layout instead — this row
+        # — stretching the combo across it and vertically centering it,
+        # while a tab whose settings card does have that stretch leaves this
+        # row at its natural height. Fixed makes every tab's row the same
+        # height regardless of what the rest of that tab happens to do.
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
