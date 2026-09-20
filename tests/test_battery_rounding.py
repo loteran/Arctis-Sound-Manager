@@ -47,8 +47,14 @@ def test_rounding_is_opt_in():
 
 
 def test_continuous_scales_are_untouched():
-    """Station volume uses the same parser with an inverted range."""
-    assert [percentage(56, 0, v) for v in (0, 28, 56)] == [0, 50, 100]
+    """Station volume uses the same parser with an inverted range.
+
+    perc_min always maps to 0% and perc_max to 100%, regardless of which one
+    is numerically larger — station_volume's raw byte counts *down* as the
+    dial turns up (perc_min=56, perc_max=0), confirmed against real Nova Pro
+    Wireless hardware (#255).
+    """
+    assert [percentage(56, 0, v) for v in (0, 28, 56)] == [100, 50, 0]
     assert percentage(1, 100, 64) == 63
 
 

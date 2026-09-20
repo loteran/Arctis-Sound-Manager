@@ -293,6 +293,7 @@ class CoreEngine:
     def __init__(self) -> None:
         self.media_mix = 100
         self.chat_mix = 100
+        self.station_volume = 100
         self._active_extra_dial_interfaces = []
         # EIO streak per listened interface (see listen_endpoint_loop).
         self._eio_counts: dict[int, int] = {}
@@ -1919,6 +1920,29 @@ class CoreEngine:
                 return False
         return True
 
+    def manage_station_volume_change(self):
+        if not self.device_status or not self.device_config:
+            return
+
+        new_station_volume = self.device_status.get('station_volume', None)
+        if new_station_volume is None:
+            return
+
+        new_station_volume = parsed_status(
+            {'station_volume': new_station_volume}, self.device_config
+        ).get('station_volume', self.station_volume)
+
+        if abs(new_station_volume - self.station_volume) <= self._MIX_JITTER_TOLERANCE:
+            return
+
+        self.station_volume = new_station_volume
+
+        default_sink = self.pa_audio_manager.get_default_device()
+        if default_sink is not None:
+            node_name = default_sink.proplist.get('node.name', '')
+            if node_name:
+                self.pa_audio_manager.set_sink_volume_by_node(node_name, self.station_volume)
+
     def manage_mix_change(self):
         if not self.device_status or not self.device_config:
             return
@@ -2027,6 +2051,7 @@ class CoreEngine:
                                 self._active_extra_dial_interfaces = [interface_id]
 
                 self.manage_mix_change()
+                self.manage_station_volume_change()
 
             self._absorb_settings_readback(read_input)
             self._resolve_raw_response_waiters(read_input)

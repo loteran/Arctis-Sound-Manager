@@ -32,9 +32,8 @@ def percentage(perc_min: int, perc_max: int, value: int, round_to: int = 0) -> i
     if perc_max < perc_min:
         value = perc_min - value
         perc_min, perc_max = perc_max, perc_min
-        result = 100 - (value - perc_min) * 100 // (perc_max - perc_min)
-    else:
-        result = (value - perc_min) * 100 // (perc_max - perc_min)
+
+    result = (value - perc_min) * 100 // (perc_max - perc_min)
 
     if round_to > 1:
         # Half-up, and never round a real 0 or 100 away from the rails.
