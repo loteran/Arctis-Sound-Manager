@@ -74,8 +74,21 @@ jobs:
       - name: Import GPG key
         run: |
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
-          GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format long | grep sec | head -1 | awk '{print $2}' | cut -d/ -f2)
-          echo "GPG_KEY_ID=$GPG_KEY_ID" >> $GITHUB_ENV
+          # Pinned, not `grep sec | head -1`: the GPG_PRIVATE_KEY secret holds
+          # more than one key, and which one gpg lists first is not stable
+          # between runs — v1.4.25 and v1.4.26 were both signed with a key
+          # that is not the one registered on Launchpad and got silently
+          # dropped downstream (dput reports "Successfully uploaded", and
+          # Launchpad's own rejection is not surfaced anywhere in this
+          # workflow — issue #263). This is the only fingerprint on
+          # https://api.launchpad.net/1.0/~loteran/gpg_keys. Failing loudly
+          # here beats a green run whose upload silently never gets published.
+          LAUNCHPAD_KEY_FINGERPRINT="FA5CC6F19E67FD25E83838107C41256B72BD7644"
+          if ! gpg --list-secret-keys --keyid-format long "$LAUNCHPAD_KEY_FINGERPRINT" >/dev/null 2>&1; then
+            echo "::error::GPG_PRIVATE_KEY does not contain the key registered on Launchpad ($LAUNCHPAD_KEY_FINGERPRINT). Uploading with any other key will be silently rejected."
+            exit 1
+          fi
+          echo "GPG_KEY_ID=$LAUNCHPAD_KEY_FINGERPRINT" >> $GITHUB_ENV
 
       - name: Build source package
         run: |
