@@ -323,9 +323,13 @@ class AudioCard(QWidget):
         # ChatMix-inclusion toggle (#249): whether the physical dial's
         # non-chat side moves this channel's volume alongside Game. Only
         # Media and Aux ever show this — Game and Chat are the dial's fixed
-        # sides — so it starts hidden, like the device combo above, until
-        # HomePage decides this card is one of the two that can opt in.
+        # sides. The row itself stays in the layout at a fixed height for
+        # every card, like the device combo above; only the checkbox inside
+        # it is hidden for cards that can't opt in — hiding the row instead
+        # dropped its height from those cards' layouts and threw off the
+        # vertical alignment of everything below it against Media/Aux (#264).
         self._chatmix_row = QWidget()
+        self._chatmix_row.setFixedHeight(30)
         self._chatmix_row.setStyleSheet("background: transparent;")
         _cm_layout = QHBoxLayout(self._chatmix_row)
         _cm_layout.setContentsMargins(12, 0, 12, 4)
@@ -335,10 +339,10 @@ class AudioCard(QWidget):
             f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; background: transparent;"
         )
         self._chatmix_checkbox.toggled.connect(self._on_chatmix_toggled)
+        self._chatmix_checkbox.setVisible(False)
         _cm_layout.addWidget(self._chatmix_checkbox)
         outer.addWidget(self._chatmix_row)
         outer.addWidget(self._device_row)
-        self._chatmix_row.setVisible(False)
         self._chatmix_toggle_cb = None
 
         self._on_change_callback = None
@@ -473,7 +477,7 @@ class AudioCard(QWidget):
             self._device_change_cb(sink_name)
 
     def set_chatmix_toggle_visible(self, visible: bool) -> None:
-        self._chatmix_row.setVisible(visible)
+        self._chatmix_checkbox.setVisible(visible)
 
     def set_chatmix_checked(self, checked: bool) -> None:
         """Set the checkbox state without firing the toggle callback.
