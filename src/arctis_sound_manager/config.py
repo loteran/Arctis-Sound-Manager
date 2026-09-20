@@ -328,6 +328,13 @@ class DeviceConfiguration:
         # True for the profile that stands in for 'no SteelSeries hardware'.
         # See the validation block below and _setup_generic_device (#189).
         self.generic = bool(raw_config.get('generic', False))
+        # True for real SteelSeries hardware with no vendor command channel
+        # at all — a plain USB Audio Class headset whose only HID interface
+        # (if any) is a standard Consumer Control page, not a vendor one
+        # (#266). Unlike a 'generic' profile this still has product_ids and
+        # is matched by the USB scan; unlike every other real profile it
+        # skips the HID conversation entirely rather than describing one.
+        self.audio_only = bool(raw_config.get('audio_only', False))
         self.reset_on_resume = bool(raw_config.get('reset_on_resume', False))
         self.time_between_commands_ms = raw_config.get('time_between_commands_ms', None)
         self.init_sleep_length_ms = raw_config.get('init_sleep_length_ms', None)
@@ -423,11 +430,43 @@ class DeviceConfiguration:
         # Opting out is explicit rather than inferred from empty fields — those
         # same checks exist to catch a headset profile someone left half
         # written, and that must keep failing loudly.
+        if self.generic and self.audio_only:
+            raise ValueError(
+                "Invalid configuration: 'device.generic' and 'device.audio_only' "
+                "are mutually exclusive — generic describes no USB device at "
+                "all, audio_only describes a real one with no vendor interface")
+
         if self.generic:
             if self.product_ids:
                 raise ValueError(
                     "Invalid configuration: a 'device.generic' profile must not declare "
                     "product_ids — it would then be selected by the USB scan")
+        elif self.audio_only:
+            if self.vendor_id == 0:
+                raise ValueError("Invalid configuration: 'device.vendor_id' must be specified and non-zero")
+            if not self.product_ids:
+                raise ValueError("Invalid configuration: 'device.product_ids' must be a non-empty list")
+            if self.command_interface_index[0] != -1 or self.command_interface_index[1] != -1:
+                raise ValueError(
+                    "Invalid configuration: an 'device.audio_only' profile has no vendor "
+                    "interface to name — 'device.command_interface_index' must be [-1, -1]")
+            if self.listen_interface_indexes:
+                raise ValueError(
+                    "Invalid configuration: an 'device.audio_only' profile has no vendor "
+                    "interface to listen on — 'device.listen_interface_indexes' must be empty")
+            # dial_interface_index defaults to 0 — a real interface — when
+            # listen_interface_indexes is empty and the profile does not say
+            # otherwise (see above). Silently accepting that default here
+            # would let a claim/detach cycle reach a real Audio Class
+            # interface behind an "audio_only, nothing is touched" profile.
+            if self.dial_interface_index != -1:
+                raise ValueError(
+                    "Invalid configuration: an 'device.audio_only' profile has no vendor "
+                    "interface to dial — 'device.dial_interface_index' must be -1")
+            if self.dial_interface_candidates:
+                raise ValueError(
+                    "Invalid configuration: an 'device.audio_only' profile has no vendor "
+                    "interface to dial — 'device.dial_interface_candidates' must be empty")
         else:
             if self.vendor_id == 0:
                 raise ValueError("Invalid configuration: 'device.vendor_id' must be specified and non-zero")

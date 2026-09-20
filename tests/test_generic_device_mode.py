@@ -349,11 +349,15 @@ def test_the_main_loop_does_not_spin_when_no_interface_is_listened_on():
 
 def test_every_headset_profile_has_something_to_listen_on():
     """Which is why no headset can hit the spin: they all declare interfaces,
-    and the validation refuses a profile that does not."""
+    and the validation refuses a profile that does not — except the two
+    kinds that have no vendor interface at all, generic (#189) and
+    audio_only (#266), both covered by the same empty-listen_coroutines
+    guard in the main loop (see test_the_main_loop_does_not_spin_...
+    above)."""
     from arctis_sound_manager.config import load_device_configurations
 
     for c in load_device_configurations():
-        if getattr(c, "generic", False):
-            assert c.listen_interface_indexes == [], "generic has none by design"
+        if getattr(c, "generic", False) or getattr(c, "audio_only", False):
+            assert c.listen_interface_indexes == [], f"{c.name} has none by design"
         else:
             assert c.listen_interface_indexes, f"{c.name} declares no listen interface"

@@ -1,0 +1,54 @@
+# SteelSeries Arctis 5 (2018), issue #266.
+#
+# Unlike every other profile in this folder, this headset has no vendor
+# command channel at all. SteelSeries' own specification for it
+# (arctis_5_2018.device, which includes the base arctis_5 spec) declares its
+# one HID interface on usage-page 0x000C — the standard Consumer Control
+# page for multimedia keys, not a vendor page (every controllable Arctis
+# declares 0xffc0/0xff00 instead). Mute and volume are handled by the
+# kernel's own USB Audio Class and HID consumer-control drivers; there is
+# nothing here for ASM to send or read.
+#
+# What still works is the whole audio half: the virtual channels, the Sonar
+# EQ and HeSuVi spatial audio, same as any other headset — PipeWire already
+# sees this card's Game and Chat ALSA profiles on its own, so
+# _discover_physical_nodes() finds them the ordinary way, by vendor/product
+# id, with no HID conversation involved.
+device:
+  name: SteelSeries Arctis 5
+  vendor_id: 0x1038
+  product_ids:
+    - 0x12aa # Arctis 5 (2018)
+
+  # Real, auto-detected SteelSeries hardware with no vendor command channel
+  # at all — distinct from devices/generic.yaml's 'generic: true' (no USB
+  # device, no product_ids, manual sink picking). See config.py's validation
+  # block for what this requires below.
+  audio_only: true
+
+  # -1 tells core.py's USB claim/detach/status code there is no interface to
+  # touch at all: _all_used_interfaces() drops negative entries before
+  # detaching/claiming/releasing anything, and resolve_command_interface()
+  # returns immediately instead of searching for a vendor interface that
+  # does not exist.
+  command_transport: interrupt
+  command_interface_index: [-1, -1]
+  listen_interface_indexes: []
+  dial_interface_index: -1
+
+  # Never used: nothing is sent to this device. Present because the parser
+  # expects it (validated as 'device.command_padding' must be specified).
+  command_padding:
+    length: 64
+    position: end
+    filler: 0x00
+
+  # No device_init: there is no device to initialise.
+  # No status / status_parse: nothing to poll, so no battery, no ANC, no
+  #                            ChatMix dial — the firmware has no channel to
+  #                            report any of that on in the first place.
+  # No settings / hardware_eq: same reason. The Headset and DAC pages come up
+  #                            with nothing to draw (#146), which is the
+  #                            honest answer for a headset with no vendor
+  #                            protocol at all. The software Sonar EQ is
+  #                            unaffected and works as usual.

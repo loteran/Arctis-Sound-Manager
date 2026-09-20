@@ -3658,6 +3658,13 @@ class CoreEngine:
         battery and no status at all (#216, #217).
         """
         declared = self.device_config.command_interface_index[0]
+        if declared < 0:
+            # Not a mistaken interface number to correct — a profile with no
+            # vendor command channel at all (#266), declared that way on
+            # purpose. Nothing to resolve, and the "cannot be this device's
+            # control channel" warning below would misreport an intentional
+            # absence as an unrecognised interface.
+            return
         wanted = getattr(self.device_config, "hid_usage_page", None)
         try:
             cfg = self.usb_device.get_active_configuration()
@@ -4028,7 +4035,12 @@ class CoreEngine:
             override = getattr(self, '_command_iface_override', None)
             if override is not None:
                 interfaces.add(override)
-        return list(interfaces)
+        # -1 means "no such interface" (a profile with no vendor command
+        # channel at all, e.g. a plain USB Audio Class headset — #266): not a
+        # real interface number, so detaching/claiming/releasing it is
+        # meaningless work that only produces misleading USB-error log noise
+        # on every connect and reconnect.
+        return [i for i in interfaces if i >= 0]
 
     def _interface_kernel_driver(
         self, usb_device: TypedDevice, interface: int,
