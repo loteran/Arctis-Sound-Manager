@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.27] - 21 September 2026
+
+### Added
+
+- **The Equalizer tab now has its own output-device picker for Game, Chat,
+  Media and Aux**, next to the EQ it already lets you tune — the same place
+  the Output channel's own picker already was. The "send this channel
+  elsewhere" combo that used to live on the Channels page is retired for all
+  five cards. (#262)
+- The Channels page's Aux add/remove button is now a "Channels ▾" menu with
+  a checkbox per channel that can be shown or hidden: Aux (unchanged) and
+  Output, a purely cosmetic toggle since Output isn't a channel the daemon
+  creates or tears down. (#262)
+- **Support for the SteelSeries Arctis 5 (2018).** This headset has no
+  vendor command protocol at all — SteelSeries' own specification confirms
+  its one HID interface is a standard Consumer Control page, not a vendor
+  one — so there's no battery, ANC or sidetone to control, but the full
+  mixer (Game/Chat channels, Sonar EQ, HeSuVi) now works, since none of that
+  needs the HID conversation. (#266)
+
+### Fixed
+
+- The ChatMix "Include in ChatMix" checkbox row on Media/Aux pushed
+  everything below it down relative to Game/Chat, which never got that row
+  at all — the row now stays in every card's layout at a fixed height, only
+  the checkbox itself is hidden where it doesn't apply. (#264)
+- The station volume dial (Nova Pro's DAC master wheel) was read from HID
+  status but never applied to any PipeWire sink, and the shared scaling
+  helper flipped direction on inverted ranges, cancelling out its own fix —
+  both confirmed against real Nova Pro Wireless hardware. Contributed by
+  @AnimeKittyFang. (#255)
+- **Releases were silently failing to reach the PPA since v1.4.25.** The CI
+  job signed uploads with whichever GPG key `gpg` happened to list first out
+  of more than one in the signing secret — not always the one registered on
+  Launchpad — so dput reported success while Launchpad rejected the package
+  downstream, with nothing surfacing the gap. The workflow now pins the
+  exact registered fingerprint and fails loudly if it's missing. (#263)
+
 ## [1.4.26] - 14 September 2026
 
 ### Fixed
