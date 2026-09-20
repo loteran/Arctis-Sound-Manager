@@ -1,3 +1,15 @@
+arctis-sound-manager (1.4.27-1) noble; urgency=medium
+
+  * **The Equalizer tab now has its own output-device picker for Game, Chat,
+  * The Channels page's Aux add/remove button is now a "Channels ▾" menu
+    with
+  * Support for the SteelSeries Arctis 5 (2018). This headset has no
+  * The ChatMix "Include in ChatMix" checkbox row on Media/Aux pushed
+  * The station volume dial (Nova Pro's DAC master wheel) was read from HID
+  * Releases were silently failing to reach the PPA since v1.4.25. The CI
+
+ -- loteran <axel.valadon@gmail.com>  Mon, 21 Sep 2026 00:00:00 +0000
+
 arctis-sound-manager (1.4.26-1) noble; urgency=medium
 
   * The daemon froze on wake from suspend (1.4.25 regression, #238). Two
