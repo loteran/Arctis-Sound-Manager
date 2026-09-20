@@ -349,6 +349,12 @@ class GeneralSettings(JsonSerializable):
     # output list, and one more filter stage running for nothing.
     aux_enabled: bool = False
 
+    # Purely a display preference (#262): unlike aux_enabled above, this
+    # never reaches the daemon — Output isn't a channel it creates or tears
+    # down, just the physical/external routing card the Home page always
+    # shows. Hiding it only frees up room for someone who never uses it.
+    output_channel_visible: bool = True
+
     # Which extra channels the ChatMix dial's non-chat side moves alongside
     # Game (#249). Only "media" and/or "aux" are valid members: Game is
     # already the dial's fixed non-chat side and Chat its fixed other side,

@@ -7,7 +7,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox, QDialog, QDialogButtonBox, QHBoxLayout,
-    QLabel, QLineEdit, QMenu, QPushButton, QVBoxLayout, QWidget,
+    QLabel, QLineEdit, QMenu, QPushButton, QVBoxLayout, QWidget, QWidgetAction,
 )
 
 import arctis_sound_manager.gui.theme as _theme
@@ -65,12 +65,14 @@ def _btn_add_ss() -> str:
 class ProfileBar(QWidget):
     sig_apply = Signal(object)   # emits Profile
     sig_changed = Signal()       # emits after save/delete
-    # The optional Aux channel's toggle lives here rather than in the mixer row
-    # (#209): it belongs with the other things you *do* to the page, not among
-    # the channels it acts on. The bar rebuilds itself, so it owns the widget
-    # and the page listens — a button inserted from outside would be destroyed
-    # on the next rebuild.
-    sig_toggle_aux = Signal()
+    # The channel-visibility toggles live here rather than in the mixer row
+    # (#209, #262): they belong with the other things you *do* to the page,
+    # not among the channels they act on. The bar rebuilds itself, so it owns
+    # the widget and the page listens — a button inserted from outside would
+    # be destroyed on the next rebuild. Both emit the new checked state
+    # directly, since a checkable menu action already carries it.
+    sig_toggle_aux = Signal(bool)
+    sig_toggle_output = Signal(bool)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -132,30 +134,67 @@ class ProfileBar(QWidget):
         add_btn.clicked.connect(self._on_add)
         self._layout.addWidget(add_btn)
 
-        self._aux_btn = QPushButton(self._aux_label())
-        self._aux_btn.setStyleSheet(_btn_add_ss())
-        self._aux_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._aux_btn.setFixedHeight(30)
-        self._aux_btn.clicked.connect(self.sig_toggle_aux.emit)
-        self._layout.addWidget(self._aux_btn)
+        self._channels_btn = QPushButton(I18n.translate('ui', 'channels_visibility') + "  ▾")
+        self._channels_btn.setStyleSheet(_btn_add_ss())
+        self._channels_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._channels_btn.setFixedHeight(30)
+        self._channels_btn.clicked.connect(self._on_channels_menu)
+        self._layout.addWidget(self._channels_btn)
 
         self._layout.addStretch(1)
 
     @staticmethod
-    def _aux_label() -> str:
+    def _read_visibility() -> tuple[bool, bool]:
+        """(aux_enabled, output_channel_visible), tolerant of a broken file."""
         from arctis_sound_manager.settings import GeneralSettings
         try:
-            on = bool(GeneralSettings.read_from_file().aux_enabled)
+            gs = GeneralSettings.read_from_file()
+            return bool(gs.aux_enabled), bool(gs.output_channel_visible)
         except Exception:  # noqa: BLE001
-            on = False
-        return ("－  " if on else "＋  ") + I18n.translate(
-            'ui', 'aux_remove' if on else 'aux_add')
+            return False, True
 
-    def refresh_aux_label(self) -> None:
-        """Re-read the setting after the page toggled it."""
-        btn = getattr(self, "_aux_btn", None)
-        if btn is not None:
-            btn.setText(self._aux_label())
+    def _on_channels_menu(self) -> None:
+        menu = self._build_channels_menu()
+        menu.exec(self._channels_btn.mapToGlobal(
+            self._channels_btn.rect().bottomLeft()))
+
+    def _build_channels_menu(self) -> QMenu:
+        """Split from _on_channels_menu so tests can inspect it without the
+        modal .exec() a real click would trigger."""
+        aux_on, output_on = self._read_visibility()
+
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            f"QMenu {{ background: {_theme.c('BG_BUTTON')}; color: {_theme.c('TEXT_PRIMARY')}; "
+            f"border: 1px solid {_theme.c('BORDER')}; border-radius: 6px; padding: 4px; }}"
+        )
+        cb_style = (
+            f"QCheckBox {{ color: {_theme.c('TEXT_PRIMARY')}; padding: 4px 16px; }}"
+        )
+
+        # A real QCheckBox per row via QWidgetAction rather than a checkable
+        # QAction: a QAction closes the menu the moment it's triggered, which
+        # would only ever let one channel be flipped per click of the
+        # "Channels" button. A widget action's own checkbox isn't wired to
+        # the menu's close-on-trigger behaviour, so the menu stays open and
+        # both can be flipped in the same pass.
+        aux_cb = QCheckBox(I18n.translate('ui', 'aux_channel'))
+        aux_cb.setStyleSheet(cb_style)
+        aux_cb.setChecked(aux_on)
+        aux_cb.toggled.connect(self.sig_toggle_aux.emit)
+        aux_action = QWidgetAction(menu)
+        aux_action.setDefaultWidget(aux_cb)
+        menu.addAction(aux_action)
+
+        output_cb = QCheckBox(I18n.translate('ui', 'output_channel'))
+        output_cb.setStyleSheet(cb_style)
+        output_cb.setChecked(output_on)
+        output_cb.toggled.connect(self.sig_toggle_output.emit)
+        output_action = QWidgetAction(menu)
+        output_action.setDefaultWidget(output_cb)
+        menu.addAction(output_action)
+
+        return menu
 
     def set_active(self, name: str | None) -> None:
         for n, btn in self._chips.items():

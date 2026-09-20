@@ -182,6 +182,15 @@ def _read_aux_enabled() -> bool:
         return False
 
 
+def _read_output_channel_visible() -> bool:
+    """Whether the Output card should be shown (#262) — a display preference only."""
+    try:
+        from arctis_sound_manager.settings import GeneralSettings
+        return bool(GeneralSettings.read_from_file().output_channel_visible)
+    except Exception:  # noqa: BLE001 — a broken settings file is not worth the page
+        return True
+
+
 class AudioCard(QWidget):
     """
     Vertical card with:
@@ -949,8 +958,8 @@ class HomePage(QWidget):
         # Profiles bar inline
         from arctis_sound_manager.gui.profile_bar import ProfileBar
         self.profile_bar = ProfileBar()
-        self.profile_bar.sig_toggle_aux.connect(
-            lambda: self._set_aux_enabled(self._aux_card.isHidden()))
+        self.profile_bar.sig_toggle_aux.connect(self._set_aux_enabled)
+        self.profile_bar.sig_toggle_output.connect(self._set_output_channel_visible)
         toggle_layout.addWidget(self.profile_bar, stretch=1)
 
         # Reclaim audio — one-click fix for apps stuck on a non-ASM output
@@ -1033,6 +1042,7 @@ class HomePage(QWidget):
         cards_outer_layout.addStretch(1)
 
         self._apply_aux_visibility(_read_aux_enabled())
+        self._apply_output_visibility(_read_output_channel_visible())
 
         root.addWidget(cards_outer, stretch=1)
 
@@ -2393,14 +2403,34 @@ class HomePage(QWidget):
             logger.debug("could not notify the daemon about aux_enabled", exc_info=True)
 
     def _apply_aux_visibility(self, enabled: bool) -> None:
-        """Show either the Aux card or the "+" that adds it — never both."""
+        """Show or hide the Aux card."""
         self._aux_card.setVisible(bool(enabled))
         self._fit_cards_to_row()
         self._refresh_app_tag_buttons()
         self._refresh_chatmix_toggles()
-        bar = getattr(self, "profile_bar", None)
-        if bar is not None:
-            bar.refresh_aux_label()
+
+    # ── the optional Output card (#262) ──────────────────────────────────────
+
+    def _set_output_channel_visible(self, visible: bool) -> None:
+        """Persist the Output card's visibility. Display-only — no daemon call.
+
+        Unlike Aux, Output isn't a channel the daemon creates or tears down:
+        it's always the physical/external routing card, just optionally out
+        of the way for someone who never uses it.
+        """
+        try:
+            from arctis_sound_manager.settings import GeneralSettings
+            gs = GeneralSettings.read_from_file()
+            gs.output_channel_visible = bool(visible)
+            gs.write_to_file()
+        except Exception:  # noqa: BLE001
+            logger.warning("could not persist output_channel_visible", exc_info=True)
+        self._apply_output_visibility(visible)
+
+    def _apply_output_visibility(self, visible: bool) -> None:
+        self._ext_card.setVisible(bool(visible))
+        self._fit_cards_to_row()
+        self._refresh_app_tag_buttons()
 
     # ── ChatMix extra channels (#249) ────────────────────────────────────────
 

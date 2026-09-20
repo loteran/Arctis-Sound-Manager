@@ -132,21 +132,51 @@ def test_the_button_lives_with_the_other_page_actions(page):
     """It sits in the profile bar beside "Save current settings", not among the
     channel cards: it is something you do to the page, not one of the channels
     it acts on. The bar rebuilds itself, so it owns the widget."""
-    assert page.profile_bar._aux_btn is not None
+    assert page.profile_bar._channels_btn is not None
 
 
-def test_the_button_says_what_pressing_it_will_do(page, monkeypatch):
-    """One control, two states."""
-    from arctis_sound_manager.gui import profile_bar as pb
+def test_the_menu_reflects_which_channels_are_currently_on(monkeypatch):
+    """One button, a checkbox per optional/hideable channel (#262).
 
-    monkeypatch.setattr(pb.ProfileBar, "_aux_label", staticmethod(lambda: "ADD"))
-    page.profile_bar.refresh_aux_label()
-    assert page.profile_bar._aux_btn.text() == "ADD"
+    A standalone ProfileBar, not the one HomePage wires up: that wiring
+    would make checking a box here actually persist aux_enabled through
+    the fixture's real (fake-HOME) settings file, leaking into whichever
+    test runs next.
+    """
+    from PySide6.QtWidgets import QApplication, QCheckBox
+    from arctis_sound_manager.gui.profile_bar import ProfileBar
 
-    monkeypatch.setattr(pb.ProfileBar, "_aux_label", staticmethod(lambda: "HIDE"))
-    page.profile_bar.refresh_aux_label()
+    QApplication.instance() or QApplication([])
+    bar = ProfileBar()
 
-    assert page.profile_bar._aux_btn.text() == "HIDE"
+    monkeypatch.setattr(bar, "_read_visibility", lambda: (True, False))
+    menu = bar._build_channels_menu()
+    checkboxes = [a.defaultWidget() for a in menu.actions()]
+
+    assert all(isinstance(cb, QCheckBox) for cb in checkboxes)
+    assert [cb.isChecked() for cb in checkboxes] == [True, False]
+
+
+def test_checking_a_box_emits_the_matching_signal(monkeypatch):
+    from PySide6.QtWidgets import QApplication
+    from arctis_sound_manager.gui.profile_bar import ProfileBar
+
+    QApplication.instance() or QApplication([])
+    bar = ProfileBar()
+
+    monkeypatch.setattr(bar, "_read_visibility", lambda: (False, True))
+    menu = bar._build_channels_menu()
+    aux_cb, output_cb = (a.defaultWidget() for a in menu.actions())
+
+    aux_calls = []
+    bar.sig_toggle_aux.connect(aux_calls.append)
+    aux_cb.setChecked(True)
+    assert aux_calls == [True]
+
+    output_calls = []
+    bar.sig_toggle_output.connect(output_calls.append)
+    output_cb.setChecked(False)
+    assert output_calls == [False]
 
 
 def test_the_card_starts_hidden_on_a_default_install(page):
