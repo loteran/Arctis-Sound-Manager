@@ -123,3 +123,27 @@ def test_losing_the_race_hands_over_instead_of_evicting(busy_instance, server_na
     assert server is None
     assert busy_instance.isListening()
     assert Path(socket_path).exists()
+
+
+
+def test_plain_socket_restart_request_is_heard_by_qlocalserver(server_name, monkeypatch):
+    """`asm-gui --restart` sends over a plain Unix socket (no Qt, no display)
+    while the instance listens through QLocalServer. The two must meet on
+    the same path and the bytes that arrive must be the restart command."""
+    from PySide6.QtCore import QCoreApplication
+
+    from arctis_sound_manager import runtime_staleness as rs
+
+    app = QCoreApplication.instance() or QCoreApplication([])
+    server = QLocalServer()
+    assert server.listen(server_name), server.errorString()
+    try:
+        monkeypatch.setattr(rs, "gui_socket_path", lambda: server.fullServerName())
+        assert rs.request_gui_restart(timeout=2.0) is True
+        assert server.waitForNewConnection(2000)
+        conn = server.nextPendingConnection()
+        conn.waitForReadyRead(1000)
+        assert bytes(conn.readAll()) == gui_mod.GUI_RESTART_COMMAND
+    finally:
+        server.close()
+    app.processEvents()

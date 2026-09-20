@@ -126,17 +126,40 @@ def test_an_empty_span_is_not_remembered(tmp_path):
     assert clip_library.read_trim(clip) is None
 
 
-def test_sidecars_follow_the_convention_the_capture_already_uses(tmp_path):
-    """clip_….tracks.json is written by the capture with with_suffix(); the
-    trim and the mix have to be named the same way or deleting a clip leaves
-    one behind."""
+def test_sidecars_live_in_the_state_directory_not_the_clips_folder(tmp_path):
+    """Two or three JSON files per recording turned a folder of a hundred
+    clips into four hundred files. The trim and the mix go to the state
+    directory, named after the clip and its folder; the legacy spots beside
+    the clip are still listed so deleting or renaming sweeps them up."""
     clip = _clip(tmp_path)
-    names = {p.name for p in clip_library.sidecars(clip)}
-    assert names == {"clip_2026-07-30_23-15-02_Pal.trim.json",
-                     "clip_2026-07-30_23-15-02_Pal.mix.json",
-                     "clip_2026-07-30_23-15-02_Pal.tracks.json"}
-    assert clip_library.trim_sidecar(clip) in set(clip_library.sidecars(clip))
-    assert clip_library.mix_sidecar(clip) in set(clip_library.sidecars(clip))
+    listed = clip_library.sidecars(clip)
+    state = [p for p in listed if p.parent == clip_library.sidecar_dir()]
+    legacy = [p for p in listed if p.parent == tmp_path]
+    assert {p.name.split(".")[-2] for p in state} == {"trim", "mix", "tracks"}
+    assert all(p.name.startswith("clip_2026-07-30_23-15-02_Pal.") for p in state)
+    assert {p.name for p in legacy} == {"clip_2026-07-30_23-15-02_Pal.trim.json",
+                                        "clip_2026-07-30_23-15-02_Pal.mix.json",
+                                        "clip_2026-07-30_23-15-02_Pal.tracks.json"}
+    assert clip_library.trim_sidecar(clip).parent == clip_library.sidecar_dir()
+    assert clip_library.mix_sidecar(clip).parent == clip_library.sidecar_dir()
+
+
+def test_a_sidecar_beside_the_clip_is_moved_aside_when_touched(tmp_path):
+    """An existing library migrates one clip at a time, as each is opened."""
+    clip = _clip(tmp_path)
+    legacy = clip.with_suffix(".trim.json")
+    legacy.write_text('{"start_s": 1.0, "end_s": 4.0}')
+    assert clip_library.read_trim(clip) == (1.0, 4.0)
+    assert not legacy.exists()
+    assert clip_library.trim_sidecar(clip).exists()
+
+
+def test_listing_sweeps_leftover_sidecars_out_of_the_folder(tmp_path):
+    clip = _clip(tmp_path)
+    clip.with_suffix(".mix.json").write_text("{}")
+    clip.with_suffix(".tracks.json").write_text("{}")
+    clip_library.list_clips(tmp_path)
+    assert [p.name for p in tmp_path.iterdir()] == [clip.name]
 
 
 # ── remembered channel levels ─────────────────────────────────────────────────

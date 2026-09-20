@@ -170,3 +170,28 @@ def test_move_failure_is_logged_not_raised():
 ])
 def test_is_monitor_source(name, expected):
     assert video_router._is_monitor_source(name) is expected
+
+
+def test_asm_clip_recorder_streams_are_left_on_their_channels():
+    """ASM's own clip recorder is a source-output per channel, reading each
+    channel's monitor on purpose. The capture pass took Chat and Media onto
+    Game (they were "already on a monitor", "not a microphone") and every
+    clip came back as three copies of Game with no Discord or music.
+    """
+    from arctis_sound_manager.pw_utils import CLIP_STREAM_PREFIX
+
+    def clip(index: int, track: str, source_index: int) -> _FakeSourceOutput:
+        return _FakeSourceOutput(index, source_index, {
+            "application.name": "Arctis Sound Manager",
+            "application.id": f"com.github.loteran.arctis-sound-manager.clip.{track}",
+            "node.name": f"{CLIP_STREAM_PREFIX}{track}",
+            "media.class": "Stream/Input/Audio",
+        })
+
+    chat, media = clip(20, "chat", 2), clip(21, "media", 1)
+    pulse = _FakePulse(_sources(), [clip(19, "game", 0), chat, media])
+
+    video_router._route_capture_streams(pulse, HeadsetPower.ON, {})
+
+    assert pulse.moves == []
+    assert (chat.source, media.source) == (2, 1)

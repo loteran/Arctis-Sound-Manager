@@ -162,10 +162,10 @@ class _Pulse:
 SINKS = [_sink(1, "Arctis_Game"), _sink(2, "Arctis_Chat"), _sink(3, "Arctis_Media")]
 
 
-def _detect(sinks, streams):
+def _detect(sinks, streams, strict=False):
     from arctis_sound_manager import clip_capture
     with patch("pulsectl.Pulse", return_value=_Pulse(sinks, streams)):
-        return clip_capture.detect_game()
+        return clip_capture.detect_game(strict=strict)
 
 
 def test_the_stream_on_the_game_channel_wins(spawned=None):
@@ -198,6 +198,22 @@ def test_a_browser_alone_is_still_not_a_game():
 
 def test_nothing_playing_is_not_a_guess():
     assert _detect(SINKS, []) is None
+
+
+def test_strict_does_not_guess_from_an_unknown_app():
+    """bambu-studio opened a stream and the capture armed itself for it, with
+    a picker. Naming a clip may guess; arming the capture may not."""
+    assert _detect(SINKS, [_stream(3, "bambu-studio")]) == "bambu-studio"
+    assert _detect(SINKS, [_stream(3, "bambu-studio")], strict=True) is None
+    assert _detect(SINKS, [_stream(1, "GenshinImpact")], strict=True) == "GenshinImpact"
+
+
+def test_corked_and_sinkless_streams_do_not_count():
+    """A stream delivering nothing is not a game playing, whatever its name."""
+    corked = _stream(1, "GenshinImpact")
+    corked.corked = True
+    assert _detect(SINKS, [corked]) is None
+    assert _detect(SINKS, [_stream(0xFFFFFFFF, "GenshinImpact")]) is None
 
 
 # ── the blocklist matches display names, not binaries ─────────────────────────

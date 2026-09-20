@@ -144,7 +144,12 @@ def build_command(plan: ExportPlan) -> list[str]:
         parts = [f"[0:a:{i}]volume={t.gain:.3f}[a{i}]"
                  for i, t in enumerate(plan.tracks) if t.gain > 0]
         inputs = "".join(f"[a{i}]" for i, t in enumerate(plan.tracks) if t.gain > 0)
-        parts.append(f"{inputs}amix=inputs={len(audible)}:normalize=0[aout]")
+        # The sum is not normalised — a quiet chat track must not turn the
+        # game down — so it can exceed full scale, and a limiter is what
+        # keeps that from coming out as distortion. level=false: the limiter
+        # only catches peaks, it does not raise a quiet clip to meet them.
+        parts.append(f"{inputs}amix=inputs={len(audible)}:normalize=0,"
+                     f"alimiter=limit=0.97:level=false:attack=5:release=60[aout]")
         cmd += ["-filter_complex", ";".join(parts), "-map", "0:v:0", "-map", "[aout]"]
     else:
         # Every track muted is a deliberate choice: ship a silent clip rather
@@ -211,18 +216,6 @@ def probe_tracks(path: Path) -> list[str]:
     Falls back to positional labels when ffprobe is unavailable or the file
     carries no titles — the editor still needs one row per track.
     """
-    # ASM writes the real channel names beside the clip when it saves one;
-    # the container itself has no titles, so ffprobe alone can only ever answer
-    # "Audio" for every track.
-    sidecar = path.with_suffix(".tracks.json")
-    try:
-        import json
-        names = json.loads(sidecar.read_text()).get("tracks")
-        if isinstance(names, list) and names:
-            return [str(n) for n in names if n != "video"]
-    except (OSError, ValueError):
-        pass
-
     ffprobe = shutil.which("ffprobe")
     if ffprobe is None:
         return []

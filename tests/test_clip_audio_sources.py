@@ -195,3 +195,139 @@ def test_two_sinks_running_the_same_app_do_not_collide():
 def test_the_mic_is_its_own_track():
     tracks = _resolve(SONAR_SINKS, [], mic="alsa_input.usb-HyperX")
     assert tracks[-1] == ("mic", "alsa_input.usb-HyperX")
+
+
+# ── no Sonar at all ───────────────────────────────────────────────────────────
+#
+# Seen in a clip: game, chat and media byte-identical. The capture had started
+# at login, before the daemon built the Sonar sinks, and fell back to asking
+# for the three monitors by name. PipeWire does not refuse a source that does
+# not exist — it hands over the default one — so all three recorded the
+# headset's full mix, and the editor then summed the copies: +9.5 dB.
+
+def test_no_sonar_records_the_system_output_once():
+    tracks = _resolve([_sink(9, "alsa_output.headset")], [])
+    assert tracks == [("game", "@DEFAULT_MONITOR@")]
+
+
+def test_no_sonar_never_asks_for_monitors_that_do_not_exist():
+    tracks = _resolve([], [], mic="mic_source")
+    assert [src for _, src in tracks] == ["@DEFAULT_MONITOR@", "mic_source"]
+
+
+def test_a_pulse_failure_does_not_invent_sonar_monitors():
+    from arctis_sound_manager import clip_capture
+    with patch("pulsectl.Pulse", side_effect=RuntimeError("no server")):
+        tracks = clip_capture.resolve_audio_sources()
+    assert tracks == [("game", "@DEFAULT_MONITOR@")]
+
+
+def test_capture_knows_when_it_started_without_sonar():
+    from arctis_sound_manager.clip_capture import ClipCapture
+    capture = ClipCapture.__new__(ClipCapture)
+    capture.audio_tracks = [("game", "@DEFAULT_MONITOR@"), ("mic", "m")]
+    assert capture.recording_without_sonar is True
+    capture.audio_tracks = [("game", "Arctis_Game.monitor"), ("mic", "m")]
+    assert capture.recording_without_sonar is False
+
+
+def test_capture_notices_its_sources_being_recreated(monkeypatch):
+    """The daemon rebuilds the channel loopbacks (on a device event, a
+    settings change, a GUI start). A pulsesrc bound to the old monitor is
+    left recording silence; the capture has to notice and rebuild."""
+    from arctis_sound_manager import clip_capture
+    from arctis_sound_manager.clip_capture import ClipCapture
+    capture = ClipCapture.__new__(ClipCapture)
+    capture.audio_tracks = [("game", "Arctis_Game.monitor"), ("mic", "mic_src")]
+    capture._source_ids = {"Arctis_Game.monitor": 41, "mic_src": 7}
+
+    monkeypatch.setattr(clip_capture, "audio_source_ids",
+                        lambda names: {"Arctis_Game.monitor": 41, "mic_src": 7})
+    assert capture.audio_sources_changed() is False
+
+    monkeypatch.setattr(clip_capture, "audio_source_ids",
+                        lambda names: {"Arctis_Game.monitor": 99, "mic_src": 7})
+    assert capture.audio_sources_changed() is True
+
+
+def test_a_source_that_was_never_there_does_not_count_as_changed(monkeypatch):
+    from arctis_sound_manager import clip_capture
+    from arctis_sound_manager.clip_capture import ClipCapture
+    capture = ClipCapture.__new__(ClipCapture)
+    capture.audio_tracks = [("game", "@DEFAULT_MONITOR@")]
+    capture._source_ids = {"@DEFAULT_MONITOR@": None}
+    monkeypatch.setattr(clip_capture, "audio_source_ids", lambda names: {"@DEFAULT_MONITOR@": None})
+    assert capture.audio_sources_changed() is False
+
+
+def test_the_processed_microphone_chain_is_preferred_over_the_raw_input():
+    """What every app hears is the Micro EQ / noise-suppression output; the
+    raw capture behind it carried the room and the fans into every clip."""
+    pulse = _Pulse([
+        _source("alsa_input.usb-HyperX.analog-stereo"),
+        _source("effect_output.sonar-micro-eq"),
+    ], default="effect_output.sonar-micro-eq")
+    with patch("arctis_sound_manager.settings.GeneralSettings.read_from_file",
+               return_value=SimpleNamespace(
+                   micro_input_source="alsa_input.usb-HyperX.analog-stereo")):
+        assert _default_microphone(pulse) == "effect_output.sonar-micro-eq"
+
+
+def test_without_the_chain_the_chosen_raw_input_still_wins():
+    pulse = _Pulse([_source("alsa_input.usb-HyperX.analog-stereo"),
+                    _source("alsa_input.other")], default="alsa_input.other")
+    with patch("arctis_sound_manager.settings.GeneralSettings.read_from_file",
+               return_value=SimpleNamespace(
+                   micro_input_source="alsa_input.usb-HyperX.analog-stereo")):
+        assert _default_microphone(pulse) == "alsa_input.usb-HyperX.analog-stereo"
+
+
+def test_each_capture_stream_has_its_own_identity_on_the_graph():
+    """WirePlumber remembers a stream's last target under the first of
+    application.id / application.name / media.name / node.name it finds,
+    and re-applies it. Four pulsesrc streams that all say "python" share one
+    memory — one of them landing on Arctis_Game once made chat and media
+    record game forever. Each track needs its own application.id, and must
+    opt out of target restore so the memory can never override the device
+    it asked for."""
+    import pytest
+    gi = pytest.importorskip("gi")
+    gi.require_version("Gst", "1.0")
+    from gi.repository import Gst
+    from arctis_sound_manager.clip_capture import (
+        CAPTURE_APP_ID,
+        capture_stream_properties,
+    )
+    Gst.init(None)
+
+    chat = Gst.Structure.from_string(capture_stream_properties("chat"))[0]
+    media = Gst.Structure.from_string(capture_stream_properties("media"))[0]
+    assert chat.get_string("application.id") == f"{CAPTURE_APP_ID}.chat"
+    assert media.get_string("application.id") == f"{CAPTURE_APP_ID}.media"
+    assert chat.get_string("application.id") != media.get_string("application.id")
+    assert chat.get_string("node.name") == "asm-clip-chat"
+    assert chat.get_string("state.restore-target") == "false"
+
+
+def test_capture_pipeline_names_its_streams():
+    """The structure has to survive parse_launch's quoting: a pulsesrc built
+    from the pipeline string carries the client name and the per-track
+    properties, or the mixer shows four "python"s again."""
+    import pytest
+    gi = pytest.importorskip("gi")
+    gi.require_version("Gst", "1.0")
+    from gi.repository import Gst
+    Gst.init(None)
+    if Gst.ElementFactory.find("pulsesrc") is None:
+        pytest.skip("pulsesrc not available")
+    from arctis_sound_manager.clip_capture import (
+        CAPTURE_CLIENT_NAME,
+        capture_stream_properties,
+    )
+    desc = (f'pulsesrc name=a device=x client-name="{CAPTURE_CLIENT_NAME}" '
+            f'stream-properties="{capture_stream_properties("game")}" ! fakesink')
+    src = Gst.parse_launch(desc).get_by_name("a")
+    assert src.get_property("client-name") == CAPTURE_CLIENT_NAME
+    props = src.get_property("stream-properties")
+    assert props.get_string("node.name") == "asm-clip-game"
+    assert props.get_string("state.restore-target") == "false"

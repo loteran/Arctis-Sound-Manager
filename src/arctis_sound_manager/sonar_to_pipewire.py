@@ -303,7 +303,10 @@ def _conf_has_bare_ladspa(content: str) -> bool:
 #       this mechanism exists to prevent. _ensure_passive_playback() therefore
 #       repairs those in place, inserting the one missing line and touching
 #       nothing else.
-_CONF_VERSION = 4
+# 5: the boost stage carries the curve's headroom (largest positive band
+#    gain), so a conf baked before it lets a hot source drive the HeSuVi
+#    limiter flat out. Regenerated from saved state on the next start.
+_CONF_VERSION = 5
 
 _CONF_VERSION_RE = re.compile(r"^\s*#\s*ASM-CONF-VERSION:\s*(\d+)\s*$", re.MULTILINE)
 
@@ -785,6 +788,19 @@ def _clamp_finite(value: float, lo: float, hi: float, default: float) -> float:
     if not math.isfinite(value):
         return default
     return max(lo, min(hi, value))
+
+
+def eq_headroom_db(bands, macro_values: dict[str, float] | None = None) -> float:
+    """How much the curve must be lowered so no band raises the level.
+
+    The largest positive gain among the enabled bands and the macro
+    sliders, in dB; 0 when nothing boosts. Cuts need no headroom.
+    """
+    gains = [float(b.gain) for b in bands if getattr(b, "enabled", True)]
+    if macro_values:
+        gains += [float(v) for v in macro_values.values()]
+    peak = max([0.0] + [g for g in gains if math.isfinite(g)])
+    return round(peak, 2)
 
 
 def _node_block(name: str, label: str, freq: float, q: float, gain: float) -> str:
@@ -1552,15 +1568,26 @@ def generate_sonar_eq_conf(
                            boost_db, smart_volume)
         return text
 
+    # Headroom for the curve's boosts. A band at +5 dB pushes any source
+    # that already sits near full scale over it, and what the user then
+    # hears depends on what comes next: the HeSuVi chain's limiter working
+    # flat out (a garbled, pumping "the file is broken" — the same file is
+    # fine on a phone), or the device clipping outright. Every equaliser
+    # with a preamp does the same thing here: the whole curve is lowered by
+    # its largest positive gain, so no band can raise anything above where
+    # it came in. Applied at the boost stage, which is where the chain
+    # already has a full-band gain; the user's own Boost still sits on top.
+    node_boost_db = boost_db - eq_headroom_db(active_bands, macro_values)
+
     if channels != 2 or channel == "output":
         text = _active_conf_8ch(channel, sink_name, target, position,
                                 all_filters, band_slots, macro_bands,
-                                boost_db, smart_volume, channels=channels,
+                                node_boost_db, smart_volume, channels=channels,
                                 owns_link=owns_link)
     else:
         text = _active_conf_2ch(channel, sink_name, target, position,
                                 all_filters, band_slots, macro_bands,
-                                boost_db, smart_volume, owns_link=owns_link)
+                                node_boost_db, smart_volume, owns_link=owns_link)
 
     _write_conf(output_path, text)
     if writes_live_conf:
@@ -3566,10 +3593,17 @@ def ensure_sonar_eq_configs() -> bool:
                     channel, exp["target"],
                 )
                 regen_reason = "wrong target"
+            elif _conf_is_outdated(content) and _load_eq_state(channel) is not None:
+                # An older shape *and* the curve on file to rebuild it from,
+                # so the rebuild costs the user nothing. Without saved state
+                # the conf is left alone — the regen would fall back to a
+                # bypass and flatten their bands, which is worse than an old
+                # shape (the reason check_and_fix_stale_configs() never
+                # version-checks these).
+                log.info("sonar-%s-eq.conf predates conf version %d — regenerating "
+                         "from the saved curve", channel, _CONF_VERSION)
+                regen_reason = "outdated conf version"
 
-        # No ASM-CONF-VERSION check here either — same reason as in
-        # check_and_fix_stale_configs(): the regen below can only fall back
-        # to a bypass conf when there is no saved EQ state to rebuild from.
         if regen_reason is not None:
             # channel= is not optional: _bypass_conf/_regenerate_eq_conf
             # derive media.class and priority.session from it. Omitting it

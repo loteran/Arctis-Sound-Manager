@@ -84,12 +84,33 @@ _GAME_POLL_MS = 5_000
 _GAME_GONE_GRACE_S = 45.0
 
 
+def _saved_fps() -> int:
+    """The remembered frame-rate ceiling, or the default when none is saved
+    or the saved one is not on offer any more."""
+    try:
+        from arctis_sound_manager.settings import GeneralSettings
+        value = int(GeneralSettings.read_from_file().clips_fps or 0)
+    except Exception:  # noqa: BLE001 — a broken settings file is not worth the page
+        logger.debug("could not read clips_fps, using the default", exc_info=True)
+        return _DEFAULT_FPS
+    return value if value in _FPS_CHOICES else _DEFAULT_FPS
+
+
 def _autostart_enabled() -> bool:
     try:
         from arctis_sound_manager.settings import GeneralSettings
         return bool(GeneralSettings.read_from_file().clips_autostart)
     except Exception:  # noqa: BLE001 — a broken settings file is not worth the page
         logger.debug("could not read clips_autostart, assuming off", exc_info=True)
+        return False
+
+
+def _capture_window_enabled() -> bool:
+    try:
+        from arctis_sound_manager.settings import GeneralSettings
+        return bool(GeneralSettings.read_from_file().clips_capture_window)
+    except Exception:  # noqa: BLE001 — a broken settings file is not worth the page
+        logger.debug("could not read clips_capture_window, assuming off", exc_info=True)
         return False
 
 
@@ -283,6 +304,10 @@ class ClipsPage(QWidget):
         super().__init__(parent)
         self._capture = None
         self._error: str | None = None
+        self._starting = False      # a start is in flight — see _start_capture
+        # The editor that is up, if any — see _on_open_clip.
+        self._editor = None
+        self._editor_open = False
 
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 20, 24, 20)
@@ -363,6 +388,21 @@ class ClipsPage(QWidget):
         self._save_btn.clicked.connect(self._on_save)
         actions.addWidget(self._save_btn)
 
+        # Up here with Start and Save, not in the settings under the gear.
+        # It sat beside the "Capture:" kind for a while, which was tidy and
+        # wrong: it is not a setting, it is the thing you reach for when the
+        # picker chose the wrong monitor or the game moved to another window
+        # — and it was found by nobody who went looking for it.
+        self._source_btn = QPushButton(_tr("clips_change_source", "Change source…"))
+        self._source_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._source_btn.setToolTip(_tr(
+            "clips_source_hint",
+            "Ask again which screen or window to record. The picker is shown "
+            "once and the answer is remembered, so this is the way to change "
+            "it."))
+        self._source_btn.clicked.connect(self._on_change_source)
+        actions.addWidget(self._source_btn)
+
         actions.addStretch(1)
 
         # Everything you set once, in one place, out of the way of the two
@@ -428,14 +468,16 @@ class ClipsPage(QWidget):
         _row("clips_length", "Length:", self._seconds)
 
         # A ceiling, not a target — see clip_capture.FPS_CHOICES. It is offered
-        # because it decides the keyframe interval and the encoder's budget, and
-        # locked while capturing because both are fixed when the pipeline is
-        # built: changing it live would mean tearing the capture down, and the
-        # buffer with it.
+        # because it decides the keyframe interval and the encoder's budget.
+        # Both are fixed when the pipeline is built, so changing it during a
+        # capture rebuilds the capture (and empties the buffer) — the same
+        # trade the source picker makes, and better than a control that is
+        # greyed out for as long as autostart keeps the capture running.
         self._fps = QComboBox()
         for value in _FPS_CHOICES:
             self._fps.addItem(f"{value} fps", value)
-        self._fps.setCurrentIndex(max(0, _FPS_CHOICES.index(_DEFAULT_FPS)))
+        self._fps.setCurrentIndex(max(0, _FPS_CHOICES.index(_saved_fps())))
+        self._fps.currentIndexChanged.connect(self._on_fps_changed)
         self._fps.setToolTip(_tr(
             "clips_fps_hint",
             "The most this will record. The screen is only captured when it "
@@ -443,18 +485,27 @@ class ClipsPage(QWidget):
             "an exact rate when you export it."))
         _row("clips_fps", "Frame rate:", self._fps)
 
-        # What is being captured cannot be *shown* — the choice lives in the
-        # portal and Wayland never tells the app what was picked — so this
-        # offers the only honest thing: the way back to the picker.
-        self._source_btn = QPushButton(_tr("clips_change_source", "Change…"))
-        self._source_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._source_btn.setToolTip(_tr(
-            "clips_source_hint",
-            "Ask again which screen or window to record. The picker is shown "
-            "once and the answer is remembered, so this is the way to change "
-            "it."))
-        self._source_btn.clicked.connect(self._on_change_source)
-        _row("clips_source", "Capture:", self._source_btn)
+        # Which *kind* of source the picker is allowed to offer. What is being
+        # captured cannot be *shown* — the choice lives in the portal and
+        # Wayland never tells the app what was picked — so this is not that
+        # question; the "Change source…" button up in the actions row is the
+        # way back to the picker, and this decides what the picker will have
+        # in it. Asking for a
+        # window narrows the portal to windows only, which is the only way to
+        # keep a panel or an overlay out of a clip when the game is not
+        # covering the screen — the app cannot crop what it was handed.
+        self._source_kind = QComboBox()
+        self._source_kind.addItem(_tr("clips_source_screen", "Whole screen"), False)
+        self._source_kind.addItem(_tr("clips_source_window", "A single window"), True)
+        self._source_kind.setCurrentIndex(1 if _capture_window_enabled() else 0)
+        self._source_kind.setToolTip(_tr(
+            "clips_source_kind_hint",
+            "A window keeps everything else off the recording, but the choice "
+            "is tied to that one window: it ends when the window does, and the "
+            "next game is a different window. A screen keeps working across "
+            "games."))
+        self._source_kind.currentIndexChanged.connect(self._on_source_kind_changed)
+        _row("clips_source", "Capture:", self._source_kind)
 
         # Where clips land. Shown rather than assumed: the default follows the
         # desktop's own video folder, whatever it is called in the user's
@@ -661,6 +712,9 @@ class ClipsPage(QWidget):
         broken, so it reports that state rather than doing nothing silently.
         """
         if self._capture is None:
+            # The window is behind a game when this happens; the log is the
+            # only place the press leaves a trace.
+            logger.warning("clip shortcut pressed, but the capture is off")
             self._status.setText(_tr(
                 "clips_shortcut_idle",
                 "Shortcut pressed, but capture is off — start it first."))
@@ -705,6 +759,20 @@ class ClipsPage(QWidget):
             self._stop_capture()
 
     def _start_capture(self) -> None:
+        # Re-entrancy guard. start() waits for the portal's answer in a
+        # nested GLib loop, and while the picker is on screen that loop
+        # keeps dispatching Qt timers — including the game poll, which saw
+        # no capture yet and started another. Three pickers, side by side,
+        # each unaware of the others.
+        if self._starting:
+            return
+        self._starting = True
+        try:
+            self._start_capture_inner()
+        finally:
+            self._starting = False
+
+    def _start_capture_inner(self) -> None:
         try:
             from arctis_sound_manager.clip_capture import (ClipCapture,
                                                            ClipCaptureUnavailable)
@@ -716,7 +784,8 @@ class ClipsPage(QWidget):
         self._status.setText(_tr("clips_starting", "Starting capture…"))
         try:
             capture = ClipCapture(history_s=max(90.0, self._seconds.value() * 2.0),
-                                  fps=int(self._fps.currentData() or _DEFAULT_FPS))
+                                  fps=int(self._fps.currentData() or _DEFAULT_FPS),
+                                  window=bool(self._source_kind.currentData()))
             capture.start()
         except ClipCaptureUnavailable as exc:
             self._error = str(exc)
@@ -733,9 +802,6 @@ class ClipsPage(QWidget):
         self._capture = capture
         self._toggle_btn.setText(_tr("clips_stop", "Stop capture"))
         self._save_btn.setEnabled(True)
-        # The rate is baked into the pipeline (keyframe interval, encoder
-        # budget), so it can only change between captures.
-        self._fps.setEnabled(False)
         self._update_status()
 
     # ── where clips are saved ─────────────────────────────────────────────────
@@ -845,6 +911,52 @@ class ClipsPage(QWidget):
         self._error = None
         self._update_status()
 
+    def _on_source_kind_changed(self, index: int) -> None:
+        """Switch between capturing a screen and capturing one window.
+
+        The saved token has to go with it. A restore token does not merely
+        remember *which* source was picked, it remembers a source of a
+        particular kind — replaying a screen token while asking the portal for
+        windows only is a contradiction, and what comes back is the screen the
+        token names, silently, which is precisely the bug this setting exists
+        to fix. Forgetting first means the next open() asks, and asks with the
+        kind the user just chose.
+
+        A live capture is restarted for the same reason `_on_change_source`
+        restarts one: the picker belongs to the moment the user asked for it,
+        not to whenever the pipeline next happens to be rebuilt.
+        """
+        from arctis_sound_manager.clip_capture import ScreenCastPortal
+
+        want_window = bool(self._source_kind.itemData(index))
+        try:
+            from arctis_sound_manager.settings import GeneralSettings
+            settings = GeneralSettings.read_from_file()
+            settings.clips_capture_window = want_window
+            settings.write_to_file()
+        except Exception:  # noqa: BLE001
+            logger.warning("could not persist clips_capture_window", exc_info=True)
+
+        ScreenCastPortal.forget()
+
+        if self._capture is None:
+            self._status.setText(_tr(
+                "clips_source_forgotten",
+                "You will be asked what to capture when you start again."))
+            return
+
+        self._capture.window = want_window
+        try:
+            self._capture.restart()
+        except Exception as exc:
+            logger.warning("could not re-open the capture source: %s", exc)
+            self._error = str(exc)
+            self._stop_capture()
+            return
+
+        self._error = None
+        self._update_status()
+
     def _stop_capture(self) -> None:
         if self._capture is not None:
             try:
@@ -854,10 +966,33 @@ class ClipsPage(QWidget):
             self._capture = None
         self._toggle_btn.setText(_tr("clips_start", "Start capture"))
         self._save_btn.setEnabled(False)
-        self._fps.setEnabled(True)
         self._update_status()
 
     # ── following the game ────────────────────────────────────────────────────
+
+    def _on_fps_changed(self, _index: int) -> None:
+        """Remember the ceiling, and rebuild a running capture on it."""
+        fps = int(self._fps.currentData() or _DEFAULT_FPS)
+        try:
+            from arctis_sound_manager.settings import GeneralSettings
+            settings = GeneralSettings.read_from_file()
+            settings.clips_fps = fps
+            settings.write_to_file()
+        except Exception:  # noqa: BLE001
+            logger.warning("could not persist clips_fps", exc_info=True)
+
+        if self._capture is None:
+            return
+        self._capture.max_fps = fps
+        try:
+            self._capture.restart()
+        except Exception as exc:
+            logger.warning("could not rebuild the capture at %d fps: %s", fps, exc)
+            self._error = str(exc)
+            self._stop_capture()
+            return
+        self._error = None
+        self._update_status()
 
     def _on_autostart_toggled(self, on: bool) -> None:
         try:
@@ -870,6 +1005,51 @@ class ClipsPage(QWidget):
         self._game_gone_since = None
         if on:
             self._poll_game()
+
+    def _rebuild_once_sonar_is_up(self) -> None:
+        """A capture that started before the Sonar channels existed is built
+        again the moment they do.
+
+        At login the tray comes up alongside the daemon, and the capture is
+        wired before Arctis_Game/Chat/Media are there to record; it then holds
+        one track of the system output for as long as it runs. Rebuilding
+        costs the buffer, which at that point holds nothing worth keeping, and
+        no portal prompt — start() reuses the restore token.
+        """
+        capture = self._capture
+        if capture is None or not getattr(capture, "recording_without_sonar", False):
+            return
+        try:
+            from arctis_sound_manager.clip_capture import sonar_sinks_present
+            if not sonar_sinks_present():
+                return
+            logger.info("Sonar channels are up — rebuilding the capture with them")
+            capture.restart()
+        except Exception as exc:  # noqa: BLE001 — a failed rebuild must not kill the page
+            logger.warning("could not rebuild the capture on the Sonar channels: %s", exc)
+            self._error = str(exc)
+            self._stop_capture()
+            return
+        self._error = None
+        self._update_status()
+
+    def _rebuild_if_sources_recreated(self) -> None:
+        """The daemon rebuilt the channel sinks under a running capture:
+        build the capture again on the new ones, or every channel but the
+        mic records silence from here on."""
+        capture = self._capture
+        if capture is None or not getattr(capture, "audio_sources_changed", lambda: False)():
+            return
+        try:
+            logger.info("audio sources were recreated — rebuilding the capture on them")
+            capture.restart()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("could not rebuild the capture on the new sources: %s", exc)
+            self._error = str(exc)
+            self._stop_capture()
+            return
+        self._error = None
+        self._update_status()
 
     def _poll_game(self) -> None:
         """Start the capture when a game shows up, drop it when the game goes.
@@ -890,12 +1070,14 @@ class ClipsPage(QWidget):
         Only the capture this started is stopped. Someone who pressed Start
         themselves gets to decide when it ends.
         """
-        if self._closing:
+        if self._closing or self._starting:
             return
 
         try:
             from arctis_sound_manager.clip_capture import detect_game
-            game = detect_game()
+            # strict: this decides whether to arm the capture, and arming
+            # can mean a portal picker — a guess is not good enough for that.
+            game = detect_game(strict=True)
         except Exception:  # noqa: BLE001 — a probe failure is not worth the page
             logger.debug("could not look for a game", exc_info=True)
             return
@@ -906,6 +1088,9 @@ class ClipsPage(QWidget):
         # runs here, on the slow timer that exists for exactly this, whether or
         # not autostart is on: the label is shown either way.
         self._last_detected_game = game
+
+        self._rebuild_once_sonar_is_up()
+        self._rebuild_if_sources_recreated()
 
         if not self._autostart.isChecked():
             return
@@ -1321,14 +1506,30 @@ class ClipsPage(QWidget):
         path = item.data(Qt.ItemDataRole.UserRole)
         if not path:
             return
+        # One editor at a time. Building one is not instant — it probes the
+        # file with ffprobe before it can show anything — and every extra
+        # double-click that lands in that gap is still queued when exec()
+        # starts its nested event loop, so each one used to open another
+        # editor on top of the first. The editor being up is what refuses
+        # them; the flag is only so the check does not depend on Qt having
+        # shown the window yet.
+        if self._editor_open:
+            if self._editor is not None:
+                self._editor.raise_()
+                self._editor.activateWindow()
+            return
+        self._editor_open = True
         try:
             from arctis_sound_manager.gui.clip_editor import ClipEditor
-            editor = ClipEditor(Path(path), self)
-            editor.exec()
+            self._editor = ClipEditor(Path(path), self)
+            self._editor.exec()
             self.refresh_clips()     # an export lands next to the original
         except Exception:
             logger.exception("could not open the clip editor")
             QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+        finally:
+            self._editor = None
+            self._editor_open = False
 
     # ── status ────────────────────────────────────────────────────────────────
 

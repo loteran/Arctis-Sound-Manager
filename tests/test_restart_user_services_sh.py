@@ -161,17 +161,55 @@ def test_no_init_manager_is_not_fatal_and_says_why(fakebin, tmp_path):
     assert "no usable init manager" in result.stderr.lower()
 
 
-def test_systemd_branch_restarts_the_current_tray_unit_name():
-    """The tray unit was renamed to app-ArctisManager.service in v1.3.0 so
-    xdg-desktop-portal can derive an app id from the cgroup (ENV-1's native
-    counterpart). This script kept restarting the old name only, so on
-    systemd the tray stayed on the pre-upgrade code after every package
-    update. The legacy name is kept alongside it: an upgrade can land before
-    the GUI has migrated its own unit."""
+def test_systemd_branch_never_restarts_the_tray():
+    """A package scriptlet runs as root with no idea what the user is doing.
+    Restarting the tray from it ran the *old* GUI's exit path mid-upgrade,
+    which (before 1.4.27) bounced the whole audio server and took
+    plasmashell down with it. The headless daemons are restarted; the GUI
+    notices the upgrade itself (runtime_staleness.py)."""
     script = (Path(__file__).resolve().parents[1]
               / "scripts" / "restart-user-services.sh").read_text()
 
     services = next(line for line in script.splitlines()
                     if line.startswith("SYSTEMD_SERVICES="))
 
-    assert "app-ArctisManager.service" in services
+    assert "arctis-manager.service" in services
+    assert "app-ArctisManager" not in services
+    assert "arctis-gui" not in services
+
+
+def test_upgrade_asks_the_tray_to_restart_as_the_user(fakebin, tmp_path):
+    """The daemons are restarted through their units; the tray has none it
+    can be counted on to have (XDG autostart, a launcher click), so it is
+    asked over its own socket instead: `asm-gui --restart`, run as the user
+    with that user's runtime dir — and after the daemons, so the new tray
+    comes up talking to the new daemon."""
+    systemctl_body = '''
+echo "systemctl $@" >> "$ASM_TEST_LOG"
+exit 0
+'''
+    asm_gui_body = '''
+echo "asm-gui $@ [XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR]" >> "$ASM_TEST_LOG"
+exit 0
+'''
+    result, calls = _run_script(
+        fakebin, tmp_path, init_comm="systemd",
+        extra_bins={"systemctl": systemctl_body, "asm-gui": asm_gui_body},
+    )
+
+    assert result.returncode == 0, result.stderr
+    gui_calls = [c for c in calls if c.startswith("asm-gui")]
+    assert gui_calls == [f"asm-gui --restart [XDG_RUNTIME_DIR=/run/user/{_REAL_UID}]"]
+    assert calls.index(gui_calls[0]) > max(
+        i for i, c in enumerate(calls) if c.startswith("systemctl"))
+
+
+def test_no_asm_gui_on_path_is_skipped_quietly(fakebin, tmp_path):
+    """A partial install (or a distro that names the entry point differently)
+    must not turn the scriptlet into a failure."""
+    result, calls = _run_script(
+        fakebin, tmp_path, init_comm="systemd",
+        extra_bins={"systemctl": 'echo "systemctl $@" >> "$ASM_TEST_LOG"\nexit 0'},
+    )
+    assert result.returncode == 0, result.stderr
+    assert not any(c.startswith("asm-gui") for c in calls)

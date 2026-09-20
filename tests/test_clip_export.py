@@ -389,3 +389,14 @@ def test_the_offered_rates_are_the_ones_capture_offers():
     from arctis_sound_manager.clip_export import FPS_CHOICES as EXPORT_CHOICES
 
     assert EXPORT_CHOICES == CAPTURE_CHOICES
+
+
+def test_the_mix_is_limited_so_summed_channels_cannot_clip():
+    """Three full-scale channels summed without normalisation exceed 0 dBFS;
+    the limiter is what keeps that from being heard as distortion. level=false:
+    it catches peaks and never raises a quiet clip."""
+    cmd = build_command(_plan(tracks=[TrackMix("game"), TrackMix("chat"),
+                                      TrackMix("media")]))
+    graph = cmd[cmd.index("-filter_complex") + 1]
+    assert "amix=inputs=3:normalize=0,alimiter=" in graph
+    assert "level=false" in graph

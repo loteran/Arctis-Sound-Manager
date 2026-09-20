@@ -29,6 +29,7 @@ import sys
 import time
 from pathlib import Path
 
+from arctis_sound_manager import singleton
 from arctis_sound_manager.log_setup import configure_logging
 from arctis_sound_manager.pw_utils import _abs_exe, _pw_run, _parse_pw_dump_output
 from arctis_sound_manager.stream_guard import (CONFIG_FILE,
@@ -170,30 +171,15 @@ def process_tick() -> tuple[int, bool]:
 
 
 # ── singleton ──────────────────────────────────────────────────────────────
+# See arctis_sound_manager.singleton for why this is not os.kill(pid, 0).
 
 def _acquire_singleton() -> bool:
     """Return True if we are the sole running instance, False otherwise."""
-    if _PID_FILE.exists():
-        try:
-            old_pid = int(_PID_FILE.read_text().strip())
-            os.kill(old_pid, 0)
-            log.warning(
-                "Another asm-stream-guard instance (PID %d) is already running — exiting.",
-                old_pid,
-            )
-            return False
-        except (ValueError, ProcessLookupError, PermissionError):
-            pass  # stale PID file — take over
-    _PID_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _PID_FILE.write_text(str(os.getpid()))
-    return True
+    return singleton.acquire(_PID_FILE, "asm-stream-guard", log)
 
 
 def _release_singleton() -> None:
-    try:
-        _PID_FILE.unlink(missing_ok=True)
-    except OSError:
-        pass
+    singleton.release(_PID_FILE)
 
 
 # ── main loop ──────────────────────────────────────────────────────────────

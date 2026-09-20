@@ -56,7 +56,7 @@ def page(tmp_path, monkeypatch):
 
 def _game(monkeypatch, name):
     monkeypatch.setattr("arctis_sound_manager.clip_capture.detect_game",
-                        lambda: name)
+                        lambda strict=False: name)
 
 
 def test_a_game_starting_arms_the_buffer(page, monkeypatch):

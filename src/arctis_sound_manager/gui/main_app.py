@@ -157,7 +157,7 @@ class QMainApp(QBaseDesktopApp):
         # code it loaded at startup, and would otherwise go on doing so until
         # the next reboot — reporting a version it is not executing.
         self._staleness_timer = QTimer(self)
-        self._staleness_timer.setInterval(5 * 60 * 1000)
+        self._staleness_timer.setInterval(60 * 1000)
         self._staleness_timer.timeout.connect(self._check_upgraded_under_us)
         self._staleness_timer.start()
 
@@ -513,10 +513,38 @@ class QMainApp(QBaseDesktopApp):
         new_version = upgraded_under_us()
         if not new_version:
             return
-        # Stop polling: the answer cannot change back, and the banner is now
-        # the only thing that matters until the user acts on it.
+        self.restart_on_new_code(f"upgraded to {new_version}")
+
+    def restart_on_new_code(self, reason: str) -> None:
+        """Replace this process with one running the code now on disk.
+
+        Reached from the staleness poll above and from the package scriptlet
+        knocking on the single-instance socket (`asm-gui --restart`). Restart
+        whatever is open: the banner used to wait for a click, and a tray
+        running yesterday's code next to daemons already on today's is
+        exactly the half-upgraded state an upgrade exists to end — the
+        capture and the shortcut in particular are the tray's, and stayed on
+        the old code for the whole session. Release what must not be
+        inherited across the exec — the capture's portal session, the
+        encoder — and come back on the code now on disk, same pid, same
+        tray slot.
+        """
+        # Stop polling: the answer cannot change back, and this restart is
+        # the only thing that matters now.
         self._staleness_timer.stop()
-        self._home_page.on_restart_required(new_version)
+        self.logger.info("%s — restarting on the new code", reason)
+        shutdown = getattr(getattr(self, "_clips_page", None), "shutdown", None)
+        if shutdown is not None:
+            try:
+                shutdown()
+            except Exception:  # noqa: BLE001
+                self.logger.debug("clips page shutdown failed", exc_info=True)
+        try:
+            self.main_window.close()
+        except Exception:  # noqa: BLE001
+            pass
+        from arctis_sound_manager.runtime_staleness import restart_gui
+        restart_gui()
 
     # ── Theme editor ──────────────────────────────────────────────────────────
 
@@ -626,4 +654,16 @@ class QMainApp(QBaseDesktopApp):
         self._stopping = True
         self.dbus_wrapper.stop()
         self.logger.debug("Received shutdown signal, shutting down.")
+        # Release the clip capture before the interpreter starts tearing
+        # objects down. Left to finalisation, the GStreamer pipeline and the
+        # portal session died with the process — the GUI itself SEGV'd in
+        # _gi on the way out, and the compositor's end of the screencast was
+        # cut mid-frame, which is what took plasmashell down with it on
+        # every Exit.
+        shutdown = getattr(getattr(self, "_clips_page", None), "shutdown", None)
+        if shutdown is not None:
+            try:
+                shutdown()
+            except Exception:  # noqa: BLE001 — quitting must not depend on it
+                self.logger.debug("clips page shutdown failed", exc_info=True)
         self.app.quit()

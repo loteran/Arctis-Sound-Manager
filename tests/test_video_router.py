@@ -1016,3 +1016,51 @@ def test_tick_restores_card_profile_then_sees_the_recovered_sink():
     assert card.profile_active.name == "output:analog-stereo+input:mono-fallback"
 
 
+
+
+# ── ASM's own chain nodes are never applications (1.4.26 regression) ──────────
+#
+# #243 made get_native_streams fall back to node.name when a stream has no
+# application.name. ASM's filter-chain outputs are exactly such streams, so
+# the router started treating effect_output.sonar-chat-eq and friends as apps:
+# it learned where WirePlumber had put them as "manual moves" (a Bluetooth
+# headset, the moment it became the default) and, for the output EQ, wrote
+# effect_output.sonar-output-eq -> Arctis_Media — the chain fed into itself.
+
+def test_native_stream_scan_skips_asm_chain_nodes():
+    from arctis_sound_manager.pw_utils import get_native_streams
+    data = [
+        {"id": 1, "type": "PipeWire:Interface:Node", "info": {"props": {
+            "media.class": "Stream/Output/Audio", "node.name": "effect_output.sonar-chat-eq"}}},
+        {"id": 2, "type": "PipeWire:Interface:Node", "info": {"props": {
+            "media.class": "Stream/Output/Audio", "node.name": "Arctis_Media_sink_out"}}},
+        {"id": 3, "type": "PipeWire:Interface:Node", "info": {"props": {
+            "media.class": "Stream/Output/Audio", "node.name": "Stardew Valley"}}},
+    ]
+    names = [s["app_name"] for s in get_native_streams(data)]
+    assert names == ["Stardew Valley"]
+
+
+def test_overrides_keyed_by_asm_chain_nodes_are_pruned():
+    overrides = {
+        "Spotify": "Arctis_Media",
+        "effect_output.sonar-output-eq": "Arctis_Media",
+        "effect_output.virtual-surround-7.1-hesuvi": "bluez_output.x.1",
+        "Arctis_Game_sink_out": "bluez_output.x.1",
+    }
+    pruned, dropped = video_router._prune_dead_overrides(overrides, {"Arctis_Media"})
+    assert pruned == {"Spotify": "Arctis_Media"}
+    assert set(dropped) == {"effect_output.sonar-output-eq",
+                            "effect_output.virtual-surround-7.1-hesuvi",
+                            "Arctis_Game_sink_out"}
+
+
+def test_dont_reconnect_streams_are_left_alone():
+    """plasmashell's volume feedback carries node.dont-reconnect=true and is
+    pinned to the device sink; WirePlumber ignores target.node for it, so the
+    router tried to move it every tick for ever — a graph renegotiation each
+    time, heard on Bluetooth as a burst of crackle."""
+    assert video_router._dont_reconnect({"node.dont-reconnect": "true"}) is True
+    assert video_router._dont_reconnect({"node.dont-reconnect": True}) is True
+    assert video_router._dont_reconnect({"node.dont-reconnect": "false"}) is False
+    assert video_router._dont_reconnect({}) is False

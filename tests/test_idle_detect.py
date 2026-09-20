@@ -210,3 +210,20 @@ def test_disarmed_tracker_stops_transitioning():
     tracker.disarmed = True
     assert tracker.feed(0.0, any_active=False) == "none"
     assert tracker.feed(1.0, any_active=True) == "none"
+
+
+def test_disarm_never_leaves_state_stuck_idle():
+    # The refused transition that trips the cap can be the restore itself:
+    # idle -> (active refused) -> disarmed. The state must not stay "idle",
+    # because the watchdog reads it to skip the physical-hop repair.
+    tracker = IdleTracker(idle_after_s=0.0, min_transition_interval_s=0.0,
+                           max_transitions_per_hour=2)
+    t = 0.0
+    tracker.feed(t, any_active=False)          # seed
+    for _ in range(6):
+        t += 1.0
+        tracker.feed(t, any_active=True)
+        t += 1.0
+        tracker.feed(t, any_active=False)      # ... -> "idle"
+    assert tracker.disarmed is True
+    assert tracker.state == "active"

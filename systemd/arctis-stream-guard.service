@@ -2,11 +2,18 @@
 Description=Arctis Sound Manager — Stream Guard (keep non-allowed channels out of Discord's screen share)
 After=pipewire.service arctis-manager.service
 Requires=pipewire.service
+# Never give up on this one. The default (5 starts in 10 s, then failed
+# forever) turned a transient startup problem into a guard that stays dead
+# until someone notices — and nobody notices, because a dead guard looks
+# exactly like a working one right up to the moment a screen share carries
+# audio it should not. Retrying forever costs one process spawn every 5 s in
+# the worst case; the alternative cost is private audio on a call.
+StartLimitIntervalSec=0
 
 [Service]
 ExecStart=/usr/bin/asm-stream-guard
 Restart=always
-RestartSec=3
+RestartSec=5
 
 [Install]
 WantedBy=default.target

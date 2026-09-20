@@ -17,12 +17,13 @@ from pathlib import Path
 
 import pulsectl
 
-from arctis_sound_manager import audio_reconfig
+from arctis_sound_manager import audio_reconfig, singleton
 from arctis_sound_manager.constants import (DBUS_BUS_NAME,
                                             DBUS_STATUS_INTERFACE_NAME,
                                             DBUS_STATUS_OBJECT_PATH)
 from arctis_sound_manager.power_status import HeadsetPower, extract_power_status
-from arctis_sound_manager.pw_utils import app_override_key, get_native_streams, move_native_stream
+from arctis_sound_manager.pw_utils import (app_override_key, get_native_streams,
+                                           is_asm_internal_stream, move_native_stream)
 
 from arctis_sound_manager.log_setup import configure_logging
 configure_logging(default=logging.INFO, fmt="[%(levelname)s] %(message)s")
@@ -402,8 +403,15 @@ def _prune_dead_overrides(overrides: dict, present_sinks=()) -> tuple[dict, list
     needs to fail both a structural and a liveness test before it is dropped.
     """
     present = set(present_sinks)
+    # An entry *keyed* by one of ASM's own chain nodes is not a choice
+    # anyone made — it is the node.name fallback (#243) having mistaken the
+    # filter chain for an application, and re-applying it either sends the
+    # chain to whatever device WirePlumber last picked or, for the output
+    # EQ, feeds the end of the chain back into its start. Dropped on sight,
+    # so an install that already learned them heals on the next tick.
     dead_keys = [key for key, target in overrides.items()
-                if _is_dead_override_target(target, present)]
+                 if is_asm_internal_stream(key)
+                 or _is_dead_override_target(target, present)]
     if not dead_keys:
         return overrides, []
     pruned = {key: target for key, target in overrides.items()
@@ -523,6 +531,15 @@ def ensure_card_profile(pulse: pulsectl.Pulse) -> bool:
     return True
 
 
+def _dont_reconnect(props: dict) -> bool:
+    """Whether a stream carries node.dont-reconnect (PipeWire's "leave my
+    target alone" flag), in any of the spellings pw-dump hands back."""
+    value = props.get("node.dont-reconnect", False)
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1", "yes")
+    return bool(value)
+
+
 def _explicit_pin_target(props: dict, sink_map: dict) -> str | None:
     """Return the foreign virtual sink a stream is explicitly pinned to, or None.
 
@@ -623,6 +640,11 @@ def _route_capture_streams(pulse: pulsectl.Pulse,
         app = props.get("application.name", "")
         if not app:
             continue
+        # ASM's own clip recorder reads Game, Chat, Media and the mic as four
+        # streams, each on the channel it is named after. Herding them onto
+        # Game made every clip three copies of Game — Discord and music gone.
+        if is_asm_internal_stream(props.get("node.name", "")):
+            continue
 
         current = src_name.get(so.source, "")
         if not _is_monitor_source(current):
@@ -649,29 +671,18 @@ def _subscribe(pulse: pulsectl.Pulse) -> None:
 _PID_FILE = Path.home() / ".config" / "arctis_manager" / "video_router.pid"
 
 
+# See arctis_sound_manager.singleton for why this is not os.kill(pid, 0).
+# Caught here in the wild: this router spent a whole session restarting every
+# three seconds because its leftover pid file said 1346, and 1346 was a
+# `gmain` thread inside gnome-keyring-daemon.
+
 def _acquire_singleton() -> bool:
     """Return True if we are the sole running instance, False otherwise."""
-    if _PID_FILE.exists():
-        try:
-            old_pid = int(_PID_FILE.read_text().strip())
-            # Check if that PID is still alive
-            os.kill(old_pid, 0)
-            log.warning(
-                "Another asm-router instance (PID %d) is already running — exiting.", old_pid
-            )
-            return False
-        except (ValueError, ProcessLookupError, PermissionError):
-            pass  # stale PID file — take over
-    _PID_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _PID_FILE.write_text(str(os.getpid()))
-    return True
+    return singleton.acquire(_PID_FILE, "asm-router", log)
 
 
 def _release_singleton() -> None:
-    try:
-        _PID_FILE.unlink(missing_ok=True)
-    except OSError:
-        pass
+    singleton.release(_PID_FILE)
 
 
 def main():
@@ -948,6 +959,15 @@ def _process_tick(pulse: pulsectl.Pulse) -> None:
         app = s["app_name"]
         binary = s.get("props", {}).get("application.process.binary", "")
         key = app_override_key(app, binary)
+
+        # A stream that asked not to be reconnected cannot be moved: the
+        # session manager ignores target.node for it. plasmashell's volume
+        # feedback is one (node.dont-reconnect=true, pinned to the device
+        # sink). Writing the target anyway meant trying again every tick for
+        # ever — each attempt a graph renegotiation, audible on Bluetooth as
+        # a burst of crackle — with the stream never moving an inch.
+        if _dont_reconnect(s.get("props", {})):
+            continue
 
         # Same foreign-virtual-sink pin guard as the PA pass above, including
         # the "only undo our own displacement" rule.

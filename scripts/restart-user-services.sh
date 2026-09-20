@@ -25,13 +25,15 @@
 # Copyright (C) 2026 loteran — SPDX-License-Identifier: GPL-3.0-or-later
 set -u
 
-# systemd unit names (as shipped: *.service). The tray unit is
-# app-ArctisManager.service since v1.3.0 (service_control._SERVICE_MAP maps
-# "arctis-gui" to it, so xdg-desktop-portal can derive an app id from the
-# cgroup). The legacy name stays in the list because an upgrade can land
-# before the GUI has migrated its own unit, and try-restart is a no-op on a
-# unit that is not running.
-SYSTEMD_SERVICES="arctis-manager.service arctis-video-router.service arctis-stream-guard.service app-ArctisManager.service arctis-gui.service"
+# systemd unit names (as shipped: *.service). Headless daemons only. The
+# tray GUI is deliberately not here: a package scriptlet runs as root with no
+# idea what the user is doing, and killing their tray app from it meant the
+# old GUI's exit path ran mid-upgrade — which, before 1.4.27, bounced the
+# whole audio server and took plasmashell down with it. The GUI is asked
+# instead (nudge_gui below): `asm-gui --restart` reaches the running
+# instance over its own socket and it execs itself on the new code, the
+# same path its own upgrade poll (runtime_staleness.py) takes.
+SYSTEMD_SERVICES="arctis-manager.service arctis-video-router.service arctis-stream-guard.service"
 # dinit service names have no suffix, and there is no dinit unit for the GUI —
 # it autostarts via an XDG .desktop entry there instead (service_control.py's
 # _SERVICE_MAP maps "arctis-gui" to None on dinit; mirrored here).
@@ -94,6 +96,22 @@ restart_for_session_dinit() {
     done
 }
 
+# The tray GUI, whichever way it was started — systemd unit, XDG autostart,
+# a click on the launcher. It listens on a single-instance socket; --restart
+# hands it the request and starts nothing when no GUI is running. Its own
+# poll would get there within a minute; this is for right now, and for the
+# session where the poll did not fire and the clip shortcut stayed on the
+# old code all day.
+nudge_gui() {
+    uid="$1"
+    user="$2"
+    command -v asm-gui >/dev/null 2>&1 || return 0
+    runuser -u "$user" -- env \
+        XDG_RUNTIME_DIR="/run/user/${uid}" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${uid}/bus" \
+        asm-gui --restart >/dev/null 2>&1 || true
+}
+
 restart_for_session() {
     uid="$1"
     user="$2"
@@ -108,6 +126,7 @@ restart_for_session() {
         dinit)   restart_for_session_dinit "$uid" "$user" ;;
         *)       ;;  # unknown init: nothing we can safely drive
     esac
+    nudge_gui "$uid" "$user"
 }
 
 command -v loginctl >/dev/null 2>&1 || exit 0
@@ -130,8 +149,4 @@ loginctl list-users --no-legend 2>/dev/null | while read -r uid user _rest; do
     restart_for_session "$uid" "$user" "$INIT"
 done
 
-# The GUI is not always a systemd service — it is commonly started by the
-# desktop's autostart, and killing someone's window from a package transaction
-# would be rude. It notices the upgrade on its own and offers to restart
-# (see runtime_staleness.py).
 exit 0
