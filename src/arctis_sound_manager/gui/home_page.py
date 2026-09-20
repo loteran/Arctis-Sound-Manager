@@ -13,7 +13,6 @@ from PySide6.QtCore import Qt, QTimer, QUrl, Slot
 from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
-    QComboBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -40,25 +39,6 @@ def _save_overrides(overrides: dict) -> None:
     tmp = OVERRIDES_FILE.with_suffix(".tmp")
     tmp.write_text(json.dumps(overrides))
     tmp.replace(OVERRIDES_FILE)
-
-CHANNEL_OUTPUTS_FILE = Path.home() / ".config" / "arctis_manager" / "channel_output_devices.json"
-
-
-def _load_channel_outputs() -> dict:
-    if CHANNEL_OUTPUTS_FILE.exists():
-        try:
-            return json.loads(CHANNEL_OUTPUTS_FILE.read_text())
-        except Exception:
-            pass
-    return {}
-
-
-def _save_channel_outputs(data: dict) -> None:
-    CHANNEL_OUTPUTS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = CHANNEL_OUTPUTS_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data))
-    tmp.replace(CHANNEL_OUTPUTS_FILE)
-
 
 # Applications the user dismissed from the "other applications" list. Keyed the
 # same way as routing_overrides.json (app_override_key), so an app that shares a
@@ -303,40 +283,14 @@ class AudioCard(QWidget):
         self._apps_widget.setFixedHeight(100)
         outer.addWidget(self._apps_widget)
 
-        # Device combo (routing output) — always in layout to keep cards aligned;
-        # contents are hidden until set_device_options() is called.
-        self._device_row = QWidget()
-        self._device_row.setFixedHeight(30)
-        self._device_row.setStyleSheet("background: transparent;")
-        _dr_layout = QHBoxLayout(self._device_row)
-        _dr_layout.setContentsMargins(12, 4, 12, 0)
-        _dr_layout.setSpacing(6)
-        self._dr_lbl = QLabel(I18n.translate("ui", "output_device"))
-        self._dr_lbl.setStyleSheet(
-            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; background: transparent;"
-        )
-        self._dr_lbl.setVisible(False)
-        _dr_layout.addWidget(self._dr_lbl)
-        self._device_combo = QComboBox()
-        self._device_combo.setStyleSheet(
-            f"QComboBox {{ background: {_theme.c('BG_BUTTON')}; border: 1px solid {_theme.c('BORDER')}; "
-            f"border-radius: 4px; color: {_theme.c('TEXT_PRIMARY')}; font-size: 9pt; padding: 2px 6px; }}"
-            f"QComboBox::drop-down {{ border: none; width: 16px; }}"
-        )
-        self._device_combo.setVisible(False)
-        self._device_combo.currentIndexChanged.connect(self._on_device_changed)
-        _dr_layout.addWidget(self._device_combo, stretch=1)
-
-        self._device_change_cb = None
-
         # ChatMix-inclusion toggle (#249): whether the physical dial's
         # non-chat side moves this channel's volume alongside Game. Only
         # Media and Aux ever show this — Game and Chat are the dial's fixed
         # sides. The row itself stays in the layout at a fixed height for
-        # every card, like the device combo above; only the checkbox inside
-        # it is hidden for cards that can't opt in — hiding the row instead
-        # dropped its height from those cards' layouts and threw off the
-        # vertical alignment of everything below it against Media/Aux (#264).
+        # every card; only the checkbox inside it is hidden for cards that
+        # can't opt in — hiding the row instead dropped its height from
+        # those cards' layouts and threw off the vertical alignment of
+        # everything below it against Media/Aux (#264).
         self._chatmix_row = QWidget()
         self._chatmix_row.setFixedHeight(30)
         self._chatmix_row.setStyleSheet("background: transparent;")
@@ -351,7 +305,6 @@ class AudioCard(QWidget):
         self._chatmix_checkbox.setVisible(False)
         _cm_layout.addWidget(self._chatmix_checkbox)
         outer.addWidget(self._chatmix_row)
-        outer.addWidget(self._device_row)
         self._chatmix_toggle_cb = None
 
         self._on_change_callback = None
@@ -401,17 +354,6 @@ class AudioCard(QWidget):
             self._apps_title.setStyleSheet(
                 f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 9pt; font-weight: bold; background: transparent;"
             )
-        # Device combo
-        self._device_combo.setStyleSheet(
-            f"QComboBox {{ background: {_theme.c('BG_BUTTON')}; border: 1px solid {_theme.c('BORDER')}; "
-            f"border-radius: 4px; color: {_theme.c('TEXT_PRIMARY')}; font-size: 9pt; padding: 2px 6px; }}"
-            f"QComboBox::drop-down {{ border: none; width: 16px; }}"
-        )
-        # Output-device row label
-        self._dr_lbl.setStyleSheet(
-            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; background: transparent;"
-        )
-
     def set_highlight(self, active: bool):
         """Highlight this card visually when an app tag is dragged over it."""
         if active:
@@ -463,37 +405,15 @@ class AudioCard(QWidget):
         if not self._ignore_change and self._on_change_callback:
             self._on_change_callback(value)
 
-    def set_device_options(self, options: list, current: str = "") -> None:
-        """options: [(sink_name, display_label), ...]"""
-        self._device_combo.blockSignals(True)
-        self._device_combo.clear()
-        for name, label in options:
-            self._device_combo.addItem(label, name)
-        if current:
-            idx = self._device_combo.findData(current)
-            if idx >= 0:
-                self._device_combo.setCurrentIndex(idx)
-        self._device_combo.blockSignals(False)
-        self._dr_lbl.setVisible(True)
-        self._device_combo.setVisible(True)
-
-    def set_on_device_change(self, cb) -> None:
-        self._device_change_cb = cb
-
-    def _on_device_changed(self, _idx: int) -> None:
-        sink_name = self._device_combo.currentData() or ""
-        if self._device_change_cb:
-            self._device_change_cb(sink_name)
-
     def set_chatmix_toggle_visible(self, visible: bool) -> None:
         self._chatmix_checkbox.setVisible(visible)
 
     def set_chatmix_checked(self, checked: bool) -> None:
         """Set the checkbox state without firing the toggle callback.
 
-        Same guard as set_device_options()'s blockSignals: without it,
-        setting the initial state on population would fire the toggle
-        callback and re-write the setting to whatever it already was.
+        Blocked while set: without it, setting the initial state on
+        population would fire the toggle callback and re-write the setting
+        to whatever it already was.
         """
         self._chatmix_checkbox.blockSignals(True)
         self._chatmix_checkbox.setChecked(checked)
@@ -1170,29 +1090,10 @@ class HomePage(QWidget):
         self._timer.setInterval(500)
         self._timer.timeout.connect(self._poll_volumes)
 
-        self._channel_outputs: dict = _load_channel_outputs()
-        # (channel options, Output-card options) — the Output card has its own
-        # list: the headset is offered there and the "headset by default" entry
-        # is not (see _refresh_device_combos).
-        self._available_sinks: tuple = ()
         self._combo_tick = 0
         # Last get_native_streams() result — reused on the ticks that skip the
         # pw-dump rescan (#182).
         self._native_cache: list = []
-
-        # Wire device change callbacks
-        self._game_card.set_on_device_change(
-            lambda s: self._on_channel_output_changed("game", s)
-        )
-        self._chat_card.set_on_device_change(
-            lambda s: self._on_channel_output_changed("chat", s)
-        )
-        self._media_card.set_on_device_change(
-            lambda s: self._on_channel_output_changed("media", s)
-        )
-        self._aux_card.set_on_device_change(
-            lambda dev: self._on_channel_output_changed("aux", dev))
-        self._ext_card.set_on_device_change(self._on_external_output_changed)
 
         # Apply the currently active theme so the initial render is correct
         # even if a non-default theme was saved in settings.
@@ -1863,10 +1764,6 @@ class HomePage(QWidget):
             # Anything playing that no card above represents.
             self._refresh_unassigned(sink_inputs, sinks, sink_ext)
 
-            # Refresh device combos every 20 ticks (10s)
-            if self._combo_tick % 20 == 1:
-                self._refresh_device_combos(sinks)
-
         except Exception as exc:
             logger.warning("Error polling PulseAudio: %s", exc)
             try:
@@ -2174,140 +2071,6 @@ class HomePage(QWidget):
             self._game_card.set_connected()
             self._chat_card.set_connected()
             self._media_card.set_connected()
-
-    def _refresh_device_combos(self, sinks) -> None:
-        def _label(sink) -> str:
-            # pulsectl's own description before the node name. Both PipeWire
-            # properties are optional and Bluetooth sinks routinely ship
-            # without either, so a pair of earbuds was listed as
-            # "bluez_output.30_96_10_49_54_E2.1" — a MAC address where a
-            # product name belongs, which reads as a bug rather than a device.
-            # build_sink_options() already ends its ladder this way for the
-            # D-Bus pickers (#134 / #146); these combos never got it.
-            return (sink.proplist.get("node.description")
-                    or sink.proplist.get("node.nick")
-                    or getattr(sink, "description", "")
-                    or sink.name)
-
-        physical = [s for s in sinks if is_external_output_sink(s)]
-        # Name the headset rather than saying "Headset". The default entry is a
-        # device like any other in this list, and calling it by a generic word
-        # while every sibling shows a product name reads as a placeholder —
-        # worse when a second headset is connected and neither row says which
-        # one this is. Falls back to the generic label only when the headset is
-        # absent, where there is no name to give.
-        headset = next(
-            (s for s in sinks
-             if is_external_output_sink(s, allow_headset=True)
-             and not is_external_output_sink(s)),
-            None,
-        )
-        default_label = (_label(headset) if headset is not None
-                         else I18n.translate("ui", "headset_output"))
-        options = [("", default_label)] + [(s.name, _label(s)) for s in physical]
-
-        # The Output card gets its own list: it is not "send this channel
-        # somewhere else" like the three above, it *is* the channel's
-        # destination, so there is no "headset by default" entry — and the
-        # headset itself belongs in the list, since routing Output at it is a
-        # supported setup (a second path with a flat EQ, no spatial — #139).
-        ext_options = [
-            (s.proplist.get("node.nick") or s.name, _label(s))
-            for s in sinks if is_external_output_sink(s, allow_headset=True)
-        ]
-
-        # The cache key carries the current *selections*, not just the available
-        # devices: changing the Output device from the Settings page (or a
-        # channel override from anywhere else) leaves the device list identical,
-        # so comparing lists alone would skip the refresh and leave the combos
-        # showing a stale selection until a device was plugged or unplugged.
-        ch_outputs = _load_channel_outputs()
-        selections = (
-            tuple(ch_outputs.get(k, "") for k in ("game", "chat", "media", "aux")),
-            self._ext_device_nick or "",
-        )
-        if (options, ext_options, selections) == self._available_sinks:
-            return
-        self._available_sinks = (options, ext_options, selections)
-        for key, card in (("game", self._game_card), ("chat", self._chat_card),
-                          ("media", self._media_card), ("aux", self._aux_card)):
-            card.set_device_options(options, ch_outputs.get(key, ""))
-        self._ext_card.set_device_options(ext_options, self._ext_device_nick or "")
-
-    def _on_external_output_changed(self, device_id: str) -> None:
-        """The Output card's device changed — persist it as the channel's target.
-
-        Unlike the other three cards, this does not move streams: the Output
-        channel *is* an EQ chain pointed at an external device, so its selector
-        sets that destination. It writes the same ``external_output_device``
-        setting the Settings page uses — one source of truth, which the daemon
-        also reads when it regenerates the Output conf — and goes through the
-        daemon's SetSetting handler rather than touching the YAML directly, so
-        there is no parallel write path.
-        """
-        self._ext_device_nick = device_id or None
-        try:
-            from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
-            DbusWrapper.change_setting("external_output_device", device_id)
-        except Exception as exc:
-            logger.warning("Could not save external output device: %r", exc)
-
-    def _on_channel_output_changed(self, channel: str, sink_name: str) -> None:
-        """Send *channel* to *sink_name* — by moving the channel, not its apps.
-
-        This used to drag every application off the channel's virtual sink and
-        onto the chosen device. The routing overrides then pulled them back on
-        the next pass, so the selection undid itself within seconds and looked
-        like it did nothing. Re-linking the channel's own output leaves every
-        application exactly where the user put it, and there is nothing left to
-        contest the change.
-        """
-        ch_outputs = _load_channel_outputs()
-        if sink_name:
-            ch_outputs[channel] = sink_name
-        else:
-            ch_outputs.pop(channel, None)
-        _save_channel_outputs(ch_outputs)
-        self._channel_outputs = ch_outputs
-
-        # Apply now rather than waiting for the daemon's next tick — a device
-        # switch has to be immediate to feel like it worked. It has to go
-        # through the daemon: the enforcement passes resolve the headset via
-        # device_state, which is per-process and empty here, so running them in
-        # the GUI resolves an empty target and links nothing.
-        try:
-            from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
-            DbusWrapper.apply_channel_outputs()
-        except Exception:
-            logger.exception("could not retarget channel '%s'", channel)
-
-    def _move_channel_streams_now(self, channel: str, sink_name: str) -> None:
-        pulse = self._get_pulse()
-        if pulse is None:
-            return
-        virtual_map = {"game": SINK_GAME, "chat": SINK_CHAT, "media": SINK_MEDIA}
-        virtual_frag = virtual_map.get(channel)
-        if not virtual_frag:
-            return
-        try:
-            sinks = pulse.sink_list()
-            sink_inputs = pulse.sink_input_list()
-            if sink_name:
-                target = next((s for s in sinks if s.name == sink_name), None)
-            else:
-                target = next((s for s in sinks if virtual_frag in s.name), None)
-            if target is None:
-                return
-            for si in sink_inputs:
-                app = si.proplist.get("application.name", "")
-                if not app:
-                    continue
-                current_sink = next((s for s in sinks if s.index == si.sink), None)
-                if current_sink and virtual_frag in current_sink.name:
-                    if si.sink != target.index:
-                        pulse.sink_input_move(si.index, target.index)
-        except Exception as e:
-            logger.warning("Failed to move channel streams: %s", e)
 
     # ── Drag & drop stream routing ────────────────────────────────────────────
 

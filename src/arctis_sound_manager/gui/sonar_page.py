@@ -19,6 +19,7 @@ import subprocess
 from pathlib import Path
 
 from arctis_sound_manager import service_control as sc
+from arctis_sound_manager.gui.channel_output_selector import ChannelOutputSelector
 from arctis_sound_manager.gui.output_selector import OutputSelector
 from arctis_sound_manager.i18n import I18n
 
@@ -3361,6 +3362,23 @@ class SonarPage(QWidget):
         _out_layout = self._output_widget.layout()
         if _out_layout is not None:
             _out_layout.insertWidget(0, self._output_selector)
+
+        # Same idea for the other four channels (#262): "send this channel
+        # elsewhere" used to live only on the Channels page combo, which is
+        # retired now that every channel has its device picker here instead.
+        self._game_output_selector = ChannelOutputSelector("game")
+        self._chat_output_selector = ChannelOutputSelector("chat")
+        self._media_output_selector = ChannelOutputSelector("media")
+        self._aux_output_selector = ChannelOutputSelector("aux")
+        for widget, selector in (
+            (self._game_widget, self._game_output_selector),
+            (self._chat_widget, self._chat_output_selector),
+            (self._media_widget, self._media_output_selector),
+            (self._aux_widget, self._aux_output_selector),
+        ):
+            layout = widget.layout()
+            if layout is not None:
+                layout.insertWidget(0, selector)
 
         self._tabs.addTab(self._game_widget,   _t("game"))
         self._tabs.addTab(self._media_widget,  _t("media"))

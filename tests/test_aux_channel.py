@@ -186,13 +186,6 @@ def test_the_card_starts_hidden_on_a_default_install(page):
 # ── parity with the other channels ───────────────────────────────────────────
 
 
-def test_it_has_an_output_device_picker_like_the_others(page):
-    """The first thing missing when this shipped: every other channel lets you
-    choose where it plays, and a channel you cannot point anywhere is a slider
-    attached to nothing."""
-    assert page._aux_card._device_combo is not None
-
-
 def test_it_gets_a_routing_button_only_while_it_exists(page):
     """The small squares next to each running application — G, C, M, O — gain
     an A. Not while the channel is off: pressing it would move the stream to a
