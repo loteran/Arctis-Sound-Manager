@@ -2885,7 +2885,7 @@ class CoreEngine:
         # replies land on the listen loop and only fill in settings the user
         # never chose here — see _absorb_settings_readback().
         self._request_settings_readback()
-        self._send_device_init_sequence(context="init_device")
+        failed, attempted = self._send_device_init_sequence(context="init_device")
 
         # Not _apply_stored_eq() directly: in Sonar mode the stored curve must
         # not be reinstated at all, or the headset would colour the sound
@@ -2893,7 +2893,46 @@ class CoreEngine:
         self._applied_eq_mode = None
         self.reconcile_hardware_eq_mode()
 
-    def _send_device_init_sequence(self, context: str = "init_device") -> None:
+        # One or two stray opcode failures happen for legitimate reasons (a
+        # declared interface absent on this unit, #100) and are not worth
+        # disrupting the connection over. A majority of the sequence timing
+        # out is a different animal: every write to this device is failing,
+        # not just one it dislikes — a wedged handle/port that a plain reopen
+        # never clears (#272: reinstall, purge, replay udev rules, restart
+        # the daemon, still every command times out). That is exactly what
+        # resume_from_sleep's USB reset (#238) already recovers from, so
+        # reuse it here instead of leaving the device dead until a sleep/wake
+        # cycle or a physical replug happens to fix it.
+        if attempted and failed / attempted > 0.5:
+            self.logger.error(
+                "init_device: %d/%d commands failed — device looks wedged, "
+                "escalating to a USB reset", failed, attempted)
+            self._schedule_wedged_device_reset("init_device transport failures")
+
+    def _schedule_wedged_device_reset(self, reason: str) -> None:
+        """Fire-and-forget a USB reset from sync code.
+
+        init_device() runs on the pyudev observer thread (or its
+        init_sleep_length_ms timer); _escalate_to_usb_reset() is async — same
+        run_coroutine_threadsafe handoff _schedule_settings_replay() already
+        uses for _probe_status_once(). Shares _last_usb_reset_monotonic with
+        resume_from_sleep()'s escalation so the two triggers cannot fire
+        resets back-to-back on top of each other.
+        """
+        loop = self._main_event_loop
+        if loop is None or not loop.is_running():
+            return
+        now = time.monotonic()
+        since_last = now - self._last_usb_reset_monotonic
+        if since_last < _USB_RESET_MIN_INTERVAL_S:
+            self.logger.info(
+                "init_device: skipping reset (last one %.0fs ago, minimum %.0fs)",
+                since_last, _USB_RESET_MIN_INTERVAL_S)
+            return
+        self._last_usb_reset_monotonic = now
+        asyncio.run_coroutine_threadsafe(self._escalate_to_usb_reset(reason), loop)
+
+    def _send_device_init_sequence(self, context: str = "init_device") -> tuple[int, int]:
         """Push the profile's `device_init` frames to the headset.
 
         Split out of :meth:`init_device` so the power-on replay sends exactly
@@ -2901,11 +2940,18 @@ class CoreEngine:
         does this device need to be told", mode switches included (the Nova 3
         Wireless' `[0x49, 0x01]` that turns software ChatMix on, for one), so
         the two paths must not drift apart.
+
+        Returns (failed, attempted): counts of command frames that were still
+        failing after their retry, and of frames actually sent (pure settle
+        pauses excluded from both) — the caller uses this to tell "one
+        incompatible opcode" from "the device stopped answering entirely".
         """
         if not (self.device_config and self.device_config.device_init):
-            return
+            return 0, 0
         endpoint = self.get_command_endpoint_address()
         total = len(self.device_config.device_init)
+        attempted = 0
+        failed = 0
         # SteelSeries' own GG engine paces every command it sends to a device
         # by at least this much (its `time-between-commands`, pushed to the
         # firmware over a HIDCONFIG report at connect time) — a command
@@ -2932,6 +2978,7 @@ class CoreEngine:
             # logging it; it does not raise. The retry used to be written as
             # an `except USBError` around that call, which could never fire,
             # so every failed init frame was silently sent exactly once.
+            attempted += 1
             for attempt in (1, 2):
                 failure: str | None = None
                 try:
@@ -2946,6 +2993,7 @@ class CoreEngine:
                         f"{context} cmd {index}/{total} failed ({failure}); retrying once."
                     )
                     continue
+                failed += 1
                 self.logger.error(
                     f"{context} cmd {index}/{total} still failing after retry: {failure}. "
                     "Device may be left in a partially-configured state."
@@ -2953,6 +3001,7 @@ class CoreEngine:
             if pace:
                 time.sleep(pace)
         self._last_settings_push = time.monotonic()
+        return failed, attempted
 
     def _schedule_settings_replay(self) -> None:
         """Arrange for the settings to go back out now the headset is on.
