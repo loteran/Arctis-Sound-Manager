@@ -141,18 +141,19 @@ def _make_vertical_slider_qss(accent_color: str, groove_color: str | None = None
     """
 
 
-def _make_chatmix_bar_qss(left_color: str, right_color: str, groove_color: str | None = None) -> str:
+def _make_chatmix_bar_qss(track_css: str) -> str:
     """Build the QSS for the horizontal software ChatMix bar (#269).
 
-    sub-page (left of the handle) reads as "Chat"'s share, add-page (right of
-    the handle) as the selected channel(s)' share — mirrors the vertical
-    sliders' white-fill-over-groove look, just rotated.
+    The track (QSlider's groove) always shows the channel colour(s) on its
+    left half and Chat's colour on its right half, built by
+    :func:`chatmix_bar_track_css`. sub-page/add-page are left transparent so
+    they don't paint a second, handle-position-dependent fill on top —
+    only the handle itself should move, not the colours (#269).
     """
-    groove = groove_color or _theme.c("BG_BUTTON")
     return f"""
         QSlider::groove:horizontal {{
             height: 6px;
-            background: {groove};
+            background: {track_css};
             border-radius: 3px;
         }}
         QSlider::handle:horizontal {{
@@ -164,12 +165,10 @@ def _make_chatmix_bar_qss(left_color: str, right_color: str, groove_color: str |
             border-radius: 9px;
         }}
         QSlider::sub-page:horizontal {{
-            background: {left_color};
-            border-radius: 3px;
+            background: transparent;
         }}
         QSlider::add-page:horizontal {{
-            background: {right_color};
-            border-radius: 3px;
+            background: transparent;
         }}
     """
 
@@ -183,29 +182,35 @@ _CHATMIX_CHANNEL_COLOR_KEYS = {
 }
 
 
-def chatmix_bar_channels_css_color(colors: list[str]) -> str:
-    """Build the QSS colour (or hard-edged multi-colour gradient) for the
-    bar's channel-side fill from an ordered list of hex colours.
-
-    One channel included -> a flat colour, matching that channel's own
-    vertical slider. Several -> the fill is split into equal same-width
-    bands, one per colour, in the given order, so the bar visibly shows
-    every channel riding along rather than picking one arbitrarily.
+def _hard_edge_gradient_stops(
+    colors: list[str], start: float = 0.0, end: float = 1.0, eps: float = 1e-4
+) -> list[tuple[float, str]]:
+    """QSS gradient stops splitting *colors* into equal same-width bands
+    over [start, end], with a near-zero-width transition at each boundary
+    so the bands read as hard edges rather than a blend.
     """
-    if not colors:
-        return "#ffffff"
-    if len(colors) == 1:
-        return colors[0]
     n = len(colors)
-    eps = 1e-4
+    span = end - start
     stops: list[tuple[float, str]] = []
     for i, color in enumerate(colors):
-        start = i / n
-        end = (i + 1) / n
-        stops.append((start, color))
-        stops.append((max(start, end - eps), color))
-    if stops[-1][0] < 1.0:
-        stops.append((1.0, colors[-1]))
+        seg_start = start + span * i / n
+        seg_end = start + span * (i + 1) / n
+        stops.append((seg_start, color))
+        stops.append((max(seg_start, seg_end - eps), color))
+    return stops
+
+
+def chatmix_bar_track_css(channel_colors: list[str], chat_color: str) -> str:
+    """Build the ChatMix bar's *static* track background (#269).
+
+    The channel colour(s) always fill the left half and Chat always fills
+    the right half, regardless of the handle's position — only the handle
+    itself (the actual indicator) moves; the colours don't shift with it.
+    """
+    colors = channel_colors or ["#ffffff"]
+    stops = _hard_edge_gradient_stops(colors, 0.0, 0.5)
+    stops.append((0.5, chat_color))
+    stops.append((1.0, chat_color))
     parts = ", ".join(f"stop:{pos:.4f} {color}" for pos, color in stops)
     return f"qlineargradient(x1:0, y1:0, x2:1, y2:0, {parts})"
 
@@ -238,16 +243,30 @@ def chatmix_bar_to_percentages(position: int) -> tuple[int, int]:
     Pure and Qt-free on purpose (testable without a QApplication). Mirrors the
     physical dial's own two-sided taper (see arctis_7.yaml's signed_percentage
     note): centre (50) leaves both sides at their own independent volume.
-    Left of centre keeps the selected channel(s) at 0 and ramps Chat from 0
-    (position 0) up to 100 (position 50); right of centre keeps Chat at 0 and
-    ramps the channel(s) from 100 (position 50) down to 0 (position 100) —
-    i.e. moving toward Chat pulls the channels down, moving toward the
-    channels pulls Chat down, as issue #269 asked for.
+    Left of centre keeps the selected channel(s) at 100 and ramps Chat up from
+    0 (position 0) to 100 (position 50); right of centre keeps Chat at 100
+    and ramps the channel(s) down from 100 (position 50) to 0 (position 100)
+    — i.e. moving toward the channels (left) pulls Chat down, moving toward
+    Chat (right) pulls the channels down, Chat on the right as requested.
     """
     position = max(0, min(100, position))
     if position <= 50:
-        return round(position * 2), 100
-    return 100, round((100 - position) * 2)
+        return 100, round(position * 2)
+    return round((100 - position) * 2), 100
+
+
+def chatmix_percentages_to_bar_position(channels_pct: int, chat_pct: int) -> int:
+    """Inverse of :func:`chatmix_bar_to_percentages`.
+
+    The hardware dial writes straight to the sinks rather than going through
+    the bar, so the bar needs this to catch up to whatever position produced
+    the (channels_pct, chat_pct) it now reads back (#269).
+    """
+    channels_pct = max(0, min(100, channels_pct))
+    chat_pct = max(0, min(100, chat_pct))
+    if chat_pct <= channels_pct:
+        return round(chat_pct / 2)
+    return round(100 - channels_pct / 2)
 
 
 # What one channel card needs, and what it may be squeezed to when the optional
@@ -1086,17 +1105,19 @@ class HomePage(QWidget):
         chatmix_bar_row_layout.setContentsMargins(0, 12, 0, 0)
         chatmix_bar_row_layout.setSpacing(10)
 
-        self._chatmix_bar_chat_lbl = QLabel(I18n.translate("ui", "chat"))
-        self._chatmix_bar_chat_lbl.setStyleSheet(
+        self._chatmix_bar_channels_lbl = QLabel(I18n.translate("ui", "game"))
+        self._chatmix_bar_channels_lbl.setStyleSheet(
             f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;"
         )
-        chatmix_bar_row_layout.addWidget(self._chatmix_bar_chat_lbl)
+        chatmix_bar_row_layout.addWidget(self._chatmix_bar_channels_lbl)
 
         self._chatmix_bar = _ChatMixSlider(Qt.Orientation.Horizontal)
         self._chatmix_bar.setMinimum(0)
         self._chatmix_bar.setMaximum(100)
         self._chatmix_bar.setStyleSheet(
-            _make_chatmix_bar_qss(_theme.c("COLOR_CHAT"), _theme.c("COLOR_GAME"))
+            _make_chatmix_bar_qss(
+                chatmix_bar_track_css([_theme.c("COLOR_GAME")], _theme.c("COLOR_CHAT"))
+            )
         )
         self._chatmix_bar.setToolTip(I18n.translate("ui", "chatmix_bar_hint"))
         self._chatmix_bar.blockSignals(True)
@@ -1105,13 +1126,13 @@ class HomePage(QWidget):
         self._chatmix_bar.valueChanged.connect(self._on_chatmix_bar_changed)
         chatmix_bar_row_layout.addWidget(self._chatmix_bar, stretch=1)
 
-        self._chatmix_bar_channels_lbl = QLabel(I18n.translate("ui", "game"))
-        self._chatmix_bar_channels_lbl.setStyleSheet(
+        self._chatmix_bar_chat_lbl = QLabel(I18n.translate("ui", "chat"))
+        self._chatmix_bar_chat_lbl.setStyleSheet(
             f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;"
         )
-        chatmix_bar_row_layout.addWidget(self._chatmix_bar_channels_lbl)
+        chatmix_bar_row_layout.addWidget(self._chatmix_bar_chat_lbl)
 
-        chatmix_bar_outer_layout.addWidget(chatmix_bar_row, stretch=6)
+        chatmix_bar_outer_layout.addWidget(chatmix_bar_row, stretch=2)
         chatmix_bar_outer_layout.addStretch(1)
 
         self._apply_aux_visibility(_read_aux_enabled())
@@ -1788,6 +1809,35 @@ class HomePage(QWidget):
         # subprocess — see the timer's construction and #182.
         self._timer.stop()
 
+    def _sync_chatmix_bar(self, game_pct, chat_pct, media_pct, aux_pct) -> None:
+        """Follow the hardware dial: it writes straight to the sinks (via the
+        daemon's set_mix), bypassing the bar, so without this the bar would
+        sit still while the vertical cards it mirrors visibly move (#269).
+        """
+        bar = getattr(self, "_chatmix_bar", None)
+        if bar is None or chat_pct is None or bar.isSliderDown():
+            return
+
+        try:
+            from arctis_sound_manager.settings import GeneralSettings
+            channels = GeneralSettings.read_from_file().chatmix_channels_or_default()
+        except Exception:  # noqa: BLE001 — a broken settings file just skips this tick
+            channels = ["game"]
+
+        pct_by_channel = {"game": game_pct, "media": media_pct, "aux": aux_pct}
+        values = [pct_by_channel[ch] for ch in channels if pct_by_channel.get(ch) is not None]
+        if not values:
+            return
+
+        channels_pct = round(sum(values) / len(values))
+        position = chatmix_percentages_to_bar_position(channels_pct, chat_pct)
+        if position == bar.value():
+            return
+
+        bar.blockSignals(True)
+        bar.setValue(position)
+        bar.blockSignals(False)
+
     @Slot()
     def _poll_volumes(self):
         pulse = self._get_pulse()
@@ -1823,27 +1873,32 @@ class HomePage(QWidget):
 
             self._set_connected()
 
+            game_pct = chat_pct = media_pct = aux_pct = None
+
             if sink_game is not None:
-                pct = round(sink_game.volume.value_flat * 100)
-                self._game_card.set_volume(pct)
+                game_pct = round(sink_game.volume.value_flat * 100)
+                self._game_card.set_volume(game_pct)
                 self._sink_game = sink_game
 
             if sink_chat is not None:
-                pct = round(sink_chat.volume.value_flat * 100)
-                self._chat_card.set_volume(pct)
+                chat_pct = round(sink_chat.volume.value_flat * 100)
+                self._chat_card.set_volume(chat_pct)
                 self._sink_chat = sink_chat
 
             if sink_media is not None:
-                pct = round(sink_media.volume.value_flat * 100)
-                self._media_card.set_volume(pct)
+                media_pct = round(sink_media.volume.value_flat * 100)
+                self._media_card.set_volume(media_pct)
                 self._sink_media = sink_media
 
             # Aux exists only while the channel is switched on, so a missing
             # sink here is the normal case and not a fault to report.
             sink_aux = next((s for s in sinks if s.name == SINK_AUX), None)
             if sink_aux is not None:
-                self._aux_card.set_volume(round(sink_aux.volume.value_flat * 100))
+                aux_pct = round(sink_aux.volume.value_flat * 100)
+                self._aux_card.set_volume(aux_pct)
                 self._sink_aux = sink_aux
+
+            self._sync_chatmix_bar(game_pct, chat_pct, media_pct, aux_pct)
 
             # External output sink (non-Arctis physical sink)
             if self._ext_device_nick:
@@ -2421,10 +2476,11 @@ class HomePage(QWidget):
         self._refresh_chatmix_bar_label(set(updated))
 
     def _refresh_chatmix_bar_label(self, channels: set) -> None:
-        """Keep the bar's right-hand label and fill colour in step with the
+        """Keep the bar's left-hand label and fill colour in step with the
         toggled channels: the label lists what's included, and the fill
         matches those channels' own vertical sliders (#269) — a flat colour
-        for one, a band per colour when several ride together.
+        for one, a band per colour when several ride together. Chat sits on
+        the right, so its label and fill stay fixed.
         """
         order = ["game", "media", "aux"]
         included = [ch for ch in order if ch in channels]
@@ -2437,7 +2493,7 @@ class HomePage(QWidget):
         if bar is not None:
             colors = [_theme.c(_CHATMIX_CHANNEL_COLOR_KEYS[ch]) for ch in included] or [_theme.c("COLOR_GAME")]
             bar.setStyleSheet(
-                _make_chatmix_bar_qss(_theme.c("COLOR_CHAT"), chatmix_bar_channels_css_color(colors))
+                _make_chatmix_bar_qss(chatmix_bar_track_css(colors, _theme.c("COLOR_CHAT")))
             )
 
     def _on_chatmix_bar_changed(self, position: int) -> None:

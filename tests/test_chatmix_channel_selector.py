@@ -268,16 +268,16 @@ def test_chatmix_bar_to_percentages_center_is_full_both_sides():
     assert chatmix_bar_to_percentages(50) == (100, 100)
 
 
-def test_chatmix_bar_to_percentages_full_left_is_chat_only():
+def test_chatmix_bar_to_percentages_full_left_is_channel_only():
     from arctis_sound_manager.gui.home_page import chatmix_bar_to_percentages
 
-    assert chatmix_bar_to_percentages(0) == (0, 100)
+    assert chatmix_bar_to_percentages(0) == (100, 0)
 
 
-def test_chatmix_bar_to_percentages_full_right_is_channel_only():
+def test_chatmix_bar_to_percentages_full_right_is_chat_only():
     from arctis_sound_manager.gui.home_page import chatmix_bar_to_percentages
 
-    assert chatmix_bar_to_percentages(100) == (100, 0)
+    assert chatmix_bar_to_percentages(100) == (0, 100)
 
 
 def test_chatmix_bar_to_percentages_clamps_out_of_range_input():
@@ -285,6 +285,21 @@ def test_chatmix_bar_to_percentages_clamps_out_of_range_input():
 
     assert chatmix_bar_to_percentages(-10) == chatmix_bar_to_percentages(0)
     assert chatmix_bar_to_percentages(150) == chatmix_bar_to_percentages(100)
+
+
+def test_chatmix_percentages_to_bar_position_is_the_inverse():
+    from arctis_sound_manager.gui.home_page import (
+        chatmix_bar_to_percentages, chatmix_percentages_to_bar_position)
+
+    for position in range(0, 101, 5):
+        channels_pct, chat_pct = chatmix_bar_to_percentages(position)
+        assert chatmix_percentages_to_bar_position(channels_pct, chat_pct) == position
+
+
+def test_chatmix_percentages_to_bar_position_centre_when_both_full():
+    from arctis_sound_manager.gui.home_page import chatmix_percentages_to_bar_position
+
+    assert chatmix_percentages_to_bar_position(100, 100) == 50
 
 
 def test_apply_chatmix_bar_drives_configured_channels_and_chat(monkeypatch):
@@ -331,35 +346,105 @@ def test_apply_chatmix_bar_falls_back_to_game_when_settings_unreadable(monkeypat
     assert calls == [("game-sink", 30), ("chat-sink", 100)]
 
 
-# ── HomePage: the ChatMix bar's channel-side colour (#269) ──────────────────
+# ── HomePage: the ChatMix bar's static, split-in-half track (#269) ──────────
 
-def test_chatmix_bar_channels_css_color_defaults_to_white_when_empty():
-    from arctis_sound_manager.gui.home_page import chatmix_bar_channels_css_color
+def test_chatmix_bar_track_css_splits_exactly_at_the_middle():
+    from arctis_sound_manager.gui.home_page import chatmix_bar_track_css
 
-    assert chatmix_bar_channels_css_color([]) == "#ffffff"
-
-
-def test_chatmix_bar_channels_css_color_is_flat_for_a_single_channel():
-    from arctis_sound_manager.gui.home_page import chatmix_bar_channels_css_color
-
-    assert chatmix_bar_channels_css_color(["#F59E0B"]) == "#F59E0B"
-
-
-def test_chatmix_bar_channels_css_color_bands_each_included_channel():
-    from arctis_sound_manager.gui.home_page import chatmix_bar_channels_css_color
-
-    css = chatmix_bar_channels_css_color(["#F59E0B", "#3b82f6"])
+    css = chatmix_bar_track_css(["#F59E0B"], "#EF4444")
 
     assert css.startswith("qlineargradient(")
-    assert "#F59E0B" in css
-    assert "#3b82f6" in css
     assert "stop:0.0000 #F59E0B" in css
-    assert "stop:1.0000 #3b82f6" in css
+    assert "stop:0.5000 #EF4444" in css
+    assert "stop:1.0000 #EF4444" in css
 
 
-def test_chatmix_bar_channels_css_color_bands_three_channels_in_order():
-    from arctis_sound_manager.gui.home_page import chatmix_bar_channels_css_color
+def test_chatmix_bar_track_css_bands_multiple_channels_within_the_left_half():
+    from arctis_sound_manager.gui.home_page import chatmix_bar_track_css
 
-    css = chatmix_bar_channels_css_color(["#F59E0B", "#3b82f6", "#10b981"])
+    css = chatmix_bar_track_css(["#F59E0B", "#3b82f6"], "#EF4444")
 
-    assert css.index("#F59E0B") < css.index("#3b82f6") < css.index("#10b981")
+    assert css.index("#F59E0B") < css.index("#3b82f6") < css.index("#EF4444")
+    assert "stop:0.2500 #3b82f6" in css
+
+
+def test_chatmix_bar_track_css_defaults_to_white_when_no_channel_is_included():
+    from arctis_sound_manager.gui.home_page import chatmix_bar_track_css
+
+    css = chatmix_bar_track_css([], "#EF4444")
+
+    assert "#ffffff" in css
+
+
+# ── HomePage: the ChatMix bar follows the hardware dial (#269) ──────────────
+
+def _fake_bar():
+    bar = MagicMock()
+    bar.isSliderDown.return_value = False
+    bar.value.return_value = -1  # never equal to a real position, forces the write
+    return bar
+
+
+def test_sync_chatmix_bar_follows_the_dial(monkeypatch):
+    from arctis_sound_manager import settings as settings_mod
+
+    saved = settings_mod.GeneralSettings()
+    saved.chatmix_channels = ["game"]
+    monkeypatch.setattr(settings_mod.GeneralSettings, "read_from_file", staticmethod(lambda: saved))
+
+    bar = _fake_bar()
+    fake_self = SimpleNamespace(_chatmix_bar=bar)
+
+    HomePage._sync_chatmix_bar(fake_self, 40, 100, None, None)
+
+    bar.setValue.assert_called_once_with(80)
+
+
+def test_sync_chatmix_bar_averages_multiple_configured_channels(monkeypatch):
+    from arctis_sound_manager import settings as settings_mod
+
+    saved = settings_mod.GeneralSettings()
+    saved.chatmix_channels = ["game", "media"]
+    monkeypatch.setattr(settings_mod.GeneralSettings, "read_from_file", staticmethod(lambda: saved))
+
+    bar = _fake_bar()
+    fake_self = SimpleNamespace(_chatmix_bar=bar)
+
+    HomePage._sync_chatmix_bar(fake_self, 100, 40, 100, None)
+
+    bar.setValue.assert_called_once_with(20)
+
+
+def test_sync_chatmix_bar_skips_while_the_user_is_dragging():
+    bar = _fake_bar()
+    bar.isSliderDown.return_value = True
+    fake_self = SimpleNamespace(_chatmix_bar=bar)
+
+    HomePage._sync_chatmix_bar(fake_self, 40, 100, None, None)
+
+    bar.setValue.assert_not_called()
+
+
+def test_sync_chatmix_bar_skips_when_already_at_that_position(monkeypatch):
+    from arctis_sound_manager import settings as settings_mod
+
+    saved = settings_mod.GeneralSettings()
+    saved.chatmix_channels = ["game"]
+    monkeypatch.setattr(settings_mod.GeneralSettings, "read_from_file", staticmethod(lambda: saved))
+
+    bar = _fake_bar()
+    bar.value.return_value = 80
+    fake_self = SimpleNamespace(_chatmix_bar=bar)
+
+    HomePage._sync_chatmix_bar(fake_self, 40, 100, None, None)
+
+    bar.setValue.assert_not_called()
+
+
+def test_sync_chatmix_bar_does_nothing_without_a_chat_reading():
+    bar = _fake_bar()
+    fake_self = SimpleNamespace(_chatmix_bar=bar)
+
+    HomePage._sync_chatmix_bar(fake_self, 40, None, None, None)
+
+    bar.setValue.assert_not_called()
