@@ -252,6 +252,13 @@ class GeneralSettings(JsonSerializable):
     # (issue #135).
     redirect_audio_on_connect: bool = True
 
+    # Which channel redirect_audio_on_connect hands the system default to
+    # (issue #273). 0=Media (default — see the rationale above:
+    # everything the router does not know by name should stay out of the
+    # ChatMix balance), 1=Game, 2=Chat. Only takes effect while
+    # redirect_audio_on_connect is on; ignored otherwise.
+    redirect_audio_on_connect_channel: int = 0
+
     # When disconnecting, redirect to this device
     redirect_audio_on_disconnect: bool = False
     redirect_audio_on_disconnect_device: str|None = None
@@ -486,6 +493,7 @@ class GeneralSettings(JsonSerializable):
 
     settings_config: list[ConfigSetting] = [
         ConfigSetting('redirect_audio_on_connect', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
+        ConfigSetting('redirect_audio_on_connect_channel', SettingType.BUTTON_GROUP, 0, values_mapping={0: 'redirect_channel_media', 1: 'redirect_channel_game', 2: 'redirect_channel_chat'}),
         # inert_without: this toggle acts only through the companion setting
         # named here. On its own it makes CoreEngine.redirect_audio_on_disconnect
         # return without doing anything, which is indistinguishable from a

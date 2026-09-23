@@ -37,13 +37,16 @@ def test_the_three_channels_are_distinct_sinks():
 
 # ── The system default ────────────────────────────────────────────────────────
 
-def _make_engine(*, online: bool = True, on_connect: bool = True):
+def _make_engine(*, online: bool = True, on_connect: bool = True, channel: int = 0):
     from arctis_sound_manager.core import CoreEngine
 
     engine = CoreEngine.__new__(CoreEngine)
     engine._device_lock = threading.Lock()
     engine.is_device_online = MagicMock(return_value=online)
-    engine.general_settings = MagicMock(redirect_audio_on_connect=on_connect)
+    engine.general_settings = MagicMock(
+        redirect_audio_on_connect=on_connect,
+        redirect_audio_on_connect_channel=channel,
+    )
     engine.pa_audio_manager = MagicMock()
     return engine
 
@@ -75,6 +78,30 @@ def test_the_setting_still_wins():
     engine = _make_engine(on_connect=False)
     engine.redirect_to_media_sink()
     engine.pa_audio_manager.redirect_audio.assert_not_called()
+
+
+# ── The configurable channel (issue #273) ───────────────────────────────────
+
+def test_channel_setting_can_target_game():
+    """A user whose system default is already the Arctis ALSA node does not
+    want Media as a second, unasked-for sink — they can point new apps at
+    Game instead."""
+    engine = _make_engine(channel=1)
+    engine.redirect_to_media_sink()
+    engine.pa_audio_manager.redirect_audio.assert_called_once_with(PULSE_GAME_NODE_NAME)
+
+
+def test_channel_setting_can_target_chat():
+    engine = _make_engine(channel=2)
+    engine.redirect_to_media_sink()
+    engine.pa_audio_manager.redirect_audio.assert_called_once_with(PULSE_CHAT_NODE_NAME)
+
+
+def test_channel_setting_falls_back_to_media_on_bad_value():
+    """A stale/corrupt settings file must not crash the daemon on connect."""
+    engine = _make_engine(channel=99)
+    engine.redirect_to_media_sink()
+    engine.pa_audio_manager.redirect_audio.assert_called_once_with(PULSE_MEDIA_NODE_NAME)
 
 
 # ── The ChatMix dial ──────────────────────────────────────────────────────────

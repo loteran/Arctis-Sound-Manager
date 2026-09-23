@@ -24,6 +24,7 @@ from arctis_sound_manager.config import (CommandTransport,
                                          load_device_configurations,
                                          parsed_status)
 from arctis_sound_manager.constants import (PULSE_CHAT_NODE_NAME,
+                                            PULSE_GAME_NODE_NAME,
                                             PULSE_MEDIA_NODE_NAME,
                                             STEELSERIES_VENDOR_ID)
 from arctis_sound_manager.loopback_manager import (LoopbackManager, make_specs,
@@ -3452,15 +3453,20 @@ class CoreEngine:
         except Exception as e:
             self.logger.warning(f'Failed to update EQ band file: {e}')
     
-    def redirect_to_media_sink(self):
-        """Make the Media channel the system default when the headset comes up.
+    # redirect_audio_on_connect_channel's int value -> the sink it targets.
+    # Media is index 0 / the default: the default output is what everything
+    # ASM does not route by name follows (a browser, a music player, system
+    # sounds, any app the router has never heard of), so filing it as Game —
+    # which is what this did for as long as PULSE_MEDIA_NODE_NAME held
+    # ``Arctis_Game`` — has the ChatMix dial balancing a podcast against
+    # Discord. Game and Chat (issue #273) are for a user who has already
+    # picked the Arctis' own ALSA node as their system default output
+    # instead of one of ASM's channels — for them "Media" is not a neutral
+    # default, it is a second sink they never asked for.
+    _REDIRECT_CHANNELS = (PULSE_MEDIA_NODE_NAME, PULSE_GAME_NODE_NAME, PULSE_CHAT_NODE_NAME)
 
-        Media, because the default output is what everything ASM does not route
-        by name follows: a browser, a music player, system sounds, any app the
-        router has never heard of. Sending that to Game — which is what this did
-        for as long as PULSE_MEDIA_NODE_NAME held ``Arctis_Game`` — files all of
-        it as game audio, so the ChatMix dial then balances a podcast against
-        Discord.
+    def redirect_to_media_sink(self):
+        """Make the configured channel the system default when the headset comes up.
 
         Only when the headset is actually on: the channels point at it, so
         adopting the default while it is off would move audio to a device that
@@ -3470,7 +3476,13 @@ class CoreEngine:
         if not self.general_settings.redirect_audio_on_connect or not self.is_device_online():
             return
 
-        self.pa_audio_manager.redirect_audio(PULSE_MEDIA_NODE_NAME)
+        channel_index = getattr(self.general_settings, 'redirect_audio_on_connect_channel', 0) or 0
+        try:
+            target = self._REDIRECT_CHANNELS[channel_index]
+        except (IndexError, TypeError):
+            target = PULSE_MEDIA_NODE_NAME
+
+        self.pa_audio_manager.redirect_audio(target)
 
     # Sink name fragments that mean "audio is going through the Arctis headset".
     # Includes all three virtual loopbacks, the full Sonar EQ pipeline and the
