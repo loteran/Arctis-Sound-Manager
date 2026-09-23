@@ -362,12 +362,13 @@ class GeneralSettings(JsonSerializable):
     # shows. Hiding it only frees up room for someone who never uses it.
     output_channel_visible: bool = True
 
-    # Which extra channels the ChatMix dial's non-chat side moves alongside
-    # Game (#249). Only "media" and/or "aux" are valid members: Game is
-    # already the dial's fixed non-chat side and Chat its fixed other side,
-    # so neither is configurable here. Empty (the default) reproduces the
-    # exact pre-#249 behaviour — the dial only ever touches Game and Chat.
-    chatmix_extra_channels: list[str] = []
+    # Which channels the ChatMix bar/dial's non-chat side moves (#249, #269).
+    # Chat is always the other, fixed side. "game" is the only member out of
+    # the box, reproducing the pre-#249 behaviour; the user can add
+    # "media"/"aux" and remove "game" via the per-card checkboxes. Never
+    # meant to be empty — GeneralSettings.chatmix_channels_or_default() and
+    # every write path fall back to ["game"] rather than drive nothing.
+    chatmix_channels: list[str] = ['game']
 
     # #180: minutes of whole-graph inactivity (idle_detect.IdleTracker) before
     # ASM voluntarily cuts the last hop into the headset's own physical output
@@ -571,6 +572,16 @@ class GeneralSettings(JsonSerializable):
         if data.get('hrir_id') in _HRIR_ID_MIGRATIONS:
             data['hrir_id'] = _HRIR_ID_MIGRATIONS[data['hrir_id']]
 
+        # chatmix_extra_channels -> chatmix_channels (#269): the old field held
+        # only what rode along *beside* Game, which was itself an unconditional
+        # member. Game is now an equal, removable member, so an existing file's
+        # extras must gain it back explicitly or the upgrade silently drops
+        # Game from a mix that used to include it.
+        if 'chatmix_channels' not in data and 'chatmix_extra_channels' in data:
+            old_extra = data.pop('chatmix_extra_channels')
+            if isinstance(old_extra, list):
+                data['chatmix_channels'] = ['game'] + [c for c in old_extra if c != 'game']
+
         # Validate every value against its ConfigSetting's declared domain
         # rather than trust a hand-edited or restored file (CHA-2 / CHA-8):
         # an out-of-range pipewire_quantum, or a non-string SELECT value,
@@ -616,3 +627,13 @@ class GeneralSettings(JsonSerializable):
         # process is killed mid-flush (which used to make the next start
         # fall back to defaults — now it won't).
         _atomic_yaml_dump(self.__dict__, settings_file)
+
+    def chatmix_channels_or_default(self) -> list[str]:
+        """chatmix_channels, guaranteed non-empty (#269).
+
+        The single place every reader (PulseAudioManager, the GUI checkboxes,
+        the D-Bus setter) falls back through, so deselecting every channel —
+        or a hand-edited settings file with an empty list — still leaves the
+        ChatMix bar/dial crossfading something instead of nothing.
+        """
+        return list(self.chatmix_channels) or ['game']

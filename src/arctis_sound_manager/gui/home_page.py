@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QUrl, Slot
-from PySide6.QtGui import QDesktopServices, QPixmap
+from PySide6.QtGui import QColor, QDesktopServices, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QHBoxLayout,
@@ -139,6 +139,115 @@ def _make_vertical_slider_qss(accent_color: str, groove_color: str | None = None
             border-radius: 3px;
         }}
     """
+
+
+def _make_chatmix_bar_qss(left_color: str, right_color: str, groove_color: str | None = None) -> str:
+    """Build the QSS for the horizontal software ChatMix bar (#269).
+
+    sub-page (left of the handle) reads as "Chat"'s share, add-page (right of
+    the handle) as the selected channel(s)' share — mirrors the vertical
+    sliders' white-fill-over-groove look, just rotated.
+    """
+    groove = groove_color or _theme.c("BG_BUTTON")
+    return f"""
+        QSlider::groove:horizontal {{
+            height: 6px;
+            background: {groove};
+            border-radius: 3px;
+        }}
+        QSlider::handle:horizontal {{
+            background: white;
+            border: none;
+            width: 18px;
+            height: 18px;
+            margin: -6px 0;
+            border-radius: 9px;
+        }}
+        QSlider::sub-page:horizontal {{
+            background: {left_color};
+            border-radius: 3px;
+        }}
+        QSlider::add-page:horizontal {{
+            background: {right_color};
+            border-radius: 3px;
+        }}
+    """
+
+
+# Which theme colour key drives each ChatMix-eligible channel's slider,
+# reused so the bar's channel-side fill always matches (#269).
+_CHATMIX_CHANNEL_COLOR_KEYS = {
+    'game': 'COLOR_GAME',
+    'media': 'COLOR_AUX',
+    'aux': 'COLOR_AUX2',
+}
+
+
+def chatmix_bar_channels_css_color(colors: list[str]) -> str:
+    """Build the QSS colour (or hard-edged multi-colour gradient) for the
+    bar's channel-side fill from an ordered list of hex colours.
+
+    One channel included -> a flat colour, matching that channel's own
+    vertical slider. Several -> the fill is split into equal same-width
+    bands, one per colour, in the given order, so the bar visibly shows
+    every channel riding along rather than picking one arbitrarily.
+    """
+    if not colors:
+        return "#ffffff"
+    if len(colors) == 1:
+        return colors[0]
+    n = len(colors)
+    eps = 1e-4
+    stops: list[tuple[float, str]] = []
+    for i, color in enumerate(colors):
+        start = i / n
+        end = (i + 1) / n
+        stops.append((start, color))
+        stops.append((max(start, end - eps), color))
+    if stops[-1][0] < 1.0:
+        stops.append((1.0, colors[-1]))
+    parts = ", ".join(f"stop:{pos:.4f} {color}" for pos, color in stops)
+    return f"qlineargradient(x1:0, y1:0, x2:1, y2:0, {parts})"
+
+
+class _ChatMixSlider(QSlider):
+    """Horizontal ChatMix slider (#269) with a fixed tick marking its centre.
+
+    The groove alone gives no visual anchor for "both sides full volume" —
+    this draws a short tick over the middle of the groove after the normal
+    paint, the same way equalizer_page's curve widgets layer their own
+    QPainter drawing on top of the base paintEvent.
+    """
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        pen = QPen(QColor("white"))
+        pen.setWidth(2)
+        painter.setPen(pen)
+        cx = self.width() // 2
+        cy = self.height() // 2
+        painter.drawLine(cx, cy - 9, cx, cy + 9)
+        painter.end()
+
+
+def chatmix_bar_to_percentages(position: int) -> tuple[int, int]:
+    """Translate a 0-100 ChatMix bar *position* into (channels_pct, chat_pct).
+
+    Pure and Qt-free on purpose (testable without a QApplication). Mirrors the
+    physical dial's own two-sided taper (see arctis_7.yaml's signed_percentage
+    note): centre (50) leaves both sides at their own independent volume.
+    Left of centre keeps the selected channel(s) at 0 and ramps Chat from 0
+    (position 0) up to 100 (position 50); right of centre keeps Chat at 0 and
+    ramps the channel(s) from 100 (position 50) down to 0 (position 100) —
+    i.e. moving toward Chat pulls the channels down, moving toward the
+    channels pulls Chat down, as issue #269 asked for.
+    """
+    position = max(0, min(100, position))
+    if position <= 50:
+        return round(position * 2), 100
+    return 100, round((100 - position) * 2)
 
 
 # What one channel card needs, and what it may be squeezed to when the optional
@@ -927,6 +1036,7 @@ class HomePage(QWidget):
         self._game_card = AudioCard(I18n.translate("ui", "game"), _theme.c("COLOR_GAME"), GAME_ICON)
         self._game_card.set_on_change(self._on_media_volume_changed)
         self._game_card.set_on_drop(lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_GAME))
+        self._game_card.set_on_chatmix_toggle(lambda enabled: self._on_chatmix_toggle("game", enabled))
         self._cards_layout.addWidget(self._game_card, stretch=1)
 
         # Chat card (Arctis_Chat sink)
@@ -961,10 +1071,54 @@ class HomePage(QWidget):
         cards_outer_layout.addWidget(self._cards_widget, stretch=6)
         cards_outer_layout.addStretch(1)
 
+        # ── ChatMix bar (#269) — software crossfade between Chat and the
+        # configured channel(s), aligned under the cards above.
+        chatmix_bar_outer = QWidget()
+        chatmix_bar_outer.setStyleSheet("background: transparent;")
+        chatmix_bar_outer_layout = QHBoxLayout(chatmix_bar_outer)
+        chatmix_bar_outer_layout.setContentsMargins(0, 0, 0, 0)
+        chatmix_bar_outer_layout.setSpacing(0)
+        chatmix_bar_outer_layout.addStretch(1)
+
+        chatmix_bar_row = QWidget()
+        chatmix_bar_row.setStyleSheet("background: transparent;")
+        chatmix_bar_row_layout = QHBoxLayout(chatmix_bar_row)
+        chatmix_bar_row_layout.setContentsMargins(0, 12, 0, 0)
+        chatmix_bar_row_layout.setSpacing(10)
+
+        self._chatmix_bar_chat_lbl = QLabel(I18n.translate("ui", "chat"))
+        self._chatmix_bar_chat_lbl.setStyleSheet(
+            f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;"
+        )
+        chatmix_bar_row_layout.addWidget(self._chatmix_bar_chat_lbl)
+
+        self._chatmix_bar = _ChatMixSlider(Qt.Orientation.Horizontal)
+        self._chatmix_bar.setMinimum(0)
+        self._chatmix_bar.setMaximum(100)
+        self._chatmix_bar.setStyleSheet(
+            _make_chatmix_bar_qss(_theme.c("COLOR_CHAT"), _theme.c("COLOR_GAME"))
+        )
+        self._chatmix_bar.setToolTip(I18n.translate("ui", "chatmix_bar_hint"))
+        self._chatmix_bar.blockSignals(True)
+        self._chatmix_bar.setValue(50)
+        self._chatmix_bar.blockSignals(False)
+        self._chatmix_bar.valueChanged.connect(self._on_chatmix_bar_changed)
+        chatmix_bar_row_layout.addWidget(self._chatmix_bar, stretch=1)
+
+        self._chatmix_bar_channels_lbl = QLabel(I18n.translate("ui", "game"))
+        self._chatmix_bar_channels_lbl.setStyleSheet(
+            f"color: {TEXT_SECONDARY}; font-size: 9pt; background: transparent;"
+        )
+        chatmix_bar_row_layout.addWidget(self._chatmix_bar_channels_lbl)
+
+        chatmix_bar_outer_layout.addWidget(chatmix_bar_row, stretch=6)
+        chatmix_bar_outer_layout.addStretch(1)
+
         self._apply_aux_visibility(_read_aux_enabled())
         self._apply_output_visibility(_read_output_channel_visible())
 
         root.addWidget(cards_outer, stretch=1)
+        root.addWidget(chatmix_bar_outer)
 
         # ── Other applications ────────────────────────────────────────────────
         # Applications that are playing but sit on no ASM channel are invisible
@@ -2195,33 +2349,43 @@ class HomePage(QWidget):
         self._fit_cards_to_row()
         self._refresh_app_tag_buttons()
 
-    # ── ChatMix extra channels (#249) ────────────────────────────────────────
+    # ── ChatMix channels (#249, #269) ─────────────────────────────────────────
 
     def _refresh_chatmix_toggles(self) -> None:
         """Show/hide and (re)set the "Include in ChatMix" checkboxes.
 
-        Media always offers it. Aux only does while the Aux channel itself is
-        on — its card is already hidden entirely otherwise, but the checkbox
-        is kept in step too rather than relying on that alone. Called at
-        startup and whenever Aux's own enabled state changes, since that's
-        the only thing that can make the Aux checkbox go from irrelevant to
-        relevant (or back) during a running session.
+        Game and Media always offer it. Aux only does while the Aux channel
+        itself is on — its card is already hidden entirely otherwise, but the
+        checkbox is kept in step too rather than relying on that alone.
+        Called at startup and whenever Aux's own enabled state changes, since
+        that's the only thing that can make the Aux checkbox go from
+        irrelevant to relevant (or back) during a running session.
         """
         try:
             from arctis_sound_manager.settings import GeneralSettings
-            extra = set(GeneralSettings.read_from_file().chatmix_extra_channels)
+            channels = set(GeneralSettings.read_from_file().chatmix_channels_or_default())
         except Exception:  # noqa: BLE001
-            extra = set()
+            channels = {"game"}
+
+        self._game_card.set_chatmix_toggle_visible(True)
+        self._game_card.set_chatmix_checked("game" in channels)
 
         self._media_card.set_chatmix_toggle_visible(True)
-        self._media_card.set_chatmix_checked("media" in extra)
+        self._media_card.set_chatmix_checked("media" in channels)
 
         aux_on = not self._aux_card.isHidden()
         self._aux_card.set_chatmix_toggle_visible(aux_on)
-        self._aux_card.set_chatmix_checked("aux" in extra)
+        self._aux_card.set_chatmix_checked("aux" in channels)
+
+        self._refresh_chatmix_bar_label(channels)
 
     def _on_chatmix_toggle(self, channel: str, enabled: bool) -> None:
-        """Add/remove *channel* ('media' or 'aux') from the dial's non-chat side.
+        """Add/remove *channel* ('game'/'media'/'aux') from the non-chat side.
+
+        Unchecking the last remaining channel puts Game straight back
+        (#269) — the bar/dial must always drive something — and the Game
+        checkbox is corrected back to checked so it doesn't lie about what
+        just happened, even when Game itself wasn't the one just toggled.
 
         Mirrors _set_aux_enabled's dual write: the settings file is updated
         immediately (the next manage_mix_change() tick in the daemon reads it
@@ -2234,20 +2398,78 @@ class HomePage(QWidget):
         try:
             from arctis_sound_manager.settings import GeneralSettings
             gs = GeneralSettings.read_from_file()
-            updated = list(gs.chatmix_extra_channels)
+            updated = list(gs.chatmix_channels)
             if enabled and channel not in updated:
                 updated.append(channel)
             elif not enabled and channel in updated:
                 updated.remove(channel)
-            gs.chatmix_extra_channels = updated
+            if not updated:
+                updated = ['game']
+                try:
+                    self._game_card.set_chatmix_checked(True)
+                except Exception:  # noqa: BLE001
+                    pass
+            gs.chatmix_channels = updated
             gs.write_to_file()
         except Exception:  # noqa: BLE001
-            logger.warning("could not persist chatmix_extra_channels", exc_info=True)
+            logger.warning("could not persist chatmix_channels", exc_info=True)
         try:
             from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
-            DbusWrapper.change_setting("chatmix_extra_channels", updated)
+            DbusWrapper.change_setting("chatmix_channels", updated)
         except Exception:  # noqa: BLE001
-            logger.debug("could not notify the daemon about chatmix_extra_channels", exc_info=True)
+            logger.debug("could not notify the daemon about chatmix_channels", exc_info=True)
+        self._refresh_chatmix_bar_label(set(updated))
+
+    def _refresh_chatmix_bar_label(self, channels: set) -> None:
+        """Keep the bar's right-hand label and fill colour in step with the
+        toggled channels: the label lists what's included, and the fill
+        matches those channels' own vertical sliders (#269) — a flat colour
+        for one, a band per colour when several ride together.
+        """
+        order = ["game", "media", "aux"]
+        included = [ch for ch in order if ch in channels]
+        names = [I18n.translate("ui", ch) for ch in included]
+        label = getattr(self, "_chatmix_bar_channels_lbl", None)
+        if label is not None:
+            label.setText(", ".join(names) or I18n.translate("ui", "game"))
+
+        bar = getattr(self, "_chatmix_bar", None)
+        if bar is not None:
+            colors = [_theme.c(_CHATMIX_CHANNEL_COLOR_KEYS[ch]) for ch in included] or [_theme.c("COLOR_GAME")]
+            bar.setStyleSheet(
+                _make_chatmix_bar_qss(_theme.c("COLOR_CHAT"), chatmix_bar_channels_css_color(colors))
+            )
+
+    def _on_chatmix_bar_changed(self, position: int) -> None:
+        channels_pct, chat_pct = chatmix_bar_to_percentages(position)
+        self._apply_chatmix_bar(channels_pct, chat_pct)
+
+    def _apply_chatmix_bar(self, channels_pct: int, chat_pct: int) -> None:
+        """Drive the configured channel(s) and Chat straight from the bar (#269).
+
+        Software-only for now: this goes through the same PipeWire calls the
+        vertical sliders already make from this process, without touching the
+        headset's own dial. The vertical sliders themselves catch up on the
+        next _poll_volumes() tick, at most half a second later.
+        """
+        try:
+            from arctis_sound_manager.settings import GeneralSettings
+            channels = GeneralSettings.read_from_file().chatmix_channels_or_default()
+        except Exception:  # noqa: BLE001
+            channels = ['game']
+
+        sink_by_channel = {
+            'game': self._sink_game,
+            'media': self._sink_media,
+            'aux': getattr(self, '_sink_aux', None),
+        }
+        for channel in channels:
+            sink = sink_by_channel.get(channel)
+            if sink is not None:
+                self._apply_volume(sink, channels_pct)
+
+        if self._sink_chat is not None:
+            self._apply_volume(self._sink_chat, chat_pct)
 
     def _fit_cards_to_row(self) -> None:
         """Give every card a minimum width the window can actually satisfy.

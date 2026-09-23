@@ -113,7 +113,8 @@ def _make_pactl(sink_names: list[str]):
     mgr.logger = MagicMock()
     mgr.pulse = MagicMock()
     sinks = [MagicMock(proplist={"node.name": n}) for n in sink_names]
-    mgr.get_arctis_sinks = MagicMock(return_value=sinks)
+    mgr.sink_list_wrapper = MagicMock(return_value=sinks)
+    mgr._chatmix_channels = MagicMock(return_value=["game"])
     return mgr, {s.proplist["node.name"]: s for s in sinks}
 
 

@@ -185,46 +185,57 @@ def test_set_setting_aux_enabled_rejects_non_bool(tmp_path):
     svc.core_engine.configure_virtual_sinks.assert_not_called()
 
 
-# ── chatmix_extra_channels has no ConfigSetting entry either (#249, its own
+# ── chatmix_channels has no ConfigSetting entry either (#249/#269, its own
 # per-card checkbox, not a generic widget) — special-cased the same way.
 # Unlike aux_enabled, nothing needs reconfiguring: the next
 # manage_mix_change() tick reads it fresh via PulseAudioManager.set_mix. ──
 
-def test_set_setting_chatmix_extra_channels_persists(tmp_path):
+def test_set_setting_chatmix_channels_persists(tmp_path):
     svc = _make_service(tmp_path)
     with patch("arctis_sound_manager.settings.SETTINGS_FOLDER", tmp_path):
-        ok = _set_setting(svc, "chatmix_extra_channels", json.dumps(["media", "aux"]))
+        ok = _set_setting(svc, "chatmix_channels", json.dumps(["game", "media", "aux"]))
 
     assert ok is True
-    assert svc.core_engine.general_settings.chatmix_extra_channels == ["media", "aux"]
+    assert svc.core_engine.general_settings.chatmix_channels == ["game", "media", "aux"]
 
 
-def test_set_setting_chatmix_extra_channels_rejects_game_or_chat(tmp_path):
-    """Game and Chat are the dial's fixed, always-on sides — never configurable."""
+def test_set_setting_chatmix_channels_rejects_chat(tmp_path):
+    """Chat is the dial's fixed other side — never configurable."""
     svc = _make_service(tmp_path)
     with patch("arctis_sound_manager.settings.SETTINGS_FOLDER", tmp_path):
-        ok = _set_setting(svc, "chatmix_extra_channels", json.dumps(["media", "game"]))
+        ok = _set_setting(svc, "chatmix_channels", json.dumps(["media", "chat"]))
 
     assert ok is False
-    assert svc.core_engine.general_settings.chatmix_extra_channels == []
+    assert svc.core_engine.general_settings.chatmix_channels == ["game"]
 
 
-def test_set_setting_chatmix_extra_channels_rejects_non_list(tmp_path):
+def test_set_setting_chatmix_channels_rejects_non_list(tmp_path):
     svc = _make_service(tmp_path)
     with patch("arctis_sound_manager.settings.SETTINGS_FOLDER", tmp_path):
-        ok = _set_setting(svc, "chatmix_extra_channels", json.dumps("media"))
+        ok = _set_setting(svc, "chatmix_channels", json.dumps("media"))
 
     assert ok is False
-    assert svc.core_engine.general_settings.chatmix_extra_channels == []
+    assert svc.core_engine.general_settings.chatmix_channels == ["game"]
 
 
-def test_set_setting_chatmix_extra_channels_rejects_garbage_entry(tmp_path):
+def test_set_setting_chatmix_channels_rejects_garbage_entry(tmp_path):
     svc = _make_service(tmp_path)
     with patch("arctis_sound_manager.settings.SETTINGS_FOLDER", tmp_path):
-        ok = _set_setting(svc, "chatmix_extra_channels", json.dumps(["media", 42]))
+        ok = _set_setting(svc, "chatmix_channels", json.dumps(["media", 42]))
 
     assert ok is False
-    assert svc.core_engine.general_settings.chatmix_extra_channels == []
+    assert svc.core_engine.general_settings.chatmix_channels == ["game"]
+
+
+def test_set_setting_chatmix_channels_falls_back_to_game_when_emptied(tmp_path):
+    """The bar/dial must always drive something (#269): persisting an empty
+    selection falls back to Game rather than being written as-is."""
+    svc = _make_service(tmp_path)
+    with patch("arctis_sound_manager.settings.SETTINGS_FOLDER", tmp_path):
+        ok = _set_setting(svc, "chatmix_channels", json.dumps([]))
+
+    assert ok is True
+    assert svc.core_engine.general_settings.chatmix_channels == ["game"]
 
 
 # ── #180: pm_shutdown links headset_idle_off_minutes on the same slider ─────

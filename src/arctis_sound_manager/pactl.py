@@ -409,27 +409,31 @@ class PulseAudioManager:
             return False
         return True
 
-    # #249: user-configurable channels that ride along with Game on the dial's
-    # non-chat side. Game and Chat are never members — they're the fixed,
-    # always-on halves of the physical crossfade.
-    _EXTRA_MIX_NODE_NAMES = {
+    # #249/#269: user-configurable channels that ride the ChatMix bar/dial's
+    # non-chat side. Chat is never a member — it's the fixed other half of
+    # the crossfade. "game" used to be an unconditional member handled
+    # separately from this map; it is now just the default entry in it.
+    _MIX_NODE_NAMES = {
+        'game': PULSE_GAME_NODE_NAME,
         'media': PULSE_MEDIA_NODE_NAME,
         'aux': PULSE_AUX_NODE_NAME,
     }
 
-    def _chatmix_extra_channels(self) -> list[str]:
-        """Extra channels configured to move with Game (#249).
+    def _chatmix_channels(self) -> list[str]:
+        """Channels configured to ride the non-chat side (#249/#269).
 
         Read fresh from disk on every call, never cached: the user can toggle
         this while the daemon is running, and a stale answer here means the
         dial silently stops (or never starts) driving a channel the user just
         (un)checked. Mirrors sonar_to_pipewire._aux_enabled()'s rationale.
+        Falls back to Game alone rather than an empty list — see
+        GeneralSettings.chatmix_channels_or_default().
         """
         try:
             from arctis_sound_manager.settings import GeneralSettings
-            return list(GeneralSettings.read_from_file().chatmix_extra_channels)
+            return GeneralSettings.read_from_file().chatmix_channels_or_default()
         except Exception:  # noqa: BLE001
-            return []
+            return ['game']
 
     def set_mix(self, media_mix: int, chat_mix: int):
         if media_mix > 100:
@@ -437,40 +441,30 @@ class PulseAudioManager:
         if chat_mix > 100:
             chat_mix = 100
 
-        sinks = self.get_arctis_sinks(ONLY_VIRTUAL)
+        all_sinks = self.sink_list_wrapper()
 
-        # `media_mix` is the firmware's name for the dial's non-chat half, and
-        # the sink it drives is Game — not the Media channel. See constants.py.
-        game = next((s for s in sinks if s.proplist.get('node.name', '') == PULSE_GAME_NODE_NAME), None)
-        chat = next((s for s in sinks if s.proplist.get('node.name', '') == PULSE_CHAT_NODE_NAME), None)
+        def _find(node_name: str):
+            return next((s for s in all_sinks if s.proplist.get('node.name', '') == node_name), None)
 
         # Only the channel that actually moved is written. Writing a sink the
         # level it already has is not free: the server still announces a volume
         # change, and the desktop still shows its volume OSD for it — so
         # nudging one end of the dial used to flash the other channel's sink
         # too. See CoreEngine._mix_is_jitter for the other half of this.
-        if game and not self._sink_is_at(game, media_mix):
-            self.pulse.volume_set_all_chans(game, media_mix / 100)
+        chat = _find(PULSE_CHAT_NODE_NAME)
         if chat and not self._sink_is_at(chat, chat_mix):
             self.pulse.volume_set_all_chans(chat, chat_mix / 100)
 
-        # Extra channels (#249) opted in to ride along with Game. Looked up
-        # against the full sink list, not `sinks`/ONLY_VIRTUAL above — that
-        # set is deliberately Game/Chat only (see set_sink_volume_by_node's
-        # docstring), and Media/Aux are not part of it.
-        extra_channels = self._chatmix_extra_channels()
-        if extra_channels:
-            all_sinks = self.sink_list_wrapper()
-            for channel in extra_channels:
-                node_name = self._EXTRA_MIX_NODE_NAMES.get(channel)
-                if node_name is None:
-                    continue
-                extra_sink = next(
-                    (s for s in all_sinks if s.proplist.get('node.name', '') == node_name),
-                    None,
-                )
-                if extra_sink and not self._sink_is_at(extra_sink, media_mix):
-                    self.pulse.volume_set_all_chans(extra_sink, media_mix / 100)
+        # `media_mix` is the firmware's name for the dial's non-chat half; the
+        # channel(s) it drives are whichever the user configured (#249/#269),
+        # Game by default. See constants.py.
+        for channel in self._chatmix_channels():
+            node_name = self._MIX_NODE_NAMES.get(channel)
+            if node_name is None:
+                continue
+            sink = _find(node_name)
+            if sink and not self._sink_is_at(sink, media_mix):
+                self.pulse.volume_set_all_chans(sink, media_mix / 100)
 
     @staticmethod
     def _sink_is_at(sink, pct: int) -> bool:

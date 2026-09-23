@@ -133,7 +133,8 @@ def _manager(sinks):
     manager = PulseAudioManager.__new__(PulseAudioManager)
     manager.logger = logging.getLogger("test")
     manager.pulse = MagicMock()
-    manager.get_arctis_sinks = MagicMock(return_value=sinks)
+    manager.sink_list_wrapper = MagicMock(return_value=sinks)
+    manager._chatmix_channels = MagicMock(return_value=["game"])
     return manager
 
 
@@ -165,49 +166,50 @@ def test_set_mix_writes_nothing_when_the_sinks_already_match():
     manager.pulse.volume_set_all_chans.assert_not_called()
 
 
-# ── PulseAudioManager.set_mix: ChatMix extra channels (#249) ───────────────
+# ── PulseAudioManager.set_mix: ChatMix channels (#249/#269) ────────────────
 #
-# Media and/or Aux can be configured to ride along with Game on the dial's
-# non-chat side. Looked up against the full sink list (sink_list_wrapper),
-# not get_arctis_sinks(ONLY_VIRTUAL) — that stays Game/Chat only, unchanged.
+# Game, Media and/or Aux can be configured to ride the dial's non-chat side.
+# Looked up against the full sink list (sink_list_wrapper) uniformly.
 
-def _manager_with_extra(virtual_sinks, all_sinks, extra_channels):
-    manager = _manager(virtual_sinks)
-    manager.sink_list_wrapper = MagicMock(return_value=all_sinks)
-    manager._chatmix_extra_channels = MagicMock(return_value=extra_channels)
+def _manager_with_channels(all_sinks, channels):
+    manager = _manager(all_sinks)
+    manager._chatmix_channels = MagicMock(return_value=channels)
     return manager
 
 
-def test_set_mix_moves_media_alongside_game_when_configured():
+def test_set_mix_moves_only_the_configured_channels():
     game = _sink("Arctis_Game", 100)
     chat = _sink("Arctis_Chat", 100)
     media = _sink("Arctis_Media", 100)
-    manager = _manager_with_extra([game, chat], [game, chat, media], ["media"])
+    manager = _manager_with_channels([game, chat, media], ["media"])
 
     manager.set_mix(70, 40)
 
     manager.pulse.volume_set_all_chans.assert_any_call(media, 0.7)
+    touched = [call.args[0] for call in manager.pulse.volume_set_all_chans.call_args_list]
+    assert game not in touched
 
 
 def test_set_mix_moves_aux_alongside_game_when_configured():
     game = _sink("Arctis_Game", 100)
     chat = _sink("Arctis_Chat", 100)
     aux = _sink("Arctis_Aux", 100)
-    manager = _manager_with_extra([game, chat], [game, chat, aux], ["aux"])
+    manager = _manager_with_channels([game, chat, aux], ["game", "aux"])
 
     manager.set_mix(55, 40)
 
     manager.pulse.volume_set_all_chans.assert_any_call(aux, 0.55)
+    manager.pulse.volume_set_all_chans.assert_any_call(game, 0.55)
 
 
-def test_set_mix_leaves_media_and_aux_untouched_by_default():
-    """Today's exact behaviour, as a regression guard: an empty configured
-    list must not move anything beyond Game and Chat."""
+def test_set_mix_leaves_media_and_aux_untouched_when_not_configured():
+    """Today's exact behaviour, as a regression guard: a Media/Aux channel
+    that isn't in the configured list must not move."""
     game = _sink("Arctis_Game", 100)
     chat = _sink("Arctis_Chat", 100)
     media = _sink("Arctis_Media", 100)
     aux = _sink("Arctis_Aux", 100)
-    manager = _manager_with_extra([game, chat], [game, chat, media, aux], [])
+    manager = _manager_with_channels([game, chat, media, aux], ["game"])
 
     manager.set_mix(70, 40)
 
@@ -216,12 +218,12 @@ def test_set_mix_leaves_media_and_aux_untouched_by_default():
     assert aux not in touched
 
 
-def test_set_mix_skips_extra_channel_already_at_target():
-    """The anti-OSD-flicker optimization must hold for Media/Aux too."""
+def test_set_mix_skips_configured_channel_already_at_target():
+    """The anti-OSD-flicker optimization must hold for every configured channel."""
     game = _sink("Arctis_Game", 100)
     chat = _sink("Arctis_Chat", 100)
     media = _sink("Arctis_Media", 70)  # already at the dial's target
-    manager = _manager_with_extra([game, chat], [game, chat, media], ["media"])
+    manager = _manager_with_channels([game, chat, media], ["media"])
 
     manager.set_mix(70, 40)
 
