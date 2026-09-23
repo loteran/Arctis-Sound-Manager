@@ -466,68 +466,107 @@ def _is_physical_arctis(sink_name: str) -> bool:
     return "SteelSeries_Arctis" in sink_name and not sink_name.startswith("Arctis_")
 
 
-def _best_card_profile(card) -> object | None:
-    """The profile PulseAudio/ACP's own priority ranking says this card should
-    be on — whichever offers at least one sink (an input-only or fully-off
-    profile is never useful to ASM) and the highest ``priority`` among the
-    ones the card currently reports ``available``.
+def _expected_card_profile(card) -> str | None:
+    """Pick the profile that should give *card* a working analog sink.
 
-    No per-headset-model hardcoding: ACP already computes ``priority`` to
-    reflect exactly "the richest profile this card's ports currently
-    support" (e.g. an analog+mono-mic combo outranks analog-only, which
-    outranks digital, which outranks ``pro-audio``), the same ranking its own
-    auto-profile logic would pick on fresh discovery. Reading it back here
-    means this works unmodified across every Arctis family ASM supports,
-    not just the one profile string a single model happened to be tested on.
+    Deliberately not a hardcoded literal: ASM manages several Arctis models
+    (Nova 7, Nova Elite, Nova 4, Nova Pro Omni/Wireless, Nova 3P/3X...) and
+    their cards do not all name their working profile the same way (e.g. a
+    mono-fallback mic on some, stereo on others). Guessing one fixed string
+    and force-applying it to every card whose name merely contains
+    "SteelSeries_Arctis" would fight whatever profile a *different* model
+    actually needs. Instead this looks at what the card itself advertises:
+
+    - if exactly one non-"off" profile both drives an analog output and
+      pairs it with an input (the common single-purpose-USB-DAC shape,
+      "output:analog-stereo+input:*"), that is the answer;
+    - otherwise, if the card has exactly one non-"off" profile at all
+      (true for every Arctis DAC seen so far — one working profile, plus
+      "off"), that is the answer;
+    - otherwise there is more than one plausible candidate and no way to
+      confidently pick — return None and let the caller leave it alone
+      rather than guess.
     """
-    candidates = [p for p in card.profile_list if p.available and p.n_sinks > 0]
-    if not candidates:
-        return None
-    return max(candidates, key=lambda p: p.priority)
+    profiles = [p for p in card.profile_list if p.name != "off"]
+    stereo_io = [p for p in profiles
+                 if p.name.startswith("output:analog-stereo") and "+input:" in p.name]
+    if len(stereo_io) == 1:
+        return stereo_io[0].name
+    if len(profiles) == 1:
+        return profiles[0].name
+    return None
 
 
-def ensure_card_profile(pulse: pulsectl.Pulse) -> bool:
-    """Detect and restore the Arctis card's profile if something changed it.
+def ensure_card_profile(pulse: pulsectl.Pulse, sinks: list) -> bool:
+    """Restore the Arctis card's profile if its analog sink has gone missing.
 
-    System sound-settings UIs (GNOME Settings, Cinnamon's sound applet, KDE's
-    Audio Volume applet) can and do change a card's active profile directly
-    when the user merely clicks the device in a dropdown — not just the
-    default sink. Nothing in PipeWire/WirePlumber proactively reverts an
-    explicit profile change like that (auto-profile only acts on a card's
-    initial discovery, not against a later explicit pick), so it sticks: the
-    card is left on some other profile (``off``, ``pro-audio``, an S/PDIF
-    profile), its analog output/input sinks disappear from the graph
-    entirely, and the headset goes silent with no error anywhere — every
-    loopback and EQ link ASM already manages was pointed at a sink that no
-    longer exists, and every other watchdog pass only checks whether
-    *streams* are linked to the sinks it expects, never whether the card
-    exposing those sinks is even in the right profile to begin with.
+    System sound-settings UIs (GNOME Settings, Cinnamon's sound applet,
+    KDE's Audio Volume applet) can and do change a card's active ALSA
+    profile directly when the user merely clicks the device in a dropdown —
+    not just the default sink. Nothing restores that afterwards: the card
+    can be left on a profile that exposes no analog output/input at all
+    (``off``, ``pro-audio``, an S/PDIF-only profile), its physical sink
+    disappears from the PipeWire graph entirely, and the headset goes
+    silent with no error anywhere — every loopback and EQ link ASM already
+    manages was pointed at a sink that no longer exists, and every other
+    watchdog pass only ever checks whether *streams* are linked to the
+    sinks it expects, never whether the card exposing those sinks is even
+    in a profile that provides them.
 
-    Idempotent and cheap: a no-op read (``card_list()``) on every tick, and a
-    single ``card_profile_set`` call only on the rare tick where the profile
-    is actually wrong. Skipped entirely when the card is not present (headset
-    unplugged/off) or when nothing on it looks like a usable profile at all.
+    Keyed on the physical sink's actual presence in *sinks* (a fact this
+    tick already observed), not on comparing profile names: a card still
+    exposing its analog sink under some other, equally valid profile is
+    left alone. That is also what keeps this generic across every Arctis
+    model ASM supports, instead of needing a per-model expected-profile
+    table (see :func:`_expected_card_profile`).
 
-    Returns True if the profile was corrected this tick.
+    Cheap in the common case: no ``card_list()`` call at all when the
+    physical sink is present, which is every tick except the rare one
+    where something external broke it.
+
+    Returns True if the profile was corrected this tick. The caller should
+    treat that as "worth re-reading sinks", not as a guarantee the analog
+    sink is already back — WirePlumber creates the corresponding PipeWire
+    node in reaction to the profile change, which is not guaranteed to have
+    landed by the time this call returns; a tick where it hasn't yet will
+    simply catch it on the next pass.
     """
-    card = next(
-        (c for c in pulse.card_list() if "SteelSeries_Arctis" in c.name), None,
-    )
-    if card is None:
+    if any(_is_physical_arctis(s.name) for s in sinks):
         return False
-    best = _best_card_profile(card)
-    if best is None:
+
+    cards = [c for c in pulse.card_list() if "SteelSeries_Arctis" in c.name]
+    if len(cards) != 1:
+        if len(cards) > 1:
+            log.warning(
+                "Multiple Arctis cards present (%s) with no analog sink up — "
+                "can't tell which one to restore, leaving profiles alone.",
+                [c.name for c in cards],
+            )
         return False
+    card = cards[0]
+
+    expected = _expected_card_profile(card)
     active = card.profile_active.name if card.profile_active else None
-    if active == best.name:
+    if expected is None:
+        log.warning(
+            "Arctis card '%s' has no analog sink (profile is '%s') and more "
+            "than one plausible profile to restore (%s) — leaving it alone.",
+            card.name, active, sorted(p.name for p in card.profile_list),
+        )
         return False
+    if active == expected:
+        # Profile already looks right; the sink is missing for some other
+        # reason (device still settling, mid-reconnect) — nothing to fix
+        # here.
+        return False
+
     log.warning(
-        "Arctis card profile was '%s' (expected '%s') — restoring it. "
-        "This usually means a system sound-settings UI changed the "
+        "Arctis card '%s' has no analog sink (profile is '%s') — restoring "
+        "'%s'. This usually means a system sound-settings UI changed the "
         "device's profile directly.",
-        active, best.name,
+        card.name, active, expected,
     )
-    pulse.card_profile_set(card, best.name)
+    pulse.card_profile_set(card, expected)
     return True
 
 
@@ -714,11 +753,23 @@ def _process_tick(pulse: pulsectl.Pulse) -> None:
 
     sinks = pulse.sink_list()
 
-    # Card profile sovereignty check (R1-adjacent): must run before anything
-    # else touches `sinks`, since a corrected profile changes which physical
-    # sinks actually exist this tick — every check below has to see the
-    # post-restore graph, not a stale one missing the analog sink entirely.
-    if ensure_card_profile(pulse):
+    # Repatriation is keyed on the headset's actual power state (R2), never
+    # on which sink happens to be default: a saved override is sovereign
+    # (R1) and must be enforced even while e.g. HDMI is the default sink. An
+    # UNKNOWN power state (daemon down, D-Bus unreachable) fails safe to
+    # "touch nothing" (R3).
+    headset_power = get_headset_power()
+
+    # Card profile watchdog: also gated on R3, even though it queries pulse
+    # directly rather than the D-Bus status daemon. arctis-video-router.service
+    # only requires pipewire.service, not arctis-manager.service (see the two
+    # .service units), so the daemon that answers get_headset_power() can be
+    # down/restarting while this tick keeps running. Restoring a profile in
+    # that window would fight a deliberate manual change made while the user
+    # can't get a straight answer from ASM about the headset's state either —
+    # same "don't act on a state we can't reason about" posture as R3, so it
+    # gets the same gate rather than being treated as exempt.
+    if headset_power != HeadsetPower.UNKNOWN and ensure_card_profile(pulse, sinks):
         sinks = pulse.sink_list()
 
     server_info = pulse.server_info()
@@ -728,12 +779,6 @@ def _process_tick(pulse: pulsectl.Pulse) -> None:
         k in default_sink_name for k in ("Arctis_", "SteelSeries_Arctis")
     )
 
-    # Repatriation is keyed on the headset's actual power state (R2), never
-    # on which sink happens to be default: a saved override is sovereign
-    # (R1) and must be enforced even while e.g. HDMI is the default sink. An
-    # UNKNOWN power state (daemon down, D-Bus unreachable) fails safe to
-    # "touch nothing" (R3).
-    headset_power = get_headset_power()
     # Which channels still lead somewhere audible with the headset down. A
     # channel with its own output device is not dead just because the headset
     # is, and everything below has to stop assuming otherwise.

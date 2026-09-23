@@ -150,6 +150,9 @@ class _FakePulse:
         return _FakeServerInfo(self._default_sink_name)
 
     def card_list(self):
+        # No card-profile-watchdog fixtures in this file — every test here
+        # already omits a physical Arctis sink, so ensure_card_profile()
+        # falls through to this and finds nothing to restore.
         return []
 
     def sink_input_move(self, si_index, target_index):

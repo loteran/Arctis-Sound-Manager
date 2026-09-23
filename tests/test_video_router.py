@@ -305,21 +305,15 @@ class _FakeServerInfo:
 
 
 class _FakeCardProfile:
-    def __init__(self, name: str, priority: int = 1, n_sinks: int = 1, available: bool = True):
+    def __init__(self, name: str):
         self.name = name
-        self.priority = priority
-        self.n_sinks = n_sinks
-        self.available = available
 
 
 class _FakeCard:
-    def __init__(self, name: str, active_profile: str | None, profiles: list):
+    def __init__(self, name: str, active_profile: str | None, available_profiles: list[str]):
         self.name = name
-        self.profile_list = list(profiles)
-        self.profile_active = next(
-            (p for p in self.profile_list if p.name == active_profile),
-            _FakeCardProfile(active_profile) if active_profile else None,
-        )
+        self.profile_active = _FakeCardProfile(active_profile) if active_profile else None
+        self.profile_list = [_FakeCardProfile(p) for p in available_profiles]
 
 
 class _FakePulse:
@@ -330,9 +324,9 @@ class _FakePulse:
         self._sinks = sinks
         self._sink_inputs = sink_inputs
         self._default_sink_name = default_sink_name
-        self._cards = cards if cards is not None else []
+        self._cards = cards or []
         self.moves: list[tuple[int, int]] = []
-        self.card_profile_sets: list[tuple[str, str]] = []
+        self.profile_sets: list[tuple[str, str]] = []
 
     def sink_list(self):
         return self._sinks
@@ -346,9 +340,9 @@ class _FakePulse:
     def card_list(self):
         return self._cards
 
-    def card_profile_set(self, card, profile):
-        self.card_profile_sets.append((card.name, profile))
-        card.profile_active = _FakeCardProfile(profile)
+    def card_profile_set(self, card, profile_name: str):
+        self.profile_sets.append((card.name, profile_name))
+        card.profile_active = _FakeCardProfile(profile_name)
 
     def sink_input_move(self, si_index: int, target_index: int):
         self.moves.append((si_index, target_index))
@@ -532,6 +526,146 @@ def test_tick_unknown_power_status_moves_nothing():
     assert pulse.moves == []
     assert si.sink == chat.index
     mock_save.assert_not_called()
+
+
+# ── card profile watchdog (silent audio loss when a sound-settings UI ──────
+# ── flips the Arctis card's ALSA profile away from analog-stereo) ──────────
+
+_OMNI_CARD_NAME = "alsa_card.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00"
+_OMNI_PHYSICAL_SINK = "alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.analog-stereo"
+
+
+def test_expected_card_profile_picks_the_stereo_io_profile():
+    card = _FakeCard(_OMNI_CARD_NAME, "off",
+                      ["off", "output:analog-stereo+input:mono-fallback"])
+    assert (video_router._expected_card_profile(card)
+            == "output:analog-stereo+input:mono-fallback")
+
+
+def test_expected_card_profile_falls_back_to_sole_non_off_profile():
+    """Some model's only non-off profile might not match the
+    output:analog-stereo+input:* shape (e.g. a stereo-only mic naming) — if
+    it's the only alternative to 'off', it's still the answer."""
+    card = _FakeCard("alsa_card.usb-SteelSeries_Arctis_7-00", "off",
+                      ["off", "output:analog-stereo+input:analog-stereo"])
+    assert (video_router._expected_card_profile(card)
+            == "output:analog-stereo+input:analog-stereo")
+
+
+def test_expected_card_profile_none_when_ambiguous():
+    """Two equally plausible non-off profiles and neither is uniquely the
+    analog-stereo+input shape: refuse to guess."""
+    card = _FakeCard(_OMNI_CARD_NAME, "off",
+                      ["off", "pro-audio", "output:iec958-stereo+input:mono-fallback"])
+    assert video_router._expected_card_profile(card) is None
+
+
+def test_ensure_card_profile_noop_when_physical_sink_present():
+    """The analog sink is up under whatever profile is active — even if it's
+    not the profile this function would have picked, nothing is fought."""
+    physical = _FakeSink(2, _OMNI_PHYSICAL_SINK)
+    card = _FakeCard(_OMNI_CARD_NAME, "pro-audio",
+                      ["off", "pro-audio", "output:analog-stereo+input:mono-fallback"])
+    pulse = _FakePulse([physical], [], default_sink_name=physical.name, cards=[card])
+
+    assert video_router.ensure_card_profile(pulse, pulse.sink_list()) is False
+    assert pulse.profile_sets == []
+
+
+def test_ensure_card_profile_restores_when_sink_missing():
+    hdmi = _FakeSink(0, "alsa_output.hdmi-stereo")
+    card = _FakeCard(_OMNI_CARD_NAME, "off",
+                      ["off", "output:analog-stereo+input:mono-fallback"])
+    pulse = _FakePulse([hdmi], [], default_sink_name=hdmi.name, cards=[card])
+
+    assert video_router.ensure_card_profile(pulse, pulse.sink_list()) is True
+    assert pulse.profile_sets == [(_OMNI_CARD_NAME, "output:analog-stereo+input:mono-fallback")]
+    assert card.profile_active.name == "output:analog-stereo+input:mono-fallback"
+
+
+def test_ensure_card_profile_noop_when_card_absent():
+    """Headset unplugged/off — no card to restore a profile on."""
+    hdmi = _FakeSink(0, "alsa_output.hdmi-stereo")
+    pulse = _FakePulse([hdmi], [], default_sink_name=hdmi.name, cards=[])
+
+    assert video_router.ensure_card_profile(pulse, pulse.sink_list()) is False
+
+
+def test_ensure_card_profile_noop_when_ambiguous():
+    """More than one plausible profile and no confident pick — log and leave
+    it, never guess (same fail-safe posture as the rest of this file)."""
+    hdmi = _FakeSink(0, "alsa_output.hdmi-stereo")
+    card = _FakeCard(_OMNI_CARD_NAME, "off",
+                      ["off", "pro-audio", "output:iec958-stereo+input:mono-fallback"])
+    pulse = _FakePulse([hdmi], [], default_sink_name=hdmi.name, cards=[card])
+
+    assert video_router.ensure_card_profile(pulse, pulse.sink_list()) is False
+    assert pulse.profile_sets == []
+
+
+def test_ensure_card_profile_noop_when_multiple_arctis_cards():
+    """Can't tell which of several matching cards actually lost its sink —
+    picking one arbitrarily could restore the wrong device's profile."""
+    hdmi = _FakeSink(0, "alsa_output.hdmi-stereo")
+    card_a = _FakeCard(_OMNI_CARD_NAME, "off",
+                        ["off", "output:analog-stereo+input:mono-fallback"])
+    card_b = _FakeCard("alsa_card.usb-SteelSeries_Arctis_7-00", "off",
+                        ["off", "output:analog-stereo+input:analog-stereo"])
+    pulse = _FakePulse([hdmi], [], default_sink_name=hdmi.name, cards=[card_a, card_b])
+
+    assert video_router.ensure_card_profile(pulse, pulse.sink_list()) is False
+    assert pulse.profile_sets == []
+
+
+def test_tick_restores_card_profile_then_sees_the_recovered_sink():
+    """The profile fix runs before the rest of the tick decides what the
+    default/Arctis sink is, so a same-tick recovery is visible downstream —
+    not just claimed by a docstring, but exercised by mutating sink_list()
+    from within the fake's card_profile_set(), the way a real WirePlumber
+    reacting to the profile change would (eventually) also expose the sink."""
+    physical = _FakeSink(2, _OMNI_PHYSICAL_SINK)
+    hdmi = _FakeSink(0, "alsa_output.hdmi-stereo")
+    card = _FakeCard(_OMNI_CARD_NAME, "off",
+                      ["off", "output:analog-stereo+input:mono-fallback"])
+    pulse = _FakePulse([hdmi], [], default_sink_name=hdmi.name, cards=[card])
+
+    original_set = pulse.card_profile_set
+
+    def _restore_and_expose_sink(card_, profile_name):
+        original_set(card_, profile_name)
+        pulse._sinks.append(physical)
+
+    pulse.card_profile_set = _restore_and_expose_sink
+
+    with patch("arctis_sound_manager.scripts.video_router.get_headset_power",
+               return_value=HeadsetPower.ON), \
+         patch("arctis_sound_manager.scripts.video_router.load_overrides", return_value={}), \
+         patch("arctis_sound_manager.scripts.video_router.save_overrides"):
+        _process_tick(pulse)
+
+    assert card.profile_active.name == "output:analog-stereo+input:mono-fallback"
+    assert physical in pulse.sink_list()
+
+
+def test_tick_unknown_power_status_does_not_restore_card_profile():
+    """R3 also gates the card profile watchdog: arctis-video-router.service
+    only requires pipewire.service, not arctis-manager.service, so the D-Bus
+    status daemon can be down while this tick still runs. Restoring the
+    profile in that window would fight a possible deliberate manual change
+    made while ASM itself can't reason about the headset's state either."""
+    hdmi = _FakeSink(0, "alsa_output.hdmi-stereo")
+    card = _FakeCard(_OMNI_CARD_NAME, "off",
+                      ["off", "output:analog-stereo+input:mono-fallback"])
+    pulse = _FakePulse([hdmi], [], default_sink_name=hdmi.name, cards=[card])
+
+    with patch("arctis_sound_manager.scripts.video_router.get_headset_power",
+               return_value=HeadsetPower.UNKNOWN), \
+         patch("arctis_sound_manager.scripts.video_router.load_overrides", return_value={}), \
+         patch("arctis_sound_manager.scripts.video_router.save_overrides"):
+        _process_tick(pulse)
+
+    assert pulse.profile_sets == []
+    assert card.profile_active.name == "off"
 
 
 def test_get_headset_power_caches_within_ttl():
@@ -887,135 +1021,6 @@ def test_adoption_guard_and_pin_guard_agree_on_the_hardware():
     headset = "alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.analog-stereo"
     assert _is_physical_arctis(headset)
     assert not _is_asm_channel(headset)
-
-
-# ── ensure_card_profile — sound-settings UIs changing the card profile ───────
-#
-# System sound-settings UIs (Cinnamon's sound applet, GNOME Settings, KDE's
-# Audio Volume applet) can and do change a card's active profile directly —
-# not just the default sink. Nothing in PipeWire/WirePlumber proactively
-# reverts an explicit profile change like that, so it sticks: the analog
-# output/input sinks vanish from the graph entirely and the headset goes
-# silent with no error anywhere. Every other watchdog pass only checks
-# whether streams are linked to the sinks it expects, never whether the card
-# exposing those sinks is even in the right profile.
-#
-# _best_card_profile() picks the highest-priority profile with at least one
-# sink, mirroring PulseAudio/ACP's own priority ranking rather than a single
-# hardcoded profile string — so these tests exercise real per-model profile
-# shapes (a Nova Pro Wireless's analog+mono-mic combo, a plain analog-only
-# card, one with no usable profile at all), not just one fixed name.
-
-from arctis_sound_manager.scripts.video_router import ensure_card_profile
-
-_ANALOG_MIC = _FakeCardProfile("output:analog-stereo+input:mono-fallback", priority=6501, n_sinks=1)
-_ANALOG_ONLY = _FakeCardProfile("output:analog-stereo", priority=6500, n_sinks=1)
-_DIGITAL_MIC = _FakeCardProfile("output:iec958-stereo+input:mono-fallback", priority=5501, n_sinks=1)
-_PRO_AUDIO = _FakeCardProfile("pro-audio", priority=1, n_sinks=1)
-_OFF = _FakeCardProfile("off", priority=0, n_sinks=0)
-_MIC_ONLY = _FakeCardProfile("input:mono-fallback", priority=1, n_sinks=0)
-
-
-def test_ensure_card_profile_restores_wrong_profile():
-    card = _FakeCard(
-        "alsa_card.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00",
-        active_profile="off",
-        profiles=[_OFF, _ANALOG_MIC, _PRO_AUDIO],
-    )
-    pulse = _FakePulse([], [], "", cards=[card])
-
-    assert ensure_card_profile(pulse) is True
-    assert pulse.card_profile_sets == [(card.name, "output:analog-stereo+input:mono-fallback")]
-    assert card.profile_active.name == "output:analog-stereo+input:mono-fallback"
-
-
-def test_ensure_card_profile_picks_highest_priority_available_profile():
-    """No profile name is hardcoded: whichever combination the card's own
-    priorities rank highest wins, so this generalizes to any Arctis model's
-    own profile shape instead of the one this fix happened to be tested on
-    (analog+mic outranks analog-only, digital+mic, and pro-audio here)."""
-    card = _FakeCard(
-        "alsa_card.usb-SteelSeries_Arctis_Nova_5-00",
-        active_profile="pro-audio",
-        profiles=[_OFF, _DIGITAL_MIC, _ANALOG_ONLY, _ANALOG_MIC, _PRO_AUDIO],
-    )
-    pulse = _FakePulse([], [], "", cards=[card])
-
-    assert ensure_card_profile(pulse) is True
-    assert card.profile_active.name == "output:analog-stereo+input:mono-fallback"
-
-
-def test_ensure_card_profile_noop_when_already_correct():
-    card = _FakeCard(
-        "alsa_card.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00",
-        active_profile="output:analog-stereo+input:mono-fallback",
-        profiles=[_OFF, _ANALOG_MIC, _PRO_AUDIO],
-    )
-    pulse = _FakePulse([], [], "", cards=[card])
-
-    assert ensure_card_profile(pulse) is False
-    assert pulse.card_profile_sets == []
-
-
-def test_ensure_card_profile_noop_when_card_absent():
-    """Headset unplugged/off — nothing to restore a profile on."""
-    pulse = _FakePulse([], [], "", cards=[])
-    assert ensure_card_profile(pulse) is False
-    assert pulse.card_profile_sets == []
-
-
-def test_ensure_card_profile_noop_when_no_usable_profile_available():
-    """Every profile with an actual sink is unavailable (or there is none) —
-    nothing sane to set, must not guess or crash."""
-    card = _FakeCard(
-        "alsa_card.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00",
-        active_profile="off",
-        profiles=[_OFF, _MIC_ONLY],
-    )
-    pulse = _FakePulse([], [], "", cards=[card])
-
-    assert ensure_card_profile(pulse) is False
-    assert pulse.card_profile_sets == []
-    assert card.profile_active.name == "off"
-
-
-def test_ensure_card_profile_ignores_other_cards():
-    other_card = _FakeCard(
-        "alsa_card.usb-Generic_USB_Audio-00",
-        active_profile="off",
-        profiles=[_OFF, _ANALOG_ONLY],
-    )
-    pulse = _FakePulse([], [], "", cards=[other_card])
-
-    assert ensure_card_profile(pulse) is False
-    assert pulse.card_profile_sets == []
-
-
-def test_tick_restores_card_profile_then_sees_the_recovered_sink():
-    """Integration: _process_tick must restore a wrong profile BEFORE doing
-    anything else this tick, so a saved override enforced later in the same
-    pass can actually see the physical sink the profile fix just brought
-    back — not a stale sink list missing it entirely."""
-    card = _FakeCard(
-        "alsa_card.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00",
-        active_profile="off",
-        profiles=[_OFF, _ANALOG_MIC],
-    )
-    chat = _FakeSink(1, "Arctis_Chat")
-    si = _FakeSinkInput(10, sink=chat.index, proplist={"application.name": "Discord"})
-    pulse = _FakePulse([chat], [si], default_sink_name=chat.name, cards=[card])
-
-    with patch("arctis_sound_manager.scripts.video_router.get_headset_power",
-               return_value=HeadsetPower.ON), \
-         patch("arctis_sound_manager.scripts.video_router.load_overrides",
-               return_value={"Discord": "Arctis_Chat"}), \
-         patch("arctis_sound_manager.scripts.video_router.save_overrides"):
-        _process_tick(pulse)
-
-    assert pulse.card_profile_sets == [(card.name, "output:analog-stereo+input:mono-fallback")]
-    assert card.profile_active.name == "output:analog-stereo+input:mono-fallback"
-
-
 
 
 # ── ASM's own chain nodes are never applications (1.4.26 regression) ──────────
