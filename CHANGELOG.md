@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.28] - 24 September 2026
+
+### Added
+
+- **A software ChatMix bar on the Channels page.** It balances Chat
+  against whichever of Game, Media and Aux you include, follows the
+  headset's own ChatMix dial in real time, and has one compact checkbox
+  per channel underneath it in place of the old per-card "Include in
+  ChatMix" rows. Game can now be left out of the mix too. (#269)
+- **A Master card** for the headset's own physical output. The hardware
+  volume wheel now drives it instead of the system default sink, which
+  may be an unrelated device pinned to Output. (#269)
+- "Redirect audio on connect" can now send the system default to Game or
+  Chat instead of always Media, for users whose default was already
+  the Arctis' own output. (#273)
+
+### Fixed
+
+- The Arctis 7 (2019) dongle dropped off the USB bus about once a minute
+  while ASM was running. The status poll sent its battery and ChatMix
+  requests back to back; every command frame now honours the profile's
+  `time_between_commands_ms` gap, not just the init sequence. (#271)
+- A headset that answers no command at all (every write timing out) is
+  now reset over USB automatically, instead of staying dead through
+  reinstalls and daemon restarts. The first reset after boot was also
+  being skipped. (#272)
+- The GUI crashed at startup on Ubuntu when `pacman` was installed but
+  never answered during install-method detection. A hung package manager
+  is now treated as absent. (#274)
+- Streams moved to Aux played into a dead end until the output device
+  was changed by hand: the watchdog never linked the Aux EQ output.
+  (#209)
+- ASM no longer forces a card profile back when the headset's analog
+  sink is already present under another valid profile.
+- The redirect-on-connect channel setting showed its raw key instead of
+  a label. (#273)
+
 ## [1.4.27] - 21 September 2026
 
 ### Added
