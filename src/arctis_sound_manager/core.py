@@ -1940,11 +1940,19 @@ class CoreEngine:
 
         self.station_volume = new_station_volume
 
-        default_sink = self.pa_audio_manager.get_default_device()
-        if default_sink is not None:
-            node_name = default_sink.proplist.get('node.name', '')
-            if node_name:
-                self.pa_audio_manager.set_sink_volume_by_node(node_name, self.station_volume)
+        # Target the headset's own physical output — downstream of every
+        # virtual channel — rather than the OS default sink. The default
+        # sink can be an unrelated external device (e.g. Output pinned to a
+        # TV/AVR) that has no bearing on what's actually audible through the
+        # headset, and moving its volume instead of the headset's own can
+        # cap how loud the wheel is able to make the channel someone is
+        # actually listening to (Master, decoupled from Output).
+        node_name = device_state.get_physical_out()
+        if not node_name:
+            default_sink = self.pa_audio_manager.get_default_device()
+            node_name = default_sink.proplist.get('node.name', '') if default_sink is not None else None
+        if node_name:
+            self.pa_audio_manager.set_sink_volume_by_node(node_name, self.station_volume)
 
     def manage_mix_change(self):
         if not self.device_status or not self.device_config:

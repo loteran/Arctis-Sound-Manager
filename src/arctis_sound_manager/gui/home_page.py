@@ -73,6 +73,7 @@ from arctis_sound_manager.gui.components import (
     CHAT_ICON,
     GAME_ICON,
     HDMI_ICON,
+    HEADPHONE_ICON,
     MEDIA_ICON,
     SvgIconWidget,
 )
@@ -275,6 +276,11 @@ def chatmix_percentages_to_bar_position(channels_pct: int, chat_pct: int) -> int
 CARD_MIN_WIDTH = 260
 CARD_MIN_WIDTH_TIGHT = 205
 
+# Master isn't a channel with its own theme color — it's the headset's own
+# physical volume, so it stays a neutral gray across every theme instead of
+# following COLOR_GAME/COLOR_CHAT/etc.
+MASTER_COLOR = "#9E9E9E"
+
 
 def _read_aux_enabled() -> bool:
     """Whether the optional Aux channel is switched on.
@@ -348,7 +354,7 @@ class AudioCard(QWidget):
         header_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
 
         if svg_path:
-            icon = SvgIconWidget(svg_path, accent_color, size=72, width=96)
+            icon = SvgIconWidget(svg_path, accent_color, size=36, width=48)
             header_layout.addWidget(icon)
 
         self._name_lbl = QLabel(channel_name)
@@ -410,30 +416,6 @@ class AudioCard(QWidget):
 
         self._apps_widget.setFixedHeight(100)
         outer.addWidget(self._apps_widget)
-
-        # ChatMix-inclusion toggle (#249): whether the physical dial's
-        # non-chat side moves this channel's volume alongside Game. Only
-        # Media and Aux ever show this — Game and Chat are the dial's fixed
-        # sides. The row itself stays in the layout at a fixed height for
-        # every card; only the checkbox inside it is hidden for cards that
-        # can't opt in — hiding the row instead dropped its height from
-        # those cards' layouts and threw off the vertical alignment of
-        # everything below it against Media/Aux (#264).
-        self._chatmix_row = QWidget()
-        self._chatmix_row.setFixedHeight(30)
-        self._chatmix_row.setStyleSheet("background: transparent;")
-        _cm_layout = QHBoxLayout(self._chatmix_row)
-        _cm_layout.setContentsMargins(12, 0, 12, 4)
-        self._chatmix_checkbox = QCheckBox(I18n.translate("ui", "chatmix_include"))
-        self._chatmix_checkbox.setToolTip(I18n.translate("ui", "chatmix_include_hint"))
-        self._chatmix_checkbox.setStyleSheet(
-            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; background: transparent;"
-        )
-        self._chatmix_checkbox.toggled.connect(self._on_chatmix_toggled)
-        self._chatmix_checkbox.setVisible(False)
-        _cm_layout.addWidget(self._chatmix_checkbox)
-        outer.addWidget(self._chatmix_row)
-        self._chatmix_toggle_cb = None
 
         self._on_change_callback = None
         self._on_drop_callback = None  # fn(si_index, app_name, pid)
@@ -533,27 +515,6 @@ class AudioCard(QWidget):
         if not self._ignore_change and self._on_change_callback:
             self._on_change_callback(value)
 
-    def set_chatmix_toggle_visible(self, visible: bool) -> None:
-        self._chatmix_checkbox.setVisible(visible)
-
-    def set_chatmix_checked(self, checked: bool) -> None:
-        """Set the checkbox state without firing the toggle callback.
-
-        Blocked while set: without it, setting the initial state on
-        population would fire the toggle callback and re-write the setting
-        to whatever it already was.
-        """
-        self._chatmix_checkbox.blockSignals(True)
-        self._chatmix_checkbox.setChecked(checked)
-        self._chatmix_checkbox.blockSignals(False)
-
-    def set_on_chatmix_toggle(self, cb) -> None:
-        self._chatmix_toggle_cb = cb
-
-    def _on_chatmix_toggled(self, checked: bool) -> None:
-        if self._chatmix_toggle_cb:
-            self._chatmix_toggle_cb(checked)
-
 
 # ── App tag with inline move buttons ──────────────────────────────────────────
 
@@ -585,6 +546,13 @@ class _AppTag(QWidget):
             f"color: {color}; font-size: 11pt; font-weight: bold; "
             f"background: transparent; border: none;"
         )
+        # Ignored, not the default Preferred: on the narrow (Aux-on) card
+        # width there isn't room for both a long app name and every move
+        # button (up to five once Aux and Output are counted). Preferred
+        # would keep demanding the name's full width and push the rightmost
+        # button — Output — past the card's edge instead of shrinking the
+        # name first.
+        lbl.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         layout.addWidget(lbl, stretch=1)
 
         # Move buttons — built lazily from registry when first painted
@@ -903,6 +871,7 @@ class HomePage(QWidget):
         self._sink_chat = None
         self._sink_media = None
         self._sink_aux = None
+        self._sink_master = None
         self._sink_ext = None
         self._ext_device_nick: str | None = None  # from settings
         self._connected = False
@@ -1051,11 +1020,20 @@ class HomePage(QWidget):
         self._cards_layout.setSpacing(20)
         self._cards_layout.setContentsMargins(0, 0, 0, 0)
 
+        # Master card: the headset's own physical volume, downstream of every
+        # channel below. Kept separate from Output (an unrelated external
+        # device the user may have pinned) so the hardware volume wheel has
+        # its own dedicated target instead of being capped by whatever
+        # headroom that device's own slider allows. Placed leftmost since it
+        # isn't one of the routable channels.
+        self._master_card = AudioCard(I18n.translate("ui", "master"), MASTER_COLOR, HEADPHONE_ICON)
+        self._master_card.set_on_change(self._on_master_volume_changed)
+        self._cards_layout.addWidget(self._master_card, stretch=1)
+
         # Game card — use active-theme color at construction time
         self._game_card = AudioCard(I18n.translate("ui", "game"), _theme.c("COLOR_GAME"), GAME_ICON)
         self._game_card.set_on_change(self._on_media_volume_changed)
         self._game_card.set_on_drop(lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_GAME))
-        self._game_card.set_on_chatmix_toggle(lambda enabled: self._on_chatmix_toggle("game", enabled))
         self._cards_layout.addWidget(self._game_card, stretch=1)
 
         # Chat card (Arctis_Chat sink)
@@ -1068,7 +1046,6 @@ class HomePage(QWidget):
         self._media_card = AudioCard(I18n.translate("ui", "media"), _theme.c("COLOR_AUX"), MEDIA_ICON)
         self._media_card.set_on_change(self._on_aux_volume_changed)
         self._media_card.set_on_drop(lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_MEDIA))
-        self._media_card.set_on_chatmix_toggle(lambda enabled: self._on_chatmix_toggle("media", enabled))
         self._cards_layout.addWidget(self._media_card, stretch=1)
 
         # Aux card — the opt-in fourth playback channel (#209). Built once and
@@ -1078,7 +1055,6 @@ class HomePage(QWidget):
         self._aux_card = AudioCard(I18n.translate("ui", "aux"), _theme.c("COLOR_AUX2"), MEDIA_ICON)
         self._aux_card.set_on_change(self._on_aux_channel_volume_changed)
         self._aux_card.set_on_drop(lambda si, app, pid: self._on_stream_drop(si, app, pid, SINK_AUX))
-        self._aux_card.set_on_chatmix_toggle(lambda enabled: self._on_chatmix_toggle("aux", enabled))
         self._aux_card.setVisible(False)
         self._cards_layout.addWidget(self._aux_card, stretch=1)
 
@@ -1098,6 +1074,12 @@ class HomePage(QWidget):
         chatmix_bar_outer_layout.setContentsMargins(0, 0, 0, 0)
         chatmix_bar_outer_layout.setSpacing(0)
         chatmix_bar_outer_layout.addStretch(1)
+
+        chatmix_column = QWidget()
+        chatmix_column.setStyleSheet("background: transparent;")
+        chatmix_column_layout = QVBoxLayout(chatmix_column)
+        chatmix_column_layout.setContentsMargins(0, 0, 0, 0)
+        chatmix_column_layout.setSpacing(6)
 
         chatmix_bar_row = QWidget()
         chatmix_bar_row.setStyleSheet("background: transparent;")
@@ -1132,7 +1114,33 @@ class HomePage(QWidget):
         )
         chatmix_bar_row_layout.addWidget(self._chatmix_bar_chat_lbl)
 
-        chatmix_bar_outer_layout.addWidget(chatmix_bar_row, stretch=2)
+        chatmix_column_layout.addWidget(chatmix_bar_row)
+
+        # Which channel(s) ride alongside Game on the bar's non-chat side
+        # (#249, #269): small checkboxes next to the channel name, same
+        # pattern used for sink selection elsewhere, rather than a full
+        # sentence repeated on every card.
+        chatmix_channels_row = QWidget()
+        chatmix_channels_row.setStyleSheet("background: transparent;")
+        chatmix_channels_layout = QHBoxLayout(chatmix_channels_row)
+        chatmix_channels_layout.setContentsMargins(0, 0, 0, 0)
+        chatmix_channels_layout.setSpacing(16)
+        chatmix_channels_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+
+        self._chatmix_channel_checkboxes: dict[str, QCheckBox] = {}
+        for channel in ("game", "media", "aux"):
+            cb = QCheckBox(I18n.translate("ui", channel))
+            cb.setToolTip(I18n.translate("ui", "chatmix_include_hint"))
+            cb.setStyleSheet(
+                f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; background: transparent;"
+            )
+            cb.toggled.connect(lambda checked, ch=channel: self._on_chatmix_toggle(ch, checked))
+            self._chatmix_channel_checkboxes[channel] = cb
+            chatmix_channels_layout.addWidget(cb)
+
+        chatmix_column_layout.addWidget(chatmix_channels_row)
+
+        chatmix_bar_outer_layout.addWidget(chatmix_column, stretch=2)
         chatmix_bar_outer_layout.addStretch(1)
 
         self._apply_aux_visibility(_read_aux_enabled())
@@ -1347,14 +1355,17 @@ class HomePage(QWidget):
         color_chat = _theme.c("COLOR_CHAT")
         color_aux  = _theme.c("COLOR_AUX")
         color_hdmi = _theme.c("COLOR_HDMI")
+        color_master = MASTER_COLOR
 
         # Update each card's accent and restyle
         self._game_card._accent = color_game
         self._chat_card._accent = color_chat
         self._media_card._accent = color_aux
         self._ext_card._accent = color_hdmi
+        self._master_card._accent = color_master
 
-        for card in (self._game_card, self._chat_card, self._media_card, self._ext_card):
+        for card in (self._game_card, self._chat_card, self._media_card,
+                     self._master_card, self._ext_card):
             card.apply_theme(t)
 
         # Update _AppTag registry with fresh accent colors
@@ -1382,6 +1393,9 @@ class HomePage(QWidget):
         )
         self._ext_card._name_lbl.setStyleSheet(
             f"color: {color_hdmi}; font-size: 14pt; font-weight: normal; background: transparent;"
+        )
+        self._master_card._name_lbl.setStyleSheet(
+            f"color: {color_master}; font-size: 14pt; font-weight: normal; background: transparent;"
         )
 
     # ── Toggle handler ─────────────────────────────────────────────────────────
@@ -1900,6 +1914,21 @@ class HomePage(QWidget):
 
             self._sync_chatmix_bar(game_pct, chat_pct, media_pct, aux_pct)
 
+            # Master: the headset's own physical output, downstream of every
+            # channel above — independent of whatever device is selected for
+            # Output below, which may be a different, unrelated sink entirely.
+            sink_master = next(
+                (s for s in sinks
+                 if (s.name.startswith("alsa_output") or s.name.startswith("bluez_output"))
+                 and ("SteelSeries" in s.name
+                      or s.proplist.get("device.vendor.id", "") == STEELSERIES_VENDOR_ID)),
+                None,
+            )
+            if sink_master is not None:
+                master_pct = round(sink_master.volume.value_flat * 100)
+                self._master_card.set_volume(master_pct)
+                self._sink_master = sink_master
+
             # External output sink (non-Arctis physical sink)
             if self._ext_device_nick:
                 # User chose a specific device in settings. Match node.nick OR
@@ -2348,6 +2377,9 @@ class HomePage(QWidget):
     def _on_ext_volume_changed(self, value: int):
         self._apply_volume(self._sink_ext, value)
 
+    def _on_master_volume_changed(self, value: int):
+        self._apply_volume(self._sink_master, value)
+
     def _on_aux_channel_volume_changed(self, value: int):
         self._apply_volume(getattr(self, "_sink_aux", None), value)
 
@@ -2407,14 +2439,15 @@ class HomePage(QWidget):
     # ── ChatMix channels (#249, #269) ─────────────────────────────────────────
 
     def _refresh_chatmix_toggles(self) -> None:
-        """Show/hide and (re)set the "Include in ChatMix" checkboxes.
+        """Show/hide and (re)set the channel-inclusion checkboxes under the bar.
 
-        Game and Media always offer it. Aux only does while the Aux channel
-        itself is on — its card is already hidden entirely otherwise, but the
-        checkbox is kept in step too rather than relying on that alone.
-        Called at startup and whenever Aux's own enabled state changes, since
-        that's the only thing that can make the Aux checkbox go from
-        irrelevant to relevant (or back) during a running session.
+        Game and Media always offer theirs. Aux only does while the Aux
+        channel itself is on — its card is already hidden entirely
+        otherwise, but the checkbox is kept in step too rather than relying
+        on that alone. Called at startup and whenever Aux's own enabled
+        state changes, since that's the only thing that can make the Aux
+        checkbox go from irrelevant to relevant (or back) during a running
+        session.
         """
         try:
             from arctis_sound_manager.settings import GeneralSettings
@@ -2422,17 +2455,25 @@ class HomePage(QWidget):
         except Exception:  # noqa: BLE001
             channels = {"game"}
 
-        self._game_card.set_chatmix_toggle_visible(True)
-        self._game_card.set_chatmix_checked("game" in channels)
-
-        self._media_card.set_chatmix_toggle_visible(True)
-        self._media_card.set_chatmix_checked("media" in channels)
-
         aux_on = not self._aux_card.isHidden()
-        self._aux_card.set_chatmix_toggle_visible(aux_on)
-        self._aux_card.set_chatmix_checked("aux" in channels)
+        self._set_chatmix_checkbox("game", True, "game" in channels)
+        self._set_chatmix_checkbox("media", True, "media" in channels)
+        self._set_chatmix_checkbox("aux", aux_on, "aux" in channels)
 
         self._refresh_chatmix_bar_label(channels)
+
+    def _set_chatmix_checkbox(self, channel: str, visible: bool, checked: bool) -> None:
+        """Set a channel checkbox's visibility/state without firing its toggle.
+
+        Blocked while set: without it, setting the initial state on
+        population would fire the toggle callback and re-write the setting
+        to whatever it already was.
+        """
+        cb = self._chatmix_channel_checkboxes[channel]
+        cb.setVisible(visible)
+        cb.blockSignals(True)
+        cb.setChecked(checked)
+        cb.blockSignals(False)
 
     def _on_chatmix_toggle(self, channel: str, enabled: bool) -> None:
         """Add/remove *channel* ('game'/'media'/'aux') from the non-chat side.
@@ -2461,7 +2502,10 @@ class HomePage(QWidget):
             if not updated:
                 updated = ['game']
                 try:
-                    self._game_card.set_chatmix_checked(True)
+                    cb = self._chatmix_channel_checkboxes["game"]
+                    cb.blockSignals(True)
+                    cb.setChecked(True)
+                    cb.blockSignals(False)
                 except Exception:  # noqa: BLE001
                     pass
             gs.chatmix_channels = updated
@@ -2530,11 +2574,12 @@ class HomePage(QWidget):
     def _fit_cards_to_row(self) -> None:
         """Give every card a minimum width the window can actually satisfy.
 
-        The row is four cards wide normally and five with Aux on, laid out
-        side by side with 20 px gaps and taking three quarters of the window.
-        At 260 px each, five cards need a window around 1840 px — wider than a
-        1366 px laptop screen, and the row has no scroll area to fall back on,
-        so Qt would simply force the window past the edge of the display.
+        The row is five cards wide normally (Game/Chat/Media/Master/Output)
+        and six with Aux on, laid out side by side with 20 px gaps and taking
+        three quarters of the window. At 260 px each, six cards need a window
+        around 2080 px — wider than a 1366 px laptop screen, and the row has
+        no scroll area to fall back on, so Qt would simply force the window
+        past the edge of the display.
 
         The cards keep their Expanding policy, so this only lowers the floor:
         on a wide screen they still spread out exactly as before.
@@ -2544,7 +2589,7 @@ class HomePage(QWidget):
         # counts zero cards and picks the wrong width. isHidden() answers about
         # the widget itself, whatever its parent is doing.
         shown = [c for c in self._all_cards() if not c.isHidden()]
-        width = CARD_MIN_WIDTH_TIGHT if len(shown) > 4 else CARD_MIN_WIDTH
+        width = CARD_MIN_WIDTH_TIGHT if len(shown) > 5 else CARD_MIN_WIDTH
         for card in self._all_cards():
             card.setMinimumWidth(width)
 
@@ -2586,7 +2631,7 @@ class HomePage(QWidget):
 
     def _all_cards(self) -> tuple:
         return (self._game_card, self._chat_card, self._media_card,
-                self._aux_card, self._ext_card)
+                self._aux_card, self._master_card, self._ext_card)
 
     def _apply_volume(self, sink, value: int):
         pulse = self._get_pulse()

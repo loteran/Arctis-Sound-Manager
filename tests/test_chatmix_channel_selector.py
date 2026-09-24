@@ -4,11 +4,12 @@
 """Tests for the ChatMix channel selector GUI (#249, #269).
 
 Each of Game, Media and Aux can be included in (or excluded from) the
-ChatMix crossfade via a small checkbox on its card ("Include in ChatMix").
-Game ships on by default, and comes back automatically whenever unchecking
-a card would otherwise leave the selection empty — the bar/dial must always
-drive something. Chat never shows the checkbox: it is the crossfade's fixed
-other half.
+ChatMix crossfade via a small checkbox under the ChatMix bar, one per
+channel, labelled with the channel's own name rather than a full sentence
+repeated on every card. Game ships on by default, and comes back
+automatically whenever unchecking a channel would otherwise leave the
+selection empty — the bar/dial must always drive something. Chat never
+shows a checkbox: it is the crossfade's fixed other half.
 
 Uses the lightweight SimpleNamespace fake-self pattern from
 tests/test_home_page_app_name.py rather than instantiating a real
@@ -28,19 +29,24 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from arctis_sound_manager.gui.home_page import AudioCard, HomePage
+from arctis_sound_manager.gui.home_page import HomePage
 
 
-# ── AudioCard: the checkbox itself ──────────────────────────────────────────
+# ── HomePage: the checkbox itself ───────────────────────────────────────────
 
 class _FakeCheckbox:
-    """Stands in for the real QCheckBox: records blockSignals/setChecked calls
-    in order, so the blockSignals-during-population guard can be verified
-    without a real Qt event loop."""
+    """Stands in for the real QCheckBox: records setVisible/blockSignals/
+    setChecked calls in order, so the blockSignals-during-population guard
+    can be verified without a real Qt event loop."""
 
     def __init__(self):
         self._checked = False
+        self._visible = False
         self.calls: list[tuple[str, object]] = []
+
+    def setVisible(self, value):
+        self.calls.append(("setVisible", value))
+        self._visible = value
 
     def blockSignals(self, value):
         self.calls.append(("blockSignals", value))
@@ -53,44 +59,33 @@ class _FakeCheckbox:
         return self._checked
 
 
-def test_set_chatmix_checked_blocks_signals_around_the_write():
-    """Same guard as set_device_options(): without it, setting the initial
-    state during population would fire the toggle callback and re-write the
-    setting right back to what it already was."""
-    fake_self = SimpleNamespace(_chatmix_checkbox=_FakeCheckbox())
+def test_set_chatmix_checkbox_blocks_signals_around_the_write():
+    """Without it, setting the initial state during population would fire
+    the toggle callback and re-write the setting right back to what it
+    already was."""
+    cb = _FakeCheckbox()
+    fake_self = SimpleNamespace(_chatmix_channel_checkboxes={"game": cb})
 
-    AudioCard.set_chatmix_checked(fake_self, True)
+    HomePage._set_chatmix_checkbox(fake_self, "game", True, True)
 
-    assert fake_self._chatmix_checkbox.calls == [
+    assert cb.calls == [
+        ("setVisible", True),
         ("blockSignals", True),
         ("setChecked", True),
         ("blockSignals", False),
     ]
-    assert fake_self._chatmix_checkbox.isChecked() is True
+    assert cb.isChecked() is True
 
 
-def test_set_chatmix_checked_reflects_false_too():
-    fake_self = SimpleNamespace(_chatmix_checkbox=_FakeCheckbox())
-    fake_self._chatmix_checkbox.setChecked(True)  # pre-existing state
+def test_set_chatmix_checkbox_reflects_false_and_hidden_too():
+    cb = _FakeCheckbox()
+    cb.setChecked(True)  # pre-existing state
+    fake_self = SimpleNamespace(_chatmix_channel_checkboxes={"aux": cb})
 
-    AudioCard.set_chatmix_checked(fake_self, False)
+    HomePage._set_chatmix_checkbox(fake_self, "aux", False, False)
 
-    assert fake_self._chatmix_checkbox.isChecked() is False
-
-
-def test_chatmix_toggled_invokes_the_registered_callback():
-    calls = []
-    fake_self = SimpleNamespace(_chatmix_toggle_cb=lambda enabled: calls.append(enabled))
-
-    AudioCard._on_chatmix_toggled(fake_self, True)
-
-    assert calls == [True]
-
-
-def test_chatmix_toggled_is_a_noop_without_a_registered_callback():
-    fake_self = SimpleNamespace(_chatmix_toggle_cb=None)
-
-    AudioCard._on_chatmix_toggled(fake_self, True)  # must not raise
+    assert cb.isChecked() is False
+    assert cb._visible is False
 
 
 # ── HomePage: reflecting the setting on population ─────────────────────────
@@ -108,25 +103,20 @@ def test_refresh_chatmix_toggles_reflects_current_setting(monkeypatch):
     saved.chatmix_channels = ["game", "media"]
     monkeypatch.setattr(settings_mod.GeneralSettings, "read_from_file", staticmethod(lambda: saved))
 
-    game_card = _fake_card()
-    media_card = _fake_card()
     aux_card = _fake_card()
+    set_cb = MagicMock()
     fake_self = SimpleNamespace(
-        _game_card=game_card,
-        _media_card=media_card,
         _aux_card=aux_card,
+        _set_chatmix_checkbox=set_cb,
         _refresh_chatmix_bar_label=MagicMock(),
     )
 
     HomePage._refresh_chatmix_toggles(fake_self)
 
-    game_card.set_chatmix_toggle_visible.assert_called_once_with(True)
-    game_card.set_chatmix_checked.assert_called_once_with(True)
-    media_card.set_chatmix_toggle_visible.assert_called_once_with(True)
-    media_card.set_chatmix_checked.assert_called_once_with(True)
-    # Aux card is not hidden in this fake, so its toggle is relevant too.
-    aux_card.set_chatmix_toggle_visible.assert_called_once_with(True)
-    aux_card.set_chatmix_checked.assert_called_once_with(False)
+    set_cb.assert_any_call("game", True, True)
+    set_cb.assert_any_call("media", True, True)
+    # Aux card is not hidden in this fake, so its checkbox is relevant too.
+    set_cb.assert_any_call("aux", True, False)
     fake_self._refresh_chatmix_bar_label.assert_called_once_with({"game", "media"})
 
 
@@ -137,20 +127,18 @@ def test_refresh_chatmix_toggles_hides_aux_toggle_when_aux_card_is_hidden(monkey
     saved.chatmix_channels = ["game", "aux"]
     monkeypatch.setattr(settings_mod.GeneralSettings, "read_from_file", staticmethod(lambda: saved))
 
-    game_card = _fake_card()
-    media_card = _fake_card()
     aux_card = _fake_card()
     aux_card.isHidden.return_value = True  # Aux channel itself is off
+    set_cb = MagicMock()
     fake_self = SimpleNamespace(
-        _game_card=game_card,
-        _media_card=media_card,
         _aux_card=aux_card,
+        _set_chatmix_checkbox=set_cb,
         _refresh_chatmix_bar_label=MagicMock(),
     )
 
     HomePage._refresh_chatmix_toggles(fake_self)
 
-    aux_card.set_chatmix_toggle_visible.assert_called_once_with(False)
+    set_cb.assert_any_call("aux", False, True)
 
 
 # ── HomePage: the update path when the user toggles a card's checkbox ──────
@@ -207,12 +195,15 @@ def test_on_chatmix_toggle_removing_game_falls_back_when_selection_would_be_empt
     change_setting = MagicMock()
     monkeypatch.setattr(dbus_wrapper.DbusWrapper, "change_setting", staticmethod(change_setting))
 
-    game_card = _fake_card()
-    fake_self = SimpleNamespace(_game_card=game_card, _refresh_chatmix_bar_label=MagicMock())
+    game_cb = _FakeCheckbox()
+    fake_self = SimpleNamespace(
+        _chatmix_channel_checkboxes={"game": game_cb},
+        _refresh_chatmix_bar_label=MagicMock(),
+    )
     HomePage._on_chatmix_toggle(fake_self, "game", False)
 
     assert saved.chatmix_channels == ["game"]
-    game_card.set_chatmix_checked.assert_called_once_with(True)
+    assert game_cb.isChecked() is True
     change_setting.assert_called_once_with("chatmix_channels", ["game"])
 
 
@@ -227,12 +218,15 @@ def test_on_chatmix_toggle_removing_last_non_game_channel_falls_back_to_game(mon
     change_setting = MagicMock()
     monkeypatch.setattr(dbus_wrapper.DbusWrapper, "change_setting", staticmethod(change_setting))
 
-    game_card = _fake_card()
-    fake_self = SimpleNamespace(_game_card=game_card, _refresh_chatmix_bar_label=MagicMock())
+    game_cb = _FakeCheckbox()
+    fake_self = SimpleNamespace(
+        _chatmix_channel_checkboxes={"game": game_cb},
+        _refresh_chatmix_bar_label=MagicMock(),
+    )
     HomePage._on_chatmix_toggle(fake_self, "media", False)
 
     assert saved.chatmix_channels == ["game"]
-    game_card.set_chatmix_checked.assert_called_once_with(True)
+    assert game_cb.isChecked() is True
     change_setting.assert_called_once_with("chatmix_channels", ["game"])
 
 
