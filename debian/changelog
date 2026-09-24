@@ -1,3 +1,17 @@
+arctis-sound-manager (1.4.28-1) noble; urgency=medium
+
+  * A software ChatMix bar on the Channels page. It balances Chat
+  * A Master card for the headset's own physical output. The hardware
+  * "Redirect audio on connect" can now send the system default to Game or
+  * The Arctis 7 (2019) dongle dropped off the USB bus about once a minute
+  * A headset that answers no command at all (every write timing out) is
+  * The GUI crashed at startup on Ubuntu when pacman was installed but
+  * Streams moved to Aux played into a dead end until the output device
+  * ASM no longer forces a card profile back when the headset's analog
+  * The redirect-on-connect channel setting showed its raw key instead of
+
+ -- loteran <axel.valadon@gmail.com>  Thu, 24 Sep 2026 00:00:00 +0000
+
 arctis-sound-manager (1.4.27-1) noble; urgency=medium
 
   * **The Equalizer tab now has its own output-device picker for Game, Chat,
