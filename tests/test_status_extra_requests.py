@@ -15,12 +15,13 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 import usb.core
 from ruamel.yaml import YAML
 
+from arctis_sound_manager import core as core_mod
 from arctis_sound_manager.config import DeviceConfiguration
 from arctis_sound_manager.core import CoreEngine
 
@@ -98,3 +99,57 @@ def test_a_failing_main_query_still_reaches_the_poll_error_handler():
 
     with pytest.raises(usb.core.USBError):
         CoreEngine.request_device_status(engine)
+
+
+# ── Pacing between the poll's frames (#271) ──────────────────────────────────
+#
+# The Arctis 7 2019 dongle dropped off the USB bus about once a minute while
+# the headset was off, with ASM running only. The poll above put its two
+# frames on the wire back to back every 2s; the profile's
+# time_between_commands_ms was only honoured inside device_init.
+
+def _make_writer(cfg: DeviceConfiguration, clock: list[float]) -> MagicMock:
+    engine = MagicMock()
+    engine.device_config = cfg
+    engine._usb_write_lock = threading.Lock()
+    engine._last_usb_write_monotonic = 0.0
+    engine._command_interface_number.return_value = 5
+    engine.writes = []
+    engine.usb_device.ctrl_transfer.side_effect = (
+        lambda *args: engine.writes.append(clock[0]))
+    return engine
+
+
+def _fake_time(clock: list[float]):
+    def _sleep(seconds: float) -> None:
+        clock[0] += seconds
+    return (patch.object(core_mod.time, "monotonic", side_effect=lambda: clock[0]),
+            patch.object(core_mod.time, "sleep", side_effect=_sleep))
+
+
+def test_back_to_back_frames_are_spaced_by_time_between_commands():
+    cfg = _load_config("arctis_7.yaml")
+    clock = [100.0]
+    engine = _make_writer(cfg, clock)
+
+    fake_monotonic, fake_sleep = _fake_time(clock)
+    with fake_monotonic, fake_sleep:
+        CoreEngine.send_command(engine, [0x0618], 0)
+        CoreEngine.send_command(engine, [0x0624], 0)
+
+    assert engine.writes[1] - engine.writes[0] == pytest.approx(
+        cfg.time_between_commands_ms / 1000)
+
+
+def test_no_wait_once_the_gap_has_already_elapsed():
+    cfg = _load_config("arctis_7.yaml")
+    clock = [100.0]
+    engine = _make_writer(cfg, clock)
+
+    fake_monotonic, fake_sleep = _fake_time(clock)
+    with fake_monotonic, fake_sleep as sleep:
+        CoreEngine.send_command(engine, [0x0618], 0)
+        clock[0] += 2.0  # next poll tick
+        CoreEngine.send_command(engine, [0x0618], 0)
+
+    sleep.assert_not_called()

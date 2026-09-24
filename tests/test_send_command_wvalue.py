@@ -25,12 +25,14 @@ from arctis_sound_manager.core import CoreEngine
 def _make_engine(transport: CommandTransport, command_report_id):
     engine = object.__new__(CoreEngine)
     engine._usb_write_lock = threading.Lock()
+    engine._last_usb_write_monotonic = 0.0
     engine.usb_device = MagicMock()
     engine.device_config = SimpleNamespace(
         command_transport=transport,
         command_report_id=command_report_id,
         command_interface_index=[4, 0],
         command_padding=SimpleNamespace(filler=0x00, length=16),
+        time_between_commands_ms=None,
     )
     return engine
 

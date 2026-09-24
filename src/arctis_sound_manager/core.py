@@ -304,6 +304,9 @@ class CoreEngine:
         self._endpointless_interfaces: set[int] = set()
         self._device_lock = threading.RLock()
         self._usb_write_lock = threading.Lock()
+        # monotonic() of the last frame send_command() put on the wire, so the
+        # next one can honour time_between_commands_ms whoever sends it (#271).
+        self._last_usb_write_monotonic: float = 0.0
 
         # Set to True when kernel_detach hits EACCES on a USB interface
         # (udev rules missing or not yet applied to the connected device).
@@ -3943,8 +3946,21 @@ class CoreEngine:
 
         command_lst = [int.from_bytes([int(command_str[i:i+2], 16)], 'big') for i in range(0, len(command_str), 2)]
 
+        # GG's time-between-commands is a floor between *any* two frames, not
+        # just device_init's. The status poll sends its main request and each
+        # extra_requests entry back to back; on the Arctis 7 2019 dongle that
+        # pair (battery + ChatMix, since #220) landing with no gap every 2s
+        # while the headset is off matches the firmware dropping off the bus
+        # about once a minute, with ASM running only (#271).
+        pace = (self.device_config.time_between_commands_ms or 0) / 1000
+
         try:
             with self._usb_write_lock:
+                if pace:
+                    wait = self._last_usb_write_monotonic + pace - time.monotonic()
+                    if wait > 0:
+                        time.sleep(wait)
+                self._last_usb_write_monotonic = time.monotonic()
                 if endpoint != 0:
                     self.usb_device.write(endpoint, command_lst)
                 else:

@@ -100,6 +100,7 @@ def test_send_command_returns_false_on_usb_error():
     engine = MagicMock()
     engine.device_config = cfg
     engine._usb_write_lock = threading.Lock()
+    engine._last_usb_write_monotonic = 0.0
     engine.usb_device.ctrl_transfer.side_effect = usb.core.USBError("boom")
     engine._command_interface_number.return_value = 3
 
