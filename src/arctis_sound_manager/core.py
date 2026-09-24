@@ -385,7 +385,9 @@ class CoreEngine:
         # prepare_for_sleep() so at most one attempt happens per suspend cycle;
         # the monotonic timestamp additionally rate-limits across cycles.
         self._resume_reset_attempted: bool = False
-        self._last_usb_reset_monotonic: float = 0.0
+        # -inf, not 0.0: monotonic() counts from boot, so a daemon started at
+        # login would otherwise see a reset "0s ago" and skip the first one.
+        self._last_usb_reset_monotonic: float = float('-inf')
 
         # configure_virtual_sinks() runs on the pyudev observer thread, which
         # must not block (it is the single path for every USB hotplug event,
