@@ -83,7 +83,10 @@ def detect_all_install_methods() -> list[InstallMethod]:
             if r.returncode == 0:
                 found.append(method)
                 continue
-        except FileNotFoundError:
+        except (FileNotFoundError, subprocess.SubprocessError):
+            # Absent, or present but hung (a `pacman` that never answers on
+            # Ubuntu, #274) — either way it cannot be the install method, and
+            # the owner query below would only hang on it a second time.
             continue
         # The package may carry another name — a third-party repackage, or a
         # distro convention. Ask which package owns this module instead.
@@ -98,7 +101,7 @@ def detect_all_install_methods() -> list[InstallMethod]:
             )
             if "arctis-sound-manager" in r.stdout:
                 found.append(InstallMethod.PIPX)
-        except FileNotFoundError:
+        except (FileNotFoundError, subprocess.SubprocessError):
             pass
 
     # Detect a pip --user install that shadows a system package manager install.

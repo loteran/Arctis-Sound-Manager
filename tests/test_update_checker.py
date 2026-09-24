@@ -309,6 +309,33 @@ def test_a_renamed_package_is_still_detected_as_a_system_install(monkeypatch):
     assert uc.InstallMethod.RPM in uc.detect_all_install_methods()
 
 
+def test_a_hung_package_manager_does_not_crash_detection(monkeypatch):
+    """A `pacman` on Ubuntu that never answered took the GUI down (#274)."""
+    from arctis_sound_manager import update_checker as uc
+
+    asked: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        asked.append(cmd)
+        if cmd[0] in ("pacman", "pipx"):
+            raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout"))
+        if cmd[:2] == ["dpkg", "-s"]:
+            return SimpleNamespace(returncode=0, stdout="Status: install ok installed\n")
+        return SimpleNamespace(returncode=1, stdout="")
+
+    monkeypatch.setattr(uc.subprocess, "run", fake_run)
+    monkeypatch.setattr(uc.shutil, "which", lambda name: "/usr/bin/pipx" if name == "pipx" else None)
+
+    methods = uc.detect_all_install_methods()
+
+    assert uc.InstallMethod.APT in methods
+    assert uc.InstallMethod.PACMAN not in methods
+    assert uc.InstallMethod.PIPX not in methods
+    # The owner query would only hang on the same pacman a second time.
+    assert [cmd for cmd in asked if cmd[0] == "pacman"] == [
+        ["pacman", "-Q", "arctis-sound-manager"]]
+
+
 # ── Arch: binary repository vs AUR ───────────────────────────────────────────
 
 def test_pacman_upgrade_uses_pacman_when_the_package_is_in_a_repository(monkeypatch):
