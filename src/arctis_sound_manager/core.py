@@ -1537,8 +1537,9 @@ class CoreEngine:
                         and self._idle_off_minutes() > 0) else None
                 )
 
-                from arctis_sound_manager.sonar_to_pipewire import ensure_spatial_eq_links
-                await _enforce_hop("spatial EQ", ensure_spatial_eq_links, ("game", "media"),
+                from arctis_sound_manager.sonar_to_pipewire import (
+                    ensure_spatial_eq_links, spatial_channels)
+                await _enforce_hop("spatial EQ", ensure_spatial_eq_links, spatial_channels(),
                                    skip_targets=_physical_skip_targets)
 
                 # ── Physical output link-enforcement (headset power-cycle) ───
@@ -1647,11 +1648,12 @@ class CoreEngine:
                     elif transition == "restore":
                         if idle_off_minutes > 0:
                             from arctis_sound_manager.sonar_to_pipewire import (
-                                ensure_spatial_eq_links, ensure_physical_output_links)
+                                ensure_spatial_eq_links, ensure_physical_output_links,
+                                spatial_channels)
                             loop = asyncio.get_running_loop()
                             await loop.run_in_executor(
                                 None, functools.partial(ensure_spatial_eq_links,
-                                                         ("game", "media"), link_data))
+                                                         spatial_channels(), link_data))
                             await loop.run_in_executor(
                                 None, functools.partial(ensure_physical_output_links,
                                                          link_data))

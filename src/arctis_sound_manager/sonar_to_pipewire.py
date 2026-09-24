@@ -3692,8 +3692,9 @@ def ensure_spatial_eq_links(
     Parameters
     ----------
     channels:
-        Which EQ channels to (re)link. Only ``"game"``/``"media"`` are
-        meaningful — anything else is silently ignored.
+        Which EQ channels to (re)link. Only channels in
+        :func:`spatial_channels` are meaningful (``"game"``/``"media"``,
+        plus ``"aux"`` when enabled) — anything else is silently ignored.
     data:
         Optional pre-fetched ``pw-dump`` payload, so a caller that already
         fetched one this tick (e.g. the daemon's loopback watchdog) does not
