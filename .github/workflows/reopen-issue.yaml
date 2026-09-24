@@ -1,0 +1,29 @@
+name: Reopen issue on request
+
+# GitHub only lets an issue's author reopen it if they closed it themselves.
+# Issues get closed here when the fix ships, often before the reporter could
+# test it, so a comment starting with /reopen from the issue's author reopens
+# it. Anyone else's /reopen is ignored.
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  reopen:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    if: >-
+      !github.event.issue.pull_request &&
+      github.event.issue.state == 'closed' &&
+      github.event.comment.user.login == github.event.issue.user.login &&
+      startsWith(github.event.comment.body, '/reopen')
+    steps:
+      - name: Reopen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue reopen "$NUMBER" \
+            --comment "Reopened at the author's request. Thanks for testing, the details above will help."
