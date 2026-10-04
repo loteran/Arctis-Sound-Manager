@@ -37,6 +37,7 @@ let
       ../LICENSE
       ../src
       ../scripts/generate_udev_rules.py
+      ../scripts/generate_plasmoid_i18n.py
       ../hrir/EAC_Default.wav
     ];
   };
