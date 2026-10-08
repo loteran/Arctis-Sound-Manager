@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.5.0" date="2026-10-08">
+      <description>
+        <p>Real 7.1 for Game, Media and Aux. These channels now accept 5.1/7.1, so a game set to surround sends its real centre and rear channels instead of a stereo mix. Spatial Audio (HeSuVi) now places those real channels around you; a stereo app still plays exactly as before. Surround passthrough to speakers. A channel sent to a 5.1/7.1 receiver or TV gets its channels as they are, with no headphone rendering. A 5.1 receiver that only has side or rear surrounds gets the other pair folded in instead of losing it. Clean stereo downmix. With Spatial Audio off on a stereo device, surround content is folded into stereo (centre and surrounds at -3 dB) instead of keeping only the front left/right, which used to drop a 7.1 game's dialogue.</p>
+      </description>
+    </release>
     <release version="1.4.34" date="2026-10-04">
       <description>
         <p>DAC Wheel Overlay. Turning the volume wheel on the base station / GameDAC floats a "DAC wheel" bar at the bottom of the screen, in the same place as the ChatMix bar (now called Chat/Mix Overlay). Can be turned off in the settings. Arctis Pro Wireless: spare battery and base station screen. The spare battery charging in the base is shown on the Channels page, and the base's OLED can be used from the DAC page. Arctis Pro Wireless battery stuck at 50% (#305). ASM read the radio link state instead of the battery; it now reads the real battery level.</p>
@@ -199,11 +204,6 @@
     <release version="1.4.6" date="2026-08-23">
       <description>
         <p>The Arctis GameBuds report battery and connection state. The profile said no status request was known for the family, so the tray never showed a percentage and every status row stayed blank. That was out of date rather than true: SteelSeries' own device specification describes the frame in full, for the GameBuds and the Xbox variant alike. Each earbud reports its own 0-100 level; the tray shows the lower of the two, since the bud that dies first is the one that ends the session, and you count as connected when either bud is — which is what the vendor's own firmware does, so wearing a single bud no longer reads as offline. The charging case keeps its percentage to itself: it answers on its own USB product rather than through the dongle. (#202). Two diagnostics for problems that need someone else's hardware. scripts/diagnose-sonar-eq.py answers "where does the EQ chain break?" in five read-only checks ordered so the first failure is the answer — safe mode, the filter-chain unit's LADSPA path, a plugin that fails to load, an EQ node missing or unlinked, a config carrying no filters at all. scripts/reverse-engineering/gamebuds_battery_probe.py finds out whether a headset reports a battery at all, by listening while you put a bud in its case rather than by asking you to capture USB traffic on Windows. (#181). A clips folder on a disconnected drive no longer stops the window opening. With clips on removable media, pulling the drive leaves the mount point behind: it still looks like it exists and answers an I/O error on the first read. That error escaped out of the Clips page while the main window was being built, so the whole window failed — no mixer, no Sonar, no settings, because a disk was not there. The folder is now read defensively, entry by entry, since on failing media some reads succeed and others do not. (#204).</p>
-      </description>
-    </release>
-    <release version="1.4.5" date="2026-08-23">
-      <description>
-        <p>Choose which Arctis ASM drives when several are plugged in. Keeping a GameBuds dongle in a port next to a Nova Pro Wireless base station meant ASM picked whichever one happened to be enumerated first — invisible, unchangeable, and only avoidable by unplugging the other. Settings now lists the Arctis units actually detected and remembers the one to drive. The choice applies immediately, and an unplugged preferred unit falls back to the other headset rather than to nothing. (#199). The Nova Elite answers its own status request. The profile mapped only the individual asynchronous pushes, so every status row stayed blank from startup until each control had reported once. The combined reply its own vendor specification defines is now decoded. A bug report says which kernel driver holds the USB interface. libusb only answers yes or no, so a refused claim never said who was in the way. It matters more from Linux 7.3 on, where an in-kernel hid-steelseries driver will bind to the same interface on 25+ models.</p>
       </description>
     </release>
   </releases>
