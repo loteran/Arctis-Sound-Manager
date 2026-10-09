@@ -192,6 +192,37 @@ def test_stderr_beats_a_zero_exit_status():
         assert pw_utils.grant_link_permissions(10, 20) is False
 
 
+def test_registry_race_noise_is_not_a_refusal():
+    """pw-cli binds every global on connecting; on a busy graph objects vanish
+    under it and it prints one line per stale proxy, while the grant itself
+    went through. Taking that for a refusal skipped every retry and left the
+    link refused for good — thousands of times in one SteamOS report (#181).
+    Verbatim stderr from that report.
+    """
+    def run(argv, **_k):
+        return SimpleNamespace(returncode=0, stdout=b'', stderr=(
+            b'remote 0: error id:65 seq:128 res:-2 (No such file or directory): no global 83\n'
+            b'remote 0: error id:212 seq:422 res:-116 (Stale file handle): no global 233 any more\n'
+            b'remote 0: error id:0 seq:572 res:-2 (No such file or directory): unknown resource 72 op:7\n'))
+
+    with patch.object(pw_utils, '_pw_dump', _dump), \
+         patch.object(pw_utils, '_pw_run', run), \
+         patch.object(pw_utils.shutil, 'which', lambda _: '/usr/bin/pw-cli'):
+        assert pw_utils.grant_link_permissions(10, 20) is True
+
+
+def test_real_error_amid_registry_noise_still_fails():
+    def run(argv, **_k):
+        return SimpleNamespace(returncode=0, stdout=b'', stderr=(
+            b'remote 0: error id:65 seq:128 res:-2 (No such file or directory): no global 83\n'
+            b'Error: "permissions: unknown global \'232\'"\n'))
+
+    with patch.object(pw_utils, '_pw_dump', _dump), \
+         patch.object(pw_utils, '_pw_run', run), \
+         patch.object(pw_utils.shutil, 'which', lambda _: '/usr/bin/pw-cli'):
+        assert pw_utils.grant_link_permissions(10, 20) is False
+
+
 # ---------------------------------------------------------------------------
 # Retrying the repair, and telling a refusal apart from a missing node (#181)
 # ---------------------------------------------------------------------------

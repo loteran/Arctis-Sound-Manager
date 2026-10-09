@@ -7,6 +7,7 @@ Used to detect and move apps like mpv/haruna that bypass PulseAudio.
 """
 import json
 import logging
+import re
 import shutil
 import subprocess
 import time
@@ -175,6 +176,15 @@ def grant_link_permissions(out_port: int, in_port: int) -> bool:
     return granted
 
 
+# pw-cli binds a proxy to every global it sees on connecting; objects that go
+# away meanwhile (a loopback being recreated, filter-chain restarting) earn one
+# "no global N" / "unknown resource N op:M" line each on stderr. That is pw-cli's
+# own bookkeeping racing the graph, not the permissions command failing — read
+# as a refusal, it threw away grants that had worked and the link was never
+# retried, exactly on the busy graphs that need it most (#181).
+_PW_CLI_REGISTRY_RACE = re.compile(r"\bno global \d+|\bunknown resource \d+ op:")
+
+
 def _grant_owners_rwxml(owners: set[str], context: str) -> bool:
     """Raise each of *owners* to ``rwxml`` on every object. Shared by
     :func:`grant_link_permissions` and :func:`grant_props_permissions`.
@@ -193,7 +203,9 @@ def _grant_owners_rwxml(owners: set[str], context: str) -> bool:
             logger.warning("could not grant %s permissions to client %s: %r",
                            context, owner, exc)
             continue
-        err = (r.stderr or b"").decode(errors="replace").strip()
+        err = "\n".join(
+            line for line in (r.stderr or b"").decode(errors="replace").splitlines()
+            if line.strip() and not _PW_CLI_REGISTRY_RACE.search(line))
         if r.returncode == 0 and not err:
             granted = True
         else:
