@@ -135,6 +135,7 @@ class QMainApp(QBaseDesktopApp):
         self.dbus_wrapper.sig_status.connect(self._dac_page.update_status)
         self.dbus_wrapper.sig_settings.connect(self._home_page.update_settings)
         self.dbus_wrapper.sig_settings.connect(self._headset_page.update_settings)
+        self.dbus_wrapper.sig_settings.connect(self._equalizer_page.update_settings)
         self.dbus_wrapper.sig_settings.connect(self._dac_page.update_settings)
         self.dbus_wrapper.sig_settings.connect(self._device_page.update_settings)
 

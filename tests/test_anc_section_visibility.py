@@ -24,7 +24,7 @@ pytest.importorskip("PySide6")
 
 from unittest.mock import MagicMock
 
-from arctis_sound_manager.gui.device_page import DevicePage
+from arctis_sound_manager.gui.headset_page import HeadsetPage
 
 
 def _page_stub(visible: bool = False) -> MagicMock:
@@ -32,7 +32,7 @@ def _page_stub(visible: bool = False) -> MagicMock:
     page = MagicMock()
     page._anc_section = MagicMock()
     page._anc_section.isVisible.return_value = visible
-    page._update_anc_visibility = lambda s: DevicePage._update_anc_visibility(page, s)
+    page._update_anc_visibility = lambda s: HeadsetPage._update_anc_visibility(page, s)
     return page
 
 
@@ -66,5 +66,5 @@ def test_hidden_by_default_before_any_device_is_known():
     """Built hidden, so a headset without ANC never flashes it on startup."""
     import inspect
 
-    source = inspect.getsource(DevicePage.__init__)
+    source = inspect.getsource(HeadsetPage.__init__)
     assert "self._anc_section.setVisible(False)" in source

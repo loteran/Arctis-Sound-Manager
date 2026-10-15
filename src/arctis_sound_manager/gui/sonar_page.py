@@ -22,6 +22,7 @@ from arctis_sound_manager import service_control as sc
 from arctis_sound_manager.gui.channel_output_selector import ChannelOutputSelector
 from arctis_sound_manager.gui.output_selector import OutputSelector
 from arctis_sound_manager.gui.search_pick_dialog import SearchPickDialog
+from arctis_sound_manager.gui.settings_widget import QSettingsWidget
 from arctis_sound_manager.i18n import I18n
 
 from PySide6.QtCore import QThread, Qt, QTimer, Signal, Slot
@@ -3414,6 +3415,57 @@ class _AutoGamePresetBar(QFrame):
         )
 
 
+def _channel_tabs_qss() -> str:
+    """Folder tabs joined to the panel under them.
+
+    The selected tab takes the panel's colour, an accent line on top and no
+    bottom edge, and overlaps the panel's border by a pixel: it reads as the
+    lid of the box below, so it is plain which channel the EQ is for. Before,
+    the panel had no border at all and the tabs looked like a row of buttons
+    sitting above unrelated cards.
+    """
+    return f"""
+        QTabWidget::pane {{
+            border: 1px solid {_theme.c('BORDER')};
+            border-radius: 10px;
+            border-top-left-radius: 0;
+            background: transparent;
+            top: -1px;
+            padding: 12px;
+        }}
+        QTabBar::tab {{
+            background: transparent;
+            color: {_theme.c('TEXT_SECONDARY')};
+            border: 1px solid transparent;
+            border-bottom: none;
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+            padding: 7px 20px;
+            margin-right: 2px;
+            font-size: 11pt;
+        }}
+        QTabBar::tab:selected {{
+            background: {_theme.c('BG_MAIN')};
+            color: {_theme.c('TEXT_PRIMARY')};
+            border: 1px solid {_theme.c('BORDER')};
+            border-top: 2px solid {_theme.c('ACCENT')};
+            border-bottom: 1px solid {_theme.c('BG_MAIN')};
+            font-weight: bold;
+        }}
+        QTabBar::tab:!selected:hover {{
+            background: {_theme.c('BG_BUTTON')};
+            color: {_theme.c('TEXT_PRIMARY')};
+        }}
+    """
+
+
+def _micro_source_qss() -> str:
+    return f"""
+        QWidget {{ background-color: {_theme.c('BG_MAIN')}; color: {_theme.c('TEXT_PRIMARY')}; }}
+        QLabel  {{ background-color: transparent; color: {_theme.c('TEXT_SECONDARY')}; font-size: 10pt; }}
+    """
+
+
 class SonarPage(QWidget):
     def __init__(self, embedded: bool = False, parent: QWidget | None = None):
         super().__init__(parent)
@@ -3481,31 +3533,7 @@ class SonarPage(QWidget):
         # ── Channel tabs ──────────────────────────────────────────────────────
         from PySide6.QtWidgets import QTabWidget
         self._tabs = QTabWidget()
-        self._tabs.setStyleSheet(f"""
-            QTabWidget::pane {{
-                border: none;
-                background: transparent;
-            }}
-            QTabBar::tab {{
-                background: {BG_BUTTON};
-                color: {TEXT_SECONDARY};
-                border: 1px solid {BORDER};
-                border-bottom: none;
-                border-radius: 6px 6px 0 0;
-                padding: 7px 22px;
-                margin-right: 3px;
-                font-size: 11pt;
-            }}
-            QTabBar::tab:selected {{
-                background: {BG_CARD};
-                color: {TEXT_PRIMARY};
-                border-color: {BORDER};
-            }}
-            QTabBar::tab:hover {{
-                background: {BG_BUTTON_HOVER};
-                color: {TEXT_PRIMARY};
-            }}
-        """)
+        self._tabs.setStyleSheet(_channel_tabs_qss())
 
         self._game_widget   = SonarChannelWidget("game")
         self._media_widget  = SonarChannelWidget("media")
@@ -3541,6 +3569,17 @@ class SonarPage(QWidget):
             layout = widget.layout()
             if layout is not None:
                 layout.insertWidget(0, selector)
+
+        # And the microphone the Micro chain listens to. Every other channel
+        # had its device on top of its tab; this one only had it in Settings,
+        # so on the tab where you tune the mic there was no way to pick it.
+        # The same setting as the one in Settings: both read it from the
+        # settings push and write it through change_setting.
+        self._micro_source = QSettingsWidget(
+            None, None, "general", keys=("micro_input_source",), compact=True)
+        _micro_layout = self._micro_widget.layout()
+        if _micro_layout is not None:
+            _micro_layout.insertWidget(0, self._micro_source, 0, Qt.AlignmentFlag.AlignLeft)
 
         self._tabs.addTab(self._game_widget,   _t("game"))
         self._tabs.addTab(self._media_widget,  _t("media"))
@@ -3834,6 +3873,10 @@ class SonarPage(QWidget):
             self._pending_apply_all = False
             self._schedule_apply_all()
 
+    def update_settings(self, settings: dict) -> None:
+        """The daemon's settings push, for the Micro tab's input picker."""
+        self._micro_source.update_settings(settings)
+
     def apply_theme(self, t=None) -> None:
         """Restyle the Sonar page and all its channel widgets for the active theme."""
         self.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
@@ -3843,31 +3886,10 @@ class SonarPage(QWidget):
         if hasattr(self, "_auto_game_preset_bar"):
             self._auto_game_preset_bar.apply_theme(t)
 
-        self._tabs.setStyleSheet(f"""
-            QTabWidget::pane {{
-                border: none;
-                background: transparent;
-            }}
-            QTabBar::tab {{
-                background: {_theme.c('BG_BUTTON')};
-                color: {_theme.c('TEXT_SECONDARY')};
-                border: 1px solid {_theme.c('BORDER')};
-                border-bottom: none;
-                border-radius: 6px 6px 0 0;
-                padding: 7px 22px;
-                margin-right: 3px;
-                font-size: 11pt;
-            }}
-            QTabBar::tab:selected {{
-                background: {_theme.c('BG_CARD')};
-                color: {_theme.c('TEXT_PRIMARY')};
-                border-color: {_theme.c('BORDER')};
-            }}
-            QTabBar::tab:hover {{
-                background: {_theme.c('BG_BUTTON_HOVER')};
-                color: {_theme.c('TEXT_PRIMARY')};
-            }}
-        """)
+        self._tabs.setStyleSheet(_channel_tabs_qss())
+        if hasattr(self, "_micro_source"):
+            self._micro_source.setStyleSheet(_micro_source_qss())
+            self._micro_source.apply_theme()
 
         # Propagate to each channel widget (they own cards, macro sliders, etc.)
         for widget in (self._game_widget, self._media_widget, self._chat_widget,

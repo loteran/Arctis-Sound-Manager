@@ -26,7 +26,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from arctis_sound_manager.gui.anc_widget import QAncWidget
 from arctis_sound_manager.gui.qt_widgets.no_wheel_combo import NoWheelComboBox
 from arctis_sound_manager.gui.qt_widgets.q_dual_state import QDualState
 from arctis_sound_manager.i18n import I18n
@@ -34,7 +33,12 @@ from arctis_sound_manager.gui.components import (
     DividerLine,
     SectionTitle,
 )
-from arctis_sound_manager.gui.settings_widget import QSettingsWidget
+from arctis_sound_manager.gui.headset_cards import SettingsCard
+from arctis_sound_manager.gui.settings_widget import (
+    _COMPACT_LABEL_WIDTH,
+    QSettingsWidget,
+    status_key_names,
+)
 from arctis_sound_manager.autostart import active_backend_name, autostart_enabled, set_autostart
 log = logging.getLogger(__name__)
 
@@ -203,41 +207,33 @@ class DevicePage(QWidget):
         self._content = content
         content_layout = QVBoxLayout(content)
         content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        content_layout.setContentsMargins(36, 12, 36, 12)
-        content_layout.setSpacing(0)
+        content_layout.setContentsMargins(28, 20, 28, 24)
+        content_layout.setSpacing(8)
         self._settings_groups: list[QSettingsWidget] = []
+        self._cards: list[SettingsCard] = []
 
-        # ── General section ────────────────────────────────────────────────────
         content_layout.addWidget(SectionTitle(I18n.translate("ui", "general_settings")))
         content_layout.addSpacing(4)
 
-        # ── Top row : check for updates (left) + language selector (right) ──────
-        title_row = QHBoxLayout()
-        title_row.setSpacing(16)
+        # Every group is a card, the way the Headset page is laid out: a title,
+        # then label/control rows sized to their content. The page used to be
+        # one long column of oversized controls, wider than the window.
+
+        # ── General ───────────────────────────────────────────────────────────
+        general = self._add_card(content_layout, "settings_group_general")
 
         self._check_update_btn = _styled_button(I18n.translate("ui", "check_for_updates"))
-        self._check_update_btn.setFixedWidth(220)
+        self._check_update_btn.setFixedHeight(30)
+        self._check_update_btn.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         self._check_update_btn.clicked.connect(self._on_check_update)
-        title_row.addWidget(self._check_update_btn)
 
         self._update_status_lbl = QLabel("")
         self._update_status_lbl.setStyleSheet(
             f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
         )
         self._update_status_lbl.setWordWrap(True)
-        title_row.addWidget(self._update_status_lbl, stretch=1)
 
         self._update_url: str = ""
-
-        lang_row = QHBoxLayout()
-        lang_row.setSpacing(6)
-        lang_row.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-
-        lang_label = QLabel("Language:")
-        lang_label.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
-        )
-        lang_row.addWidget(lang_label)
 
         self._lang_combo = NoWheelComboBox()
         self._lang_combo.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -270,30 +266,7 @@ class DevicePage(QWidget):
             self._lang_codes.append(code)
         self._lang_combo.currentIndexChanged.connect(self._on_lang_combo)
         self._refresh_lang_combo()
-        lang_row.addWidget(self._lang_combo)
-        title_row.addLayout(lang_row)
-        content_layout.addLayout(title_row)
-        content_layout.addSpacing(8)
-
-        # ── Startup toggle ─────────────────────────────────────────────────────
-        # Mirror QSettingsWidget.get_widget() row structure exactly so this
-        # manual toggle lines up with the general/device-settings toggles above.
-        # The row layout must be *set on a QWidget* (not added to content_layout
-        # via addLayout): a sub-layout added with addLayout inherits the parent
-        # layout's spacing (0 here), whereas a layout set on a widget resolves to
-        # the style's default label→control spacing (6px) — the same value
-        # get_widget() gets. Without this the toggle sat 6px to the left.
-        startup_roww = QWidget()
-        startup_row = QHBoxLayout()
-        startup_row.setContentsMargins(0, 4, 0, 4)
-        startup_roww.setLayout(startup_row)
-        startup_label = QLabel(I18n.translate("ui", "launch_at_startup"))
-        startup_label.setFixedWidth(260)
-        startup_label.setWordWrap(True)
-        startup_label.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 11pt; background: transparent;"
-        )
-        startup_row.addWidget(startup_label)
+        self._add_row(general, I18n.translate("ui", "language"), self._lang_combo)
 
         self._startup_toggle = QDualState(
             off_text=I18n.translate("settings_values", "off"),
@@ -303,26 +276,9 @@ class DevicePage(QWidget):
         )
         self._startup_toggle.setToolTip(f"Autostart via: {active_backend_name()}")
         self._startup_toggle.checkStateChanged.connect(self._on_autostart_toggled)
-        startup_row.addWidget(self._startup_toggle)
-        startup_row.addStretch(1)
-        content_layout.addWidget(startup_roww)
+        self._add_row(general, I18n.translate("ui", "launch_at_startup"), self._startup_toggle)
 
-        content_layout.addSpacing(16)
-
-        # ── Telemetry toggle ───────────────────────────────────────────────────
         from arctis_sound_manager.telemetry import get_consent, set_consent
-
-        telemetry_roww = QWidget()
-        telemetry_row = QHBoxLayout()
-        telemetry_row.setContentsMargins(0, 4, 0, 4)
-        telemetry_roww.setLayout(telemetry_row)
-        telemetry_label = QLabel("Telemetry — share anonymous usage data")
-        telemetry_label.setFixedWidth(260)
-        telemetry_label.setWordWrap(True)
-        telemetry_label.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 11pt; background: transparent;"
-        )
-        telemetry_row.addWidget(telemetry_label)
 
         consent = get_consent()
         self._telemetry_toggle = QDualState(
@@ -334,49 +290,40 @@ class DevicePage(QWidget):
         self._telemetry_toggle.checkStateChanged.connect(
             lambda state: set_consent(state == Qt.CheckState.Checked)
         )
-        telemetry_row.addWidget(self._telemetry_toggle)
-        telemetry_row.addStretch(1)
-        content_layout.addWidget(telemetry_roww)
-
-        content_layout.addSpacing(16)
+        self._add_row(general, "Telemetry — share anonymous usage data", self._telemetry_toggle)
 
         # Whatever no other group claims lands here, so a setting added to
         # GeneralSettings shows up even before it is given a group.
         self._general_widget = self._add_settings_group(
-            content_layout, None, None,
-            exclude=_INTERFACE_KEYS + _AUDIO_KEYS + _MICRO_KEYS + _GENERIC_KEYS)
-        content_layout.addSpacing(12)
-        content_layout.addWidget(DividerLine())
-        content_layout.addSpacing(12)
+            general, None, exclude=_INTERFACE_KEYS + _AUDIO_KEYS + _MICRO_KEYS + _GENERIC_KEYS)
 
-        # ── Interface & tray: theme, then the tray settings ────────────────────────────────────────────────────
-        theme_title = SectionTitle(I18n.translate("ui", "settings_group_interface"))
-        content_layout.addWidget(theme_title)
-        content_layout.addSpacing(6)
+        update_row = self._add_row(general, I18n.translate("ui", "check_for_updates"),
+                                   self._check_update_btn)
+        update_row.layout().insertWidget(2, self._update_status_lbl, 1)
 
-        # Ligne 1 : combo thème
-        theme_combo_row = QHBoxLayout()
+        # ── Interface & tray: theme, then the tray settings ───────────────────
+        interface = self._add_card(content_layout, "settings_group_interface")
+
         self._theme_combo = NoWheelComboBox()
-        self._theme_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        theme_combo_row.addWidget(self._theme_combo)
-        theme_combo_row.addStretch(1)
-        content_layout.addLayout(theme_combo_row)
-        content_layout.addSpacing(6)
+        self._theme_combo.setMinimumWidth(200)
+        self._theme_combo.setMaximumWidth(320)
+        self._add_row(interface, I18n.translate("ui", "theme"), self._theme_combo)
 
-        # Ligne 2 : boutons
-        theme_btn_row = QHBoxLayout()
         self._theme_create_btn = QPushButton(I18n.translate("ui", "theme_create"))
         self._theme_edit_btn = QPushButton(I18n.translate("ui", "theme_edit"))
         self._theme_delete_btn = QPushButton(I18n.translate("ui", "theme_delete"))
         self._theme_export_btn = QPushButton(I18n.translate("ui", "theme_export"))
         self._theme_import_btn = QPushButton(I18n.translate("ui", "theme_import"))
-        theme_btn_row.addWidget(self._theme_create_btn)
-        theme_btn_row.addWidget(self._theme_edit_btn)
-        theme_btn_row.addWidget(self._theme_delete_btn)
-        theme_btn_row.addWidget(self._theme_export_btn)
-        theme_btn_row.addWidget(self._theme_import_btn)
-        theme_btn_row.addStretch(1)
-        content_layout.addLayout(theme_btn_row)
+        theme_buttons = QWidget()
+        theme_btn_row = QHBoxLayout(theme_buttons)
+        theme_btn_row.setContentsMargins(0, 0, 0, 0)
+        theme_btn_row.setSpacing(4)
+        self._theme_buttons = (self._theme_create_btn, self._theme_edit_btn,
+                               self._theme_delete_btn, self._theme_export_btn,
+                               self._theme_import_btn)
+        for btn in self._theme_buttons:
+            theme_btn_row.addWidget(btn)
+        self._add_row(interface, "", theme_buttons)
 
         # Connexions des widgets de thème
         self._theme_combo.currentIndexChanged.connect(self._on_theme_combo_changed)
@@ -386,74 +333,14 @@ class DevicePage(QWidget):
         self._theme_export_btn.clicked.connect(self._on_theme_export)
         self._theme_import_btn.clicked.connect(self._on_theme_import)
 
-        content_layout.addSpacing(6)
-        self._add_settings_group(content_layout, None, _INTERFACE_KEYS)
-        content_layout.addSpacing(12)
-        content_layout.addWidget(DividerLine())
-        content_layout.addSpacing(12)
+        self._add_settings_group(interface, _INTERFACE_KEYS)
 
-        # ── ANC / Transparent section ─────────────────────────────────────────
-        # Grouped in one container so it can be hidden wholesale: plenty of
-        # headsets have no noise cancelling at all (the Nova 7P, for one), and
-        # showing them dead controls reads as a broken app rather than as an
-        # absent feature. Shown only once the daemon reports the setting.
-        self._anc_section = QWidget(content)
-        anc_layout = QVBoxLayout(self._anc_section)
-        anc_layout.setContentsMargins(0, 0, 0, 0)
-        anc_layout.setSpacing(0)
-
-        anc_layout.addWidget(SectionTitle(I18n.translate("ui", "noise_cancelling")))
-        anc_layout.addSpacing(4)
-
-        self._anc_widget = QAncWidget(self._anc_section)
-        self._anc_widget.setStyleSheet(f"""
-            QWidget {{ background-color: {BG_MAIN}; color: {TEXT_PRIMARY}; }}
-            QLabel  {{ background-color: transparent; color: {TEXT_PRIMARY}; font-size: 11pt; }}
-        """)
-        anc_layout.addWidget(self._anc_widget)
-        anc_layout.addSpacing(6)
-        anc_layout.addWidget(DividerLine())
-        anc_layout.addSpacing(6)
-
-        self._anc_section.setVisible(False)
-        content_layout.addWidget(self._anc_section)
-
-        # ── Device Settings section ────────────────────────────────────────────
-        device_settings_title = SectionTitle(I18n.translate("ui", "device_settings"))
-        content_layout.addWidget(device_settings_title)
-        content_layout.addSpacing(4)
-
-        self._device_widget = QSettingsWidget(content, None, "device")
-        self._device_widget.setStyleSheet(
-            f"""
-            QWidget {{
-                background-color: {BG_MAIN};
-                color: {TEXT_PRIMARY};
-            }}
-            QLabel {{
-                background-color: transparent;
-                color: {TEXT_PRIMARY};
-                font-size: 11pt;
-            }}
-            """
-        )
-        content_layout.addWidget(self._device_widget)
-        content_layout.addSpacing(6)
-
-        # ── Horizontal divider ─────────────────────────────────────────────────
-        content_layout.addWidget(DividerLine())
-        content_layout.addSpacing(6)
-
-        self._add_settings_group(content_layout, "settings_group_audio", _AUDIO_KEYS)
-        content_layout.addSpacing(6)
-        content_layout.addWidget(DividerLine())
-        content_layout.addSpacing(6)
-        self._add_settings_group(content_layout, "settings_group_micro", _MICRO_KEYS)
-        content_layout.addSpacing(6)
-        content_layout.addWidget(DividerLine())
-        content_layout.addSpacing(6)
-        self._add_settings_group(content_layout, "settings_group_generic", _GENERIC_KEYS)
-        content_layout.addSpacing(6)
+        # The headset's own settings (sidetone, mic volume, noise cancelling…)
+        # live on the Headset page, next to the headset they change. This page
+        # keeps what belongs to the app.
+        self._add_settings_group(self._add_card(content_layout, "settings_group_audio"), _AUDIO_KEYS)
+        self._add_settings_group(self._add_card(content_layout, "settings_group_micro"), _MICRO_KEYS)
+        self._add_settings_group(self._add_card(content_layout, "settings_group_generic"), _GENERIC_KEYS)
 
         content_layout.addStretch(1)
 
@@ -468,14 +355,34 @@ class DevicePage(QWidget):
         # Apply the currently-active theme on first paint.
         self.apply_theme()
 
-    def _add_settings_group(self, layout: QVBoxLayout, title_key: str | None,
-                            keys, exclude=()) -> QSettingsWidget:
-        """One panel of "general" settings, under its own title if given."""
-        if title_key:
-            layout.addWidget(SectionTitle(I18n.translate("ui", title_key)))
-            layout.addSpacing(4)
-        widget = QSettingsWidget(self._content, None, "general", keys=keys, exclude=exclude)
-        widget.setStyleSheet(_settings_panel_qss())
+    def _add_card(self, layout: QVBoxLayout, title_key: str) -> QVBoxLayout:
+        """A titled card on the page; returns the layout its rows go in."""
+        body = QWidget()
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(3)
+        card = SettingsCard(I18n.translate("ui", title_key), body, self._content)
+        layout.addWidget(card)
+        self._cards.append(card)
+        return body_layout
+
+    def _add_row(self, layout: QVBoxLayout, label: str, control: QWidget) -> QWidget:
+        """A label/control row lined up with the rows QSettingsWidget builds."""
+        row = QWidget()
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 4, 0, 4)
+        text = QLabel(label)
+        text.setFixedWidth(_COMPACT_LABEL_WIDTH)
+        text.setWordWrap(True)
+        row_layout.addWidget(text)
+        row_layout.addWidget(control)
+        row_layout.addStretch(1)
+        layout.addWidget(row)
+        return row
+
+    def _add_settings_group(self, layout: QVBoxLayout, keys, exclude=()) -> QSettingsWidget:
+        """One panel of "general" settings, inside a card."""
+        widget = QSettingsWidget(None, None, "general", keys=keys, exclude=exclude, compact=True)
         layout.addWidget(widget)
         self._settings_groups.append(widget)
         return widget
@@ -488,20 +395,24 @@ class DevicePage(QWidget):
         self._scroll.setStyleSheet(f"QScrollArea {{ background-color: {_theme.c('BG_MAIN')}; border: none; }}")
         self._content.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
 
-        # Settings panels
-        for widget in [getattr(self, "_device_widget", None), *getattr(self, "_settings_groups", [])]:
-            if widget is not None:
-                widget.setStyleSheet(_settings_panel_qss())
-                widget.apply_theme()
-
-        # ANC widget background + pill colors
-        if hasattr(self, "_anc_widget"):
-            self._anc_widget.setStyleSheet(f"""
-                QWidget {{ background-color: {_theme.c('BG_MAIN')}; color: {_theme.c('TEXT_PRIMARY')}; }}
-                QLabel  {{ background-color: transparent; color: {_theme.c('TEXT_PRIMARY')}; font-size: 11pt; }}
+        # Cards restyle their own contents, settings panels included.
+        for card in getattr(self, "_cards", []):
+            card.apply_theme()
+        for widget in getattr(self, "_settings_groups", []):
+            widget.apply_theme()
+        for btn in getattr(self, "_theme_buttons", ()):
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {_theme.c('BG_BUTTON')};
+                    color: {_theme.c('TEXT_PRIMARY')};
+                    border: 1px solid {_theme.c('BG_BUTTON_HOVER')};
+                    border-radius: 6px;
+                    padding: 4px 10px;
+                    font-size: 9pt;
+                }}
+                QPushButton:hover {{ background-color: {_theme.c('BG_BUTTON_HOVER')}; }}
+                QPushButton:disabled {{ color: {_theme.c('TEXT_SECONDARY')}; }}
             """)
-            if hasattr(self._anc_widget, "apply_theme"):
-                self._anc_widget.apply_theme(t)
 
         # Language combo
         if hasattr(self, "_lang_combo"):
@@ -538,10 +449,10 @@ class DevicePage(QWidget):
                 QPushButton {{
                     background-color: {_theme.c('BG_BUTTON')};
                     color: {_theme.c('TEXT_PRIMARY')};
-                    border: none;
+                    border: 1px solid {_theme.c('BG_BUTTON_HOVER')};
                     border-radius: 6px;
-                    font-size: 11pt;
-                    padding: 0 16px;
+                    font-size: 10pt;
+                    padding: 0 12px;
                 }}
                 QPushButton:hover {{ background-color: {_theme.c('BG_BUTTON_HOVER')}; }}
             """)
@@ -609,51 +520,23 @@ class DevicePage(QWidget):
 
     @Slot(object)
     def update_status(self, status: dict):
-        self._anc_widget.update_status(status)
-        self._forward_available_status_keys(status)
-
-    def _forward_available_status_keys(self, status: dict) -> None:
         """Tell the settings widgets which live status keys the connected
-        device is actually reporting (GetStatus's ``{category: {key: {...}}}``
-        shape, flattened to just the key names).
+        device is actually reporting.
 
         This is how a global BUTTON_GROUP setting like ``micro_autoswitch``
         (settings.py) knows whether an option backed by e.g. ``mic_status``
         can do anything on the currently active device profile — see
         ``option_requires_status`` there and
-        ``QSettingsWidget._option_available``. An empty/malformed payload
-        (no device yet, or a status shape from an old daemon) yields an empty
-        key set, which — per set_available_status_keys — only ever narrows
-        what's offered, never breaks it further.
+        ``QSettingsWidget._option_available``.
         """
-        keys: set[str] = set()
-        if isinstance(status, dict):
-            for category in status.values():
-                if isinstance(category, dict):
-                    keys.update(category.keys())
+        keys = status_key_names(status)
         for widget in self._settings_groups:
             widget.set_available_status_keys(keys)
-        self._device_widget.set_available_status_keys(keys)
 
     @Slot(object)
     def update_settings(self, settings: dict):
         for widget in self._settings_groups:
             widget.update_settings(settings)
-        self._device_widget.update_settings(settings)
-        self._update_anc_visibility(settings)
-
-    def _update_anc_visibility(self, settings: dict) -> None:
-        """Show the ANC section only for headsets that actually have it.
-
-        The device profile is the authority: a headset without noise
-        cancelling simply doesn't declare the setting, so its controls could
-        never do anything. An empty config means "no device yet" — keep the
-        section as it is rather than flashing it away on a transient update.
-        """
-        config = settings.get('settings_config') or {}
-        if not config:
-            return
-        self._anc_section.setVisible('noise_cancelling' in config)
 
     # ── Language ───────────────────────────────────────────────────────────────
 

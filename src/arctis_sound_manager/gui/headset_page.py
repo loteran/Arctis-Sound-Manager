@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """
-Headset page — Device info + status.
+Headset page — device info, live status and the headset's own settings.
 """
 from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtWidgets import (
@@ -18,14 +18,20 @@ from PySide6.QtWidgets import (
 
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
 
+from arctis_sound_manager.gui.anc_widget import QAncWidget
 from arctis_sound_manager.gui.components import (
     HEADPHONE_ICON,
-    DividerLine,
     SectionTitle,
     SvgIconWidget,
 )
+from arctis_sound_manager.gui.headset_cards import (
+    SettingsCard,
+    StatusTiles,
+    card_contents_qss,
+    section_title,
+)
 from arctis_sound_manager.gui.qt_widgets.no_wheel_combo import NoWheelComboBox
-from arctis_sound_manager.gui.status_widget import QStatusWidget
+from arctis_sound_manager.gui.settings_widget import QSettingsWidget, status_key_names
 import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.gui.theme import (
     ACCENT,
@@ -37,9 +43,14 @@ from arctis_sound_manager.gui.theme import (
 )
 from arctis_sound_manager.i18n import I18n
 
+_CHATMIX_WIDTH = 340
+
+# The base station's settings have their own panel on the DAC page.
+_SECTIONS_SHOWN_ELSEWHERE = frozenset({'station'})
+
 
 class HeadsetPage(QWidget):
-    """Page showing connected device info and live status."""
+    """Page showing the connected headset, its live status and its settings."""
 
     # Emitted with the raw option list, so the fetch can stay off the UI thread
     # the way settings_widget does it.
@@ -56,6 +67,9 @@ class HeadsetPage(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        # Everything here is sized to fit the window; a sideways scrollbar
+        # would only ever mean a control asking for more than it needs.
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setStyleSheet(f"QScrollArea {{ background-color: {_theme.c('BG_MAIN')}; border: none; }}")
         self._scroll = scroll
 
@@ -64,12 +78,17 @@ class HeadsetPage(QWidget):
         self._content = content
         layout = QVBoxLayout(content)
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        layout.setContentsMargins(36, 28, 36, 36)
+        layout.setContentsMargins(28, 20, 28, 24)
         layout.setSpacing(0)
 
-        # Devices section
-        layout.addWidget(SectionTitle(I18n.translate("ui", "devices")))
-        layout.addSpacing(20)
+        # Devices section: the title, and on its right the headset picker
+        # when more than one is plugged in (see _device_selector below).
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.addWidget(SectionTitle(I18n.translate("ui", "devices")))
+        header.addStretch(1)
+        layout.addLayout(header)
+        layout.addSpacing(12)
 
         # Device card
         self._device_card = QWidget()
@@ -83,10 +102,10 @@ class HeadsetPage(QWidget):
         """)
 
         card_layout = QHBoxLayout(self._device_card)
-        card_layout.setContentsMargins(20, 16, 20, 16)
-        card_layout.setSpacing(16)
+        card_layout.setContentsMargins(16, 10, 16, 10)
+        card_layout.setSpacing(12)
 
-        card_layout.addWidget(SvgIconWidget(HEADPHONE_ICON, ACCENT, size=44))
+        card_layout.addWidget(SvgIconWidget(HEADPHONE_ICON, ACCENT, size=32))
 
         device_info = QWidget()
         device_info.setStyleSheet("background: transparent;")
@@ -123,11 +142,15 @@ class HeadsetPage(QWidget):
         #
         # Hidden while there is nothing to choose. A picker offering a single
         # item is not a choice, and this card is the first thing you see.
+        #
+        # In the header rather than the card: the card's right side holds the
+        # ChatMix dial, and the two together made it wider than the window.
         self._device_selector = NoWheelComboBox()
         self._device_selector.setMinimumWidth(220)
+        self._device_selector.setPlaceholderText(I18n.translate("settings", "preferred_device"))
         self._device_selector.setVisible(False)
         self._device_selector.activated.connect(self._on_device_picked)
-        card_layout.addWidget(self._device_selector)
+        header.addWidget(self._device_selector, 0, Qt.AlignmentFlag.AlignVCenter)
 
         # Device ids in the order the combo shows them. The combo carries the
         # label; this carries what the setting is actually written from.
@@ -135,15 +158,47 @@ class HeadsetPage(QWidget):
         self._preferred_id: str | None = None
 
         layout.addWidget(self._device_card)
-        layout.addSpacing(24)
+        layout.addSpacing(8)
 
-        # Status widget
-        self._status_widget = QStatusWidget(content)
-        self._status_widget.setStyleSheet(f"""
-            QWidget {{ background-color: {BG_MAIN}; color: {TEXT_PRIMARY}; }}
-            QLabel  {{ background-color: transparent; color: {TEXT_PRIMARY}; font-size: 11pt; }}
-        """)
-        layout.addWidget(self._status_widget)
+        # Live status, one tile per value the headset reports.
+        self._status_tiles = StatusTiles(content)
+        self._status_tiles.setVisible(False)
+        layout.addWidget(self._status_tiles)
+
+        # The ChatMix dial goes in the device card's empty right-hand side, at
+        # the length of a dial rather than of the page.
+        chatmix = self._status_tiles.chatmix
+        chatmix.setParent(self._device_card)
+        chatmix.embed(_CHATMIX_WIDTH)
+        chatmix.setVisible(False)
+        card_layout.addWidget(chatmix)
+        layout.addSpacing(16)
+
+        # ── The headset's own settings ────────────────────────────────────────
+        # Sidetone, mic volume, the volume limiter, auto power-off… everything
+        # the device profile declares, one card per section of the profile.
+        # They used to sit in Settings among the app's own options, where
+        # nobody looking at their headset found them.
+        #
+        # Noise cancelling first: on a headset that has it, it is the control
+        # people reach for most. Hidden wholesale on the ones without it (the
+        # Nova 7P, for one) — dead controls read as a broken app rather than as
+        # an absent feature. Shown only once the daemon reports the setting.
+        self._anc_widget = QAncWidget()
+        self._anc_section = SettingsCard(
+            I18n.translate("ui", "noise_cancelling"), self._anc_widget, content)
+        self._anc_section.setVisible(False)
+        layout.addWidget(self._anc_section)
+        layout.addSpacing(8)
+
+        # Rebuilt only when the device's set of sections changes; see
+        # _sync_setting_cards().
+        self._cards_layout = QVBoxLayout()
+        self._cards_layout.setContentsMargins(0, 0, 0, 0)
+        self._cards_layout.setSpacing(8)
+        layout.addLayout(self._cards_layout)
+        self._setting_cards: list[SettingsCard] = []
+        self._card_groups: list[tuple[str | None, tuple[str, ...]]] = []
         layout.addStretch(1)
 
         scroll.setWidget(content)
@@ -181,10 +236,11 @@ class HeadsetPage(QWidget):
             f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; background: transparent;"
         )
 
-        self._status_widget.setStyleSheet(f"""
-            QWidget {{ background-color: {_theme.c('BG_MAIN')}; color: {_theme.c('TEXT_PRIMARY')}; }}
-            QLabel  {{ background-color: transparent; color: {_theme.c('TEXT_PRIMARY')}; font-size: 11pt; }}
-        """)
+        self._device_selector.setStyleSheet(card_contents_qss())
+        self._status_tiles.apply_theme()
+        self._anc_section.apply_theme()
+        for card in self._setting_cards:
+            card.apply_theme()
 
     # ── preferred device (#199) ───────────────────────────────────────────────
 
@@ -242,7 +298,11 @@ class HeadsetPage(QWidget):
 
     @Slot(object)
     def update_status(self, status: dict):
-        self._status_widget.update_status(status)
+        self._status_tiles.update_status(status)
+        self._anc_widget.update_status(status)
+        keys = status_key_names(status)
+        for card in self._setting_cards:
+            card.body.set_available_status_keys(keys)
 
     @Slot(object)
     def update_settings(self, settings: dict):
@@ -268,3 +328,54 @@ class HeadsetPage(QWidget):
             self._device_selector.blockSignals(True)
             self._select_preferred()
             self._device_selector.blockSignals(False)
+
+        self._sync_setting_cards(settings)
+        for card in self._setting_cards:
+            card.body.update_settings(settings)
+        self._update_anc_visibility(settings)
+
+    def _sync_setting_cards(self, settings: dict) -> None:
+        """One card per section of the device profile, in the profile's order.
+
+        The noise cancelling setting has its own card above, and the base
+        station's settings belong to the DAC page. A daemon too old to send
+        each setting's section gets everything in a single card.
+        """
+        values = settings.get('device') or {}
+        groups: dict[str | None, list[str]] = {}
+        for name, config in (settings.get('settings_config') or {}).items():
+            if name not in values or not isinstance(config, dict):
+                continue
+            section = config.get('section')
+            if section in _SECTIONS_SHOWN_ELSEWHERE:
+                continue
+            if config.get('hidden') or not config.get('type'):
+                continue
+            groups.setdefault(section, []).append(name)
+        wanted = [(section, tuple(names)) for section, names in groups.items()]
+        if wanted == self._card_groups:
+            return
+
+        for card in self._setting_cards:
+            self._cards_layout.removeWidget(card)
+            card.deleteLater()
+        self._setting_cards = []
+        for section, names in wanted:
+            body = QSettingsWidget(None, None, "device", keys=names, compact=True)
+            card = SettingsCard(section_title(section), body, self._content)
+            self._cards_layout.addWidget(card)
+            self._setting_cards.append(card)
+        self._card_groups = wanted
+
+    def _update_anc_visibility(self, settings: dict) -> None:
+        """Show the ANC section only for headsets that actually have it.
+
+        The device profile is the authority: a headset without noise
+        cancelling simply doesn't declare the setting, so its controls could
+        never do anything. An empty config means "no device yet" — keep the
+        section as it is rather than flashing it away on a transient update.
+        """
+        config = settings.get('settings_config') or {}
+        if not config:
+            return
+        self._anc_section.setVisible('noise_cancelling' in config)

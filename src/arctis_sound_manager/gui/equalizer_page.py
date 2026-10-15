@@ -809,6 +809,10 @@ class EqualizerPage(QWidget):
         # Propagate into the sonar page (which owns the EQ curve widget)
         self._sonar_page.apply_theme(t)
 
+    @Slot(object)
+    def update_settings(self, settings: dict) -> None:
+        self._sonar_page.update_settings(settings)
+
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     def showEvent(self, event):

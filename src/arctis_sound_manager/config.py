@@ -655,6 +655,9 @@ class DeviceConfiguration:
                     name=setting_name,
                     type=setting_type,
                     default_value=setting_default_value,
+                    # Travels to the GUI with the rest of the config, which
+                    # groups the Headset page's cards by it.
+                    section=setting_section,
                     **{k: v for k, v in setting_values.items() if k not in ['default', 'type']},
                 ))
 

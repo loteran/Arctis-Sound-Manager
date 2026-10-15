@@ -68,6 +68,9 @@ def tinted_svg_pixmap(svg_path: str, color: str, width: int, height: int) -> QPi
         svg_data = re.sub(r'(fill|stroke):\s*(?!none)[^;}"]+', f'fill:{color}', svg_data)
 
         renderer = QSvgRenderer(svg_data.encode("utf-8"))
+        # Fit, never stretch: a square microphone or the near-square headphone
+        # drawn into a channel card's 48x36 box came out squashed flat.
+        renderer.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
         if renderer.isValid():
             painter = QPainter(pixmap)
             renderer.render(painter)

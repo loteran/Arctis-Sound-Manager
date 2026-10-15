@@ -7,7 +7,7 @@ from typing import Callable, Iterable
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QPushButton,
-                               QSlider, QVBoxLayout, QWidget)
+                               QSizePolicy, QSlider, QVBoxLayout, QWidget)
 
 from arctis_sound_manager.config import ConfigSetting, SettingType
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
@@ -28,6 +28,15 @@ _REFRESHABLE_OPTION_SOURCES = frozenset({
     # can be plugged or unplugged at any time (issue #199).
     'connected_arctis_devices',
 })
+
+
+# Compact panels (the Headset page's cards): see QSettingsWidget(compact=True).
+_COMPACT_MAX_BUTTONS = 4
+# Characters across all of a choice's labels before it becomes a drop-down.
+_COMPACT_MAX_BUTTON_TEXT = 70
+_COMPACT_LABEL_WIDTH = 200
+_COMPACT_SLIDER_WIDTH = 240
+_COMPACT_SELECT_WIDTH = 320
 
 
 def _button_group_qss() -> str:
@@ -82,6 +91,22 @@ def _option_label(option: dict) -> str:
     return f"{label} · {I18n.get_instance().translate('settings_values', f'hrir_cpu_{cost}')}"
 
 
+def status_key_names(status) -> set[str]:
+    """The live status keys a device reports, for set_available_status_keys().
+
+    GetStatus's ``{category: {key: {...}}}`` shape, flattened to the key
+    names. An empty or malformed payload (no device yet, or a status shape
+    from an old daemon) yields an empty set, which only ever narrows what a
+    widget offers, never breaks it further.
+    """
+    keys: set[str] = set()
+    if isinstance(status, dict):
+        for category in status.values():
+            if isinstance(category, dict):
+                keys.update(category.keys())
+    return keys
+
+
 class QSettingsWidget(QWidget):
     sig_list_received = Signal(object)
 
@@ -93,14 +118,21 @@ class QSettingsWidget(QWidget):
     settings_config: dict[str, ConfigSetting]
 
     def __init__(self, parent: QWidget, i18n_section_name: str | None, dbus_settings_section: str,
-                 keys: Iterable[str] | None = None, exclude: Iterable[str] = ()):
+                 keys: Iterable[str] | None = None, exclude: Iterable[str] = (),
+                 compact: bool = False):
         """*keys* limits the panel to those settings, shown in that order;
         *exclude* drops settings from it. A D-Bus section can so be split over
         several panels, one per group of related settings. No
-        *i18n_section_name* means no title: the page supplies its own."""
+        *i18n_section_name* means no title: the page supplies its own.
+
+        *compact* sizes controls to their content instead of the row: buttons
+        as wide as their label, sliders capped, and a choice of more than
+        _COMPACT_MAX_BUTTONS options offered as a drop-down, so a panel fits a
+        narrow card without scrolling sideways."""
         super().__init__(parent)
         self._keys: list[str] | None = list(keys) if keys is not None else None
         self._exclude = frozenset(exclude)
+        self._compact = compact
 
         layout = QVBoxLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -358,6 +390,8 @@ class QSettingsWidget(QWidget):
             slider.setMaximum(config.max)
             slider.setSingleStep(config.step)
             slider.setValue(int(float(value)))
+            if self._compact:
+                slider.setFixedWidth(_COMPACT_SLIDER_WIDTH)
             widget_layout.addWidget(slider)
 
             def slider_value_callback(config: ConfigSetting) -> Callable[[bool|str|int], str]:
@@ -376,6 +410,12 @@ class QSettingsWidget(QWidget):
 
             slider.valueChanged.connect(lambda value: widget_value_label.setText(slider_value(value)))
             slider.valueChanged.connect(lambda value: callback(config, value))
+            if self._compact:
+                widget_value_label.setFixedWidth(40)
+                widget_layout.addStretch(1)
+        elif (config.type == SettingType.BUTTON_GROUP and self._compact
+              and self._too_long_for_buttons(config)):
+            widget = self._button_group_as_combo(config, value, callback)
         elif config.type == SettingType.BUTTON_GROUP:
             widget = QWidget()
             widget_layout = QHBoxLayout()
@@ -408,8 +448,15 @@ class QSettingsWidget(QWidget):
                 if not self._option_available(config, btn_value):
                     btn.setEnabled(False)
                     btn.setToolTip(I18n.get_instance().translate('settings_values', 'option_unavailable_status'))
+                if self._compact:
+                    # As wide as the label, never narrower: a squeezed button
+                    # clips its text ("hen headset disconnec").
+                    btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+                    btn.setMinimumWidth(64)
                 widget_layout.addWidget(btn)
                 btn_entries.append((btn_value, btn))
+            if self._compact:
+                widget_layout.addStretch(1)
 
             def make_btn_callback(selected_value: int, entries: list, cfg: ConfigSetting):
                 def on_click():
@@ -446,12 +493,15 @@ class QSettingsWidget(QWidget):
             # 'currentIndexChanged' only fired on an index *change*, so picking
             # the already-displayed device saved nothing (#97).
             widget.activated.connect(_on_select_change)
+            if self._compact:
+                widget.setMinimumWidth(200)
+                widget.setMaximumWidth(_COMPACT_SELECT_WIDTH)
         else:
             widget = QLabel(f'UNKNOWN TYPE: {config.type}')
 
         if widget:
             label = QLabel(I18n.get_instance().translate('settings', config.name))
-            label.setFixedWidth(260)
+            label.setFixedWidth(_COMPACT_LABEL_WIDTH if self._compact else 260)
             label.setWordWrap(True)
             main_layout.addWidget(label)
             if config.type == SettingType.TOGGLE:
@@ -469,7 +519,50 @@ class QSettingsWidget(QWidget):
                     main_layout.addWidget(note, 1)
                 else:
                     main_layout.addStretch(1)
+            elif self._compact:
+                # Sized to its content and kept against the label; with a
+                # stretch factor a capped drop-down got centred in the row.
+                main_layout.addWidget(widget)
+                main_layout.addStretch(1)
             else:
                 main_layout.addWidget(widget, 1)
 
         return main_widget if widget else None
+
+    def _too_long_for_buttons(self, config: ConfigSetting) -> bool:
+        """A choice a compact row offers as a drop-down: too many options,
+        or labels too long to sit side by side in a narrow card."""
+        mapping = getattr(config, 'values_mapping', {})
+        if len(mapping) > _COMPACT_MAX_BUTTONS:
+            return True
+        translate = I18n.get_instance().translate
+        text = sum(len(translate('settings_values', label)) for label in mapping.values())
+        return text > _COMPACT_MAX_BUTTON_TEXT
+
+    def _button_group_as_combo(self, config: ConfigSetting, value, callback: Callable) -> QWidget:
+        """A BUTTON_GROUP with too many options for a row of buttons (ten
+        auto power-off delays), offered as a drop-down instead. Same values,
+        same unavailable-option rule, same callback."""
+        def parse_key(k) -> int:
+            return int(k, 16) if isinstance(k, str) and k.startswith('0x') else int(k)
+
+        values = [parse_key(k) for k in config.values_mapping]
+        combo = NoWheelComboBox()
+        for raw_key, label_key in config.values_mapping.items():
+            combo.addItem(I18n.get_instance().translate('settings_values', label_key))
+        current = parse_key(value) if isinstance(value, str) else int(value)
+        combo.setCurrentIndex(values.index(current) if current in values else -1)
+        model = combo.model()
+        for index, option in enumerate(values):
+            if not self._option_available(config, option):
+                model.item(index).setEnabled(False)
+        combo.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+        combo.setMinimumWidth(160)
+        combo.activated.connect(lambda index: callback(config, values[index]))
+
+        holder = QWidget()
+        holder_layout = QHBoxLayout(holder)
+        holder_layout.setContentsMargins(0, 0, 0, 0)
+        holder_layout.addWidget(combo)
+        holder_layout.addStretch(1)
+        return holder
