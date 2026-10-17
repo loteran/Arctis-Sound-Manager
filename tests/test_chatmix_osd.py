@@ -246,3 +246,64 @@ def test_extension_left_alone_outside_gnome(gnome, monkeypatch):
     chatmix_osd.enable_gnome_extension_once()
 
     assert run.calls == []
+
+
+# ── DAC wheel watcher: one D-Bus connection at a time ─────────────────────
+
+class _FakeBus:
+    """Stands in for dbus_next's MessageBus: records whether each
+    connection the watcher opened was closed again."""
+
+    def __init__(self, opened, connect_error=None, introspect_error=None):
+        self.disconnected = False
+        self._connect_error = connect_error
+        self._introspect_error = introspect_error
+        opened.append(self)
+
+    async def connect(self):
+        if self._connect_error:
+            raise self._connect_error
+        return self
+
+    async def introspect(self, _name, _path):
+        raise self._introspect_error
+
+    def disconnect(self):
+        self.disconnected = True
+
+
+def _run_wheel_watcher(qapp, monkeypatch, attempts, **bus_kwargs):
+    import asyncio
+
+    import dbus_next.aio
+
+    opened = []
+    monkeypatch.setattr(dbus_next.aio, "MessageBus", lambda: _FakeBus(opened, **bus_kwargs))
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr(asyncio, "sleep", lambda _s: real_sleep(0))  # skip the 2 s retry wait
+
+    w = chatmix_osd.ChatMixWatcher(lambda: len(opened) >= attempts, lambda: True, lambda: [])
+    w._listen_wheel()
+    return opened
+
+
+def test_wheel_watcher_closes_the_bus_when_the_daemon_is_not_running(qapp, monkeypatch):
+    # The daemon not on the bus: every retry used to leave its connection
+    # open, one every 2 s, until the session bus ran out of file descriptors
+    # and took the whole desktop session down with it.
+    from dbus_next.errors import DBusError
+
+    gone = DBusError("org.freedesktop.DBus.Error.ServiceUnknown", "not running")
+    opened = _run_wheel_watcher(qapp, monkeypatch, attempts=3, introspect_error=gone)
+
+    assert len(opened) == 3
+    assert all(bus.disconnected for bus in opened)
+
+
+def test_wheel_watcher_closes_the_bus_when_connecting_fails(qapp, monkeypatch):
+    # MessageBus() opens its socket before connect() authenticates.
+    opened = _run_wheel_watcher(qapp, monkeypatch, attempts=3,
+                                connect_error=ConnectionResetError())
+
+    assert len(opened) == 3
+    assert all(bus.disconnected for bus in opened)
