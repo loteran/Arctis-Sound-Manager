@@ -411,13 +411,18 @@ device:
         # spans 0-10: 0 writes state=0, 1-10 write state=1 with that level. The
         # level byte stays >= 1 even while off (value.at_least_1) because the
         # firmware misbehaves on a 0 level.
+        #
+        # Off by default, like every other profile. Both sidetones are in
+        # device_init, so a default of 5 was not a hint but a command: every
+        # connection of a headset whose owner never touched the slider
+        # switched sidetone on, at half level, on its own.
         type: slider
         min: 0x00
         max: 0x0a
         step: 1
         min_label: off
         max_label: perc_100
-        default: 0x05
+        default: 0x00
         update_sequence: [0x01, 0x38, 'value.enabled', 'value.at_least_1']
       mic_sidetone_ear:
         # Same frame shape as mic_sidetone_boom above, on opcode 0x39 (#201).
@@ -427,7 +432,7 @@ device:
         step: 1
         min_label: off
         max_label: perc_100
-        default: 0x05
+        default: 0x00
         update_sequence: [0x01, 0x39, 'value.enabled', 'value.at_least_1']
       mic_led_brightness:
         type: slider

@@ -334,13 +334,14 @@ device:
         # on_ear_sidetone (0x39), same frame as the boom's 0x38: state, then
         # level 1-10. Inherited unchanged from base_arctis_nova_elite_tx;
         # copied from nova_elite.yaml (#201), not yet tried on an Omni.
+        # Off by default, like the boom sidetone above.
         type: slider
         min: 0x00
         max: 0x0a
         step: 1
         min_label: off
         max_label: perc_100
-        default: 0x05
+        default: 0x00
         update_sequence: [0x01, 0x39, 'value.enabled', 'value.at_least_1']
       mic_led_brightness:
         type: slider
