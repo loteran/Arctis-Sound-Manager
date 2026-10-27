@@ -69,9 +69,15 @@ device:
     - [0x37, 'settings.mic_volume']
     - [0xb3, 'settings.bluetooth_auto_mute']
     - [0x39, 'settings.mic_side_tone']
+    # save_to_flash (0x09): the firmware blocks every command for 1.5 s
+    # after it (base_arctis_nova_7_gen2_tx: "FW will block all commands for
+    # 1.5s after Save triggered", HIDSLEEP 1500). Without the pause the
+    # status request and the second save landed in that window and were lost.
     - [0x09]
+    - ['sleep', 1500]
     - ['status.request']
     - [0x09]
+    - ['sleep', 1500]
 
   status:
     request: 0xb0
