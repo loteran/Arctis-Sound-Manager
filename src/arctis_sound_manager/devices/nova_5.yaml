@@ -98,6 +98,11 @@ device:
     # Unlike the Nova 7 Gen 2, the band frame does not repeat the connection
     # byte — including it would shift the whole curve by one byte.
     bands_carry_connection: false
+    # The Nova 5's filter payload encodes gain as gain_float_to_int:
+    # 2 x (10 + dB), 0-40, 0 dB = 20 — not the signed tenths of a dB the
+    # other parametric families use. Sent signed, a flat curve (0x00) read
+    # as -10 dB on every band.
+    gain_encoding: offset_binary
     # GG raises its inter-command delay to 600 ms between the name and the
     # bands for this family, and its USB timeout with it.
     frame_delay_ms: 600

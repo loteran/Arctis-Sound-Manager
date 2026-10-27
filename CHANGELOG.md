@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Arctis Nova 5 / 5X: the on-device EQ is no longer stuck at -10 dB** (#347). This headset encodes each band's gain its own way, 2 × (10 + dB) with 20 for 0 dB, and ASM sent the signed form the other headsets use. In Sonar mode, where ASM flattens the headset's EQ so only Sonar's curve applies, every band went to -10 dB; in Custom mode the curve came out shifted. Thanks @gouwschristo, whose read-back of the stored curve showed it.
+
 ## [1.6.5] - 27 October 2026
 
 ### Added

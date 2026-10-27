@@ -331,3 +331,36 @@ def test_feature_report_profiles_send_one_chunk(profile, expected):
     assert frame[:3] == [0x01, opcode, 0x04]   # report id, opcode, Custom slot
     assert sent_size == size
     assert config.hardware_eq_preset_select is None
+
+
+def test_the_nova_5_encodes_gain_as_its_spec_does(monkeypatch):
+    """The Nova 5's filter payload takes gain_float_to_int: 2 x (10 + dB),
+    0-40 with 20 = 0 dB. It used to get the signed tenths of a dB the other
+    parametric families take, so flattening the on-device EQ for Sonar sent
+    0x00 on every band, which this headset reads as -10 dB (#347)."""
+    import arctis_sound_manager.core as core_mod
+
+    monkeypatch.setattr(core_mod.time, "sleep", lambda _s: None)
+    engine = _engine(_config("nova_5.yaml"))
+    # ASM's sliders: 20 = 0 dB, half a dB per step.
+    engine.send_eq_command([20, 20, 30, 10, 40, 0, 20, 20, 20, 20])
+
+    band_frame = engine.send_command.call_args_list[-1].args[0]
+    assert band_frame[0] == 0x33
+    # No connection byte on this family: band 1 starts at index 1, gain is
+    # byte 3 of each 6-byte band.
+    gains = [band_frame[1 + i * 6 + 3] for i in range(10)]
+    assert gains == [20, 20, 30, 10, 40, 0, 20, 20, 20, 20]
+
+
+def test_other_parametric_families_keep_signed_tenths(monkeypatch):
+    import arctis_sound_manager.core as core_mod
+
+    monkeypatch.setattr(core_mod.time, "sleep", lambda _s: None)
+    engine = _engine(_config("nova_3_wireless.yaml"))
+    engine.send_eq_command([20, 30, 10] + [20] * 7)
+
+    band_frame = engine.send_command.call_args_list[-1].args[0]
+    start = len(band_frame) - 60
+    gains = [band_frame[start + i * 6 + 3] for i in range(3)]
+    assert gains == [0x00, 0x32, 0xCE]  # 0, +5, -5 dB

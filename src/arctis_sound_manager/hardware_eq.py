@@ -52,20 +52,36 @@ class EqBand:
     filter_type: int = FILTER_PEAK
 
 
-def encode_band(band: EqBand) -> bytes:
+#: How a family's filter payload encodes a band's gain (`hardware_eq.gain_encoding`).
+#: decibel_signed: tenths of a dB in a signed byte, 0 dB = 0x00 (Nova 7 Gen 2,
+#: Nova 3 Wireless, GameBuds, Elite: `(* 10 gain)` then `int16->bytes`).
+#: offset_binary: half dBs above -10 dB, 0-40, 0 dB = 20 (the Nova 5's
+#: gain_float_to_int, `(* 2 (+ 10 gain))` capped to ±10 dB).
+GAIN_DECIBEL_SIGNED = "decibel_signed"
+GAIN_OFFSET_BINARY = "offset_binary"
+
+
+def encode_band(band: EqBand, gain_encoding: str = GAIN_DECIBEL_SIGNED) -> bytes:
     """Six bytes: frequency, filter type, gain, Q.
 
-    Gain is decidecibels in a signed byte — the specs spell out 0 dB = 0x00,
-    12 dB = 0x78, -12 dB = 0x88 — and Q is thousandths in 16 bits, both
+    Gain is decidecibels in a signed byte on most families — the specs spell
+    out 0 dB = 0x00, 12 dB = 0x78, -12 dB = 0x88 — but half dBs above -10 dB
+    on the Nova 5 (see GAIN_OFFSET_BINARY). Q is thousandths in 16 bits, both
     little-endian like every other multi-byte field in these frames.
     """
     frequency = max(20, min(20000, int(round(band.frequency))))
-    gain = max(-128, min(127, int(round(band.gain_db * 10))))
+    if gain_encoding == GAIN_OFFSET_BINARY:
+        gain_byte = bytes([max(0, min(40, int(2 * (10 + band.gain_db))))])
+    elif gain_encoding == GAIN_DECIBEL_SIGNED:
+        gain = max(-128, min(127, int(round(band.gain_db * 10))))
+        gain_byte = gain.to_bytes(1, "little", signed=True)
+    else:
+        raise ValueError(f"unknown gain encoding {gain_encoding!r}")
     q = max(200, min(10000, int(round(band.q * 1000))))
     return (
         frequency.to_bytes(2, "little")
         + bytes([band.filter_type & 0xFF])
-        + gain.to_bytes(1, "little", signed=True)
+        + gain_byte
         + q.to_bytes(2, "little")
     )
 
@@ -112,7 +128,8 @@ def encode_parametric_eq(bands: list[EqBand], name: str = "Custom",
                          name_command: int = 0xA7,
                          band_command: int = 0x33,
                          commit_command: int | None = None,
-                         bands_carry_connection: bool = True) -> list[list[int]]:
+                         bands_carry_connection: bool = True,
+                         gain_encoding: str = GAIN_DECIBEL_SIGNED) -> list[list[int]]:
     """Frames for the parametric families (Nova 7 Gen 2: 0xA7, Nova 5: 0xA5).
 
     Each frame starts with its **opcode**, not with the `report_id` the specs
@@ -143,7 +160,8 @@ def encode_parametric_eq(bands: list[EqBand], name: str = "Custom",
 
     The band frame differs between families, and getting it wrong shifts every
     byte of the curve: the Nova 7 Gen 2 repeats the connection there, the
-    Nova 5 and the GameBuds do not. Hence `bands_carry_connection`.
+    Nova 5 and the GameBuds do not. Hence `bands_carry_connection`. The Nova 5
+    also encodes each gain its own way (`gain_encoding`, see encode_band).
 
     Returned as byte lists ready for CoreEngine.send_command(), which pads
     each one to the profile's frame length.
@@ -154,7 +172,7 @@ def encode_parametric_eq(bands: list[EqBand], name: str = "Custom",
     name_bytes = list(name.encode("ascii", errors="ignore")[:32])
     payload: list[int] = []
     for band in bands:
-        payload += list(encode_band(band))
+        payload += list(encode_band(band, gain_encoding))
 
     band_frame = [band_command]
     if bands_carry_connection:

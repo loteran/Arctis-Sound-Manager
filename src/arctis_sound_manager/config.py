@@ -354,7 +354,7 @@ class DeviceConfiguration:
     # parametric payload over several frames instead of plain gain bytes,
     # the opcodes that encoder needs, and the firmware value meaning 0 dB.
     hardware_eq_format: str | None
-    hardware_eq_options: dict[str, int]
+    hardware_eq_options: dict[str, int | bool | str]
     hardware_eq_zero: int
     # Command selecting which stored preset the headset actually applies, for
     # families where writing the curve does not activate it, and the id of
@@ -533,6 +533,8 @@ class DeviceConfiguration:
         if 'bands_carry_connection' in hardware_eq:
             self.hardware_eq_options['bands_carry_connection'] = bool(
                 hardware_eq['bands_carry_connection'])
+        if 'gain_encoding' in hardware_eq:
+            self.hardware_eq_options['gain_encoding'] = str(hardware_eq['gain_encoding'])
         # Firmware value standing for 0 dB. GG derives the byte as
         # 2 * (zero_db_offset + gain), so this is that offset doubled: 20 for
         # the ±10 dB families, 24 for the ±12 dB ones (Nova 4). ASM's sliders
