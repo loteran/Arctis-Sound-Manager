@@ -499,8 +499,9 @@ asm_install_udev_rules() {
 
     sudo udevadm control --reload-rules
     # P2-C: trigger only SteelSeries devices, not every USB device on the system
-    sudo udevadm trigger --subsystem-match=usb --attr-match=idVendor=1038 \
-        || sudo udevadm trigger --subsystem-match=hidraw
+    sudo udevadm trigger --subsystem-match=usb --attr-match=idVendor=1038 || true
+    # The hidraw transport opens these nodes: re-apply their mode too.
+    sudo udevadm trigger --subsystem-match=hidraw || true
 
     log_ok "udev rules installed and reloaded"
     # trap RETURN re-enables steamos-readonly here if mode==steamos

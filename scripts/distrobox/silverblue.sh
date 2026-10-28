@@ -351,8 +351,9 @@ RULES
     rm -f "$uaccess_tmp"
 
     sudo udevadm control --reload-rules
-    sudo udevadm trigger --subsystem-match=usb --attr-match=idVendor=1038 \
-        || sudo udevadm trigger --subsystem-match=hidraw
+    sudo udevadm trigger --subsystem-match=usb --attr-match=idVendor=1038 || true
+    # The hidraw transport opens these nodes: re-apply their mode too.
+    sudo udevadm trigger --subsystem-match=hidraw || true
     log_ok "udev rules reloaded"
 }
 

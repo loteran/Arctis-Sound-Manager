@@ -209,6 +209,8 @@ udevadm control --reload-rules || :
 # lets hid-generic claim interface 4 back. The headset then reads as absent
 # until it is physically replugged, after every single upgrade.
 udevadm trigger --action=add --subsystem-match=usb --attr-match=idVendor=1038 || :
+# And the hidraw nodes the hidraw transport opens: their mode comes from the same rules.
+udevadm trigger --action=add --subsystem-match=hidraw || :
 
 # On upgrade ($1 >= 2), restart the user services: dnf replaced the files, but
 # the running asm-daemon still holds the previous version in memory.
