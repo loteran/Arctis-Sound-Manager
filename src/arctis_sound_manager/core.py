@@ -126,6 +126,10 @@ _USB_PERMISSION_WATCH_INTERVAL = 30.0
 # Omni's mic noise reduction needs both: an on/off byte telling the firmware
 # which microphones are being adjusted, and a level the firmware requires to
 # stay >= 1 even while that feature is off.
+# How long the headset must stay offline before "redirect on disconnect"
+# moves the default sink away from it (#349).
+_OFFLINE_REDIRECT_DELAY_S = 5.0
+
 # How often configure_virtual_sinks may rebuild the libusb context when the
 # kernel lists a headset libusb does not (#325).
 _LIBUSB_REFRESH_MIN_S = 30.0
@@ -437,6 +441,9 @@ class CoreEngine:
         # _schedule_settings_replay().
         self._last_settings_push: float = 0.0
         self._settings_replay_timer: threading.Timer | None = None
+        # Pending "redirect on disconnect" after the headset reported offline;
+        # see on_device_status_changed (#349).
+        self._offline_redirect_timer: threading.Timer | None = None
 
         # Guards for the resume-time USB reset escalation (#238). Reset by
         # prepare_for_sleep() so at most one attempt happens per suspend cycle;
@@ -3692,12 +3699,13 @@ class CoreEngine:
     def on_device_status_changed(self, key: str, value: int):
         if self.device_config and self.device_config.online_status and key == self.device_config.online_status.status_variable:
             if self.is_device_online():
+                self._cancel_offline_redirect()
                 self.redirect_to_media_sink()
                 # The headset just came up on its firmware defaults — give it
                 # back what the user chose (#221).
                 self._schedule_settings_replay()
             else:
-                self.redirect_audio_on_disconnect()
+                self._schedule_offline_redirect()
 
         if key == 'eq_band_value' and self.device_status is not None:
             band_index = self.device_status.get('eq_band_index')
@@ -3820,6 +3828,35 @@ class CoreEngine:
         'effect_input.virtual-surround-7.1-hesuvi',
         'effect_input.virtual-surround-7.1-hesuvi-media',
     )
+
+    def _schedule_offline_redirect(self) -> None:
+        """Redirect away from the headset once it has stayed offline a while.
+
+        Straight after a re-init the status can read "offline" for a moment
+        before the first real frame lands, with the headset sitting right
+        there. Redirecting on that moved the default sink to the user's
+        disconnect device for nothing, and on one system that default-sink
+        change was what hung PipeWire for 40 minutes (#349). A headset that
+        is really off is still off a few seconds later.
+        """
+        if self._offline_redirect_timer is not None:
+            return
+
+        def fire():
+            self._offline_redirect_timer = None
+            if self._stopping or self.is_device_online():
+                return
+            self.redirect_audio_on_disconnect()
+
+        timer = threading.Timer(_OFFLINE_REDIRECT_DELAY_S, fire)
+        timer.daemon = True
+        self._offline_redirect_timer = timer
+        timer.start()
+
+    def _cancel_offline_redirect(self) -> None:
+        timer, self._offline_redirect_timer = self._offline_redirect_timer, None
+        if timer is not None:
+            timer.cancel()
 
     def redirect_audio_on_disconnect(self):
         if not self.general_settings.redirect_audio_on_disconnect:

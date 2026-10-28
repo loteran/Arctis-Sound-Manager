@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **"Redirect on disconnect" no longer fires when the headset only looks offline for a moment** (#349). Right after ASM re-initialises the headset, its status can read offline before the first real report arrives; ASM moved the default output to your disconnect device on that, with the headset still on. It now waits until the headset has stayed offline for 5 seconds. On one system that needless default-output change was what set off a long PipeWire hang. Thanks @ziggityzack.
+
 ## [1.6.6] - 28 October 2026
 
 ### Fixed
