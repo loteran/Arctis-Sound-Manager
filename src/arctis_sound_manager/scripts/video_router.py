@@ -231,6 +231,13 @@ _pa_placed: dict[str, int] = {}
 # Same for native PipeWire streams (sink node name), same keying.
 _native_placed: dict[str, str] = {}
 
+# The target last written for each native stream node id. A stream that is
+# not linked to anything (idle, paused, stopped) shows no sink at all, so it
+# never looks "already there": the override pass used to write the same
+# target.node again every 5 s, for the whole session (#349). Keyed by node id,
+# so a new stream from the same app still gets its first move.
+_native_targeted: dict[int, str] = {}
+
 # Anti-flap guard (issue #102): WirePlumber can bounce a stream between the
 # Arctis virtual sinks (Game<->Chat<->Media). Those induced moves must not be
 # saved as user overrides. If the same app changes target >= _FLAP_THRESHOLD
@@ -851,6 +858,7 @@ def _process_tick(pulse: pulsectl.Pulse) -> None:
                     pulse.sink_input_move(si.index, default_sink.index)
         _pa_placed.clear()
         _native_placed.clear()
+        _native_targeted.clear()
         _move_times.clear()
         _pending_moves.clear()
         return
@@ -1029,6 +1037,10 @@ def _process_tick(pulse: pulsectl.Pulse) -> None:
         return
     _last_native_check = now
     native_streams = get_native_streams()
+    # Forget streams that are gone, so a recycled node id starts clean.
+    live_ids = {s["id"] for s in native_streams}
+    for gone in [i for i in _native_targeted if i not in live_ids]:
+        del _native_targeted[gone]
     for s in native_streams:
         app = s["app_name"]
         binary = s.get("props", {}).get("application.process.binary", "")
@@ -1111,9 +1123,14 @@ def _process_tick(pulse: pulsectl.Pulse) -> None:
             # off is not somewhere to move audio to.
             _native_placed[key] = s["sink_name"]
         elif wanted is not None:
-            if s["sink_name"] is None or s["sink_name"] != wanted:
+            unlinked_but_sent = s["sink_name"] is None and _native_targeted.get(s["id"]) == wanted
+            if unlinked_but_sent:
+                # Already asked; it will land there when it plays (#349).
+                _native_placed[key] = wanted
+            elif s["sink_name"] is None or s["sink_name"] != wanted:
                 log.info("Override native: moving '%s' -> %s", app, wanted)
-                move_native_stream(s["id"], wanted)
+                if move_native_stream(s["id"], wanted):
+                    _native_targeted[s["id"]] = wanted
                 _native_placed[key] = wanted
             else:
                 _native_placed[key] = s["sink_name"]
@@ -1184,6 +1201,7 @@ def _main_loop():
             _last_native_check = 0.0
             _pa_placed.clear()
             _native_placed.clear()
+            _native_targeted.clear()
             _move_times.clear()
             _pending_moves.clear()
         except Exception as e:

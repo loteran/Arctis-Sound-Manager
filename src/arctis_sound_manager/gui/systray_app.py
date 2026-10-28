@@ -1088,6 +1088,10 @@ class QSystrayApp(QBaseDesktopApp):
                 )
             except FileNotFoundError:
                 pass  # pactl gone (pulseaudio-utils) — nothing to restore
+            except subprocess.TimeoutExpired:
+                # PipeWire not answering (#349): leave the default where it
+                # is rather than let the timeout kill the tray before quit().
+                self.logger.warning('pactl set-default-sink %s timed out', prev)
 
         # Stop all ASM services and schedule a pipewire restart
         # so the system behaves as if ASM was not installed.
@@ -1098,11 +1102,16 @@ class QSystrayApp(QBaseDesktopApp):
             # Fallback: a hung unit may need SIGKILL. No portable dinit equivalent,
             # so this stays a direct systemctl call guarded to systemd only.
             self.logger.warning("service stop failed/timed out — killing services")
-            subprocess.run(
-                ["systemctl", "--user", "kill",
-                 "arctis-manager.service", "arctis-video-router.service", "filter-chain"],
-                capture_output=True,
-            )
+            # --signal: `systemctl kill` sends SIGTERM by default, which a
+            # unit that ignored the stop has already had (#349).
+            try:
+                subprocess.run(
+                    ["systemctl", "--user", "kill", "--signal=SIGKILL",
+                     "arctis-manager.service", "arctis-video-router.service", "filter-chain"],
+                    capture_output=True, timeout=5,
+                )
+            except subprocess.TimeoutExpired:
+                self.logger.warning("systemctl kill timed out")
         if redirect_target_name:
             # Redirect-on-disconnect is configured. The daemon's shutdown
             # redirect (CoreEngine.stop) already pointed the default at the
@@ -1118,6 +1127,8 @@ class QSystrayApp(QBaseDesktopApp):
                 )
             except FileNotFoundError:
                 pass  # pactl gone (pulseaudio-utils) — daemon redirect stands
+            except subprocess.TimeoutExpired:
+                self.logger.warning('pactl set-default-sink %s timed out', redirect_target_name)
         # No PipeWire restart on the way out, whatever the redirect setting.
         # This used to bounce pipewire, wireplumber and pipewire-pulse "so
         # the graph comes back without ASM's configs" — but the daemon and

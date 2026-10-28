@@ -272,3 +272,35 @@ class TestInternalNodesAreNeverSavedAsOverrides:
         for channel, sink in video_router._CHANNEL_SINKS.items():
             assert video_router._override_target(
                 f"effect_input.sonar-{channel}-eq") == sink
+
+
+def test_an_unlinked_pinned_native_stream_is_moved_once(tmp_path):
+    """A native stream with no link (idle, paused) shows no sink at all, so
+    it never looked "already there": the router wrote the same target.node
+    every native check for the whole session — 47 moves in 4 minutes for a
+    pinned wallpaper engine — and that churn overlapped two PipeWire hangs
+    (#349). One write per stream is enough."""
+    hdmi = "alsa_output.pci-0000_07_00.1.hdmi-stereo"
+    overrides_file = tmp_path / "routing_overrides.json"
+    overrides_file.write_text(json.dumps({"linux-wallpaperengine": hdmi}))
+    pulse = _FakePulse([_FakeSink(0, "Arctis_Game"), _FakeSink(1, hdmi)],
+                       default_sink_name="Arctis_Game")
+    stream = {"id": 90, "app_name": "linux-wallpaperengine", "pid": "1",
+              "props": {"application.name": "linux-wallpaperengine"},
+              "sink_name": None, "sink_id": None}
+    moves: list[tuple[int, str]] = []
+
+    video_router._native_targeted.clear()
+    video_router._native_placed.clear()
+    with patch("arctis_sound_manager.scripts.video_router.OVERRIDES_FILE", overrides_file), \
+         patch("arctis_sound_manager.scripts.video_router.get_headset_power",
+               return_value=HeadsetPower.ON), \
+         patch("arctis_sound_manager.scripts.video_router.get_native_streams",
+               return_value=[stream]), \
+         patch("arctis_sound_manager.scripts.video_router.move_native_stream",
+               side_effect=lambda sid, target: moves.append((sid, target)) or True):
+        for _ in range(4):
+            with patch.object(video_router, "_last_native_check", 0.0):
+                _process_tick(pulse)
+
+    assert moves == [(90, hdmi)]
