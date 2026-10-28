@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.6.6" date="2026-10-28">
+      <description>
+        <p>Quitting ASM no longer crashes when PipeWire stops answering (#349). The tray's last default-sink switch could time out and the error killed it before it finished; a unit that ignored the stop was then sent a second polite signal instead of being killed. Both are handled now. Thanks @ziggityzack for the reproduction and the analysis. ASM no longer re-sends the same move to an idle native app every 5 seconds (#349). An app pinned to an output but not playing has no link, so ASM never saw it as already there and asked PipeWire again and again for the whole session. It now asks once per stream. Arctis Pro (2019, wired) gets a profile of its own, audio only. It was handled as a wireless Arctis 7, whose commands it does not have, so its battery, ChatMix and headset settings never worked. Like the Arctis 5 (2018), it now gets the audio features (channels, Sonar EQ, spatial audio) and no controls that would do nothing.</p>
+      </description>
+    </release>
     <release version="1.6.5" date="2026-10-27">
       <description>
         <p>Arctis GameBuds: choose the audio source, the 2.4 GHz dongle or Bluetooth, the switch GG makes when its EQ panel changes tab. On Bluetooth, this computer's audio through the dongle no longer reaches the earbuds. Not yet tried on real GameBuds. Arctis 7 / 7 2019 and Arctis 1 Wireless / 1X / 7X / 7P: microphone volume, as GG offers it (0-100). Not yet tried on hardware: if you own one, please tell us on #331 whether it works. Arctis Nova Pro Wired: line out, stream mix and screen dimming. Line out to speakers or streaming, the main / aux / mic stream mix, and when the GameDAC's screen dims, as GG offers them. Not yet tried on a real one: if you own one, please tell us on #331 whether each control works.</p>
@@ -199,11 +204,6 @@
     <release version="1.4.15" date="2026-09-02">
       <description>
         <p>Steam Game Recording captured no game audio (issue #225). The router. Applications changed channel on their own after any EQ or profile change. The Linux test matrix never reached the install step. Every job on every.</p>
-      </description>
-    </release>
-    <release version="1.4.14" date="2026-09-02">
-      <description>
-        <p>Audible pop/click on track change with Spatial Audio on Media. The. deps-checker false failures in containers. The HOST/CONTAINER scope. 3 new Sonar presets from SteelSeries GG 118.0.0.</p>
       </description>
     </release>
   </releases>
