@@ -44,7 +44,7 @@ mute LED, the mute state, and whether the headset is charging.
 ## Which models
 
 - **Arctis 7** (USB ID `1038:1260`) and **Arctis 7 2019** (`1038:12ad`)
-- **Arctis Pro** 2019 (`1038:1252`)
+- **Arctis Pro** 2019 (`1038:1252`): audio features only (channels, Sonar EQ, spatial audio); it has no vendor channel for battery or headset settings
 - **Arctis 7+**, including the PS5, Xbox and Destiny editions
 
 The [supported devices page](device_support.md) lists every USB ID; the

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Arctis Pro (2019, wired) gets a profile of its own, audio only.** It was handled as a wireless Arctis 7, whose commands it does not have, so its battery, ChatMix and headset settings never worked. Like the Arctis 5 (2018), it now gets the audio features (channels, Sonar EQ, spatial audio) and no controls that would do nothing.
 - **Nova 7 Gen 2 / 7P Gen 2: the start-up sequence no longer loses commands after saving.** After a save to the headset's memory, its firmware ignores every command for 1.5 seconds, and ASM sent the next ones straight away. It now waits, as GG does.
 - **Arctis Nova 5 / 5X: the on-device EQ is no longer stuck at -10 dB** (#347). This headset encodes each band's gain its own way, 2 × (10 + dB) with 20 for 0 dB, and ASM sent the signed form the other headsets use. In Sonar mode, where ASM flattens the headset's EQ so only Sonar's curve applies, every band went to -10 dB; in Custom mode the curve came out shifted. Thanks @gouwschristo, whose read-back of the stored curve showed it.
 

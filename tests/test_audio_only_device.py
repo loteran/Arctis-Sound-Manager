@@ -144,3 +144,16 @@ def test_the_arctis_5_2018_profile_is_loaded():
     assert len(matches) == 1, "expected exactly one profile to claim PID 0x12aa"
     assert matches[0].audio_only is True
     assert matches[0].vendor_id == 0x1038
+
+
+def test_the_arctis_pro_2019_is_audio_only():
+    """0x1252 used to sit in arctis_7.yaml, whose 0x06 commands this headset
+    does not have: its spec (arctis-pro.device) includes the Arctis 5's and
+    declares only the Consumer Control page."""
+    from arctis_sound_manager.config import load_device_configurations
+
+    configs = load_device_configurations()
+    matches = [c for c in configs if 0x1252 in c.product_ids]
+    assert len(matches) == 1, "expected exactly one profile to claim PID 0x1252"
+    assert matches[0].audio_only is True
+    assert 0x1252 not in next(c for c in configs if 0x12ad in c.product_ids).product_ids

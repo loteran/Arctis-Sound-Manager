@@ -11,12 +11,6 @@ device:
   product_ids:
     - 0x1260 # Arctis 7
     - 0x12ad # Arctis 7 2019
-    # Arctis Pro 2019 (wired, USB). GG's spec for it (arctis-pro.device) says
-    # "Basic firmware API is identical to Arctis 5": report id 0x04 and 0x40
-    # register writes, none of this profile's 0x06 commands, no battery. It
-    # most likely belongs with the Arctis 5; left here until someone with
-    # one can say what works.
-    - 0x1252
   command_padding:
     length: 31
     position: end
@@ -90,9 +84,7 @@ device:
     microphone:
       mic_volume:
         # mic_volume (0x33): [0x06, 0x33, 0x00, amplitude 0-100], in
-        # arctis7dongle (Arctis 7 and 7 2019) and in GG's page for them; the
-        # Arctis Pro 2019 (0x1252) has no such command (see the note on its
-        # product id). Not yet tried on hardware.
+        # arctis7dongle (Arctis 7 and 7 2019) and in GG's page for them. Not yet tried on hardware.
         type: slider
         min: 0
         max: 100

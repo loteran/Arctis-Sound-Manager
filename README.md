@@ -220,7 +220,8 @@ The SteelSeries GG and Sonar alternative for Linux: manage your **SteelSeries Ar
 |---|---|---|---|
 | Arctis 1 / 7X / 7P Wireless | ✅ | 7 | $\color{royalblue}{\textbf{12b3}}$, 12b6, $\color{royalblue}{\textbf{12d5}}$, $\color{royalblue}{\textbf{12d7}}$ |
 | Arctis 5 (2018) | ✅ |  | $\color{royalblue}{\textbf{12aa}}$ |
-| Arctis 7 / 7 2019 / Pro 2019 / Pro GameDAC | ✅ | 30 | $\color{royalblue}{\textbf{1260}}$, $\color{royalblue}{\textbf{12ad}}$, $\color{royalblue}{\textbf{1252}}$, $\color{royalblue}{\textbf{1280}}$ |
+| Arctis 7 / 7 2019 / Pro GameDAC | ✅ | 30 | $\color{royalblue}{\textbf{1260}}$, $\color{royalblue}{\textbf{12ad}}$, $\color{royalblue}{\textbf{1280}}$ |
+| Arctis Pro 2019 (wired, audio only) | ✅ | | $\color{royalblue}{\textbf{1252}}$ |
 | Arctis 7+ / PS5 / Xbox / Destiny | ✅ | 43 | $\color{royalblue}{\textbf{220e}}$, $\color{royalblue}{\textbf{2212}}$, $\color{royalblue}{\textbf{2216}}$, 2236 |
 | Arctis 9 Wireless | ✅ | 22 | $\color{royalblue}{\textbf{12c2}}$ |
 | Arctis Pro Wireless | ✅ | 63 | $\color{royalblue}{\textbf{1290}}$, $\color{royalblue}{\textbf{1294}}$ |

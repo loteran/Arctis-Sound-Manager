@@ -1,0 +1,35 @@
+# SteelSeries Arctis Pro (2019, wired USB), product id 0x1252.
+#
+# This sat in arctis_7.yaml, whose whole protocol (report id 0x06, status
+# 0x18, ChatMix 0x24, sidetone 0x35, auto-off 0x51, mic volume 0x33) is the
+# wireless Arctis 7 dongle's. SteelSeries' own specification for this
+# product (arctis-pro.device) says "Basic firmware API is identical to
+# Arctis 5" and includes it: one HID interface on usage page 0x000C, the
+# standard Consumer Control page, and none of those 0x06 commands. Every
+# control ASM offered for it went nowhere; it has no battery to poll either.
+# elegos's Linux-Arctis-Manager v3 reached the same reading of the spec.
+#
+# So, like the Arctis 5 (2018) next door, it is driven as audio only: the
+# virtual channels, Sonar EQ and HeSuVi work on its ALSA nodes, found by
+# vendor/product id; nothing is sent to or read from the headset. The
+# Arctis 5 spec's register writes (report id 0x04, 0x40) are left out until
+# someone with this headset can confirm them.
+device:
+  name: SteelSeries Arctis Pro (2019)
+  vendor_id: 0x1038
+  product_ids:
+    - 0x1252
+
+  audio_only: true
+
+  # No interface to touch: see arctis_5_2018.yaml.
+  command_transport: interrupt
+  command_interface_index: [-1, -1]
+  listen_interface_indexes: []
+  dial_interface_index: -1
+
+  # Never used; the parser expects it.
+  command_padding:
+    length: 64
+    position: end
+    filler: 0x00
