@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.6.6] - 28 October 2026
 
 ### Fixed
 - **Quitting ASM no longer crashes when PipeWire stops answering** (#349). The tray's last default-sink switch could time out and the error killed it before it finished; a unit that ignored the stop was then sent a second polite signal instead of being killed. Both are handled now. Thanks @ziggityzack for the reproduction and the analysis.
