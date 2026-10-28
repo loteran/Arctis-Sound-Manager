@@ -1292,6 +1292,7 @@ Thanks to everyone who has contributed code, fixes, or community support:
 | [FrDrebin](https://github.com/FrDrebin) | Tested the Nova Pro Omni's settings and screen on hardware, traced its screen glitch to the charging battery, and posted the probe ASM now reads the Omni's base station settings from ([#330](https://github.com/loteran/Arctis-Sound-Manager/issues/330), [#331](https://github.com/loteran/Arctis-Sound-Manager/issues/331)) |
 | [PointyKite](https://github.com/PointyKite) | Tested the Nova Elite's on-device EQ against GG on Windows, and posted the probe that settled the Elite's settings layout and its microphone / Bluetooth EQ frames ([#327](https://github.com/loteran/Arctis-Sound-Manager/issues/327), [#331](https://github.com/loteran/Arctis-Sound-Manager/issues/331)) |
 | [globeFrEak](https://github.com/globeFrEak) | The Arctis 9 probe that showed ASM never read its status and sent its auto-off delay in seconds ([#331](https://github.com/loteran/Arctis-Sound-Manager/issues/331)) |
+| [ziggityzack](https://github.com/ziggityzack) | Reproduced and timed a tray crash on quit while PipeWire stopped answering, and traced it in the code to an uncaught pactl timeout, a "kill" fallback that only sent SIGTERM, and the router re-sending the same move to an idle pinned stream every 5 seconds ([#349](https://github.com/loteran/Arctis-Sound-Manager/issues/349)) |
 
 ---
 
