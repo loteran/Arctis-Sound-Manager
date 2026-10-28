@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.7.0" date="2026-10-28">
+      <description>
+        <p>ASM now talks to the headset through hidraw instead of libusb (Settings → Generic Device → Headset access). ASM used to take the headset's control interfaces away from the kernel and drive them itself through libusb. Now the kernel keeps them and ASM reads and writes HID reports through /dev/hidraw*: no detaching, reads sized by the kernel from the headset's own descriptor, and the system keeps showing the battery while ASM runs. If the hidraw nodes cannot be opened, ASM falls back to libusb on its own, and you can choose libusb in Settings if hidraw does not suit your headset. The bug report says which one you chose, which one is really in use, and why it fell back if it did. The udev rules now cover the hidraw nodes, and the packages re-apply them on install. "Redirect on disconnect" no longer fires when the headset only looks offline for a moment (#349). Right after ASM re-initialises the headset, its status can read offline before the first real report arrives; ASM moved the default output to your disconnect device on that, with the headset still on. It now waits until the headset has stayed offline for 5 seconds. On one system that needless default-output change was what set off a long PipeWire hang. Thanks @ziggityzack.</p>
+      </description>
+    </release>
     <release version="1.6.6" date="2026-10-28">
       <description>
         <p>Quitting ASM no longer crashes when PipeWire stops answering (#349). The tray's last default-sink switch could time out and the error killed it before it finished; a unit that ignored the stop was then sent a second polite signal instead of being killed. Both are handled now. Thanks @ziggityzack for the reproduction and the analysis. ASM no longer re-sends the same move to an idle native app every 5 seconds (#349). An app pinned to an output but not playing has no link, so ASM never saw it as already there and asked PipeWire again and again for the whole session. It now asks once per stream. Arctis Pro (2019, wired) gets a profile of its own, audio only. It was handled as a wireless Arctis 7, whose commands it does not have, so its battery, ChatMix and headset settings never worked. Like the Arctis 5 (2018), it now gets the audio features (channels, Sonar EQ, spatial audio) and no controls that would do nothing.</p>
@@ -199,11 +204,6 @@
     <release version="1.4.16" date="2026-09-02">
       <description>
         <p>Audio cuts out after a few seconds of silence on Game, Chat, and Aux.</p>
-      </description>
-    </release>
-    <release version="1.4.15" date="2026-09-02">
-      <description>
-        <p>Steam Game Recording captured no game audio (issue #225). The router. Applications changed channel on their own after any EQ or profile change. The Linux test matrix never reached the install step. Every job on every.</p>
       </description>
     </release>
   </releases>
