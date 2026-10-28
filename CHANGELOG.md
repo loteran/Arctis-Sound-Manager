@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.7.0] - 28 October 2026
 
 ### Added
 - **ASM now talks to the headset through hidraw instead of libusb** (Settings → Generic Device → Headset access). ASM used to take the headset's control interfaces away from the kernel and drive them itself through libusb. Now the kernel keeps them and ASM reads and writes HID reports through `/dev/hidraw*`: no detaching, reads sized by the kernel from the headset's own descriptor, and the system keeps showing the battery while ASM runs. If the hidraw nodes cannot be opened, ASM falls back to libusb on its own, and you can choose libusb in Settings if hidraw does not suit your headset. The bug report says which one you chose, which one is really in use, and why it fell back if it did. The udev rules now cover the hidraw nodes, and the packages re-apply them on install.
