@@ -680,6 +680,17 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
                 from arctis_sound_manager.pw_utils import apply_force_quantum
                 apply_force_quantum(int(value))
 
+            if setting == 'usb_transport':
+                # Re-acquire the headset with the other transport: hand the
+                # interfaces back (libusb) or close the nodes (hidraw), then
+                # take it again. Same background-thread reasoning as below.
+                self.logger.info("usb_transport set to %r — re-acquiring the headset", value)
+                threading.Thread(
+                    target=self.core_engine.configure_virtual_sinks,
+                    name='asm-usb-transport-switch',
+                    daemon=True,
+                ).start()
+
             if setting == 'preferred_device':
                 # Apply the new preference right away instead of waiting for the
                 # next daemon start (issue #199, part 3). configure_virtual_sinks()

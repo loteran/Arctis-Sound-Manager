@@ -159,7 +159,7 @@ _AUDIO_KEYS = (
     'external_output_device', 'hrir_id', 'pipewire_quantum',
 )
 _MICRO_KEYS = ('micro_input_source', 'micro_alt_source', 'micro_autoswitch')
-_GENERIC_KEYS = ('generic_device_mode', 'generic_output_device', 'generic_input_device')
+_GENERIC_KEYS = ('usb_transport', 'generic_device_mode', 'generic_output_device', 'generic_input_device')
 
 
 def _settings_panel_qss() -> str:

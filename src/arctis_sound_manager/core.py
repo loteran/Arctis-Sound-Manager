@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import asyncio
+import errno
 import functools
 import json
 import logging
@@ -29,6 +30,8 @@ from arctis_sound_manager.constants import (PULSE_AUX_NODE_NAME,
                                             PULSE_GAME_NODE_NAME,
                                             PULSE_MEDIA_NODE_NAME,
                                             STEELSERIES_VENDOR_ID)
+from arctis_sound_manager.hidraw_transport import (USB_TRANSPORT_STATE_FILE, HidrawTransport,
+                                                   find_hidraw_nodes)
 from arctis_sound_manager.loopback_manager import (LoopbackManager, make_specs,
                                                    current_pipewire_socket_signature)
 from arctis_sound_manager.channel_volumes import load_channel_volumes
@@ -126,6 +129,28 @@ _USB_PERMISSION_WATCH_INTERVAL = 30.0
 # Omni's mic noise reduction needs both: an on/off byte telling the firmware
 # which microphones are being adjusted, and a level the firmware requires to
 # stay >= 1 even while that feature is off.
+# GeneralSettings.usb_transport: how ASM talks to the headset.
+_USB_TRANSPORT_LIBUSB = 0
+_USB_TRANSPORT_HIDRAW = 1
+
+
+# Module functions rather than methods: plenty of tests drive CoreEngine code
+# with a MagicMock standing in for the engine, where any method call returns
+# a truthy mock and would send everything down the hidraw path.
+def _wants_hidraw(engine) -> bool:
+    """True when the user chose the hidraw transport in Settings."""
+    choice = getattr(getattr(engine, 'general_settings', None), 'usb_transport', 0)
+    return isinstance(choice, int) and not isinstance(choice, bool) and choice == _USB_TRANSPORT_HIDRAW
+
+
+def _active_hidraw(engine) -> 'HidrawTransport | None':
+    """The open hidraw transport, or None on the libusb path."""
+    transport = getattr(engine, '_hidraw', None)
+    return transport if isinstance(transport, HidrawTransport) else None
+# How long to wait for the hidraw nodes after handing interfaces back to the
+# kernel's HID driver.
+_HIDRAW_NODE_WAIT_S = 2.0
+
 # How long the headset must stay offline before "redirect on disconnect"
 # moves the default sink away from it (#349).
 _OFFLINE_REDIRECT_DELAY_S = 5.0
@@ -346,6 +371,13 @@ class CoreEngine:
         # the "no endpoint" warning is logged once per connection rather than
         # on every read attempt.
         self._endpointless_interfaces: set[int] = set()
+        # The hidraw nodes in use when the user chose that transport and it
+        # could be opened; None means the libusb path. usb_transport_active
+        # says which one is really talking to the headset, for the log and
+        # the bug report (the setting alone does not: hidraw falls back).
+        self._hidraw: HidrawTransport | None = None
+        self._hidraw_failure: str | None = None
+        self.usb_transport_active: str = 'libusb'
         self._device_lock = threading.RLock()
         self._usb_write_lock = threading.Lock()
         # monotonic() of the last frame send_command() put on the wire, so the
@@ -2232,9 +2264,15 @@ class CoreEngine:
             await asyncio.sleep(_LISTEN_IDLE_BACKOFF_S)
             return
 
-        endpoint, max_packet_size = self.guess_interface_endpoint('in', interface_id)
+        hidraw = _active_hidraw(self)
+        if hidraw is not None:
+            # The kernel's HID driver does the reading; an interface it does
+            # not hold (no hidraw node) is as good as one with no endpoint.
+            endpoint, max_packet_size = (interface_id, 64) if hidraw.has(interface_id) else (None, None)
+        else:
+            endpoint, max_packet_size = self.guess_interface_endpoint('in', interface_id)
 
-        if not endpoint:
+        if not endpoint and endpoint != 0:
             # Declared in the YAML but absent on this model: permanent for as
             # long as this device is attached, so back off hard rather than ask
             # again every few milliseconds. Logged once per connection, not per
@@ -2256,7 +2294,10 @@ class CoreEngine:
             # (see the except below), this is what makes a turned dial land in
             # milliseconds instead of every second or two (GameDAC 2 volume /
             # ChatMix responsiveness).
-            read_input: list[int] = list(await asyncio.to_thread(usb_device.read, endpoint, max_packet_size, 1000))
+            if hidraw is not None:
+                read_input = list(await asyncio.to_thread(hidraw.read, interface_id, max_packet_size, 1000))
+            else:
+                read_input = list(await asyncio.to_thread(usb_device.read, endpoint, max_packet_size, 1000))
             self._eio_counts.pop(interface_id, None)  # this interface read fine again
             self._overflow_counts.pop(interface_id, None)
             with self._device_lock:
@@ -4339,7 +4380,15 @@ class CoreEngine:
                 # listen thread before write() even returns.
                 if untagged_request is not None:
                     self._untagged_requests_pending.append(untagged_request)
-                if endpoint != 0:
+                hidraw = _active_hidraw(self)
+                if hidraw is not None:
+                    # The kernel picks the interrupt OUT endpoint or the
+                    # control pipe, as the descriptor says.
+                    if self.device_config.command_transport == CommandTransport.CTRL_FEATURE:
+                        hidraw.send_feature(self._command_interface_number(), command_lst)
+                    else:
+                        hidraw.write_output(self._command_interface_number(), command_lst)
+                elif endpoint != 0:
                     self.usb_device.write(endpoint, command_lst)
                 else:
                     bmRequestType = usb.util.build_request_type(
@@ -4405,9 +4454,13 @@ class CoreEngine:
                     if wait > 0:
                         time.sleep(wait)
                 self._last_usb_write_monotonic = time.monotonic()
-                self.usb_device.ctrl_transfer(
-                    bmRequestType, 0x09, (0x03 << 8) | (data[0] & 0xFF),
-                    self._command_interface_number(), data)
+                hidraw = _active_hidraw(self)
+                if hidraw is not None:
+                    hidraw.send_feature(self._command_interface_number(), data)
+                else:
+                    self.usb_device.ctrl_transfer(
+                        bmRequestType, 0x09, (0x03 << 8) | (data[0] & 0xFF),
+                        self._command_interface_number(), data)
         except usb.core.USBError as e:
             self.logger.warning("Error sending feature report 0x%02x: %s",
                                 data[1] if len(data) > 1 else 0, e)
@@ -4424,6 +4477,10 @@ class CoreEngine:
             recipient=usb.util.CTRL_RECIPIENT_INTERFACE)
         try:
             with self._usb_write_lock:
+                hidraw = _active_hidraw(self)
+                if hidraw is not None:
+                    return hidraw.get_feature(
+                        self._command_interface_number(), report_id, size)
                 return list(self.usb_device.ctrl_transfer(
                     bmRequestType, 0x01, (0x03 << 8) | (report_id & 0xFF),
                     self._command_interface_number(), size, timeout=1000))
@@ -4626,7 +4683,25 @@ class CoreEngine:
 
         Returns True on success, False on USB permission/access errors so the
         caller can bail out cleanly instead of letting the daemon crash.
+
+        With the hidraw transport chosen in Settings, nothing is detached:
+        the kernel keeps the interfaces and ASM opens their /dev/hidraw*
+        nodes instead (_open_hidraw). If that fails, this falls through to
+        the libusb claim below, so the headset still works.
         """
+        if _wants_hidraw(self):
+            if self._open_hidraw(usb_device, config):
+                self.permission_error = False
+                self._record_usb_transport('hidraw', None)
+                return True
+            self.logger.warning("hidraw transport unavailable for %s — using libusb instead",
+                                config.name)
+            fallback_reason = getattr(self, '_hidraw_failure', None) or 'hidraw could not be opened'
+        else:
+            fallback_reason = None
+        self._close_hidraw()
+        self.usb_transport_active = 'libusb'
+        self._record_usb_transport('libusb', fallback_reason)
         self.logger.info(f"Detaching kernel driver for device: {usb_device.idVendor:04x}:{usb_device.idProduct:04x} ({config.name})")
 
         had_eacces = False
@@ -5004,6 +5079,98 @@ class CoreEngine:
         timer.daemon = True
         timer.start()
 
+    def _hidraw_interfaces(self, config: DeviceConfiguration) -> set[int]:
+        interfaces = {i for i in self._all_used_interfaces(config) if i >= 0}
+        if config.oled is not None:
+            interfaces.add(config.oled.interface)
+        return interfaces
+
+    def _open_hidraw(self, usb_device: TypedDevice, config: DeviceConfiguration) -> bool:
+        """Open the headset's hidraw nodes instead of claiming it.
+
+        A libusb session before this one (or an older ASM) may have left the
+        kernel driver detached, and without it there is no hidraw node: give
+        each interface back to the kernel first, then wait briefly for the
+        nodes to appear. The command interface is the one that must be there.
+        """
+        self._close_hidraw()
+        self._hidraw_failure = None
+        interfaces = self._hidraw_interfaces(config)
+        for interface in interfaces:
+            try:
+                if not usb_device.is_kernel_driver_active(interface):
+                    usb_device.attach_kernel_driver(interface)
+            except (usb.core.USBError, NotImplementedError) as e:
+                self.logger.debug("hidraw: interface %d not handed back to the kernel: %r",
+                                  interface, e)
+        command = self._command_interface_number()
+        nodes: dict = {}
+        deadline = time.monotonic() + _HIDRAW_NODE_WAIT_S
+        # Wait for the nodes, then for their permissions: the kernel creates a
+        # hidraw node as root 0600 and udev applies the rules' MODE a moment
+        # later, so a node that has just appeared refuses the first open.
+        while True:
+            nodes = find_hidraw_nodes(getattr(usb_device, 'bus', None),
+                                      getattr(usb_device, 'port_numbers', None), interfaces)
+            error: OSError | None = None
+            if command in nodes:
+                try:
+                    self._hidraw = HidrawTransport(nodes)
+                    break
+                except OSError as e:
+                    error = e
+                    if e.errno not in (errno.EACCES, errno.EPERM, errno.ENOENT):
+                        break
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(0.1)
+        if command not in nodes:
+            self._hidraw_failure = f"no hidraw node for command interface {command}"
+            self.logger.warning("hidraw: no node for command interface %d (found: %s)",
+                                command, ", ".join(f"{i}→{n}" for i, n in sorted(nodes.items())) or "none")
+            return False
+        if self._hidraw is None:
+            self._hidraw_failure = f"cannot open {error.filename}: {error.strerror}"
+            self.logger.warning(
+                "hidraw: cannot open %s (%s). The udev rules may predate hidraw "
+                "support: run `asm-cli udev write-rules --force --reload` as root, then replug.",
+                error.filename, error)
+            return False
+        self.usb_transport_active = 'hidraw'
+        self.logger.info("Using the hidraw transport for %s: %s", config.name, self._hidraw.describe())
+        return True
+
+    def _record_usb_transport(self, active: str, fallback_reason: str | None) -> None:
+        """Write which transport is talking to the headset, for the bug report.
+
+        The setting says what the user asked for; this says what happened,
+        including a hidraw request that fell back to libusb and why. Best
+        effort: a report missing it is still a report.
+        """
+        hidraw = _active_hidraw(self)
+        state = {
+            'chosen': 'hidraw' if _wants_hidraw(self) else 'libusb',
+            'active': active,
+            'fallback_reason': fallback_reason,
+            'device': self.device_config.name if self.device_config else None,
+            'nodes': ({str(i): str(n) for i, n in sorted(hidraw.nodes.items())}
+                      if hidraw is not None else {}),
+            'numbered_reports': ({str(i): hidraw.uses_report_ids(i) for i in sorted(hidraw.nodes)}
+                                 if hidraw is not None else {}),
+            'time': time.time(),
+        }
+        try:
+            USB_TRANSPORT_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            USB_TRANSPORT_STATE_FILE.write_text(json.dumps(state, indent=1))
+        except OSError as e:
+            self.logger.debug("Could not record the USB transport state: %r", e)
+
+    def _close_hidraw(self) -> None:
+        transport = _active_hidraw(self)
+        self._hidraw = None
+        if transport is not None:
+            transport.close()
+
     def release_all_interfaces(self, usb_device: TypedDevice, config: DeviceConfiguration) -> None:
         """Release every interface :meth:`kernel_detach` claimed.
 
@@ -5020,7 +5187,14 @@ class CoreEngine:
         claimed raises, and that is not an error worth propagating on a
         teardown path — the goal is to give back whatever we hold before the
         kernel driver is re-attached.
+
+        With hidraw nothing was claimed: closing the nodes is the release.
         """
+        if _active_hidraw(self) is not None:
+            self._close_hidraw()
+            return
+        if getattr(self, 'usb_transport_active', 'libusb') == 'hidraw':
+            return
         for interface in self._all_used_interfaces(config):
             try:
                 usb.util.release_interface(usb_device, interface)
@@ -5030,6 +5204,9 @@ class CoreEngine:
 
     def kernel_attach(self, usb_device: TypedDevice, config: DeviceConfiguration) -> bool:
         """Re-attach the kernel driver. Returns False on USB error (best effort)."""
+        if getattr(self, 'usb_transport_active', 'libusb') == 'hidraw':
+            # The kernel driver was never detached.
+            return True
         self.logger.info(f"Re-attaching kernel driver for device: {usb_device.idProduct:04x}:{usb_device.idVendor:04x} ({config.name})")
 
         ok = True

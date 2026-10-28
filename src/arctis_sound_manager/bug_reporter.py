@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -722,6 +723,104 @@ def _usb_access(
     return '\n'.join(out).strip()
 
 
+def _usb_access_info(sys_usb: Path = Path('/sys/bus/usb/devices')) -> str:
+    """How ASM talks to the headset, and what that path looks like right now.
+
+    The setting (Settings → Headset access) says what the user chose; the
+    daemon's state file says what is really in use, a hidraw request falling
+    back to libusb included. The live part follows the choice: with hidraw,
+    each HID interface's driver and /dev/hidraw* node, its permissions and
+    report numbering; with libusb, the usbfs node and which interfaces the
+    kernel driver is detached from (the ones ASM claimed). Never raises.
+    """
+    import stat
+
+    from arctis_sound_manager.constants import STEELSERIES_VENDOR_ID
+    from arctis_sound_manager.hidraw_transport import (USB_TRANSPORT_STATE_FILE,
+                                                       descriptor_uses_report_ids)
+
+    lines: list[str] = []
+    chosen = 'libusb'
+    try:
+        from arctis_sound_manager.settings import GeneralSettings
+        chosen = 'hidraw' if int(GeneralSettings.read_from_file().usb_transport or 0) == 1 else 'libusb'
+    except Exception as e:
+        lines.append(f"setting: (unreadable: {e!r})")
+    lines.append(f"chosen in Settings: {chosen}")
+
+    try:
+        if USB_TRANSPORT_STATE_FILE.is_file():
+            state = json.loads(USB_TRANSPORT_STATE_FILE.read_text())
+            lines.append(f"active (daemon): {state.get('active')} for {state.get('device')}, "
+                         f"recorded {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(state.get('time', 0)))}")
+            if state.get('fallback_reason'):
+                lines.append(f"fell back to libusb: {state['fallback_reason']}")
+            for iface, node in (state.get('nodes') or {}).items():
+                numbered = (state.get('numbered_reports') or {}).get(iface)
+                lines.append(f"  opened interface {iface} -> {node} "
+                             f"({'numbered' if numbered else 'unnumbered'} reports)")
+        else:
+            lines.append("active (daemon): (no state file: the daemon has not acquired a headset "
+                         "since this was added)")
+    except Exception as e:
+        lines.append(f"active (daemon): (unreadable: {e!r})")
+
+    vendor = f'{STEELSERIES_VENDOR_ID:04x}'
+    try:
+        devices = [d for d in sorted(sys_usb.iterdir())
+                   if ':' not in d.name and (d / 'idVendor').is_file()
+                   and (d / 'idVendor').read_text().strip() == vendor]
+    except OSError as e:
+        lines.append(f"sysfs: (unreadable: {e!r})")
+        devices = []
+    for dev in devices:
+        pid = (dev / 'idProduct').read_text().strip()
+        lines.append(f"{dev.name}: 1038:{pid}")
+        if chosen == 'libusb':
+            try:
+                busnum = int((dev / 'busnum').read_text())
+                devnum = int((dev / 'devnum').read_text())
+                node = Path(f'/dev/bus/usb/{busnum:03d}/{devnum:03d}')
+                st = node.stat()
+                lines.append(f"  usbfs {node}: mode {stat.filemode(st.st_mode)} uid {st.st_uid} gid {st.st_gid}, "
+                             f"writable by this process: {'yes' if os.access(node, os.W_OK) else 'NO'}")
+            except (OSError, ValueError) as e:
+                lines.append(f"  usbfs node: (unreadable: {e!r})")
+        for intf in sorted(dev.parent.glob(f"{dev.name}:*")):
+            try:
+                if (intf / 'bInterfaceClass').read_text().strip() != '03':
+                    continue
+                num = int((intf / 'bInterfaceNumber').read_text(), 16)
+            except (OSError, ValueError):
+                continue
+            driver = (intf / 'driver').resolve().name if (intf / 'driver').exists() else 'none'
+            hidraws = sorted(intf.glob('*/hidraw/hidraw*'))
+            if chosen == 'libusb':
+                note = '(ASM detached it — expected)' if driver in ('none', 'usbfs') else ''
+                lines.append(f"  interface {num}: driver={driver} {note}".rstrip())
+                continue
+            if not hidraws:
+                lines.append(f"  interface {num}: driver={driver}, no hidraw node")
+                continue
+            for hid in hidraws:
+                node = Path('/dev') / hid.name
+                try:
+                    st = node.stat()
+                    access = 'rw' if os.access(node, os.R_OK | os.W_OK) else 'NO ACCESS'
+                    perm = f"mode {stat.filemode(st.st_mode)} uid {st.st_uid} gid {st.st_gid}, this process: {access}"
+                except OSError as e:
+                    perm = f"(stat failed: {e!r})"
+                try:
+                    numbered = descriptor_uses_report_ids((hid / 'device' / 'report_descriptor').read_bytes())
+                    reports = 'numbered' if numbered else 'unnumbered'
+                except OSError:
+                    reports = 'descriptor unreadable'
+                lines.append(f"  interface {num}: driver={driver}, {node} {perm}, {reports} reports")
+    if not devices:
+        lines.append("(no SteelSeries USB device found in sysfs)")
+    return '\n'.join(lines)
+
+
 def _usb_resume_reset_info() -> str:
     """Sysfs path of the connected Arctis device, plus the resume-time USB
     reset counters (#238). Never raises: absence of either is itself useful
@@ -854,6 +953,11 @@ def collect_system_info() -> dict:
     # since those guards are otherwise in-memory only and gone the moment this
     # separate `asm-cli diagnose` process asks about them.
     info['usb_resume_reset'] = _usb_resume_reset_info()
+    try:
+        info['usb_access'] = _usb_access_info()
+    except Exception as e:
+        info['usb_access'] = f'(error: {e!r})'
+
 
     # What the daemon actually decodes from the device: the battery level, the
     # power status, and every other status variable this model reports.
@@ -1317,6 +1421,16 @@ def format_bug_report(traceback_str: Optional[str] = None) -> str:
             '## USB HID devices',
             '```',
             usb_hid,
+            '```',
+            '',
+        ]
+
+    usb_access = info.get('usb_access', '')
+    if usb_access:
+        lines += [
+            '## USB access (libusb or hidraw)',
+            '```',
+            usb_access,
             '```',
             '',
         ]

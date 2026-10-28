@@ -756,12 +756,21 @@ class OledManager:
                     self._last_send_errno = None
                     return False
                 try:
-                    usb_device.ctrl_transfer(
-                        bmRequestType, 0x09,
-                        wvalue, self._oled_interface,
-                        packet,
-                        timeout=self._send_timeout_ms,
-                    )
+                    from arctis_sound_manager.core import _active_hidraw
+                    hidraw = _active_hidraw(self._core)
+                    if hidraw is not None:
+                        # Same report, through the kernel's HID driver.
+                        if report_type == _OLED_REPORT_TYPE_FEATURE:
+                            hidraw.send_feature(self._oled_interface, packet)
+                        else:
+                            hidraw.write_output(self._oled_interface, packet)
+                    else:
+                        usb_device.ctrl_transfer(
+                            bmRequestType, 0x09,
+                            wvalue, self._oled_interface,
+                            packet,
+                            timeout=self._send_timeout_ms,
+                        )
                     self._on_write_acknowledged()
                     return True
                 except usb.core.USBError as e:
