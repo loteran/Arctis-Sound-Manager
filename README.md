@@ -223,19 +223,19 @@ The SteelSeries GG and Sonar alternative for Linux: manage your **SteelSeries Ar
 | Arctis 5 (2018) | ✅ |  | $\color{royalblue}{\textbf{12aa}}$ |
 | Arctis 7 / 7 2019 / Pro GameDAC | ✅ | 30 | $\color{royalblue}{\textbf{1260}}$, $\color{royalblue}{\textbf{12ad}}$, $\color{royalblue}{\textbf{1280}}$ |
 | Arctis Pro 2019 (wired, audio only) | ✅ |  | $\color{royalblue}{\textbf{1252}}$ |
-| Arctis 7+ / PS5 / Xbox / Destiny | ✅ | 43 | $\color{royalblue}{\textbf{220e}}$, $\color{royalblue}{\textbf{2212}}$, $\color{royalblue}{\textbf{2216}}$, 2236 |
+| Arctis 7+ / PS5 / Xbox / Destiny | ✅ | 44 | $\color{royalblue}{\textbf{220e}}$, $\color{royalblue}{\textbf{2212}}$, $\color{royalblue}{\textbf{2216}}$, 2236 |
 | Arctis 9 Wireless | ✅ | 23 | $\color{royalblue}{\textbf{12c2}}$ |
 | Arctis Pro Wireless | ✅ | 64 | $\color{royalblue}{\textbf{1290}}$, $\color{royalblue}{\textbf{1294}}$ |
-| Arctis Nova Pro Wireless / X | ✅ | 488 | $\color{royalblue}{\textbf{12e0}}$, $\color{royalblue}{\textbf{12e5}}$, $\color{royalblue}{\textbf{225d}}$ |
+| Arctis Nova Pro Wireless / X | ✅ | 493 | $\color{royalblue}{\textbf{12e0}}$, $\color{royalblue}{\textbf{12e5}}$, $\color{royalblue}{\textbf{225d}}$ |
 | Arctis Nova Pro Wired / Xbox Wired | ✅ | 58 | $\color{royalblue}{\textbf{12cb}}$, $\color{royalblue}{\textbf{12cd}}$ |
-| Arctis Nova Pro Omni | ✅ | 66 | $\color{royalblue}{\textbf{2290}}$ |
+| Arctis Nova Pro Omni | ✅ | 67 | $\color{royalblue}{\textbf{2290}}$ |
 | Arctis Nova 3 | ✅ | 17 | $\color{royalblue}{\textbf{12ec}}$ |
 | Arctis Nova 3P / 3X Wireless | ✅ | 46 | $\color{royalblue}{\textbf{2269}}$, $\color{royalblue}{\textbf{226d}}$ |
-| Arctis Nova 5 / 5X | ✅ | 105 | $\color{royalblue}{\textbf{2232}}$, $\color{royalblue}{\textbf{2253}}$, $\color{royalblue}{\textbf{2255}}$, $\color{royalblue}{\textbf{2264}}$ |
+| Arctis Nova 5 / 5X | ✅ | 106 | $\color{royalblue}{\textbf{2232}}$, $\color{royalblue}{\textbf{2253}}$, $\color{royalblue}{\textbf{2255}}$, $\color{royalblue}{\textbf{2264}}$ |
 | Arctis Nova 7 Gen 1 | ✅ | 59 | $\color{royalblue}{\textbf{2202}}$, $\color{royalblue}{\textbf{2206}}$, $\color{royalblue}{\textbf{223a}}$, $\color{royalblue}{\textbf{227a}}$, $\color{royalblue}{\textbf{22a4}}$ |
-| Arctis Nova 7 Gen 2 | ✅ | 229 | $\color{royalblue}{\textbf{22a1}}$, $\color{royalblue}{\textbf{227e}}$, $\color{royalblue}{\textbf{2258}}$, $\color{royalblue}{\textbf{229e}}$, $\color{royalblue}{\textbf{22a9}}$, $\color{royalblue}{\textbf{22a5}}$, $\color{royalblue}{\textbf{22ab}}$ |
+| Arctis Nova 7 Gen 2 | ✅ | 232 | $\color{royalblue}{\textbf{22a1}}$, $\color{royalblue}{\textbf{227e}}$, $\color{royalblue}{\textbf{2258}}$, $\color{royalblue}{\textbf{229e}}$, $\color{royalblue}{\textbf{22a9}}$, $\color{royalblue}{\textbf{22a5}}$, $\color{royalblue}{\textbf{22ab}}$ |
 | Arctis Nova 7P | ✅ | 24 | $\color{royalblue}{\textbf{220a}}$, $\color{royalblue}{\textbf{22a7}}$ |
-| Arctis Nova Elite | ✅ | 44 | $\color{royalblue}{\textbf{2244}}$, 2249, $\color{royalblue}{\textbf{2270}}$ |
+| Arctis Nova Elite | ✅ | 45 | $\color{royalblue}{\textbf{2244}}$, 2249, $\color{royalblue}{\textbf{2270}}$ |
 | Arctis GameBuds / GameBuds X | ✅ | 35 | $\color{royalblue}{\textbf{230a}}$, $\color{royalblue}{\textbf{2317}}$ |
 <!-- STATS:DEVICES:END -->
 
@@ -905,7 +905,7 @@ To request a new language, open a [GitHub issue](https://github.com/loteran/Arct
 ## Community stats
 
 <!-- STATS:META:START -->
-_Based on **1391** unique users (**73218** anonymous data points) — last updated 2026-10-29_
+_Based on **1403** unique users (**73365** anonymous data points) — last updated 2026-10-30_
 <!-- STATS:META:END -->
 
 > Anonymous usage data shared voluntarily by opted-in users.
@@ -917,16 +917,16 @@ _Based on **1391** unique users (**73218** anonymous data points) — last updat
 <!-- STATS:TESTED_DISTROS:START -->
 | Distribution | Install method | Users |
 |---|---|---|
-| CachyOS | 🎯 AUR | 👥 552 |
-| Arch Linux | 🎯 AUR | 👥 292 |
-| Nobara Linux 44 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 84 |
+| CachyOS | 🎯 AUR | 👥 558 |
+| Arch Linux | 🎯 AUR | 👥 293 |
+| Nobara Linux 44 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 85 |
 | Fedora Linux 44 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 78 |
-| Linux Mint 22.3 | 🎯 PPA | 👥 71 |
+| Linux Mint 22.3 | 🎯 PPA | 👥 72 |
 | Ubuntu 26.04.1 LTS | 🎯 PPA | 👥 44 |
-| Pop!_OS 24.04 LTS | 🎯 PPA | 👥 29 |
+| Pop!_OS 24.04 LTS | 🎯 PPA | 👥 31 |
 | EndeavourOS | 🎯 AUR | 👥 29 |
 | Omarchy | 🎯 AUR | 👥 28 |
-| Fedora Linux 44 (Workstation Edition) | 🎯 COPR | 👥 27 |
+| Fedora Linux 44 (Workstation Edition) | 🎯 COPR | 👥 28 |
 | Ubuntu 26.04 LTS | 🎯 PPA | 👥 18 |
 | Nobara Linux 43 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 14 |
 | Garuda Linux | 🎯 AUR | 👥 14 |
@@ -956,15 +956,15 @@ _Based on **1391** unique users (**73218** anonymous data points) — last updat
 <!-- STATS:HEADSETS:START -->
 | Headset | Installs |
 |---|---|
-| Arctis Nova Pro Wireless | 488 |
-| Arctis Nova 7 (Gen 2) | 229 |
-| Arctis Nova 5 Wireless | 105 |
-| Arctis Nova Pro Omni | 66 |
+| Arctis Nova Pro Wireless | 493 |
+| Arctis Nova 7 (Gen 2) | 232 |
+| Arctis Nova 5 Wireless | 106 |
+| Arctis Nova Pro Omni | 67 |
 | Arctis Pro Wireless | 64 |
 | Arctis Nova 7 (Gen 1) | 59 |
 | Arctis Nova Pro Wired | 58 |
-| Arctis Nova Elite | 44 |
-| Arctis 7+ | 43 |
+| Arctis Nova Elite | 45 |
+| Arctis 7+ | 44 |
 | Arctis Nova 3 Wireless | 39 |
 | Arctis GameBuds | 35 |
 | Arctis Nova 3 | 24 |
@@ -979,16 +979,16 @@ _Based on **1391** unique users (**73218** anonymous data points) — last updat
 <!-- STATS:DISTROS:START -->
 | Distribution | Installs |
 |---|---|
-| CachyOS | 552 |
-| Arch Linux | 292 |
-| Nobara Linux 44 (KDE Plasma Desktop Edition) | 84 |
+| CachyOS | 558 |
+| Arch Linux | 293 |
+| Nobara Linux 44 (KDE Plasma Desktop Edition) | 85 |
 | Fedora Linux 44 (KDE Plasma Desktop Edition) | 78 |
-| Linux Mint 22.3 | 71 |
+| Linux Mint 22.3 | 72 |
 | Ubuntu 26.04.1 LTS | 44 |
-| Pop!_OS 24.04 LTS | 29 |
+| Pop!_OS 24.04 LTS | 31 |
 | EndeavourOS | 29 |
 | Omarchy | 28 |
-| Fedora Linux 44 (Workstation Edition) | 27 |
+| Fedora Linux 44 (Workstation Edition) | 28 |
 | Ubuntu 26.04 LTS | 18 |
 | Nobara Linux 43 (KDE Plasma Desktop Edition) | 14 |
 | Garuda Linux | 14 |
