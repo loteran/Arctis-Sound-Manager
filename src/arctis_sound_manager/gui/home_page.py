@@ -953,10 +953,17 @@ class AudioCard(QWidget):
         Picking through it keeps both pages showing the same device."""
         self._output_picker = picker
         self._output_btn.setVisible(picker is not None)
-        if picker is not None and hasattr(picker, "target_changed"):
-            # Queued: the combo updates its text after emitting
-            picker.target_changed.connect(
-                lambda *_: QTimer.singleShot(0, self._refresh_output_label))
+        if picker is not None:
+            # Both a user pick and an automatic fallback/return move the live
+            # label; only the former changes the saved device. The Output
+            # selector exposes them as separate signals, the per-channel ones
+            # only have target_changed.
+            for signal_name in ("target_changed", "live_target_changed"):
+                signal = getattr(picker, signal_name, None)
+                if signal is not None:
+                    # Queued: the combo updates its text after emitting
+                    signal.connect(
+                        lambda *_: QTimer.singleShot(0, self._refresh_output_label))
         self._refresh_output_label()
 
     def _style_output_label(self):

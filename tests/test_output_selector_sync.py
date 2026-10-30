@@ -129,6 +129,56 @@ def test_nothing_configured_falls_back_to_the_memory(tmp_path, monkeypatch):
     assert sel._current == HDMI
 
 
+# ── a temporary absence must not change the saved choice ─────────────────────
+
+def test_a_disappearing_configured_device_is_a_live_only_change(tmp_path, monkeypatch):
+    """The monitor goes to sleep: the link falls back, the setting does not.
+
+    This is the reported bug. OutputSelector used to emit target_changed for
+    this, and SonarPage persisted it as external_output_device — so when the
+    monitor woke up it was no longer the configured device at all.
+    """
+    sinks = [_FakeSink(HEADSET), _FakeSink(HDMI)]
+    sel = _selector(tmp_path, monkeypatch, configured=HDMI, sinks=sinks,
+                    memory_prefers=HEADSET)
+    assert sel._current == HDMI
+
+    picked, live = [], []
+    sel.target_changed.connect(picked.append)
+    sel.live_target_changed.connect(live.append)
+
+    sinks[:] = [s for s in sinks if s.name != HDMI]
+    sel.refresh()
+
+    assert sel._current == HEADSET
+    assert live == [HEADSET]
+    assert picked == [], "a temporary fallback was persisted as a user choice"
+    settings = (tmp_path / "settings" / "general_settings.yaml").read_text()
+    assert HDMI in settings, "the saved device was overwritten by the fallback"
+
+
+def test_a_returning_configured_device_is_relinked_without_being_persisted(
+        tmp_path, monkeypatch):
+    """The monitor wakes up again: the live link follows it back."""
+    sinks = [_FakeSink(HEADSET)]
+    sel = _selector(tmp_path, monkeypatch, configured=HDMI, sinks=sinks,
+                    memory_prefers=HEADSET)
+    assert sel._current == HEADSET          # the monitor is asleep at startup
+    assert sel._on_configured is False
+
+    picked, live = [], []
+    sel.target_changed.connect(picked.append)
+    sel.live_target_changed.connect(live.append)
+
+    sinks.append(_FakeSink(HDMI))
+    sel.refresh()
+
+    assert sel._current == HDMI
+    assert live == [HDMI]
+    assert picked == []
+    assert sel._on_configured is True
+
+
 # ── the outbound direction ────────────────────────────────────────────────────
 
 def test_the_equalizer_saves_the_id_the_other_tabs_use(monkeypatch):
@@ -249,3 +299,58 @@ def test_a_write_that_never_lands_stops_being_believed(tmp_path, monkeypatch):
 
     assert sel._pending_pick is None
     assert sel._current == HEADSET, "should fall back to what is actually configured"
+
+
+# ── what the page is allowed to persist ──────────────────────────────────────
+
+def _page_for_output(monkeypatch, current):
+    """A SonarPage with only the Output plumbing its handlers use."""
+    from unittest.mock import MagicMock
+
+    from arctis_sound_manager.gui.sonar_page import SonarPage
+
+    page = SonarPage.__new__(SonarPage)
+    page._output_widget = MagicMock()
+    page._output_widget._target_override = current
+
+    monkeypatch.setattr(
+        SonarPage, "_canonical_device_id",
+        staticmethod(lambda node_name: node_name),
+    )
+    written: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "arctis_sound_manager.gui.dbus_wrapper.DbusWrapper.change_setting",
+        staticmethod(lambda name, value: written.append((name, value))),
+    )
+    retargeted: list[str] = []
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.retarget_output",
+        lambda target, data=None: retargeted.append(target) or True,
+    )
+    return page, written, retargeted
+
+
+def test_an_automatic_fallback_only_moves_the_link(monkeypatch):
+    """The daemon's rule, now applied to the GUI too: a fallback is a link,
+    not a decision, so the saved device must survive the monitor sleeping."""
+    page, written, retargeted = _page_for_output(monkeypatch, current=HDMI)
+
+    page._on_output_live_target_changed(HEADSET)
+
+    assert written == [], "the fallback rewrote external_output_device"
+    assert retargeted == [HEADSET]
+    assert page._output_widget._target_override == HDMI, (
+        "the fallback must not become the target the Output conf is generated "
+        "from — that would write the headset into the conf while the setting "
+        "still says monitor"
+    )
+
+
+def test_a_user_pick_persists_the_device_and_moves_the_link(monkeypatch):
+    page, written, retargeted = _page_for_output(monkeypatch, current=HEADSET)
+
+    page._on_output_device_changed(HDMI)
+
+    assert written == [("external_output_device", HDMI)]
+    assert retargeted == [HDMI]
+    assert page._output_widget._target_override == HDMI
