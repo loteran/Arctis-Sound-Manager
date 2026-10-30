@@ -3548,7 +3548,14 @@ class SonarPage(QWidget):
         # settable in Settings and invisible here, which left a user on
         # Bluetooth earbuds with no way to see where the channel was pointing.
         self._output_selector = OutputSelector()
+        # A user pick is a decision and is persisted; an automatic fallback or
+        # a returning configured device only moves the live link. Conflating
+        # the two used to overwrite external_output_device with the headset
+        # whenever a monitor went to sleep: the monitor came back but the
+        # saved choice did not.
         self._output_selector.target_changed.connect(self._on_output_device_changed)
+        self._output_selector.live_target_changed.connect(
+            self._on_output_live_target_changed)
         _out_layout = self._output_widget.layout()
         if _out_layout is not None:
             _out_layout.insertWidget(0, self._output_selector)
@@ -3717,35 +3724,54 @@ class SonarPage(QWidget):
         return node_name
 
     def _on_output_device_changed(self, device_id: str) -> None:
-        """Point the Output channel at *device_id* and persist the choice.
-
-        The selector resolves fallbacks on its own, so this fires both when the
-        user picks a device and when one disappears — either way the channel and
-        the saved setting must follow, or the filter chain keeps feeding a sink
-        that is no longer there.
-        """
+        """The user picked *device_id*: persist the choice, then apply it."""
         import logging
         log = logging.getLogger(__name__)
 
-        if self._output_widget._target_override == device_id:
-            return
-        self._output_widget._target_override = device_id
         try:
             from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
             DbusWrapper.change_setting(
                 "external_output_device", self._canonical_device_id(device_id))
         except Exception:
             log.exception("could not persist the output device")
+        self._apply_output_target(device_id, log)
 
-        # Move one link, do not rebuild anything. Every Sonar channel feeds the
-        # master output, so the destination is a single link below it: switching
-        # touches no channel and no application, which is what stops the routing
-        # overrides from dragging streams back and undoing the choice.
-        #
-        # Rebuilding was the old route and it cannot be used here: it restarts
-        # the loopbacks, and a loopback process *is* its virtual sink — killing
-        # one orphans every stream playing to it, which is why swapping between
-        # Bluetooth and the headset lost audio and scattered channels.
+    def _on_output_live_target_changed(self, device_id: str) -> None:
+        """Point the Output chain at an automatic fallback or returning device.
+
+        The setting is the user's decision and must survive a temporary
+        absence. The daemon treats its own fallback the same way
+        (ensure_physical_output_links deliberately does not rewrite it), so
+        persisting here would make the GUI disagree with the daemon about what
+        the user asked for — and a monitor waking up would find itself replaced
+        by the headset that stood in while it slept.
+        """
+        import logging
+        self._apply_output_target(
+            device_id, logging.getLogger(__name__), update_override=False)
+
+    def _apply_output_target(
+        self, device_id: str, log, *, update_override: bool = True,
+    ) -> None:
+        """Move the Output channel's live link to *device_id*.
+
+        Move one link, do not rebuild anything. Every Sonar channel feeds the
+        master output, so the destination is a single link below it: switching
+        touches no channel and no application, which is what stops the routing
+        overrides from dragging streams back and undoing the choice.
+
+        ``update_override`` is False for an automatic fallback: the override
+        is what the Output EQ conf is generated from, and pointing that at the
+        temporary stand-in would write the headset into the conf. The saved
+        target has to stay the thing the conf keeps aiming at.
+
+        Rebuilding was the old route and it cannot be used here: it restarts
+        the loopbacks, and a loopback process *is* its virtual sink — killing
+        one orphans every stream playing to it, which is why swapping between
+        Bluetooth and the headset lost audio and scattered channels.
+        """
+        if update_override:
+            self._output_widget._target_override = device_id
         try:
             from arctis_sound_manager.pw_utils import retarget_output
             if not retarget_output(device_id):
