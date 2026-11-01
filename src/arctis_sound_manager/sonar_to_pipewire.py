@@ -1585,6 +1585,31 @@ def generate_sonar_eq_conf(
         position = _CHANNEL_POSITION[channel]
     elif channel == "output":
         target, channels, position = _resolve_external_output(target_override)
+        # A configured sink that is merely absent — a monitor asleep over
+        # DPMS, a TV between power states — must not have its target erased
+        # from the conf. The conf is the daemon's only record of where the
+        # channel returns to; rewriting it with node.target = "" while the
+        # setting still names the monitor leaves the watchdog with nothing to
+        # restore. Keep the target and layout already written, exactly as the
+        # chat branch above does for a device this process cannot see.
+        #
+        # Only when a choice actually exists: an empty setting and no
+        # override means the user has not picked an external output, and a
+        # stale target must not survive that.
+        preserved = False
+        if not target and (target_override or _read_external_output_setting()):
+            preserved_target = _target_already_written(output_path)
+            if preserved_target:
+                target = preserved_target
+                layout = _conf_layout(output_path)
+                if layout is not None:
+                    channels, position = layout
+                preserved = True
+                _log.info(
+                    "Output channel's configured sink is absent — keeping "
+                    "%r in %s so the channel can return to it",
+                    preserved_target, output_path.name,
+                )
         # CHA-6: record which raw external_output_device setting produced
         # this target, so a later read can tell — cheaply, without a
         # pulsectl round-trip — whether the setting has since moved on
@@ -1594,8 +1619,10 @@ def generate_sonar_eq_conf(
         # on) makes _resolve_external_output() come back empty, and syncing
         # the snapshot anyway would lock that failure in as "reconciled"
         # forever — the next read only compares the setting against this
-        # snapshot and would never notice anything needs retrying.
-        if target:
+        # snapshot and would never notice anything needs retrying. A
+        # preserved target is not a successful resolution either, so it must
+        # not update the snapshot.
+        if target and not preserved:
             _sync_output_setting_snapshot()
     else:
         # game / media: always 8ch, always (nominally) targets HeSuVi.
@@ -2873,6 +2900,13 @@ _WRITTEN_TARGET_RE = re.compile(
     r'^\s*(?:node\.target|target\.object)\s*=\s*"([^"]+)"', re.MULTILINE
 )
 
+# The layout a generated EQ conf already negotiates. Read alongside the target
+# above: when the configured sink is temporarily absent, its channel count and
+# position must survive too — regenerating a 7.1 chain as 2.0 because the
+# monitor is asleep would change what the user hears when it wakes.
+_CONF_CHANNELS_RE = re.compile(r"audio\.channels\s*=\s*(\d+)")
+_CONF_POSITION_RE = re.compile(r"audio\.position\s*=\s*\[\s*([^\]]+?)\s*\]")
+
 
 # The playback.props block of a generated conf, captured so a repair can look
 # inside it alone.
@@ -2999,6 +3033,26 @@ def _target_already_written(path: Path) -> str:
     except OSError:
         return ""
     return match.group(1) if match else ""
+
+
+def _conf_layout(path: Path) -> tuple[int, str] | None:
+    """The ``(audio.channels, audio.position)`` already in the conf at *path*.
+
+    ``None`` when the file is absent or either line cannot be read, in which
+    case callers keep their freshly resolved defaults rather than guessing.
+    """
+    try:
+        content = path.read_text()
+    except OSError:
+        return None
+    channels = _CONF_CHANNELS_RE.search(content)
+    position = _CONF_POSITION_RE.search(content)
+    if channels is None or position is None:
+        return None
+    try:
+        return int(channels.group(1)), " ".join(position.group(1).split())
+    except ValueError:
+        return None
 
 
 # ── Live-apply diff (Phase 2, issue #100/#88) ────────────────────────────────

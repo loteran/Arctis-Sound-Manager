@@ -46,7 +46,15 @@ def _tr(key: str, fallback: str) -> str:
 class OutputSelector(QWidget):
     """Live output picker with automatic fallback and memory."""
 
+    #: The user picked a device. This is the only signal a consumer may
+    #: persist: it is a decision, and it should outlive the device.
     target_changed = Signal(str)
+
+    #: The live target changed without the user choosing a new device — the
+    #: configured one disappeared (fallback) or came back. Move the link, but
+    #: leave the saved preference alone: a monitor going to sleep is not a
+    #: decision to stop using it.
+    live_target_changed = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -208,6 +216,7 @@ class OutputSelector(QWidget):
         # What the rest of ASM is configured for wins over this widget's own
         # memory. The memory is the fallback ladder for a device that has gone
         # away, not a second place to keep the user's choice.
+        was_on_configured = self._on_configured
         configured = self._configured_target()
         if self._pending_pick is not None:
             if configured == self._pending_pick:
@@ -235,19 +244,33 @@ class OutputSelector(QWidget):
             # wrote it has done the work. Emitting here would send it straight
             # back out and restart the filter-chain for nothing, every time the
             # device is changed from the Channels tab or from Settings.
+            #
+            # The exception is a configured device that has just come BACK
+            # after a fallback. That was not a settings change: the setting
+            # stayed on the monitor while it slept, and only the live link
+            # needs pointing at it again. ``was_on_configured`` is False only
+            # when the previous pass was itself a fallback, so this cannot fire
+            # merely because another view wrote a different device.
             if configured is not None and resolved == configured:
                 self._synced = True
+                if not first and not was_on_configured:
+                    logger.info("configured output %s is back — relinking",
+                                resolved)
+                    self.live_target_changed.emit(resolved)
                 self._update_note()
                 return
-            # Every emission ends in a filter-chain restart, and this runs on a
-            # timer — so emitting for the initial resolve would rebuild the
-            # chain (and interrupt audio) simply because the page was opened,
-            # once per launch and again on every theme or tab rebuild. The first
-            # resolve only synchronises the combo with what is already
-            # configured; nothing has changed yet, so nothing should be applied.
+            # Auto-resolution (a fallback, or a preferred device appearing)
+            # changes where the live link points, never what the user chose.
+            # A persistent setting write belongs to _on_picked() alone, or the
+            # next device to disappear would silently replace the user's pick.
+            #
+            # Emitting for the initial resolve would also apply a change simply
+            # because the page was opened, once per launch and again on every
+            # theme or tab rebuild. The first resolve only synchronises the
+            # combo with what is already configured; nothing has changed yet.
             if resolved and not first:
-                logger.info("output resolved to %s", resolved)
-                self.target_changed.emit(resolved)
+                logger.info("output resolved to %s (automatic)", resolved)
+                self.live_target_changed.emit(resolved)
             self._synced = True
         self._update_note()
 

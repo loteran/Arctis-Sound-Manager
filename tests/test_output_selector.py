@@ -3,10 +3,15 @@
 
 """Tests for the Sonar output selector's signalling.
 
-Every ``target_changed`` ends in a filter-chain restart, which interrupts
-audio. The selector polls the device list on a timer, so the rule is narrow and
-worth pinning down: emit when the resolved device actually changes, and never
-merely because the page was built or the list was re-read.
+``target_changed`` is reserved for a device the user picked and is the only
+signal a consumer may persist. Device-presence changes — a monitor going to
+sleep, the headset standing in, the monitor coming back — travel on
+``live_target_changed`` instead: they move the live link, not the saved
+choice.
+
+The selector polls the device list on a timer, so the rule is narrow and worth
+pinning down: emit when the resolved device actually changes, and never merely
+because the page was built or the list was re-read.
 """
 from __future__ import annotations
 
@@ -55,40 +60,49 @@ def _selector(qt_app, devices, order=None):
 
 def test_no_emit_when_the_page_is_built(qt_app):
     """Opening the Sonar tab must not restart the filter chain."""
-    fired: list[str] = []
     widget = _selector(qt_app, [(HEADSET, "Arctis Nova 7"), (BUDS, "FreeBuds")])
-    widget.target_changed.connect(fired.append)
+    picked, live = _record(widget)
 
     widget.refresh()
 
-    assert fired == []
+    assert picked == []
+    assert live == []
     widget.shutdown()
 
 
 def test_no_emit_when_the_list_is_unchanged(qt_app):
     """The timer re-reads devices constantly; a stable list is not a change."""
     widget = _selector(qt_app, [(HEADSET, "Arctis Nova 7")])
-    fired: list[str] = []
-    widget.target_changed.connect(fired.append)
+    picked, live = _record(widget)
 
     for _ in range(5):
         widget.refresh()
 
-    assert fired == []
+    assert picked == []
+    assert live == []
     widget.shutdown()
 
 
+def _record(widget):
+    """Collect both the persisted-choice signal and the live-link signal."""
+    picked: list[str] = []
+    live: list[str] = []
+    widget.target_changed.connect(picked.append)
+    widget.live_target_changed.connect(live.append)
+    return picked, live
+
+
 def test_emits_when_the_preferred_device_appears(qt_app):
-    """The earbuds come back: the channel must follow, exactly once."""
+    """The earbuds come back: the live channel follows, exactly once."""
     widget = _selector(qt_app, [(HEADSET, "Arctis Nova 7")], order=[BUDS])
-    fired: list[str] = []
-    widget.target_changed.connect(fired.append)
+    picked, live = _record(widget)
 
     widget._fake = [(HEADSET, "Arctis Nova 7"), (BUDS, "FreeBuds")]
     widget.refresh()
     widget.refresh()
 
-    assert fired == [BUDS]
+    assert live == [BUDS]
+    assert picked == [], "an appearing device is not a new user choice"
     widget.shutdown()
 
 
@@ -96,35 +110,35 @@ def test_emits_when_the_current_device_disappears(qt_app):
     """The earbuds go in their case: fall back, once, to the headset."""
     widget = _selector(qt_app, [(HEADSET, "Arctis Nova 7"), (BUDS, "FreeBuds")],
                        order=[BUDS])
-    fired: list[str] = []
-    widget.target_changed.connect(fired.append)
+    picked, live = _record(widget)
 
     widget._fake = [(HEADSET, "Arctis Nova 7")]
     widget.refresh()
     widget.refresh()
 
-    assert fired == [HEADSET]
+    assert live == [HEADSET]
+    assert picked == [], "a fallback must not become the saved choice"
     widget.shutdown()
 
 
-def test_user_pick_emits(qt_app):
+def test_user_pick_emits_the_persisted_signal(qt_app):
     widget = _selector(qt_app, [(HEADSET, "Arctis Nova 7"), (BUDS, "FreeBuds")])
-    fired: list[str] = []
-    widget.target_changed.connect(fired.append)
+    picked, live = _record(widget)
 
     widget._on_picked(widget._combo.findData(BUDS))
 
-    assert fired == [BUDS]
+    assert picked == [BUDS]
+    assert live == []
     assert widget._memory.preferred == BUDS
     widget.shutdown()
 
 
 def test_no_devices_emits_nothing(qt_app):
     widget = _selector(qt_app, [])
-    fired: list[str] = []
-    widget.target_changed.connect(fired.append)
+    picked, live = _record(widget)
 
     widget.refresh()
 
-    assert fired == []
+    assert picked == []
+    assert live == []
     widget.shutdown()
