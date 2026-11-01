@@ -133,11 +133,15 @@ device:
       type: percentage
       perc_min: 100
       perc_max: 154
+    # chat_gain / game_gain are attenuation steps: 0 is full volume, 19 the
+    # far end of the dial (HeadsetControl: dial centred = both 0). Read the
+    # other way round, the centre showed as 0 % / 0 % and any turn as 100 %
+    # one side (#352, #331).
     media_mix:
       type: percentage
-      perc_min: 0
-      perc_max: 19
+      perc_min: 19
+      perc_max: 0
     chat_mix:
       type: percentage
-      perc_min: 0
-      perc_max: 19
+      perc_min: 19
+      perc_max: 0

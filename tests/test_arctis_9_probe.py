@@ -60,3 +60,21 @@ def test_shutdown_delay_goes_out_as_big_endian_seconds():
     assert CoreEngine._resolve_update_sequence(engine, config, 90) == [0x04, 0x00, 0x15, 0x18]
     assert CoreEngine._resolve_update_sequence(engine, config, 10) == [0x04, 0x00, 0x02, 0x58]
     assert CoreEngine._resolve_update_sequence(engine, config, 0) == [0x04, 0x00, 0x00, 0x00]
+
+
+def test_the_chatmix_dial_reads_as_attenuation():
+    """#352 / #331: 0 is full volume, 19 the end of the dial, not the reverse."""
+    def mix(chat_gain, game_gain):
+        engine = _make_engine(_arctis_9())
+        frame = list(_INFO_TABLE)
+        frame[9], frame[10] = chat_gain, game_gain
+        _send(engine, 0x20)
+        _read(engine, frame)
+        parsed = parsed_status(engine.device_status, engine.device_config)
+        return parsed["chat_mix"], parsed["media_mix"]
+
+    assert mix(0, 0) == (100, 100)       # dial centred
+    assert mix(19, 0) == (0, 100)        # fully to one side
+    assert mix(0, 19) == (100, 0)        # fully to the other
+    chat, game = mix(10, 0)              # halfway: not snapped to an end
+    assert 0 < chat < 100 and game == 100
