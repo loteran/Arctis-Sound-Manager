@@ -1,3 +1,38 @@
+arctis-sound-manager (1.7.1-1) noble; urgency=medium
+
+  * Spatial Audio looks and works like Sonar's. The panel now shows the
+    listener from above with the seven virtual speakers around the head:
+    click one to raise or lower it (−12 to +6 dB) — the centre for dialogue,
+    the rear speakers for footsteps. Immersion and Distance sit next to it
+    under "Tuning".
+  * Headphones / Speakers switch. Headphones is the virtual surround you
+    know. Speakers skips the headphone render and folds the 7.1 to stereo
+    with your speaker levels, for stereo speakers. A 5.1/7.1 output still
+    gets the channels as they are, now with your speaker levels applied.
+  * Spatial settings per preset. The ⋮ menu saves Immersion, Distance and
+    the speaker levels for the active preset or for all presets; a preset
+    without its own uses the common ones. Switching presets — from the EQ
+    page, the tray or the automatic game preset — brings its settings along.
+    The on/off switch stays the same for every preset.
+  * Moving a Spatial slider no longer cuts the sound. Immersion, Distance
+    and the speaker levels are set on the running audio chain instead of
+    restarting it. Only taking Distance to or from 0 still restarts it.
+  * Arctis 9: ChatMix was read backwards (#352, #331). A centred dial showed
+    0 % on both channels and any turn sent one side to 100 %.
+  * Nova Pro Wireless, Nova Pro Omni, Nova Elite: settings changed on the
+    base station or in GG are no longer overwritten at start (#359, #331).
+    ASM now takes the base's own values at start instead of replaying its
+    settings file over them.
+  * The Output device you picked is kept when it disappears for a while
+    (#356). A monitor going to sleep made ASM save the fallback as your
+    choice; the channel now goes back to your device when it returns. Thanks
+    @zaxen.
+  * With Passthrough on, the Output node is named like the active one (#357)
+    instead of "Sonar EQ (bypass)".
+  * The bug report names the USB node even when it cannot be read.
+
+ -- loteran <axel.valadon@gmail.com>  Sun, 01 Nov 2026 00:00:00 +0000
+
 arctis-sound-manager (1.7.0-1) noble; urgency=medium
 
   * ASM now talks to the headset through hidraw instead of libusb (Settings
