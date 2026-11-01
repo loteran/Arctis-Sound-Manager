@@ -777,6 +777,7 @@ def _usb_access_info(sys_usb: Path = Path('/sys/bus/usb/devices')) -> str:
         pid = (dev / 'idProduct').read_text().strip()
         lines.append(f"{dev.name}: 1038:{pid}")
         if chosen == 'libusb':
+            node = None
             try:
                 busnum = int((dev / 'busnum').read_text())
                 devnum = int((dev / 'devnum').read_text())
@@ -785,7 +786,9 @@ def _usb_access_info(sys_usb: Path = Path('/sys/bus/usb/devices')) -> str:
                 lines.append(f"  usbfs {node}: mode {stat.filemode(st.st_mode)} uid {st.st_uid} gid {st.st_gid}, "
                              f"writable by this process: {'yes' if os.access(node, os.W_OK) else 'NO'}")
             except (OSError, ValueError) as e:
-                lines.append(f"  usbfs node: (unreadable: {e!r})")
+                # Name the node even when it cannot be stat'ed: "which node was
+                # missing" is the useful half of this line in a report.
+                lines.append(f"  usbfs {node or 'node'}: (unreadable: {e!r})")
         for intf in sorted(dev.parent.glob(f"{dev.name}:*")):
             try:
                 if (intf / 'bInterfaceClass').read_text().strip() != '03':
