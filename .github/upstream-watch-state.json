@@ -8,7 +8,7 @@
   "kernel-hid-ids": "a1d9dd9f23b7e1d0c3767123b092e78821496b9f",
   "kernel-hid-steelseries": "3d569aafe31012828e43280e2f8eb48db2e44439",
   "kernel-release": "v7.3",
-  "kernel-usb-audio": "8a36f53fd5ec3eff01f1b637d42cbdc3821d0493",
+  "kernel-usb-audio": "e9954f3fbddd25e1a01b7e5a0b72fb8b564204e0",
   "libusb": "v1.0.30",
   "linux-arctis-manager": "06df95e015c77f4f555f3b2b69d5f7403fb8a6b8",
   "pipewire": "1.6.11",
