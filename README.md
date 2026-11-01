@@ -138,7 +138,7 @@ The SteelSeries GG and Sonar alternative for Linux: manage your **SteelSeries Ar
   - 353 Game presets, 9 Chat, 14 Mic — searchable, 9 favorite slots; a Mic preset also sets the mic processing
   - **Automatic preset per game** — applies the matching Game preset when a game starts (Steam, Lutris, Heroic or by executable name), like GG's QuickSet; a preset picked by hand is remembered for that game (a notification says so; the tray menu puts it back to Automatic)
   - Macro sliders: Bass / Voice / Treble (±12 dB)
-  - **Spatial Audio** on Game, Media and Aux — HeSuVi virtual 7.1 fed with the game's real surround channels, Immersion (0–12 dB) and Distance (reverb) sliders, and an "Only for surround sources" option that leaves stereo audio alone
+  - **Spatial Audio** on Game, Media and Aux — HeSuVi virtual 7.1 fed with the game's real surround channels, Immersion (0–12 dB) and Distance (reverb) sliders, Sonar-style virtual speakers around the head whose level you set with a click, and an "Only for surround sources" option that leaves stereo audio alone
   - **Volume Boost** — up to +12 dB gain at the end of the filter chain
   - **Smart Volume** — Sonar's loudness targets (Quiet / Balanced / Loud)
   - All changes applied live via PipeWire biquad nodes

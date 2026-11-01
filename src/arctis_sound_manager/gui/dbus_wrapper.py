@@ -541,7 +541,9 @@ class DbusWrapper(QObject):
     @staticmethod
     def apply_spatial_audio() -> None:
         """Tell the daemon to regenerate the HeSuVi chains from the saved
-        Immersion/Distance and restart the filter-chain if they changed (#169).
+        Immersion/Distance/speaker levels (#169). It sets value-only changes on
+        the running chain and restarts the filter-chain only for a change of
+        shape.
 
         The GUI can't write these confs itself (no device registered in its
         process). Fire-and-forget, off the UI thread; the daemon self-guards so

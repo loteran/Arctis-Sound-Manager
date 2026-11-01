@@ -391,6 +391,77 @@ def _load_spatial_pct(channel: str) -> tuple[int, int]:
         return 50, 50
 
 
+# Per-channel virtual-speaker gain (Sonar's virtualSurroundChannels[].gain),
+# applied on top of Immersion in each channel's gain{ch} node. Range kept
+# narrow on the boost side: the stereo mixers sum up to eight convolvers and
+# the output limiter is the only headroom stage.
+CHANNEL_GAIN_MIN_DB = -12.0
+CHANNEL_GAIN_MAX_DB = 6.0
+
+# Optional trailing header segment "…  |  Gains: FL=+0.0 FR=… SR=+0.0",
+# present only when at least one channel gain is non-zero — so every conf
+# baked before this setting existed, and every install that never touches
+# it, keeps its header (and whole conf) byte-identical.
+_HESUVI_GAINS_RE = re.compile(r"Gains:\s*([^\n|]*?)\s*(?:\||$)", re.MULTILINE)
+
+
+def _load_channel_gains(channel: str) -> dict[str, float]:
+    """Return the saved per-virtual-speaker gains (dB) for *channel*.
+
+    Read from ``channel_gains`` in the same sonar_spatial_audio*.json the GUI
+    writes; anything missing, unknown or unparseable reads as 0 dB, and every
+    value is clamped to [CHANNEL_GAIN_MIN_DB, CHANNEL_GAIN_MAX_DB].
+    """
+    suffix = "" if channel == "game" else f"_{channel}"
+    path = Path.home() / ".config" / "arctis_manager" / f"sonar_spatial_audio{suffix}.json"
+    gains = {ch: 0.0 for ch in _HESUVI_CHANNELS}
+    try:
+        import json as _json
+        data = _json.loads(path.read_text()) if path.exists() else {}
+        saved = data.get("channel_gains") or {}
+        if isinstance(saved, dict):
+            for ch in _HESUVI_CHANNELS:
+                try:
+                    val = float(saved.get(ch, 0.0))
+                except (TypeError, ValueError):
+                    continue
+                gains[ch] = round(max(CHANNEL_GAIN_MIN_DB, min(CHANNEL_GAIN_MAX_DB, val)), 1)
+    except Exception:
+        pass
+    return gains
+
+
+def _hesuvi_gains_segment(gains: dict[str, float]) -> str:
+    """The header segment baking *gains*, or "" when they are all 0 dB."""
+    if all(abs(gains.get(ch, 0.0)) < 0.05 for ch in _HESUVI_CHANNELS):
+        return ""
+    values = " ".join(f"{ch}={gains.get(ch, 0.0):+.1f}" for ch in _HESUVI_CHANNELS)
+    return f"  |  Gains: {values}"
+
+
+def _hesuvi_conf_has_gain_drift(content: str, gains: dict[str, float]) -> bool:
+    """True if the conf's baked per-channel gains differ from the saved JSON.
+
+    No ``Gains:`` segment means the conf was baked with every gain at 0 dB, so
+    its absence is drift only when some gain is now non-zero.
+    """
+    expected = _hesuvi_gains_segment(gains)
+    match = _HESUVI_GAINS_RE.search(content)
+    if not match:
+        return expected != ""
+    return expected != f"  |  Gains: {match.group(1)}"
+
+
+def _hesuvi_conf_has_speakers_drift(content: str, channel: str) -> bool:
+    """True if the levels baked in the downmix or the surround-levels stage no
+    longer match the mode / on-off switch (markers in the header line)."""
+    header = next((ln for ln in content.splitlines()
+                   if ln.startswith("# HeSuVi 7.1 Virtual Surround")), "")
+    segments = {seg.strip() for seg in header.split("|")}
+    return (("Speakers" in segments) != (_speaker_mode_gains(channel) is not None)
+            or ("Levels" in segments) != (_passthrough_level_gains(channel) is not None))
+
+
 def _hesuvi_conf_has_spatial_drift(
     content: str, immersion_pct: int, distance_pct: int
 ) -> bool:
@@ -526,6 +597,15 @@ def _downmix_input_node(channel: str) -> str:
 
 def _downmix_output_node(channel: str) -> str:
     return f"effect_output.sonar-{channel}-downmix"
+
+
+def _levels_input_node(channel: str) -> str:
+    """8ch stage applying the speaker levels on the way to a 5.1/7.1 output."""
+    return f"effect_input.sonar-{channel}-surround-levels"
+
+
+def _levels_output_node(channel: str) -> str:
+    return f"effect_output.sonar-{channel}-surround-levels"
 
 
 # ITU-R BS.775 stereo downmix: centre and surrounds at -3 dB into their side,
@@ -3498,6 +3578,10 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
                 # chain wasn't live to pick it up (e.g. headset unplugged) —
                 # catches it the same way a slider-move drift does (issue #237).
                 _reason = "Volume Boost changed (issue #237)"
+            elif _hesuvi_conf_has_gain_drift(hesuvi_content, _load_channel_gains(_hz_channel)):
+                _reason = "per-channel gain changed"
+            elif _hesuvi_conf_has_speakers_drift(hesuvi_content, _hz_channel):
+                _reason = "speakers mode changed"
 
             if _reason is None:
                 continue  # conf is current — no needless regen/restart.
@@ -3591,7 +3675,69 @@ def sync_stream_mix_conf(enabled: bool | None = None) -> bool:
     return False
 
 
-def regenerate_hesuvi_if_changed() -> bool:
+# One-line HeSuVi nodes whose control values can change without the graph
+# changing shape (see generate_hesuvi_conf): the per-channel gain stages
+# (Immersion + speaker level) and the Distance plate reverb's wet mix.
+_HESUVI_GAIN_LINE_RE = re.compile(
+    r'^(\s*\{ type = builtin  name = ((?:gain|lvl)\w+)  label = bq_highshelf'
+    r'  control = \{ Freq = \S+  Q = \S+  Gain = )([-\d.]+)( \} \})$'
+)
+_HESUVI_PLATE_LINE_RE = re.compile(
+    r'^(\s*\{ type = ladspa  name = (plate_[LR])  .*"Dry/wet mix" = )([-\d.]+)( \} \})$'
+)
+_HESUVI_HEADER_LINE_PREFIX = "# HeSuVi 7.1 Virtual Surround  |"
+_DOWNMIX_MIXER_LINE_RE = re.compile(
+    r'^(\s*\{ type = builtin  label = mixer  name = (dmix[LR])  control = \{ )(.*)( \} \})$'
+)
+_MIXER_GAIN_RE = re.compile(r'"Gain (\d+)" = ([-\d.]+)')
+
+
+def diff_hesuvi_controls(old_text: str, new_text: str) -> dict[str, float] | None:
+    """Controls to live-apply to turn the *old_text* HeSuVi chain into *new_text*.
+
+    Returns ``{"gainFC:Gain": 9.0, "plate_L:Dry/wet mix": 0.4, …}`` when the two
+    confs differ only by gain-stage gains, the plate reverb's wet mix and the
+    summary header line — i.e. every change ``pw-cli set-param`` can make on
+    the running chain. Returns ``None`` on any other difference (a node added
+    or removed, as when Distance goes to or from 0, a new boost make-up, an
+    HRIR or target change…), which needs the filter-chain restarted.
+    """
+    old_lines = old_text.splitlines()
+    new_lines = new_text.splitlines()
+    if len(old_lines) != len(new_lines):
+        return None
+    controls: dict[str, float] = {}
+    for old_line, new_line in zip(old_lines, new_lines):
+        if old_line == new_line:
+            continue
+        if old_line.startswith(_HESUVI_HEADER_LINE_PREFIX) and new_line.startswith(_HESUVI_HEADER_LINE_PREFIX):
+            continue
+        old_dm, new_dm = _DOWNMIX_MIXER_LINE_RE.match(old_line), _DOWNMIX_MIXER_LINE_RE.match(new_line)
+        if old_dm and new_dm:
+            if old_dm.group(2) != new_dm.group(2):
+                return None
+            old_g = dict(_MIXER_GAIN_RE.findall(old_dm.group(3)))
+            new_g = dict(_MIXER_GAIN_RE.findall(new_dm.group(3)))
+            if old_g.keys() != new_g.keys():
+                return None
+            for idx, val in new_g.items():
+                if float(val) != float(old_g[idx]):
+                    controls[f"{new_dm.group(2)}:Gain {idx}"] = float(val)
+            continue
+        for regex, control in ((_HESUVI_GAIN_LINE_RE, "Gain"), (_HESUVI_PLATE_LINE_RE, "Dry/wet mix")):
+            old_m, new_m = regex.match(old_line), regex.match(new_line)
+            if old_m and new_m:
+                break
+        else:
+            return None
+        # Everything but the value itself must be the same node, same params.
+        if (old_m.group(1), old_m.group(4)) != (new_m.group(1), new_m.group(4)):
+            return None
+        controls[f"{new_m.group(2)}:{control}"] = float(new_m.group(3))
+    return controls
+
+
+def regenerate_hesuvi_if_changed(live_apply: bool = False) -> bool:
     """Rewrite each HeSuVi chain from its saved JSON and report if anything changed.
 
     Runs in the DAEMON (device attached) so :func:`generate_hesuvi_conf` can
@@ -3624,9 +3770,42 @@ def regenerate_hesuvi_if_changed() -> bool:
         )
         # generate_hesuvi_conf returns "" only when no device is attached, which
         # the guard above already excludes; treat any real diff as a change.
-        if new and new != (old or ""):
-            changed = True
+        if not new or new == (old or ""):
+            continue
+        if live_apply and old is not None and _live_apply_hesuvi(channel, old, new):
+            continue
+        changed = True
     return changed
+
+
+def _live_apply_hesuvi(channel: str, old: str, new: str) -> bool:
+    """Push a value-only HeSuVi change into the running chain, no restart.
+
+    True when every changed control was set on the live node. False when the
+    change is structural (see diff_hesuvi_controls) or the node refused it /
+    is not running — the caller then restarts, which loads the conf just
+    written, so the on-disk conf and the running graph can never stay apart.
+    """
+    controls = diff_hesuvi_controls(old, new)
+    if controls is None:
+        return False
+    if not controls:
+        return True  # only the header line moved (nothing audible changed)
+    from arctis_sound_manager.pw_utils import set_filter_controls
+    # The downmix is its own filter-chain module, with its own node.
+    by_node: dict[str, dict[str, float]] = {}
+    for key, value in controls.items():
+        if key.startswith("dmix"):
+            node = _downmix_input_node(channel)
+        elif key.startswith("lvl"):
+            node = _levels_input_node(channel)
+        else:
+            node = _hesuvi_input_node(channel)
+        by_node.setdefault(node, {})[key] = value
+    ok = all(set_filter_controls(node, ctl) for node, ctl in by_node.items())
+    if ok:
+        _log.info("HeSuVi %s: live-applied %s", channel, controls)
+    return ok
 
 
 def apply_spatial_audio_change() -> bool:
@@ -3642,9 +3821,15 @@ def apply_spatial_audio_change() -> bool:
     Audio toggle, which leaves Immersion/Distance untouched) regenerates an
     identical conf and returns False without ever touching the service.
 
+    Value-only changes (Immersion, speaker levels, the Distance reverb's wet
+    mix) are set on the running chain with ``pw-cli set-param`` and never
+    restart it; see :func:`diff_hesuvi_controls`.
+
     Returns True when it restarted the filter-chain, False otherwise.
     """
-    if not regenerate_hesuvi_if_changed():
+    # Gain stages (Immersion, speaker levels) and the reverb's wet mix go to
+    # the running chain directly; only a change of shape restarts it.
+    if not regenerate_hesuvi_if_changed(live_apply=True):
         return False
     _restart_filter_chain()
     # Same recovery as apply_hrir_choice()'s restart: re-establish ASM-owned
@@ -3818,6 +4003,37 @@ def _spatial_auto(channel: str) -> bool:
         return False
 
 
+def _spatial_mode(channel: str) -> str:
+    """``"headphones"`` (HeSuVi's HRTF render) or ``"speakers"`` (no HRTF:
+    the 7.1 folded to stereo by the downmix), as Sonar's formFactor."""
+    suffix = "" if channel == "game" else f"_{channel}"
+    path = Path.home() / ".config" / "arctis_manager" / f"sonar_spatial_audio{suffix}.json"
+    try:
+        import json as _json
+        mode = (_json.loads(path.read_text()) if path.exists() else {}).get("mode")
+    except Exception:
+        mode = None
+    return "speakers" if mode == "speakers" else "headphones"
+
+
+def _speaker_mode_gains(channel: str) -> dict[str, float] | None:
+    """The speaker levels the downmix applies: only with Spatial on in
+    speakers mode. None otherwise (the downmix then stays a plain fold)."""
+    if _spatial_mode(channel) != "speakers" or not _spatial_enabled(channel):
+        return None
+    gains = _load_channel_gains(channel)
+    return gains if any(abs(v) >= 0.05 for v in gains.values()) else None
+
+
+def _passthrough_level_gains(channel: str) -> dict[str, float] | None:
+    """The speaker levels for a multichannel output (which gets the 7.1 as it
+    is, in either mode): only with Spatial on and some level not at 0 dB."""
+    if not _spatial_enabled(channel):
+        return None
+    gains = _load_channel_gains(channel)
+    return gains if any(abs(v) >= 0.05 for v in gains.values()) else None
+
+
 def _spatial_enabled(channel: str) -> bool:
     """Read whether Spatial Audio is currently enabled for *channel*.
 
@@ -3923,6 +4139,10 @@ def ensure_spatial_eq_links(
         if channel not in spatial_channels():
             continue
         enabled = _spatial_enabled(channel)
+        if enabled and _spatial_mode(channel) == "speakers":
+            # Speakers mode: no HRTF. The downmix folds the 7.1 to stereo
+            # (with the speaker levels), a multichannel output gets it as is.
+            enabled = False
         if enabled and _spatial_auto(channel):
             # Virtual surround for 5.1/7.1 sources only: stereo (music, a game
             # already rendering for headphones) plays as it is. Re-evaluated
@@ -3985,6 +4205,11 @@ def _spatial_eq_target(
 
     channels = node_input_channel_count(destination, data) if destination else None
     if channels is not None and channels > 2:
+        # The output places the channels itself; the speaker levels still
+        # apply, through their own 8ch stage when one is set and it is up.
+        levels = _levels_input_node(channel)
+        if _passthrough_level_gains(channel) and pw_node_exists(levels, data):
+            return levels, False
         return destination, False
     if spatial:
         return _hesuvi_input_node(channel), True
@@ -4228,6 +4453,8 @@ def ensure_physical_output_links(
         # and absent until the conf has been regenerated with it.
         if pw_node_exists(_downmix_output_node(_ch), data):
             ensure_loopback_link(_downmix_output_node(_ch), _dest, data=data)
+        if pw_node_exists(_levels_output_node(_ch), data):
+            ensure_loopback_link(_levels_output_node(_ch), _dest, data=data)
 
     # The Output channel's last hop (EQ → external sink: HDMI, TV, speakers)
     # was owned by nobody at all. Unlike chat/game/media it is not covered by
@@ -4566,7 +4793,8 @@ _HESUVI_CONV_MIX_LINKS = [
 
 
 
-def _downmix_module(channel: str, destination: str) -> str:
+def _downmix_module(channel: str, destination: str,
+                    gains: dict[str, float] | None = None) -> str:
     """A filter-chain module folding *channel*'s 7.1 into stereo.
 
     Lives in the channel's HeSuVi conf so it is created, restarted and kept
@@ -4578,8 +4806,14 @@ def _downmix_module(channel: str, destination: str) -> str:
     nodes = [f'{I}{{ type = builtin  label = copy  name = dm{ch} }}' for ch in _HESUVI_CHANNELS]
     links = []
     for side, sources in _DOWNMIX_GAINS.items():
-        gains = "  ".join(f'"Gain {i}" = {g}' for i, (_, g) in enumerate(sources, start=1))
-        nodes.append(f'{I}{{ type = builtin  label = mixer  name = dmix{side}  control = {{ {gains} }} }}')
+        coeffs = []
+        for ch, g in sources:
+            if gains and abs(gains.get(ch, 0.0)) >= 0.05:
+                # Speakers mode: the speaker level scales its fold coefficient.
+                g = round(g * 10 ** (gains[ch] / 20.0), 4)
+            coeffs.append(g)
+        ctl = "  ".join(f'"Gain {i}" = {g}' for i, g in enumerate(coeffs, start=1))
+        nodes.append(f'{I}{{ type = builtin  label = mixer  name = dmix{side}  control = {{ {ctl} }} }}')
         links += [f'{I}{{ output = "dm{ch}:Out"  input = "dmix{side}:In {i}" }}'
                   for i, (ch, _) in enumerate(sources, start=1)]
     inputs = " ".join(f'"dm{ch}:In"' for ch in _HESUVI_CHANNELS)
@@ -4617,6 +4851,57 @@ def _downmix_module(channel: str, destination: str) -> str:
         node.pause-on-idle = false
         audio.channels     = 2
         audio.position     = [ FL FR ]
+      }}
+    }}
+  }}
+"""
+
+
+def _levels_module(channel: str, destination: str,
+                   gains: dict[str, float] | None = None) -> str:
+    """An 8ch filter-chain applying the speaker levels to a 7.1 headed for a
+    5.1/7.1 output. Always present in the channel's conf, so a level change is
+    only a value change (set live); _spatial_eq_target routes through it only
+    while some level is not 0 dB, otherwise the EQ links straight out."""
+    I = "                    "  # noqa: E741 — indentation constant
+    gains = gains or {}
+    nodes = [
+        f'{I}{{ type = builtin  name = lvl{ch}  label = bq_highshelf'
+        f'  control = {{ Freq = 10  Q = 0.7071  Gain = {gains.get(ch, 0.0):.1f} }} }}'
+        for ch in _HESUVI_CHANNELS
+    ]
+    inputs = " ".join(f'"lvl{ch}:In"' for ch in _HESUVI_CHANNELS)
+    outputs = " ".join(f'"lvl{ch}:Out"' for ch in _HESUVI_CHANNELS)
+    nodes_text = "\n".join(nodes)
+    return f"""\
+  {{ name = libpipewire-module-filter-chain
+    flags = [ nofail ]
+    args = {{
+      node.description = "Surround levels ({channel.capitalize()})"
+      media.name       = "Surround levels ({channel.capitalize()})"
+      filter.graph = {{
+        nodes = [
+{nodes_text}
+        ]
+        inputs  = [ {inputs} ]
+        outputs = [ {outputs} ]
+      }}
+      capture.props = {{
+        node.name      = "{_levels_input_node(channel)}"
+        media.class    = Audio/Sink/Internal
+        audio.channels = 8
+        audio.position = [ FL FR FC LFE RL RR SL SR ]
+      }}
+      playback.props = {{
+        node.name          = "{_levels_output_node(channel)}"
+        node.target        = "{destination}"
+        target.object      = "{destination}"
+        node.dont-fallback = true
+        node.linger        = true
+        node.autoconnect   = false
+        node.pause-on-idle = false
+        audio.channels     = 8
+        audio.position     = [ FL FR FC LFE RL RR SL SR ]
       }}
     }}
   }}
@@ -4840,6 +5125,9 @@ def generate_hesuvi_conf(
     # whole HeSuVi chain. Read here only to compensate the limiter below —
     # this chain's *shape* stays independent of the Spatial Audio toggle.
     boost_db = _hesuvi_boost_db(channel)
+    # Per-virtual-speaker gain (Sonar-style), read like Boost from the saved
+    # state so callers never pass it. 0 dB everywhere = historical conf.
+    channel_gains = _load_channel_gains(channel)
 
     # ── Nodes ────────────────────────────────────────────────────────────
     node_lines: list[str] = []
@@ -4850,12 +5138,14 @@ def generate_hesuvi_conf(
     for ch in _HESUVI_CHANNELS:
         node_lines.append(f'{I}{{ type = builtin  label = copy  name = copy{ch} }}')
 
-    # 2. Gain nodes (Immersion — bq_highshelf between copy and convolvers)
+    # 2. Gain nodes (Immersion + per-channel gain — bq_highshelf between copy
+    #    and convolvers). A 10 Hz high shelf is a broadband gain for audio.
     node_lines.append(f"{I}# immersion gain")
     for ch in _HESUVI_CHANNELS:
+        ch_db = immersion_db + channel_gains[ch]
         node_lines.append(
             f'{I}{{ type = builtin  name = gain{ch}  label = bq_highshelf'
-            f'  control = {{ Freq = 10  Q = 0.7071  Gain = {immersion_db:.1f} }} }}'
+            f'  control = {{ Freq = 10  Q = 0.7071  Gain = {ch_db:.1f} }} }}'
         )
 
     # 3. Convolver nodes
@@ -5019,11 +5309,18 @@ def generate_hesuvi_conf(
     # Absent segment reads as "baked with boost 0", matching every conf on
     # disk before this fix (issue #237).
     _boost_header_segment = f"  |  Boost: {boost_db:.1f} dB" if boost_db > 0.01 else ""
+    # Speakers mode carries the speaker levels in the downmix; the marker lets
+    # the drift check see a mode or on/off change that moved them.
+    _dm_gains = _speaker_mode_gains(channel)
+    _speakers_segment = "  |  Speakers" if _dm_gains else ""
+    _lvl_gains = _passthrough_level_gains(channel)
+    if _lvl_gains:
+        _speakers_segment += "  |  Levels"
 
     text = f"""\
 # Auto-generated by Arctis Sound Manager — DO NOT EDIT
 {_conf_version_header()}
-# HeSuVi 7.1 Virtual Surround  |  Immersion: {immersion_pct}%  |  Distance: {distance_pct}%{_boost_header_segment}
+# HeSuVi 7.1 Virtual Surround  |  Immersion: {immersion_pct}%  |  Distance: {distance_pct}%{_boost_header_segment}{_hesuvi_gains_segment(channel_gains)}{_speakers_segment}
 context.modules = [
   {{ name = libpipewire-module-filter-chain
     flags = [ nofail ]
@@ -5057,7 +5354,7 @@ context.modules = [
       }}
     }}
   }}
-{_downmix_module(channel, _hes_dest)}]
+{_downmix_module(channel, _hes_dest, _dm_gains)}{_levels_module(channel, _hes_dest, _lvl_gains)}]
 """
 
     _write_conf(output_path, text)

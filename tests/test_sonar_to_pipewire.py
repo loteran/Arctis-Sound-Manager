@@ -3082,12 +3082,12 @@ def test_apply_spatial_audio_change_restarts_only_when_changed(monkeypatch):
     monkeypatch.setattr(stp, "ensure_physical_output_links", lambda *a, **kw: phys_links.append(1) or {})
 
     # Nothing changed → no restart, no relink.
-    monkeypatch.setattr(stp, "regenerate_hesuvi_if_changed", lambda: False)
+    monkeypatch.setattr(stp, "regenerate_hesuvi_if_changed", lambda **kw: False)
     assert stp.apply_spatial_audio_change() is False
     assert restarts == [] and spatial_links == [] and phys_links == []
 
-    # A slider moved → exactly one restart, both link-owners re-run.
-    monkeypatch.setattr(stp, "regenerate_hesuvi_if_changed", lambda: True)
+    # A change of shape → exactly one restart, both link-owners re-run.
+    monkeypatch.setattr(stp, "regenerate_hesuvi_if_changed", lambda **kw: True)
     assert stp.apply_spatial_audio_change() is True
     assert restarts == [1]
     assert spatial_links == [(("game", "media"),)]

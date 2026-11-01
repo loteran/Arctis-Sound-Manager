@@ -26,7 +26,7 @@ from arctis_sound_manager.gui.settings_widget import QSettingsWidget
 from arctis_sound_manager.i18n import I18n
 
 from PySide6.QtCore import QThread, Qt, QTimer, Signal, Slot
-from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QApplication,
@@ -92,6 +92,8 @@ from arctis_sound_manager.stream_guard import load_config as load_guard_config
 from arctis_sound_manager.stream_guard import save_config as save_guard_config
 from arctis_sound_manager.sonar_to_pipewire import (
     _MACRO_PARAMS as MACRO_PARAMS,
+    CHANNEL_GAIN_MAX_DB,
+    CHANNEL_GAIN_MIN_DB,
     check_and_fix_stale_configs,
     diff_filter_conf,
     ensure_filter_chain_healthy,
@@ -134,6 +136,9 @@ _APPLY_DELAY  = 600   # ms debounce before restarting filter-chain
 # debounce — long enough to coalesce a burst of inspector edits, short enough
 # that the curve you drew is what you hear.
 _BAND_APPLY_DELAY = 120
+# Spatial sliders: the daemon sets gain stages and the reverb mix on the
+# running HeSuVi chain (no restart), so a short settle is enough.
+_SPATIAL_APPLY_DELAY = 300
 
 # ── Preset I/O ────────────────────────────────────────────────────────────────
 
@@ -317,7 +322,18 @@ _SPATIAL_DEFAULTS: dict = {
     "mode": "headphones",    # "headphones" | "speakers"
     "immersion": 50,         # 0–100, pending USB
     "distance": 50,          # 0–100, pending USB
+    # Per-virtual-speaker gain in dB (Sonar's virtualSurroundChannels gain),
+    # absent = 0 dB everywhere. Read back by the daemon in
+    # sonar_to_pipewire._load_channel_gains.
 }
+
+# Virtual speakers drawn around the head, with Sonar's default azimuths
+# (degrees, 0 = straight ahead, positive = to the left). LFE is not drawn,
+# as in Sonar: it has no direction, and its gain stays at 0 dB.
+_SPATIAL_SPEAKERS: tuple[tuple[str, float], ...] = (
+    ("FC", 0.0), ("FL", 30.0), ("FR", -30.0),
+    ("SL", 90.0), ("SR", -90.0), ("RL", 150.0), ("RR", -150.0),
+)
 
 
 def _spatial_file_for_channel(channel: str = "game") -> Path:
@@ -339,6 +355,127 @@ def _load_spatial_audio(channel: str = "game") -> dict:
 def _save_spatial_audio(state: dict, channel: str = "game") -> None:
     _CFG.mkdir(parents=True, exist_ok=True)
     _spatial_file_for_channel(channel).write_text(json.dumps(state, indent=2))
+
+
+# Spatial "tuning" = what a preset may carry: Immersion, Distance and the
+# speaker levels. The on/off switch and "only for surround sources" are
+# listening choices and stay common to every preset.
+_SPATIAL_TUNING_KEYS = ("immersion", "distance", "channel_gains")
+
+
+def _spatial_tuning(state: dict) -> dict:
+    """The tuning part of a Spatial state, deep-copied and always complete:
+    a missing key reads as its default, so applying a tuning saved before the
+    speaker levels existed still puts every level back to 0 dB."""
+    return {
+        "immersion": state.get("immersion", _SPATIAL_DEFAULTS["immersion"]),
+        "distance": state.get("distance", _SPATIAL_DEFAULTS["distance"]),
+        "channel_gains": dict(state.get("channel_gains") or {}),
+    }
+
+
+def _spatial_tuning_file(channel: str = "game") -> Path:
+    suffix = "" if channel == "game" else f"_{channel}"
+    return Path.home() / ".config" / "arctis_manager" / f"sonar_spatial_tuning{suffix}.json"
+
+
+def _load_spatial_tuning_store(channel: str = "game") -> dict:
+    """``{"default": tuning | None, "presets": {key: tuning}}`` for *channel*.
+
+    "default" is the tuning every preset without its own gets ("Save for all
+    presets"); "presets" holds the ones saved "for this preset".
+    """
+    store: dict = {"default": None, "presets": {}}
+    f = _spatial_tuning_file(channel)
+    try:
+        data = json.loads(f.read_text()) if f.exists() else {}
+    except Exception:
+        data = {}
+    if isinstance(data.get("default"), dict):
+        store["default"] = data["default"]
+    if isinstance(data.get("presets"), dict):
+        store["presets"] = {k: v for k, v in data["presets"].items() if isinstance(v, dict)}
+    return store
+
+
+def _save_spatial_tuning_store(store: dict, channel: str = "game") -> None:
+    _CFG.mkdir(parents=True, exist_ok=True)
+    _spatial_tuning_file(channel).write_text(json.dumps(store, indent=2, ensure_ascii=False))
+
+
+def _spatial_preset_key(sonar_channel: str, preset: str) -> str:
+    # Media and Aux share one Spatial file; the key keeps their presets apart.
+    return f"{sonar_channel}/{preset}"
+
+
+def _resolve_spatial_tuning(store: dict, key: str, legacy: dict | None) -> tuple[dict | None, str]:
+    """The tuning a preset gets, and where it came from.
+
+    Its own ("preset"), else the Spatial block a user preset was saved with
+    before per-preset tuning existed ("legacy"), else the common one
+    ("default"). ``(None, "none")`` when there is nothing to apply.
+    """
+    own = store["presets"].get(key)
+    if own:
+        return _spatial_tuning(own), "preset"
+    if legacy and any(k in legacy for k in _SPATIAL_TUNING_KEYS):
+        return _spatial_tuning(legacy), "legacy"
+    if store.get("default"):
+        return _spatial_tuning(store["default"]), "default"
+    return None, "none"
+
+
+def _strip_preset_spatial_tuning(channel: str, name: str) -> None:
+    """Drop the tuning keys from a user preset's saved Spatial block, so a
+    "forget" or "save for all" is not undone by that file on the next load."""
+    tag = _CHANNEL_TAG.get(channel, "[Game]")
+    path = _PRESETS_DIR / f"{name} {tag}.json"
+    if not path.exists():
+        return
+    try:
+        data = json.loads(path.read_text())
+        spatial = (data.get("settings") or {}).get("spatial")
+        if not isinstance(spatial, dict) or not any(k in spatial for k in _SPATIAL_TUNING_KEYS):
+            return
+        for k in _SPATIAL_TUNING_KEYS:
+            spatial.pop(k, None)
+        path.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+    except Exception:
+        pass
+
+
+def _spatial_channel_for(sonar_channel: str) -> str | None:
+    """The Spatial state file a Sonar channel uses (Aux shares Media's)."""
+    return {"game": "game", "media": "media", "aux": "media"}.get(sonar_channel)
+
+
+def apply_preset_spatial_tuning(sonar_channel: str, preset: str) -> bool:
+    """Write the tuning *preset* should get into the Spatial state file.
+
+    For appliers that switch presets without the Sonar page (the tray, the
+    automatic game preset). Returns True when the file changed, in which case
+    the caller asks the daemon to apply it.
+    """
+    sp_channel = _spatial_channel_for(sonar_channel)
+    if sp_channel is None:
+        return False
+    legacy = None
+    path = _list_presets(sonar_channel).get(preset)
+    if path is not None:
+        try:
+            legacy = (json.loads(path.read_text()).get("settings") or {}).get("spatial")
+        except Exception:
+            legacy = None
+    store = _load_spatial_tuning_store(sp_channel)
+    tuning, _src = _resolve_spatial_tuning(
+        store, _spatial_preset_key(sonar_channel, preset),
+        legacy if isinstance(legacy, dict) else None)
+    state = _load_spatial_audio(sp_channel)
+    if not tuning or tuning == _spatial_tuning(state):
+        return False
+    state.update(tuning)
+    _save_spatial_audio(state, sp_channel)
+    return True
 
 
 def _load_macro(channel: str) -> dict[str, float]:
@@ -1708,6 +1845,7 @@ class SonarChannelWidget(QWidget):
                 from arctis_sound_manager import device_state as _ds
                 _has_spatial = _ds.get_spatial_engine() != "none"
                 self._spatial = SpatialAudioWidget(channel="game")
+                self._spatial.bind_presets("game", self._active_preset)
                 self._spatial.setVisible(_has_spatial)
                 scl.addWidget(self._spatial)
                 sep = QFrame()
@@ -1719,6 +1857,7 @@ class SonarChannelWidget(QWidget):
                 from arctis_sound_manager import device_state as _ds
                 _has_spatial = _ds.get_spatial_engine() != "none"
                 self._spatial = SpatialAudioWidget(channel="media")
+                self._spatial.bind_presets(channel, self._active_preset)
                 self._spatial.setVisible(_has_spatial)
                 scl.addWidget(self._spatial)
                 sep = QFrame()
@@ -1854,6 +1993,22 @@ class SonarChannelWidget(QWidget):
         self._update_macro_curve()
         self._revert_btn.setVisible(False)
         self._schedule_apply()
+        if hasattr(self, "_spatial"):
+            self._spatial.load_preset_tuning(name, self._preset_legacy_spatial(name))
+
+    def _preset_legacy_spatial(self, name: str) -> dict | None:
+        """The Spatial block a user preset file carries, if any."""
+        path = _list_presets(self._channel).get(name)
+        if path is None:
+            return None
+        try:
+            spatial = (json.loads(path.read_text()).get("settings") or {}).get("spatial")
+        except Exception:
+            return None
+        return spatial if isinstance(spatial, dict) else None
+
+    def _active_preset(self) -> str:
+        return _active_preset_name(self._channel)
 
     def _on_bands_changed(self, bands: list):
         """A curve edit is applied as soon as it happens, no Apply in the way.
@@ -1924,8 +2079,9 @@ class SonarChannelWidget(QWidget):
         # per preset click (emit=False on all sub-widget set_state calls).
         if not settings:
             return
-        if hasattr(self, "_spatial") and "spatial" in settings:
-            self._spatial.set_state(settings["spatial"], emit=False)
+        # Spatial: only its tuning is per preset, and _on_preset_selected
+        # resolves it (own > saved with the preset > common). The on/off
+        # switch and "only for surround sources" stay common to all presets.
         if hasattr(self, "_boost") and "boost" in settings:
             self._boost.set_state(settings["boost"], emit=False)
         if hasattr(self, "_smart") and "smart_volume" in settings:
@@ -2066,6 +2222,227 @@ def _save_smart_volume(state: dict) -> None:
 # ── Spatial Audio widget ─────────────────────────────────────────────────────
 
 
+class _SpeakerGainPopup(QFrame):
+    """Small popup holding one virtual speaker's gain slider."""
+    gain_changed = Signal(str, float)
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent, Qt.WindowType.Popup)
+        self._ch = ""
+        self.setStyleSheet(f"""
+            QFrame {{ background: {_theme.c('BG_CARD')}; border: 1px solid {_theme.c('ACCENT')};
+                      border-radius: 8px; }}
+            QLabel {{ background: transparent; border: none; color: {_theme.c('TEXT_PRIMARY')}; }}
+            QSlider::groove:horizontal {{ height: 4px; background: {_theme.c('BG_BUTTON')};
+                                          border-radius: 2px; border: none; }}
+            QSlider::handle:horizontal {{ background: {_theme.c('ACCENT')}; width: 14px; height: 14px;
+                                          margin: -5px 0; border-radius: 7px; border: none; }}
+            QSlider::sub-page:horizontal {{ background: {_theme.c('ACCENT')}; border-radius: 2px; }}
+            QPushButton {{ background: {_theme.c('BG_BUTTON')}; border: 1px solid {_theme.c('BORDER')};
+                           border-radius: 6px; color: {_theme.c('TEXT_PRIMARY')}; padding: 2px 8px; }}
+            QPushButton:hover {{ background: {_theme.c('BG_BUTTON_HOVER')}; border-color: {_theme.c('ACCENT')}; }}
+        """)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(12, 10, 12, 10)
+        lay.setSpacing(8)
+        head = QHBoxLayout()
+        self._title = QLabel()
+        self._title.setStyleSheet("font-weight: bold;")
+        head.addWidget(self._title)
+        head.addStretch(1)
+        self._value = QLabel()
+        self._value.setStyleSheet(f"color: {_theme.c('ACCENT')}; font-weight: bold;")
+        head.addWidget(self._value)
+        lay.addLayout(head)
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        self._slider = QSlider(Qt.Orientation.Horizontal)
+        # Half-dB steps: the slider holds dB x 2.
+        self._slider.setMinimum(int(CHANNEL_GAIN_MIN_DB * 2))
+        self._slider.setMaximum(int(CHANNEL_GAIN_MAX_DB * 2))
+        self._slider.setFixedWidth(180)
+        self._slider.valueChanged.connect(self._on_value)
+        row.addWidget(self._slider)
+        reset = QPushButton("0 dB")
+        reset.setToolTip(_t("spatial_speaker_reset"))
+        reset.clicked.connect(lambda: self._slider.setValue(0))
+        row.addWidget(reset)
+        lay.addLayout(row)
+
+    def open_for(self, ch: str, db: float, global_pos) -> None:
+        self._ch = ch
+        self._title.setText(_t(f"spatial_ch_{ch.lower()}"))
+        self._slider.blockSignals(True)
+        self._slider.setValue(int(round(db * 2)))
+        self._slider.blockSignals(False)
+        self._show_value(db)
+        self.adjustSize()
+        self.move(global_pos)
+        self.show()
+        self._slider.setFocus()
+
+    def _show_value(self, db: float) -> None:
+        self._value.setText("0 dB" if abs(db) < 0.05 else f"{db:+.1f} dB")
+
+    def _on_value(self, value: int) -> None:
+        db = value / 2.0
+        self._show_value(db)
+        self.gain_changed.emit(self._ch, db)
+
+
+class SpatialSpeakerDisc(QWidget):
+    """Top view of the listener with the virtual speakers around, as in Sonar.
+
+    Clicking a speaker opens a popup with its gain. A speaker whose gain is
+    not 0 dB is drawn filled, with its value under it.
+    """
+    gain_changed = Signal(str, float)
+
+    _SIZE = 230
+    _SPK_R = 13      # speaker button radius
+    _RING = 0.80     # speakers sit at this fraction of the disc radius
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setFixedSize(self._SIZE, self._SIZE)
+        self.setMouseTracking(True)
+        self._gains: dict[str, float] = {ch: 0.0 for ch, _ in _SPATIAL_SPEAKERS}
+        self._hover: str | None = None
+        self._selected: str | None = None
+        self._popup = _SpeakerGainPopup(self)
+        self._popup.gain_changed.connect(self._on_popup_gain)
+        self._popup.installEventFilter(self)
+
+    # geometry
+    def _center(self):
+        return self.width() / 2.0, self.height() / 2.0
+
+    def _speaker_pos(self, azimuth: float) -> tuple[float, float]:
+        cx, cy = self._center()
+        r = (self._SIZE / 2.0 - self._SPK_R - 2) * self._RING / 0.80
+        a = math.radians(azimuth)
+        # 0 deg = up, positive azimuth = listener's left = screen left.
+        return cx - r * math.sin(a), cy - r * math.cos(a)
+
+    def _speaker_at(self, x: float, y: float) -> str | None:
+        for ch, az in _SPATIAL_SPEAKERS:
+            sx, sy = self._speaker_pos(az)
+            if (x - sx) ** 2 + (y - sy) ** 2 <= (self._SPK_R + 3) ** 2:
+                return ch
+        return None
+
+    # state
+    def set_gains(self, gains: dict) -> None:
+        for ch, _ in _SPATIAL_SPEAKERS:
+            try:
+                self._gains[ch] = float(gains.get(ch, 0.0))
+            except (TypeError, ValueError):
+                self._gains[ch] = 0.0
+        self.update()
+
+    def _on_popup_gain(self, ch: str, db: float) -> None:
+        self._gains[ch] = db
+        self.update()
+        self.gain_changed.emit(ch, db)
+
+    def eventFilter(self, obj, event):
+        if obj is self._popup and event.type() == event.Type.Hide:
+            self._selected = None
+            self.update()
+        return super().eventFilter(obj, event)
+
+    # events
+    def mouseMoveEvent(self, event):
+        ch = self._speaker_at(event.position().x(), event.position().y())
+        if ch != self._hover:
+            self._hover = ch
+            self.setCursor(Qt.CursorShape.PointingHandCursor if ch else Qt.CursorShape.ArrowCursor)
+            if ch:
+                db = self._gains[ch]
+                self.setToolTip(f"{_t(f'spatial_ch_{ch.lower()}')} — "
+                                + ("0 dB" if abs(db) < 0.05 else f"{db:+.1f} dB"))
+            else:
+                self.setToolTip(_t("spatial_speakers_hint"))
+            self.update()
+
+    def leaveEvent(self, event):
+        self._hover = None
+        self.update()
+
+    def mousePressEvent(self, event):
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        ch = self._speaker_at(event.position().x(), event.position().y())
+        if not ch:
+            return
+        self._selected = ch
+        self.update()
+        sx, sy = self._speaker_pos(dict(_SPATIAL_SPEAKERS)[ch])
+        pos = self.mapToGlobal(self.rect().topLeft())
+        from PySide6.QtCore import QPoint
+        self._popup.open_for(ch, self._gains[ch],
+                             pos + QPoint(int(sx + self._SPK_R + 6), int(sy - 20)))
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        cx, cy = self._center()
+        accent = QColor(_theme.c("ACCENT"))
+        btn = QColor(_theme.c("BG_BUTTON"))
+        card = QColor(_theme.c("BG_CARD"))
+        text2 = QColor(_theme.c("TEXT_SECONDARY"))
+
+        # outer disc and inner ring
+        R = self._SIZE / 2.0 - 1
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(btn)
+        p.drawEllipse(int(cx - R), int(cy - R), int(2 * R), int(2 * R))
+        r2 = R * 0.48
+        p.setBrush(card.darker(115))
+        p.drawEllipse(int(cx - r2), int(cy - r2), int(2 * r2), int(2 * r2))
+
+        # head (top view): face + ears + nose pointing up
+        p.setBrush(text2)
+        hr = 15
+        p.drawEllipse(int(cx - hr - 4), int(cy - 5), 8, 10)
+        p.drawEllipse(int(cx + hr - 4), int(cy - 5), 8, 10)
+        p.drawEllipse(int(cx - hr), int(cy - hr), 2 * hr, 2 * hr)
+        path = QPainterPath()
+        path.moveTo(cx - 5, cy - hr + 2)
+        path.lineTo(cx, cy - hr - 6)
+        path.lineTo(cx + 5, cy - hr + 2)
+        path.closeSubpath()
+        p.drawPath(path)
+
+        # speakers
+        font = p.font()
+        for ch, az in _SPATIAL_SPEAKERS:
+            sx, sy = self._speaker_pos(az)
+            db = self._gains.get(ch, 0.0)
+            active = abs(db) >= 0.05
+            selected = ch == self._selected
+            hovered = ch == self._hover
+            r = self._SPK_R
+            ring = accent if (active or selected or hovered) else text2
+            p.setPen(QPen(ring, 2 if (selected or hovered) else 1.5))
+            p.setBrush(accent if active else card)
+            p.drawEllipse(int(sx - r), int(sy - r), 2 * r, 2 * r)
+            f = QFont(font)
+            f.setPointSizeF(7.0)
+            f.setBold(True)
+            p.setFont(f)
+            p.setPen(QColor(_theme.c("TEXT_PRIMARY")) if active else text2)
+            p.drawText(int(sx - r), int(sy - r), 2 * r, 2 * r,
+                       int(Qt.AlignmentFlag.AlignCenter), ch)
+            if active:
+                f.setBold(False)
+                p.setFont(f)
+                p.setPen(accent)
+                p.drawText(int(sx - 24), int(sy + r + 1), 48, 12,
+                           int(Qt.AlignmentFlag.AlignCenter), f"{db:+.1f}")
+        p.end()
+
+
 class SpatialAudioWidget(QWidget):
     """
     Global spatial audio controls (affects Game channel routing only).
@@ -2082,6 +2459,17 @@ class SpatialAudioWidget(QWidget):
         self._channel = channel
         self._state = _load_spatial_audio(channel)
         self._updating = False
+        self._sonar_channel = channel
+        self._preset_provider = None
+        # First run with per-preset tuning: the tuning in use now becomes the
+        # common one, so presets without their own keep sounding as they did.
+        store = _load_spatial_tuning_store(channel)
+        if store["default"] is None:
+            store["default"] = _spatial_tuning(self._state)
+            try:
+                _save_spatial_tuning_store(store, channel)
+            except OSError:
+                pass
 
         self.setStyleSheet(f"""
             QLabel {{ background: transparent; border: none; }}
@@ -2093,6 +2481,15 @@ class SpatialAudioWidget(QWidget):
                 margin: -5px 0; border-radius: 7px;
             }}
             QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 2px; }}
+            QSlider::handle:horizontal:disabled {{ background: #6b7280; }}
+            QSlider::sub-page:horizontal:disabled {{ background: #4b5563; }}
+            QLabel:disabled {{ color: #6b7280; }}
+            QPushButton {{
+                background: {BG_BUTTON}; border: 1px solid {BORDER}; border-radius: 6px;
+                padding: 4px 10px;
+            }}
+            QPushButton:hover {{ background: {BG_BUTTON_HOVER}; border-color: {ACCENT}; }}
+            QPushButton:disabled {{ color: grey; }}
         """)
 
         root = QVBoxLayout(self)
@@ -2113,10 +2510,37 @@ class SpatialAudioWidget(QWidget):
         row1.addWidget(title)
         row1.addStretch(1)
 
+        self._save_status = QLabel("")
+        self._save_status.setStyleSheet(f"color: {ACCENT}; font-size: 9pt;")
+        row1.addWidget(self._save_status)
+
         note_key = "game_channel" if channel == "game" else "media_channel"
         note = QLabel(_t(note_key))
         note.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt;")
         row1.addWidget(note)
+
+        # Headphones / Speakers, as Sonar's two-button switch.
+        self._mode_btns: dict[str, QPushButton] = {}
+        mode_box = QHBoxLayout()
+        mode_box.setSpacing(0)
+        for key, label, tip in (("headphones", "spatial_mode_headphones", "spatial_mode_headphones_hint"),
+                                ("speakers", "spatial_mode_speakers", "spatial_mode_speakers_hint")):
+            b = QPushButton(_t(label))
+            b.setCheckable(True)
+            b.setToolTip(_t(tip))
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.clicked.connect(lambda _c=False, k=key: self._on_mode(k))
+            mode_box.addWidget(b)
+            self._mode_btns[key] = b
+        row1.addLayout(mode_box)
+
+        self._menu_btn = QPushButton("⋮")
+        self._menu_btn.setFixedSize(28, 28)
+        self._menu_btn.setToolTip(_t("spatial_menu_tooltip"))
+        self._menu_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._menu_btn.setStyleSheet("font-size: 14pt; font-weight: bold; padding: 0;")
+        self._menu_btn.clicked.connect(self._open_save_menu)
+        row1.addWidget(self._menu_btn)
         root.addLayout(row1)
 
         # ── Collapsible section ───────────────────────────────────────────────
@@ -2132,16 +2556,201 @@ class SpatialAudioWidget(QWidget):
         self._auto_cb.toggled.connect(self._on_auto)
         detail_layout.addWidget(self._auto_cb)
 
-        # Immersion slider
-        detail_layout.addWidget(self._slider_row("Performance / Immersion", "immersion"))
+        # Sonar's layout: speaker disc on the left, Tuning on the right.
+        body = QHBoxLayout()
+        body.setSpacing(24)
+        self._disc = SpatialSpeakerDisc()
+        self._disc.set_gains(self._state.get("channel_gains") or {})
+        self._disc.setToolTip(_t("spatial_speakers_hint"))
+        self._disc.gain_changed.connect(self._on_channel_gain)
+        body.addWidget(self._disc, 0, Qt.AlignmentFlag.AlignTop)
 
-        # Distance slider
-        detail_layout.addWidget(self._slider_row("Distance", "distance"))
+        tuning = QVBoxLayout()
+        tuning.setSpacing(10)
+        tuning_title = QLabel(_t("spatial_tuning"))
+        tuning_title.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 11pt; font-weight: bold;")
+        tuning.addWidget(tuning_title)
+        tuning_hint = QLabel(_t("spatial_tuning_hint"))
+        tuning_hint.setWordWrap(True)
+        tuning_hint.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt;")
+        tuning.addWidget(tuning_hint)
+        tuning.addWidget(self._slider_row("Performance / Immersion", "immersion"))
+        tuning.addWidget(self._slider_row("Distance", "distance"))
+        reset_row = QHBoxLayout()
+        self._reset_gains_btn = QPushButton(_t("spatial_channel_levels_reset"))
+        self._reset_gains_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._reset_gains_btn.clicked.connect(self._reset_channel_gains)
+        self._reset_gains_btn.setEnabled(self._has_channel_gains())
+        reset_row.addWidget(self._reset_gains_btn)
+        reset_row.addStretch(1)
+        tuning.addLayout(reset_row)
+        tuning.addStretch(1)
+        body.addLayout(tuning, 1)
+        detail_layout.addLayout(body)
+        # Breathing room under the disc, so it does not touch the next card.
+        detail_layout.addSpacing(16)
 
         root.addWidget(self._detail)
         self._detail.setVisible(self._state["enabled"])
+        self._sync_mode()
+        self._pin_min_height()
 
     # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def _pin_min_height(self) -> None:
+        """Make the minimum height explicit, so the channel tab cannot squeeze
+        this widget: inside the tab stack only an explicit minimum is honoured,
+        and the speaker disc lost its rear speakers to a 21 px shortfall."""
+        self.setMinimumHeight(0)
+        self.setMinimumHeight(self.minimumSizeHint().height())
+
+    # ── Headphones / Speakers ─────────────────────────────────────────────────
+
+    def _mode(self) -> str:
+        return "speakers" if self._state.get("mode") == "speakers" else "headphones"
+
+    def _sync_mode(self) -> None:
+        mode = self._mode()
+        accent, btn, border = _theme.c("ACCENT"), _theme.c("BG_BUTTON"), _theme.c("BORDER")
+        for key, b in self._mode_btns.items():
+            on = key == mode
+            b.setChecked(on)
+            left = key == "headphones"
+            radius = ("border-top-left-radius: 6px; border-bottom-left-radius: 6px;" if left
+                      else "border-top-right-radius: 6px; border-bottom-right-radius: 6px;")
+            b.setStyleSheet(
+                f"QPushButton {{ background: {accent if on else btn}; color: {'#fff' if on else _theme.c('TEXT_SECONDARY')};"
+                f" border: 1px solid {accent if on else border}; border-radius: 0; {radius}"
+                f" padding: 4px 12px; font-weight: {'bold' if on else 'normal'}; }}")
+        # No HRTF in speakers mode: Immersion and Distance shape HeSuVi only.
+        for key in ("immersion", "distance"):
+            for attr in (f"_slider_{key}", f"_val_lbl_{key}"):
+                w = self.__dict__.get(attr)
+                if w is not None:
+                    w.setEnabled(mode == "headphones")
+                    w.setToolTip("" if mode == "headphones" else _t("spatial_speakers_no_tuning"))
+
+    def _on_mode(self, mode: str) -> None:
+        if mode == self._mode():
+            self._sync_mode()   # keep the clicked button checked
+            return
+        self._state["mode"] = mode
+        _save_spatial_audio(self._state, self._channel)
+        self._sync_mode()
+        self.state_changed.emit()
+
+    # ── Per-preset tuning ─────────────────────────────────────────────────────
+
+    def bind_presets(self, sonar_channel: str, provider) -> None:
+        """Tell the widget which channel's presets it follows and how to read
+        the active one (a callable returning the preset name)."""
+        self._sonar_channel = sonar_channel
+        self._preset_provider = provider
+
+    def _preset_key(self) -> str | None:
+        name = self._preset_provider() if self._preset_provider else ""
+        return _spatial_preset_key(self._sonar_channel, name) if name else None
+
+    def load_preset_tuning(self, preset: str, legacy: dict | None = None) -> None:
+        """Apply the tuning *preset* should get: its own, else the one a user
+        preset was saved with, else the common one. Emits only on a change."""
+        store = _load_spatial_tuning_store(self._channel)
+        tuning, _src = _resolve_spatial_tuning(
+            store, _spatial_preset_key(self._sonar_channel, preset), legacy)
+        if not tuning or tuning == _spatial_tuning(self._state):
+            return
+        self.set_state(tuning, emit=True)
+
+    def _flash_status(self, text: str) -> None:
+        self._save_status.setText(text)
+        QTimer.singleShot(2500, self, lambda: self._save_status.setText(""))
+
+    def _open_save_menu(self) -> None:
+        key = self._preset_key()
+        name = self._preset_provider() if self._preset_provider else ""
+        store = _load_spatial_tuning_store(self._channel)
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            f"QMenu {{ background: {_theme.c('BG_CARD')}; border: 1px solid {_theme.c('BORDER')}; "
+            f"color: {_theme.c('TEXT_PRIMARY')}; }}"
+            f"QMenu::item:selected {{ background: {_theme.c('ACCENT')}; color: #fff; }}"
+            f"QMenu::item:disabled {{ color: {_theme.c('TEXT_SECONDARY')}; }}"
+        )
+        act_preset = menu.addAction(_t("spatial_save_preset").format(name or "—"))
+        act_preset.setEnabled(key is not None)
+        act_all = menu.addAction(_t("spatial_save_all"))
+        menu.addSeparator()
+        act_forget = menu.addAction(_t("spatial_forget_preset"))
+        has_own = key is not None and (
+            key in store["presets"] or self._preset_has_legacy(name))
+        act_forget.setEnabled(has_own)
+        chosen = menu.exec(self._menu_btn.mapToGlobal(self._menu_btn.rect().bottomLeft()))
+        if chosen is act_preset:
+            self.save_tuning_for_preset()
+        elif chosen is act_all:
+            self.save_tuning_for_all()
+        elif chosen is act_forget:
+            self.forget_preset_tuning()
+
+    def _preset_has_legacy(self, name: str) -> bool:
+        if not name:
+            return False
+        tag = _CHANNEL_TAG.get(self._sonar_channel, "[Game]")
+        path = _PRESETS_DIR / f"{name} {tag}.json"
+        try:
+            spatial = (json.loads(path.read_text()).get("settings") or {}).get("spatial") \
+                if path.exists() else None
+        except Exception:
+            return False
+        return isinstance(spatial, dict) and any(k in spatial for k in _SPATIAL_TUNING_KEYS)
+
+    def save_tuning_for_preset(self) -> None:
+        key = self._preset_key()
+        if key is None:
+            return
+        store = _load_spatial_tuning_store(self._channel)
+        store["presets"][key] = _spatial_tuning(self._state)
+        _save_spatial_tuning_store(store, self._channel)
+        self._flash_status(_t("spatial_saved_preset"))
+
+    def save_tuning_for_all(self) -> None:
+        store = _load_spatial_tuning_store(self._channel)
+        store["default"] = _spatial_tuning(self._state)
+        prefix = f"{self._sonar_channel}/"
+        dropped = [k for k in store["presets"] if k.startswith(prefix)]
+        for k in dropped:
+            del store["presets"][k]
+        _save_spatial_tuning_store(store, self._channel)
+        # User presets saved with a Spatial block would otherwise win again.
+        tag = _CHANNEL_TAG.get(self._sonar_channel, "[Game]")
+        if _PRESETS_DIR.exists():
+            for f in _PRESETS_DIR.glob(f"* {tag}.json"):
+                _strip_preset_spatial_tuning(self._sonar_channel, f.name[: -len(f" {tag}.json")])
+        self._flash_status(_t("spatial_saved_all"))
+
+    def forget_preset_tuning(self) -> None:
+        key = self._preset_key()
+        if key is None:
+            return
+        name = self._preset_provider()
+        store = _load_spatial_tuning_store(self._channel)
+        store["presets"].pop(key, None)
+        _save_spatial_tuning_store(store, self._channel)
+        _strip_preset_spatial_tuning(self._sonar_channel, name)
+        if store.get("default") and store["default"] != _spatial_tuning(self._state):
+            self.set_state(dict(store["default"]), emit=True)
+        self._flash_status(_t("spatial_forgot_preset"))
+
+    def showEvent(self, event):
+        # Fonts and the theme are only final once the widget is polished and
+        # shown; a minimum computed in __init__ can come out a few px short.
+        super().showEvent(event)
+        QTimer.singleShot(0, self._pin_min_height)
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() in (event.Type.FontChange, event.Type.StyleChange):
+            QTimer.singleShot(0, self._pin_min_height)
 
     def _slider_row(self, label: str, key: str) -> QWidget:
         w = QWidget()
@@ -2177,7 +2786,36 @@ class SpatialAudioWidget(QWidget):
 
         return w
 
+    def _has_channel_gains(self) -> bool:
+        for v in (self._state.get("channel_gains") or {}).values():
+            try:
+                if abs(float(v)) >= 0.05:
+                    return True
+            except (TypeError, ValueError):
+                pass
+        return False
+
+    def _sync_channel_gain_sliders(self) -> None:
+        self._disc.set_gains(self._state.get("channel_gains") or {})
+        self._reset_gains_btn.setEnabled(self._has_channel_gains())
+
     # ── Slots ─────────────────────────────────────────────────────────────────
+
+    def _on_channel_gain(self, ch: str, db: float) -> None:
+        gains = dict(self._state.get("channel_gains") or {})
+        gains[ch] = db
+        self._state["channel_gains"] = gains
+        _save_spatial_audio(self._state, self._channel)
+        self._reset_gains_btn.setEnabled(self._has_channel_gains())
+        self.state_changed.emit()
+
+    def _reset_channel_gains(self) -> None:
+        if not self._has_channel_gains():
+            return
+        self._state["channel_gains"] = {ch: 0.0 for ch, _ in _SPATIAL_SPEAKERS}
+        _save_spatial_audio(self._state, self._channel)
+        self._sync_channel_gain_sliders()
+        self.state_changed.emit()
 
     def _on_toggle(self, checked):
         # checkStateChanged emits a Qt.CheckState; bool(Qt.CheckState.Unchecked)
@@ -2188,6 +2826,7 @@ class SpatialAudioWidget(QWidget):
         self._state["enabled"] = enabled
         _save_spatial_audio(self._state, self._channel)
         self._detail.setVisible(enabled)
+        self._pin_min_height()
         self.state_changed.emit()
 
     def _on_auto(self, checked: bool) -> None:
@@ -2215,8 +2854,18 @@ class SpatialAudioWidget(QWidget):
                 margin: -5px 0; border-radius: 7px;
             }}
             QSlider::sub-page:horizontal {{ background: {_theme.c('ACCENT')}; border-radius: 2px; }}
+            QSlider::handle:horizontal:disabled {{ background: #6b7280; }}
+            QSlider::sub-page:horizontal:disabled {{ background: #4b5563; }}
+            QLabel:disabled {{ color: #6b7280; }}
+            QPushButton {{
+                background: {_theme.c('BG_BUTTON')}; border: 1px solid {_theme.c('BORDER')}; border-radius: 6px;
+                padding: 4px 10px;
+            }}
+            QPushButton:hover {{ background: {_theme.c('BG_BUTTON_HOVER')}; border-color: {_theme.c('ACCENT')}; }}
+            QPushButton:disabled {{ color: grey; }}
         """
         self.setStyleSheet(_slider_qss)
+        self._sync_mode()
 
     def get_state(self) -> dict:
         return dict(self._state)
@@ -2230,6 +2879,8 @@ class SpatialAudioWidget(QWidget):
         self._toggle.setChecked(self._state.get("enabled", False))
         self._toggle.blockSignals(False)
         self._detail.setVisible(self._state.get("enabled", False))
+        self._sync_mode()
+        self._pin_min_height()
         self._auto_cb.blockSignals(True)
         self._auto_cb.setChecked(bool(self._state.get("auto", False)))
         self._auto_cb.blockSignals(False)
@@ -2243,6 +2894,7 @@ class SpatialAudioWidget(QWidget):
                 slider.blockSignals(False)
             if lbl:
                 lbl.setText(str(val))
+        self._sync_channel_gain_sliders()
         if emit:
             self.state_changed.emit()
 
@@ -3608,7 +4260,7 @@ class SonarPage(QWidget):
         # daemon regenerates game AND media from their JSON in one pass.
         self._spatial_apply_timer = QTimer(self)
         self._spatial_apply_timer.setSingleShot(True)
-        self._spatial_apply_timer.setInterval(_APPLY_DELAY)
+        self._spatial_apply_timer.setInterval(_SPATIAL_APPLY_DELAY)
         self._spatial_apply_timer.timeout.connect(self._apply_spatial_audio_daemon)
 
         # ── Connect settings signals from tab widgets ────────────────────────
@@ -3845,7 +4497,9 @@ class SonarPage(QWidget):
 
     def _apply_spatial_audio_daemon(self):
         """Debounced: ask the daemon to regenerate the HeSuVi chains from the
-        saved Immersion/Distance and restart the filter-chain if they changed.
+        saved Immersion/Distance/speaker levels. Value changes are set on the
+        running chain; only a change of shape (Distance to or from 0) restarts
+        the filter-chain.
 
         Only the daemon can write these confs (the GUI process has no device
         registered, so generate_hesuvi_conf no-ops there — issue #169). The

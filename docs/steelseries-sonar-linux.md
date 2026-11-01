@@ -55,7 +55,8 @@ headset is described in a YAML file, so support is data rather than code — see
 [the device configuration specs](device_configuration_file_specs.md).
 
 Spatial audio is there too, through HeSuVi-compatible HRIR convolution — the
-Linux equivalent of Sonar's virtual surround.
+Linux equivalent of Sonar's virtual surround — with Sonar's per-speaker levels:
+raise the centre for dialogue or the rear speakers for footsteps.
 
 ## Sonar's game presets are included
 

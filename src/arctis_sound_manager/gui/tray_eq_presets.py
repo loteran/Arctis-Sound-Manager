@@ -122,6 +122,15 @@ class SonarPresetApplier(QObject):
         macro = _load_macro(channel)
         _set_active_preset(channel, name)
 
+        # The preset's Spatial tuning (its own, or the common one) follows it.
+        try:
+            from arctis_sound_manager.gui.sonar_page import apply_preset_spatial_tuning
+            if apply_preset_spatial_tuning(channel, name):
+                from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
+                DbusWrapper.apply_spatial_audio()
+        except Exception as e:
+            logger.warning("Spatial tuning for preset '%s' not applied: %s", name, e)
+
         worker = _ApplyWorker(
             channel, bands,
             macro.get("basses", 0.0),
