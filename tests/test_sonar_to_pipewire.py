@@ -4367,3 +4367,16 @@ def test_spatial_auto_spatialises_surround_sources_only(monkeypatch, formats, ta
 def test_spatial_auto_is_off_by_default_like_sonar(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     assert _s2p_p3._spatial_auto("game") is False
+
+
+def test_bypass_conf_names_the_output_node_like_the_active_conf(monkeypatch):
+    """#357: Passthrough must not rename the Output node "Sonar EQ (bypass)"."""
+    from arctis_sound_manager import sonar_to_pipewire as s2p
+    monkeypatch.setattr(s2p.device_state, "get_device_name", lambda: "Arctis Nova Elite")
+    for channels, position in ((2, "FL FR"), (8, "FL FR FC LFE RL RR SL SR")):
+        text = s2p._bypass_conf("effect_input.sonar-output-eq", "tv", channels, position,
+                                channel="output")
+        assert 'node.description = "Arctis Nova Elite Output"' in text
+        assert "Sonar EQ (bypass)" not in text
+    text = s2p._bypass_conf("effect_input.sonar-game-eq", "", 2, "FL FR", channel="game")
+    assert 'node.description = "Sonar Game EQ"' in text
