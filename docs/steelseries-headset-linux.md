@@ -37,8 +37,8 @@ something provides it.
   microphone and Bluetooth EQ presets, the Arctis Pro GameDAC's gain, line
   out and stream mix, the Arctis Pro Wireless' volume limiter and screen
   settings, the Nova Pro Wired's line out and stream mix, the mic volume of the
-  Arctis 7 and Arctis 1 Wireless families, the GameBuds' audio source, spoken over the headset's own USB protocol. On the Elite and Omni, ASM reads the base's settings at start
-  and leaves alone the ones you never changed in ASM.
+  Arctis 7 and Arctis 1 Wireless families, the GameBuds' audio source, spoken over the headset's own USB protocol. On the Elite, Omni and Nova Pro Wireless, ASM takes the settings
+  the base reports at start, so a change made on the base or in GG is kept.
 - **The base station's OLED screen** — the EQ of what is playing, the
   now-playing track, and screen-off while you are away.
 - **Game / Chat / Media / Aux / Output channels** as real PipeWire devices, with

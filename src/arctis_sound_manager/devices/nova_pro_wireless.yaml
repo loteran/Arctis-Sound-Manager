@@ -211,6 +211,8 @@ device:
   # base_arctis_nova_pro_wireless, every one confirmed on a 0x12e0 by
   # `asm-cli tools probe` (values inside the spec's ranges, the 0xB0 offsets
   # identical to the status mapping above).
+  # The base keeps its settings: at start, what it reports wins (#359).
+  settings_readback_wins: true
   settings_readback:
     - request: 0x0620
       starts_with: 0x0620

@@ -275,6 +275,8 @@ device:
   # (base_arctis_nova_elite_tx wireless_settings and ux_settings, the Omni's
   # own audio_settings) and checked against an Omni probe (#331): the radio
   # EQ slot read 4, the Custom slot read_radio_eq_settings returned too.
+  # The base keeps its settings: at start, what it reports wins (#359).
+  settings_readback_wins: true
   settings_readback:
     - request: 0x01b0              # wireless_settings
       starts_with: 0x01b0

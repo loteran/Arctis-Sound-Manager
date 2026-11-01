@@ -327,6 +327,8 @@ device:
   # audio_settings), checked against an Elite probe (#331). Left out on
   # purpose: the radio EQ preset (ASM's EQ mode decides it, Sonar or
   # Custom) and the station volume (the spec reads 0-38, ASM writes 0-56).
+  # The base keeps its settings: at start, what it reports wins (#359).
+  settings_readback_wins: true
   settings_readback:
     - request: 0x01b0              # wireless_settings
       starts_with: 0x01b0

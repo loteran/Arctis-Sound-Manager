@@ -479,6 +479,11 @@ class DeviceConfiguration:
             SettingsReadback(**entry)
             for entry in (raw_config.get('settings_readback', None) or [])
         ]
+        # A base station keeps its settings and has its own controls, so what
+        # it reports at start is the current state, not a stale copy: it wins
+        # over the settings file, as in GG (#359, #331). Off for headsets that
+        # may come back from a power cycle with factory values (#221).
+        self.settings_readback_wins = bool(raw_config.get('settings_readback_wins', False))
 
         hardware_eq = raw_config.get('hardware_eq', None) or {}
         self.hardware_eq_command = (

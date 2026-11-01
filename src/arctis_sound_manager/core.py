@@ -425,6 +425,9 @@ class CoreEngine:
         # as the profile default while the reply adopts the device's own value.
         self._readback_pending: set[int] = set()
         self._readback_done = threading.Event()
+        # True only between the start readback and device_init: a late reply
+        # must not undo what device_init has just pushed.
+        self._readback_wins_window = False
 
         # Requests sent whose replies carry no opcode (status mappings with
         # `reply_to`), oldest first: the device answers in order, so the next
@@ -3203,13 +3206,17 @@ class CoreEngine:
         # Ask the headset what it currently has, before pushing anything. The
         # replies land on the listen loop and only fill in settings the user
         # never chose here — see _absorb_settings_readback().
-        replies = self._request_settings_readback()
-        # device_init resolves `settings.*` when it sends them, so give the
-        # replies a moment to land first; past that, defaults go out as they
-        # always did.
-        if replies is not None and not replies.wait(_READBACK_WAIT_S):
-            self.logger.debug("settings readback: a query went unanswered before "
-                              "device_init")
+        self._readback_wins_window = True
+        try:
+            replies = self._request_settings_readback()
+            # device_init resolves `settings.*` when it sends them, so give the
+            # replies a moment to land first; past that, defaults go out as
+            # they always did.
+            if replies is not None and not replies.wait(_READBACK_WAIT_S):
+                self.logger.debug("settings readback: a query went unanswered "
+                                  "before device_init")
+        finally:
+            self._readback_wins_window = False
         failed, attempted = self._send_device_init_sequence(context="init_device")
 
         # Not _apply_stored_eq() directly: in Sonar mode the stored curve must
@@ -4797,6 +4804,12 @@ class CoreEngine:
         a setting exists in the user's settings file it is theirs, and nothing
         the headset reports may overwrite it, or a stale reply would fight
         every change they make.
+
+        The exception is a base station (`settings_readback_wins`): it keeps
+        its settings and has its own controls, so at start (and only then, see
+        init_device) its reply is the current state and wins, as in GG. ASM
+        writes every key to the settings file, so "in the file" never meant
+        "chosen here" on an upgraded install (#359, #331).
         """
         if self.device_config is None or not self.device_config.settings_readback:
             return
@@ -4809,14 +4822,16 @@ class CoreEngine:
             self._readback_pending.discard(index)
             if not self._readback_pending:
                 self._readback_done.set()
+            device_wins = (self._readback_wins_window is True
+                           and getattr(self.device_config, 'settings_readback_wins', False) is True)
             for name, value in readback.values_from(response).items():
-                if self.device_settings.was_chosen_by_user(name):
+                if self.device_settings.was_chosen_by_user(name) and not device_wins:
                     continue
                 if self.device_settings.get(name, None) == value:
                     continue
                 self.logger.info(
-                    "Adopting %s=%s read back from the headset (never set here)",
-                    name, value)
+                    "Adopting %s=%s read back from the %s", name, value,
+                    "base station" if device_wins else "headset (never set here)")
                 self.device_settings.settings[name] = value
 
     def _resolve_raw_response_waiters(self, response: list[int]) -> None:

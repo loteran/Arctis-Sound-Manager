@@ -120,3 +120,42 @@ def test_the_elite_reads_the_same_way(monkeypatch):
         "mic_sidetone_boom": 5,  # on, level 5
         "mic_sidetone_ear": 5,
     }
+
+
+def test_at_start_the_base_station_wins_over_the_settings_file(monkeypatch):
+    """#359 / #331: every key is in the file, so "in the file" is not "chosen"."""
+    monkeypatch.setattr("arctis_sound_manager.core.time.sleep", lambda _s: None)
+    engine = _engine(chosen={"mic_volume"})
+    engine.device_settings.settings["mic_volume"] = 3
+    engine._readback_wins_window = True
+    CoreEngine._request_settings_readback(engine)
+    assert engine.device_settings.settings["mic_volume"] == 8
+
+
+def test_a_late_reply_does_not_undo_device_init(monkeypatch):
+    monkeypatch.setattr("arctis_sound_manager.core.time.sleep", lambda _s: None)
+    engine = _engine(chosen={"mic_volume"})
+    engine.device_settings.settings["mic_volume"] = 3
+    engine._readback_wins_window = False
+    CoreEngine._request_settings_readback(engine)
+    assert engine.device_settings.settings["mic_volume"] == 3
+
+
+def test_only_base_stations_let_the_device_win():
+    def wins(name):
+        cfg = DeviceConfiguration(YAML(typ="safe").load(DEVICES_DIR / f"{name}.yaml"))
+        return cfg.settings_readback_wins
+    assert wins("nova_pro_wireless") and wins("nova_pro_omni") and wins("nova_elite")
+    # Headsets that may power back on with factory values keep the user's file.
+    assert not wins("nova_5") and not wins("nova_7_perc_battery")
+
+
+def test_init_device_closes_the_window_before_device_init(monkeypatch):
+    engine = MagicMock()
+    seen = {}
+    engine._request_settings_readback.side_effect = lambda: seen.setdefault(
+        "during", engine._readback_wins_window) and None
+    engine._send_device_init_sequence.side_effect = lambda **_k: (
+        seen.setdefault("init", engine._readback_wins_window), (0, 0))[1]
+    CoreEngine.init_device(engine)
+    assert seen == {"during": True, "init": False}
