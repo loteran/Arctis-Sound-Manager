@@ -50,6 +50,35 @@ def _host_root_unmapped(uid_map_path: str = '/proc/self/uid_map') -> bool:
     return True
 
 
+def _vid_pid(device) -> tuple[int, int] | None:
+    """(vendor, product) of a udev usb_device event, or None.
+
+    ID_VENDOR_ID / ID_MODEL_ID come from udev's usb_id builtin and are not on
+    every event: a rules setup that never runs it, or a remove whose database
+    entry is gone, left them out, and the event was dropped silently: the
+    headset's removal went unnoticed. PRODUCT ("vid/pid/bcd", hex without
+    padding) is set by the kernel itself on every usb_device uevent, remove
+    included. Same fix as elegos/Linux-Arctis-Manager 673679f (HID_ID there,
+    #362).
+    """
+    try:
+        vid = int(device.get('ID_VENDOR_ID') or '0', 16)
+        pid = int(device.get('ID_MODEL_ID') or '0', 16)
+    except ValueError:
+        vid = pid = 0
+    if vid and pid:
+        return vid, pid
+    parts = (device.get('PRODUCT') or '').split('/')
+    if len(parts) >= 2:
+        try:
+            vid, pid = int(parts[0], 16), int(parts[1], 16)
+        except ValueError:
+            return None
+        if 0 < vid <= 0xffff and 0 < pid <= 0xffff:
+            return vid, pid
+    return None
+
+
 class USBDevicesMonitor:
     """USB hotplug monitor with pyudev event backend and a polling fallback.
 
@@ -203,11 +232,10 @@ class USBDevicesMonitor:
         if device.device_type != 'usb_device':
             return
 
-        try:
-            vid: int = int(device.get('ID_VENDOR_ID', '0'), 16)
-            pid: int = int(device.get('ID_MODEL_ID', '0'), 16)
-        except ValueError:
+        ids = _vid_pid(device)
+        if ids is None:
             return
+        vid, pid = ids
 
         # udev's ID_MODEL is the USB iProduct string with spaces replaced by
         # underscores (kernel convention).  Expose it raw so callers can log
