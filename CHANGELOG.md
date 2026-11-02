@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Arctis 7 (and any headset) kept on libusb by old udev rules** (#342). An `/etc/udev/rules.d/91-steelseries-arctis.rules` written before 1.7.0 has no hidraw lines and hides the packaged file, so the hidraw transport could never open and ASM fell back to libusb on every connect — after handing the headset to the kernel driver and taking it back. Those rules now count as outdated, so the setup dialog offers to rewrite them, and ASM goes straight to libusb, saying why, instead of trying.
+
 ## [1.7.1] - 1 November 2026
 
 ### Added

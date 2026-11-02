@@ -21,6 +21,14 @@ _RULE_PID_RE = re.compile(
     r'SUBSYSTEM=="usb".*?ATTRS\{idVendor\}=="1038".*?ATTRS\{idProduct\}=="([0-9a-fA-F|]+)"',
     re.IGNORECASE,
 )
+# The same grant for the device's /dev/hidraw* nodes (hidraw transport, the
+# default since 1.7.0). A rules file written before 1.7.0 covers every PID on
+# the usb lines and none here: the nodes stay root 0600, ASM falls back to
+# libusb on every connect, and the check used to call that file current (#342).
+_HIDRAW_PID_RE = re.compile(
+    r'SUBSYSTEM=="hidraw".*?ATTRS\{idVendor\}=="1038".*?ATTRS\{idProduct\}=="([0-9a-fA-F|]+)"',
+    re.IGNORECASE,
+)
 
 
 def _expected_pids() -> list[tuple[int, int]]:
@@ -42,19 +50,21 @@ def _expected_pids() -> list[tuple[int, int]]:
         return []
 
 
-def _pids_in_rules(content: str) -> set[int]:
+def _pids_in_rules(content: str, subsystem: str = 'usb') -> set[int]:
     """Extract every PID covered by a real Arctis udev rule line.
 
     Strips comments before parsing so 'uaccess' / '1038' inside a `#` line
     cannot fool the checker, and supports the `pidA|pidB` alternation form
-    used by the older hardcoded ruleset.
+    used by the older hardcoded ruleset. *subsystem* picks the usb lines
+    (default) or the hidraw ones.
     """
+    rule_re = _HIDRAW_PID_RE if subsystem == 'hidraw' else _RULE_PID_RE
     pids: set[int] = set()
     for raw in content.splitlines():
         line = raw.split('#', 1)[0]
         if 'uaccess' not in line and 'MODE="0666"' not in line:
             continue
-        m = _RULE_PID_RE.search(line)
+        m = rule_re.search(line)
         if not m:
             continue
         for token in m.group(1).split('|'):
@@ -141,7 +151,8 @@ def get_udev_rules_status() -> str:
     """Return the status of the installed udev rules.
 
     'ok'       — at least one rules file covers every known PID.
-    'outdated' — a rules file exists but is missing PIDs added by new device YAMLs.
+    'outdated' — a rules file exists but is missing PIDs added by new device YAMLs,
+                 or has no hidraw lines for them (written before 1.7.0, #342).
     'missing'  — no rules file exists at any configured path.
     """
     expected = {pid for _, pid in _expected_pids()}
@@ -167,6 +178,13 @@ def get_udev_rules_status() -> str:
                     + ', '.join(f'0x{pid:04x}' for pid in missing)
                 )
                 continue
+            hidraw_missing = expected - _pids_in_rules(content, 'hidraw')
+            if hidraw_missing:
+                _logger.info(
+                    f"udev_checker: {label} has no hidraw rule for: "
+                    + ', '.join(f'0x{pid:04x}' for pid in sorted(hidraw_missing))
+                )
+                continue
             if any(expected.issubset(_pids_in_rules(content))
                    for _uaccess_label, content in uaccess_rules):
                 return 'ok'
@@ -179,3 +197,20 @@ def get_udev_rules_status() -> str:
 def is_udev_rules_valid() -> bool:
     """Return True iff at least one installed rules file covers every known PID."""
     return get_udev_rules_status() == 'ok'
+
+
+def hidraw_rules_cover(product_id: int) -> bool | None:
+    """Whether the rules udev reads let a user open this PID's hidraw nodes.
+
+    None when no ASM rules file is found at all (a distro that ships its own
+    rules elsewhere, NixOS…): nothing to conclude, the caller just tries.
+    False when the file udev reads has no hidraw line for the PID: opening the
+    node can only fail with EACCES, and trying it first hands the interface to
+    the kernel driver for two seconds before falling back to libusb — on an
+    Arctis 7 dongle that churn ended with the port disabled (#342).
+    """
+    for source in (_local_rules_contents, _host_rules_contents):
+        main_rules = _effective(source(UDEV_RULES_PATHS))
+        if main_rules:
+            return product_id in _pids_in_rules(main_rules[0][1], 'hidraw')
+    return None

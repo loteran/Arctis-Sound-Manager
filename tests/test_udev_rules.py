@@ -137,7 +137,9 @@ def test_checker_requires_current_uaccess_companion(monkeypatch):
     from arctis_sound_manager import udev_checker
 
     main = ('91 rules', 'SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", '
-            'ATTRS{idProduct}=="beef", MODE="0666", TAG+="uaccess"')
+            'ATTRS{idProduct}=="beef", MODE="0666", TAG+="uaccess"\n'
+            'KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1038", '
+            'ATTRS{idProduct}=="beef", MODE="0666"')
     uaccess = ('70 rules', 'SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", '
                'ATTRS{idProduct}=="beef", TAG+="uaccess"')
     monkeypatch.setattr(udev_checker, '_expected_pids', lambda: [(0x1038, 0xbeef)])
@@ -213,10 +215,14 @@ def test_unelevated_run_has_no_invoking_user_folder(monkeypatch):
         importlib.reload(constants)
 
 
-def _rule(pid: str, tag_only: bool = False) -> str:
+def _rule(pid: str, tag_only: bool = False, hidraw: bool = True) -> str:
     extra = '' if tag_only else 'MODE="0666", '
-    return (f'SUBSYSTEM=="usb", ATTRS{{idVendor}}=="1038", '
+    line = (f'SUBSYSTEM=="usb", ATTRS{{idVendor}}=="1038", '
             f'ATTRS{{idProduct}}=="{pid}", {extra}TAG+="uaccess"')
+    if hidraw and not tag_only:
+        line += (f'\nKERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{{idVendor}}=="1038", '
+                 f'ATTRS{{idProduct}}=="{pid}", MODE="0666"')
+    return line
 
 
 def test_stale_etc_copy_shadows_a_current_packaged_file(monkeypatch):
@@ -260,3 +266,49 @@ def test_expected_pids_include_the_charging_case():
 
     pids = {pid for _, pid in udev_checker._expected_pids()}
     assert {0x2317, 0x230c, 0x231a} <= pids
+
+
+def _fake_rules(monkeypatch, files: dict[str, str]):
+    from arctis_sound_manager import udev_checker
+    monkeypatch.setattr(udev_checker, '_host_rules_contents', lambda _paths: [])
+    monkeypatch.setattr(udev_checker, '_local_rules_contents',
+                        lambda paths: [(p, files[p]) for p in paths if p in files])
+    return udev_checker
+
+
+def test_rules_without_hidraw_lines_are_outdated(monkeypatch):
+    """#342: an /etc copy written before 1.7.0 covers every PID on its usb
+    lines but has no hidraw line; it shadows the packaged file, the hidraw
+    nodes stay 0600 and ASM silently falls back to libusb. It must read as
+    outdated so the setup dialog rewrites it."""
+    etc, etc_ua = UDEV_RULES_PATHS[0], UDEV_UACCESS_RULES_PATHS[0]
+    files = {etc: _rule('12ad', hidraw=False), etc_ua: _rule('12ad', True)}
+    udev_checker = _fake_rules(monkeypatch, files)
+    monkeypatch.setattr(udev_checker, '_expected_pids', lambda: [(0x1038, 0x12ad)])
+    assert udev_checker.get_udev_rules_status() == 'outdated'
+
+    files[etc] = _rule('12ad')
+    assert udev_checker.get_udev_rules_status() == 'ok'
+
+
+def test_hidraw_rules_cover_reads_the_file_udev_reads(monkeypatch):
+    """#342: the stale /etc copy decides, not the current packaged one."""
+    etc, usr = UDEV_RULES_PATHS[0], UDEV_RULES_PATHS[1]
+    files = {etc: _rule('12ad', hidraw=False), usr: _rule('12ad')}
+    udev_checker = _fake_rules(monkeypatch, files)
+    assert udev_checker.hidraw_rules_cover(0x12ad) is False
+
+    del files[etc]
+    assert udev_checker.hidraw_rules_cover(0x12ad) is True
+    assert udev_checker.hidraw_rules_cover(0x2232) is False
+
+    files.clear()
+    assert udev_checker.hidraw_rules_cover(0x12ad) is None
+
+
+def test_generated_rules_pass_the_hidraw_check():
+    """What udev_rules.py writes must satisfy the checker's hidraw test."""
+    from arctis_sound_manager import udev_checker
+    rules = generate_rules([SRC_DEVICES])
+    usb = udev_checker._pids_in_rules(rules)
+    assert usb and usb <= udev_checker._pids_in_rules(rules, 'hidraw')

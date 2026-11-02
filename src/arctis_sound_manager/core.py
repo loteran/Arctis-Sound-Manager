@@ -147,6 +147,36 @@ def _active_hidraw(engine) -> 'HidrawTransport | None':
     """The open hidraw transport, or None on the libusb path."""
     transport = getattr(engine, '_hidraw', None)
     return transport if isinstance(transport, HidrawTransport) else None
+
+
+# (product id, monotonic time) -> answer of udev_checker.hidraw_rules_cover().
+# kernel_detach runs again on every EIO recovery, and inside a container the
+# check shells out to the host: re-read at most once a minute.
+_HIDRAW_RULES_CACHE: dict[int, tuple[float, bool]] = {}
+_HIDRAW_RULES_CACHE_S = 60.0
+
+
+def _hidraw_rules_allow(engine, usb_device) -> bool:
+    """False only when the rules udev reads certainly lack a hidraw line.
+
+    Unknown (no ASM rules file, unreadable, a mock device) counts as allowed:
+    _open_hidraw then decides, as it did before this check existed.
+    """
+    pid = getattr(usb_device, 'idProduct', None)
+    if not isinstance(pid, int):
+        return True
+    now = time.monotonic()
+    cached = _HIDRAW_RULES_CACHE.get(pid)
+    if cached is not None and now - cached[0] < _HIDRAW_RULES_CACHE_S:
+        return cached[1]
+    try:
+        from arctis_sound_manager.udev_checker import hidraw_rules_cover
+        allowed = hidraw_rules_cover(pid) is not False
+    except Exception as e:  # noqa: BLE001 — never the thing that blocks a connect
+        logging.getLogger(__name__).debug("hidraw rules check failed: %r", e)
+        allowed = True
+    _HIDRAW_RULES_CACHE[pid] = (now, allowed)
+    return allowed
 # How long to wait for the hidraw nodes after handing interfaces back to the
 # kernel's HID driver.
 _HIDRAW_NODE_WAIT_S = 2.0
@@ -4696,7 +4726,16 @@ class CoreEngine:
         nodes instead (_open_hidraw). If that fails, this falls through to
         the libusb claim below, so the headset still works.
         """
-        if _wants_hidraw(self):
+        if _wants_hidraw(self) and not _hidraw_rules_allow(self, usb_device):
+            # Rules from before 1.7.0: the node would stay root 0600. Trying
+            # anyway hands the interface to the kernel driver and takes it back
+            # two seconds later, on every connect (#342).
+            self.logger.warning(
+                "hidraw transport skipped for %s: the udev rules have no hidraw "
+                "line for it — run `asm-cli udev write-rules --force --reload` as "
+                "root, then replug. Using libusb.", config.name)
+            fallback_reason = 'udev rules have no hidraw entry (written before 1.7.0)'
+        elif _wants_hidraw(self):
             if self._open_hidraw(usb_device, config):
                 self.permission_error = False
                 self._record_usb_transport('hidraw', None)

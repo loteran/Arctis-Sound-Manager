@@ -84,6 +84,14 @@ def test_a_read_with_nothing_pending_times_out_like_libusb():
         os.close(w)
 
 
+@pytest.fixture(autouse=True)
+def _rules_unknown(monkeypatch):
+    """Keep the host's real udev rules out of these tests (#342 check)."""
+    from arctis_sound_manager import udev_checker
+    monkeypatch.setattr(core, "_HIDRAW_RULES_CACHE", {})
+    monkeypatch.setattr(udev_checker, "hidraw_rules_cover", lambda pid: None)
+
+
 def _engine(transport_choice: int):
     engine = CoreEngine.__new__(CoreEngine)
     engine.logger = MagicMock()
@@ -186,3 +194,23 @@ def test_udev_rules_cover_the_hidraw_nodes():
     devices = [(0x1038, [0x12E0], "Nova Pro Wireless")]
     assert 'KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="12e0", MODE="0666"' in render_rules(devices)
     assert 'SUBSYSTEM=="hidraw"' in render_uaccess_rules(devices)
+
+
+def test_rules_without_hidraw_skip_the_attempt(monkeypatch):
+    """#342: with pre-1.7.0 rules the node can only refuse the open, and trying
+    hands the interface to the kernel driver for two seconds first. Go straight
+    to libusb, and say why."""
+    from arctis_sound_manager import udev_checker
+    engine, config, usb_device = _engine(1)
+    monkeypatch.setattr(udev_checker, "hidraw_rules_cover", lambda pid: False)
+    opened = MagicMock()
+    monkeypatch.setattr(CoreEngine, "_open_hidraw", opened)
+    monkeypatch.setattr(core.usb.util, "claim_interface", lambda dev, iface: None)
+
+    assert CoreEngine.kernel_detach(engine, usb_device, config)
+
+    opened.assert_not_called()
+    usb_device.attach_kernel_driver.assert_not_called()
+    assert engine.usb_transport_active == "libusb"
+    active, reason = engine._record_usb_transport.call_args.args
+    assert active == "libusb" and "hidraw entry" in reason
