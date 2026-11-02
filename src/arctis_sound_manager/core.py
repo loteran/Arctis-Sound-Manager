@@ -5524,6 +5524,11 @@ class CoreEngine:
                     now = time.monotonic()
                     if getattr(self, '_status_poll_paused', False) is True:
                         pass
+                    elif interval <= 0:
+                        # The device pushes every change (Nova 5, #364): it is
+                        # asked once at connect, resume and power-on, never
+                        # periodically.
+                        pass
                     elif now - last_request >= interval:
                         last_request = now
                         try:

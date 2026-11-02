@@ -290,7 +290,7 @@ class ConfigStatus:
     #: nothing on its own. A family whose dongle pushes power, charging and
     #: battery by itself can poll far less: on the Nova 5 each 0xb0 poll had a
     #: few-percent chance of an audible crackle (#348).
-    poll_interval_s: float = 2.0
+    poll_interval_s: float = 2.0  # 0: never polled after connect (#364)
 
     def __post_init__(self):
         raw_mappings: list[dict[str, int]] = self.response_mapping # pyright: ignore[reportAssignmentType]
@@ -652,7 +652,10 @@ class DeviceConfiguration:
                 response_mapping=raw_status.get('response_mapping', []),
                 representation=raw_status.get('representation', {}),
                 extra_requests=[int(r) for r in raw_status.get('extra_requests', [])],
-                poll_interval_s=max(0.5, float(raw_status.get('poll_interval_s', 2.0))),
+                # 0 = no periodic poll at all (the device pushes every change,
+                # #364); otherwise at least 0.5 s.
+                poll_interval_s=(lambda v: 0.0 if v <= 0 else max(0.5, v))(
+                    float(raw_status.get('poll_interval_s', 2.0))),
             )
         else:
             self.status = None

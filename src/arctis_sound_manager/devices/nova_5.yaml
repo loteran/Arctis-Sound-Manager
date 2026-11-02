@@ -62,9 +62,12 @@ device:
     request: 0xb0
     # GG asks for 0xb0 once after init and then lives on the pushes above. A
     # 2 s poll made the headset crackle now and then (#348: 9 crackles in
-    # 3.5 min at 2 s, 2 in 9 min at 30 s); the pushes report power-on/off at
-    # once, so the poll is only a safety net for the battery level.
-    poll_interval_s: 300
+    # 3.5 min at 2 s, 2 in 9 min at 30 s). Over an hour on a 0x2232 every
+    # change came as a push: battery each percent (and every ~135 s while
+    # charging), cable in/out, end of charge; no 300 s poll reply ever added
+    # anything (#364). So no periodic poll: ASM still asks at connect, after
+    # resume and after power-on.
+    poll_interval_s: 0
     response_mapping:
       # Offset 0x02 is the spec's `(field unused uint8)` — see
       # base_arctis_nova_5_tx.device, `(struct headset_status)`. It used to be

@@ -45,7 +45,7 @@ def test_charging_and_battery_push_frames():
 
 
 def test_profile_poll_interval():
-    assert _nova_5().status.poll_interval_s == 300
+    assert _nova_5().status.poll_interval_s == 0
     other = DeviceConfiguration(_yaml.load(DEVICES_DIR / "arctis_7.yaml"))
     assert other.status.poll_interval_s == 2.0
 
@@ -89,3 +89,11 @@ def test_default_interval_polls_every_tick(monkeypatch):
     engine = _poll_engine(2.0)
     _run_ticks(monkeypatch, engine, 5)
     assert engine.request_device_status.call_count == 5
+
+
+def test_zero_interval_never_polls_but_reconciles(monkeypatch):
+    """#364: a device that pushes every change is not polled at all."""
+    engine = _poll_engine(0.0)
+    _run_ticks(monkeypatch, engine, 5)
+    engine.request_device_status.assert_not_called()
+    assert engine.reconcile_hardware_eq_mode.call_count == 5
