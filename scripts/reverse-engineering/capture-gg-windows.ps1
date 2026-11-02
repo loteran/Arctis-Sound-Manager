@@ -10,7 +10,10 @@
   capture can be decoded automatically afterwards
   (scripts/reverse-engineering/parse_steelseries_capture.py).
 
-  Settings your device or GG does not have are simply skipped.
+  Settings your device or GG does not have are simply skipped. After the GG
+  settings it asks you to move the controls on the device itself (volume
+  wheels, ChatMix dial, mute button, power) and, on a model with a screen, to
+  let GG draw on it: what the device reports and what GG sends to the screen.
 
   Output, on your Desktop:
     asm-gg-capture.zip   containing capture.pcapng (USB traffic),
@@ -65,7 +68,6 @@ $PlanOf = @{
     '12AA' = 'arctis_5_2018'
     '1260' = 'arctis_7'
     '12AD' = 'arctis_7'
-    '1252' = 'arctis_7'
     '220E' = 'arctis_7_plus'
     '2212' = 'arctis_7_plus'
     '2216' = 'arctis_7_plus'
@@ -74,6 +76,7 @@ $PlanOf = @{
     '12CB' = 'arctis_nova_pro_wired'
     '12CD' = 'arctis_nova_pro_wired'
     '12FA' = 'arctis_nova_pro_wired'
+    '1252' = 'arctis_pro_2019'
     '1280' = 'arctis_pro_gamedac'
     '1282' = 'arctis_pro_gamedac'
     '1290' = 'arctis_pro_wireless'
@@ -168,10 +171,6 @@ $Plans = @{
         'Drc.threshold = HIGHEST (spec 127)'
         'Drc.ratio = LOWEST'
         'Drc.ratio = HIGHEST'
-        'Equalizer band 1 = LOWEST'
-        'Equalizer band 1 = HIGHEST'
-        'Mic noise reduction = LOWEST (spec 0x0000)'
-        'Mic noise reduction = HIGHEST (spec 0x7FFF)'
     )
     'arctis_7_plus' = @(
         'Auto shut-off (inactivity timer) = LOWEST (spec 0)'
@@ -229,6 +228,20 @@ $Plans = @{
         'Oled brightness = LOWEST (spec 1)'
         'Oled brightness = HIGHEST (spec 10)'
     )
+    'arctis_pro_2019' = @(
+        'Drc.ratio = LOWEST (spec 0x0100)'
+        'Drc.ratio = HIGHEST (spec 0x3C00)'
+        'Drc.threshold = LOWEST (spec 0xC400)'
+        'Drc.threshold = HIGHEST (spec 0x1200)'
+        'Equalizer band 1 = LOWEST'
+        'Equalizer band 1 = HIGHEST'
+        'Sidetone = LOWEST (spec 0x0000)'
+        'Sidetone = HIGHEST (spec 0x7FFF)'
+        'Microphone volume.gain = LOWEST (spec 0xB6)'
+        'Microphone volume.gain = HIGHEST (spec 0x05)'
+        'Mic noise reduction = LOWEST (spec 0x0000)'
+        'Mic noise reduction = HIGHEST (spec 0x7FFF)'
+    )
     'arctis_pro_gamedac' = @(
         'Set type id = LOWEST'
         'Set type id = HIGHEST'
@@ -280,22 +293,12 @@ $Plans = @{
         'Stream mix.aux = HIGHEST'
         'Stream mix.mic = LOWEST'
         'Stream mix.mic = HIGHEST'
-        'I2c tunnel.address = LOWEST'
-        'I2c tunnel.address = HIGHEST'
-        'I2c tunnel.write_count = LOWEST'
-        'I2c tunnel.write_count = HIGHEST'
-        'I2c tunnel.read_count = LOWEST'
-        'I2c tunnel.read_count = HIGHEST'
-        'One wire tunnel = change 1 (e.g. drag the first band or slider fully up)'
-        'One wire tunnel = change 2 (the same one fully down)'
         'Screen brightness = LOWEST'
         'Screen brightness = HIGHEST'
         'Auto shut-off (inactivity timer) = LOWEST'
         'Auto shut-off (inactivity timer) = HIGHEST'
         'Screensaver mode = LOWEST'
         'Screensaver mode = HIGHEST'
-        'Set oled = LOWEST'
-        'Set oled = HIGHEST'
         'Select preset earcups = LOWEST'
         'Select preset earcups = HIGHEST'
     )
@@ -320,8 +323,6 @@ $Plans = @{
         'Bt gamemute pref = second option (spec 0x01)'
         'Screensaver mode = LOWEST (spec 0x00)'
         'Screensaver mode = HIGHEST (spec 0x02)'
-        'Config sync disabled = first option (spec value 0)'
-        'Config sync disabled = last option (spec value 1)'
         'Profile = change 1 (e.g. drag the first band or slider fully up)'
         'Profile = change 2 (the same one fully down)'
     )
@@ -632,6 +633,309 @@ $Plans = @{
         'Power inactivity timer = HIGHEST (spec 60)'
     )
 }
+$HandsOf = @{
+    'arctis_1_wireless' = @(
+        'Headset volume wheel = fully up'
+        'Headset volume wheel = fully down'
+        'Mic mute button = press to mute'
+        'Mic mute button = press to unmute'
+        'Headset power = switch the headset OFF (wait 5 s)'
+        'Headset power = switch the headset back ON (wait until connected)'
+        'Charging cable = plug the headset in to charge (wait 5 s)'
+        'Charging cable = unplug it'
+    )
+    'arctis_5_2018' = @(
+        'Headset volume wheel = fully up'
+        'Headset volume wheel = fully down'
+        'Mic mute button = press to mute'
+        'Mic mute button = press to unmute'
+        'Headset power = switch the headset OFF (wait 5 s)'
+        'Headset power = switch the headset back ON (wait until connected)'
+        'Charging cable = plug the headset in to charge (wait 5 s)'
+        'Charging cable = unplug it'
+    )
+    'arctis_7' = @(
+        'Headset volume wheel = fully up'
+        'Headset volume wheel = fully down'
+        'Mic mute button = press to mute'
+        'Mic mute button = press to unmute'
+        'ChatMix dial = fully to Game'
+        'ChatMix dial = fully to Chat'
+        'ChatMix dial = back to the middle'
+        'Headset power = switch the headset OFF (wait 5 s)'
+        'Headset power = switch the headset back ON (wait until connected)'
+        'Charging cable = plug the headset in to charge (wait 5 s)'
+        'Charging cable = unplug it'
+    )
+    'arctis_7_plus' = @(
+        'Headset volume wheel = fully up'
+        'Headset volume wheel = fully down'
+        'Mic mute button = press to mute'
+        'Mic mute button = press to unmute'
+        'ChatMix dial = fully to Game'
+        'ChatMix dial = fully to Chat'
+        'ChatMix dial = back to the middle'
+        'Headset power = switch the headset OFF (wait 5 s)'
+        'Headset power = switch the headset back ON (wait until connected)'
+        'Charging cable = plug the headset in to charge (wait 5 s)'
+        'Charging cable = unplug it'
+    )
+    'arctis_9' = @(
+        'Headset volume wheel = fully up'
+        'Headset volume wheel = fully down'
+        'Mic mute button = press to mute'
+        'Mic mute button = press to unmute'
+        'ChatMix dial = fully to Game'
+        'ChatMix dial = fully to Chat'
+        'ChatMix dial = back to the middle'
+        'Headset power = switch the headset OFF (wait 5 s)'
+        'Headset power = switch the headset back ON (wait until connected)'
+        'Charging cable = plug the headset in to charge (wait 5 s)'
+        'Charging cable = unplug it'
+    )
+    'arctis_nova_pro_wired' = @(
+        'Headset volume wheel = fully up'
+        'Headset volume wheel = fully down'
+        'Mic mute button = press to mute'
+        'Mic mute button = press to unmute'
+        'ChatMix dial = fully to Game'
+        'ChatMix dial = fully to Chat'
+        'ChatMix dial = back to the middle'
+        'Base station / DAC volume wheel = turn up a few steps'
+        'Base station / DAC volume wheel = turn down a few steps'
+        'Base station / DAC menu = change any one setting from the base''s own menu'
+        'Headset power = switch the headset OFF (wait 5 s)'
+        'Headset power = switch the headset back ON (wait until connected)'
+        'Charging cable = plug the headset in to charge (wait 5 s)'
+        'Charging cable = unplug it'
+    )
+    'arctis_pro_2019' = @(
+        'Headset volume wheel = fully up'
+        'Headset volume wheel = fully down'
+        'Mic mute button = press to mute'
+        'Mic mute button = press to unmute'
+        'Headset power = switch the headset OFF (wait 5 s)'
+        'Headset power = switch the headset back ON (wait until connected)'
+        'Charging cable = plug the headset in to charge (wait 5 s)'
+        'Charging cable = unplug it'
+    )
+    'arctis_pro_gamedac' = @(
+        'Headset volume wheel = fully up'
+        'Headset volume wheel = fully down'
+        'Mic mute button = press to mute'
+        'Mic mute button = press to unmute'
+        'ChatMix dial = fully to Game'
+        'ChatMix dial = fully to Chat'
+        'ChatMix dial = back to the middle'
+        'Base station / DAC volume wheel = turn up a few steps'
+        'Base station / DAC volume wheel = turn down a few steps'
+        'Base station / DAC menu = change any one setting from the base''s own menu'
+        'Headset power = switch the headset OFF (wait 5 s)'
+        'Headset power = switch the headset back ON (wait until connected)'
+        'Charging cable = plug the headset in to charge (wait 5 s)'
+        'Charging cable = unplug it'
+    )
+    'arctis_pro_wireless' = @(
+        'Headset volume wheel = fully up'
+        'Headset volume wheel = fully down'
+        'Mic mute button = press to mute'
+        'Mic mute button = press to unmute'
+        'Base station / DAC volume wheel = turn up a few steps'
+        'Base station / DAC volume wheel = turn down a few steps'
+        'Base station / DAC menu = change any one setting from the base''s own menu'
+        'Headset power = switch the headset OFF (wait 5 s)'
+        'Headset power = switch the headset back ON (wait until connected)'
+        'Charging cable = plug the headset in to charge (wait 5 s)'
+        'Charging cable = unplug it'
+    )
+    'gamebuds' = @(
+        'Headset volume wheel = fully up'
+        'Headset volume wheel = fully down'
+        'Mic mute button = press to mute'
+        'Mic mute button = press to unmute'
+        'Headset power = switch the headset OFF (wait 5 s)'
+        'Headset power = switch the headset back ON (wait until connected)'
+        'Charging cable = plug the headset in to charge (wait 5 s)'
+        'Charging cable = unplug it'
+    )
+    'nova_3' = @(
+        'Headset volume wheel = fully up'
+        'Headset volume wheel = fully down'
+        'Mic mute button = press to mute'
+        'Mic mute button = press to unmute'
+    )
+    'nova_3_wireless' = @(
+        'Headset volume wheel = fully up'
+        'Headset volume wheel = fully down'
+        'Mic mute button = press to mute'
+        'Mic mute button = press to unmute'
+        'ChatMix dial = fully to Game'
+        'ChatMix dial = fully to Chat'
+        'ChatMix dial = back to the middle'
+        'Headset power = switch the headset OFF (wait 5 s)'
+        'Headset power = switch the headset back ON (wait until connected)'
+        'Charging cable = plug the headset in to charge (wait 5 s)'
+        'Charging cable = unplug it'
+    )
+    'nova_4' = @(
+        'Headset volume wheel = fully up'
+        'Headset volume wheel = fully down'
+        'Mic mute button = press to mute'
+        'Mic mute button = press to unmute'
+        'ChatMix dial = fully to Game'
+        'ChatMix dial = fully to Chat'
+        'ChatMix dial = back to the middle'
+        'Headset power = switch the headset OFF (wait 5 s)'
+        'Headset power = switch the headset back ON (wait until connected)'
+        'Charging cable = plug the headset in to charge (wait 5 s)'
+        'Charging cable = unplug it'
+    )
+    'nova_5' = @(
+        'Headset volume wheel = fully up'
+        'Headset volume wheel = fully down'
+        'Mic mute button = press to mute'
+        'Mic mute button = press to unmute'
+        'ChatMix dial = fully to Game'
+        'ChatMix dial = fully to Chat'
+        'ChatMix dial = back to the middle'
+        'Headset power = switch the headset OFF (wait 5 s)'
+        'Headset power = switch the headset back ON (wait until connected)'
+        'Charging cable = plug the headset in to charge (wait 5 s)'
+        'Charging cable = unplug it'
+    )
+    'nova_7_discrete_battery' = @(
+        'Headset volume wheel = fully up'
+        'Headset volume wheel = fully down'
+        'Mic mute button = press to mute'
+        'Mic mute button = press to unmute'
+        'ChatMix dial = fully to Game'
+        'ChatMix dial = fully to Chat'
+        'ChatMix dial = back to the middle'
+        'Headset power = switch the headset OFF (wait 5 s)'
+        'Headset power = switch the headset back ON (wait until connected)'
+        'Charging cable = plug the headset in to charge (wait 5 s)'
+        'Charging cable = unplug it'
+    )
+    'nova_7_perc_battery' = @(
+        'Headset volume wheel = fully up'
+        'Headset volume wheel = fully down'
+        'Mic mute button = press to mute'
+        'Mic mute button = press to unmute'
+        'ChatMix dial = fully to Game'
+        'ChatMix dial = fully to Chat'
+        'ChatMix dial = back to the middle'
+        'Headset power = switch the headset OFF (wait 5 s)'
+        'Headset power = switch the headset back ON (wait until connected)'
+        'Charging cable = plug the headset in to charge (wait 5 s)'
+        'Charging cable = unplug it'
+    )
+    'nova_7p_discrete_battery' = @(
+        'Headset volume wheel = fully up'
+        'Headset volume wheel = fully down'
+        'Mic mute button = press to mute'
+        'Mic mute button = press to unmute'
+        'ChatMix dial = fully to Game'
+        'ChatMix dial = fully to Chat'
+        'ChatMix dial = back to the middle'
+        'Headset power = switch the headset OFF (wait 5 s)'
+        'Headset power = switch the headset back ON (wait until connected)'
+        'Charging cable = plug the headset in to charge (wait 5 s)'
+        'Charging cable = unplug it'
+    )
+    'nova_7p_perc_battery' = @(
+        'Headset volume wheel = fully up'
+        'Headset volume wheel = fully down'
+        'Mic mute button = press to mute'
+        'Mic mute button = press to unmute'
+        'ChatMix dial = fully to Game'
+        'ChatMix dial = fully to Chat'
+        'ChatMix dial = back to the middle'
+        'Headset power = switch the headset OFF (wait 5 s)'
+        'Headset power = switch the headset back ON (wait until connected)'
+        'Charging cable = plug the headset in to charge (wait 5 s)'
+        'Charging cable = unplug it'
+    )
+    'nova_elite' = @(
+        'Headset volume wheel = fully up'
+        'Headset volume wheel = fully down'
+        'Mic mute button = press to mute'
+        'Mic mute button = press to unmute'
+        'ChatMix dial = fully to Game'
+        'ChatMix dial = fully to Chat'
+        'ChatMix dial = back to the middle'
+        'Base station / DAC volume wheel = turn up a few steps'
+        'Base station / DAC volume wheel = turn down a few steps'
+        'Base station / DAC menu = change any one setting from the base''s own menu'
+        'Headset power = switch the headset OFF (wait 5 s)'
+        'Headset power = switch the headset back ON (wait until connected)'
+        'Charging cable = plug the headset in to charge (wait 5 s)'
+        'Charging cable = unplug it'
+    )
+    'nova_pro_omni' = @(
+        'Headset volume wheel = fully up'
+        'Headset volume wheel = fully down'
+        'Mic mute button = press to mute'
+        'Mic mute button = press to unmute'
+        'ChatMix dial = fully to Game'
+        'ChatMix dial = fully to Chat'
+        'ChatMix dial = back to the middle'
+        'Base station / DAC volume wheel = turn up a few steps'
+        'Base station / DAC volume wheel = turn down a few steps'
+        'Base station / DAC menu = change any one setting from the base''s own menu'
+        'Headset power = switch the headset OFF (wait 5 s)'
+        'Headset power = switch the headset back ON (wait until connected)'
+        'Charging cable = plug the headset in to charge (wait 5 s)'
+        'Charging cable = unplug it'
+    )
+    'nova_pro_wireless' = @(
+        'Headset volume wheel = fully up'
+        'Headset volume wheel = fully down'
+        'Mic mute button = press to mute'
+        'Mic mute button = press to unmute'
+        'ChatMix dial = fully to Game'
+        'ChatMix dial = fully to Chat'
+        'ChatMix dial = back to the middle'
+        'Base station / DAC volume wheel = turn up a few steps'
+        'Base station / DAC volume wheel = turn down a few steps'
+        'Base station / DAC menu = change any one setting from the base''s own menu'
+        'Headset power = switch the headset OFF (wait 5 s)'
+        'Headset power = switch the headset back ON (wait until connected)'
+        'Charging cable = plug the headset in to charge (wait 5 s)'
+        'Charging cable = unplug it'
+    )
+}
+$ScreenOf = @{
+    'arctis_nova_pro_wired' = @(
+        'Screen = leave what GG shows on it for 10 seconds'
+        'Screen = in GG, turn on anything that changes what the screen shows (clock, app, image...) and leave it 10 seconds'
+        'Screen = turn that off again (wait 5 s)'
+    )
+    'arctis_pro_gamedac' = @(
+        'Screen = leave what GG shows on it for 10 seconds'
+        'Screen = in GG, turn on anything that changes what the screen shows (clock, app, image...) and leave it 10 seconds'
+        'Screen = turn that off again (wait 5 s)'
+    )
+    'arctis_pro_wireless' = @(
+        'Screen = leave what GG shows on it for 10 seconds'
+        'Screen = in GG, turn on anything that changes what the screen shows (clock, app, image...) and leave it 10 seconds'
+        'Screen = turn that off again (wait 5 s)'
+    )
+    'nova_elite' = @(
+        'Screen = leave what GG shows on it for 10 seconds'
+        'Screen = in GG, turn on anything that changes what the screen shows (clock, app, image...) and leave it 10 seconds'
+        'Screen = turn that off again (wait 5 s)'
+    )
+    'nova_pro_omni' = @(
+        'Screen = leave what GG shows on it for 10 seconds'
+        'Screen = in GG, turn on anything that changes what the screen shows (clock, app, image...) and leave it 10 seconds'
+        'Screen = turn that off again (wait 5 s)'
+    )
+    'nova_pro_wireless' = @(
+        'Screen = leave what GG shows on it for 10 seconds'
+        'Screen = in GG, turn on anything that changes what the screen shows (clock, app, image...) and leave it 10 seconds'
+        'Screen = turn that off again (wait 5 s)'
+    )
+}
 # END GG PLANS
 
 function Find-USBPcapCMD {
@@ -744,6 +1048,19 @@ function Do-Action($label) {
         $script:done++
     }
 }
+# A step done on the device itself rather than in GG: what the device sends
+# when a control moves, which no GG setting reaches (#337).
+function Do-Hand($label) {
+    $answer = Read-Host ">> On the device: $label   (Enter = done, s = it has no such control)"
+    $ts = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss.fffZ')
+    if ($answer -match '^\s*s') {
+        "# $ts  skipped: $label" | Add-Content $actions
+    } else {
+        "$ts  $label" | Add-Content $actions
+        $script:done++
+    }
+}
+
 function Section($title) {
     Write-Host ""
     Write-Host "-- $title --" -ForegroundColor Cyan
@@ -848,6 +1165,30 @@ if ($plan) {
     foreach ($a in $Plans[$plan]) { Do-Action $a }
 } else {
     Run-Generic
+}
+
+# What is done on the hardware, then what GG draws on a screen. A model ASM
+# does not know yet gets every step, each one skippable.
+$hands = if ($plan -and $HandsOf.ContainsKey($plan)) { $HandsOf[$plan] } else {
+    @('Headset volume wheel = fully up', 'Headset volume wheel = fully down',
+      'ChatMix dial = fully to Game', 'ChatMix dial = fully to Chat', 'ChatMix dial = back to the middle',
+      'Mic mute button = press to mute', 'Mic mute button = press to unmute',
+      'Base station / DAC volume wheel = turn up a few steps',
+      'Base station / DAC volume wheel = turn down a few steps',
+      'Headset power = switch the headset OFF (wait 5 s)',
+      'Headset power = switch the headset back ON (wait until connected)')
+}
+Section "On the device itself (not in GG): one control at a time"
+foreach ($a in $hands) { Do-Hand $a }
+
+$screen = if ($plan) { if ($ScreenOf.ContainsKey($plan)) { $ScreenOf[$plan] } else { @() } } else {
+    @('Screen = leave what GG shows on it for 10 seconds',
+      'Screen = in GG, turn on anything that changes what the screen shows (clock, app, image...) and leave it 10 seconds',
+      'Screen = turn that off again (wait 5 s)')
+}
+if ($screen.Count -gt 0) {
+    Section "Screen (OLED) - what GG draws on it"
+    foreach ($a in $screen) { Do-Action $a }
 }
 
 Section "Anything else"
