@@ -463,6 +463,10 @@ class CoreEngine:
         # `reply_to`), oldest first: the device answers in order, so the next
         # frame read answers the head of this queue (#305).
         self._untagged_requests_pending: deque[int] = deque()
+        # True while `asm-cli tools probe` runs: its window keeps every frame,
+        # so a status poll landing inside it was recorded as the probe's reply
+        # (#363: rf_status filed under read_onboard_profile_0).
+        self._status_poll_paused = False
 
         # EQ mode the on-device equaliser was last set for ("sonar"/"custom"),
         # so reconcile_hardware_eq_mode() writes on a change and stays quiet
@@ -4930,6 +4934,21 @@ class CoreEngine:
                         'replies': []}
         hexed = lambda frame: ' '.join(f'{b & 0xFF:02x}' for b in frame)  # noqa: E731
         endpoint = self.get_command_endpoint_address()
+        # No status poll inside the windows: on a family whose replies carry
+        # no opcode its frames are indistinguishable from the probe's (#363).
+        # Wait one window for a poll already sent to finish answering, and
+        # forget its untagged requests so they cannot claim a probe reply.
+        self._status_poll_paused = True
+        try:
+            await asyncio.sleep(window)
+            self._untagged_requests_pending.clear()
+            # Called on the class: tests drive this with a MagicMock engine.
+            await CoreEngine._run_probe_queries(self, config, endpoint, window, result, hexed)
+        finally:
+            self._status_poll_paused = False
+        return result
+
+    async def _run_probe_queries(self, config, endpoint, window, result, hexed) -> None:
         for query in config.probe_queries:
             entry: dict = {'name': query['name'], 'sent': hexed(query['frame']),
                            'fields': query['fields']}
@@ -4946,7 +4965,6 @@ class CoreEngine:
                 entry['feature'] = hexed(reply) if reply is not None else None
             entry['frames'] = [hexed(f) for f in tap]
             result['replies'].append(entry)
-        return result
 
     def has_hardware_eq_readback(self) -> bool:
         """True when this headset's profile declares how to read the
@@ -5504,7 +5522,9 @@ class CoreEngine:
                     if not isinstance(interval, (int, float)):
                         interval = period
                     now = time.monotonic()
-                    if now - last_request >= interval:
+                    if getattr(self, '_status_poll_paused', False) is True:
+                        pass
+                    elif now - last_request >= interval:
                         last_request = now
                         try:
                             self.request_device_status()

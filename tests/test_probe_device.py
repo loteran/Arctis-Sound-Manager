@@ -103,3 +103,33 @@ def test_nova5_probe_decodes_bands_and_settings_at_their_wire_offsets():
     assert values["eq_band_1"] == "31 Hz, type 1, +0.0 dB, Q 1.41"
     assert values["eq_band_10"] == "16000 Hz, type 1, +0.0 dB, Q 1.41"
     assert (values["mic_volume"], values["sidetone"], values["volume_limiter"]) == (15, 0, 0)
+
+
+def test_probe_pauses_the_status_poll_and_drops_its_pending_replies():
+    """#363: on the Arctis Pro Wireless the status poll's untagged replies
+    landed inside the probe's windows and were filed as probe replies."""
+    engine = _engine(_config("nova_pro_omni.yaml"))
+    engine._status_poll_paused = False
+    seen = []
+
+    def send(frame, endpoint):
+        seen.append(engine._status_poll_paused)
+        return True
+
+    engine.send_command.side_effect = send
+    engine.get_feature_report.return_value = None
+
+    asyncio.run(CoreEngine.probe_device(engine, window=0))
+
+    assert seen and all(p is True for p in seen)
+    engine._untagged_requests_pending.clear.assert_called_once()
+    assert engine._status_poll_paused is False
+
+
+def test_paused_poll_sends_nothing_but_still_reconciles(monkeypatch):
+    from tests.test_nova_5_push_events import _poll_engine, _run_ticks
+    engine = _poll_engine(2.0)
+    engine._status_poll_paused = True
+    _run_ticks(monkeypatch, engine, 3)
+    engine.request_device_status.assert_not_called()
+    assert engine.reconcile_hardware_eq_mode.call_count == 3
