@@ -26,7 +26,7 @@ device:
 
   device_init:
     - ['status.request']
-    - [0x06, 0x35, 0x01, 0x00, 'settings.mic_side_tone']
+    - [0x06, 0x35, 'settings.mic_side_tone.enabled', 0x00, 'settings.mic_side_tone']
     - [0x06, 0x53, 'settings.pm_shutdown']
     - [0x06, 0x09]  # save
 
@@ -87,7 +87,7 @@ device:
         min_label: off
         max_label: perc_100
         default: 0x00
-        update_sequence: [0x06, 0x35, 0x01, 0x00, 'value']
+        update_sequence: [0x06, 0x35, 'value.enabled', 0x00, 'value']
     power_management:
       pm_shutdown:
         type: button_group

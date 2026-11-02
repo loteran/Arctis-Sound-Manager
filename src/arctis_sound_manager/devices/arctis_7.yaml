@@ -25,7 +25,7 @@ device:
   device_init:
     - ['status.request']         # get battery
     - [0x06, 0x24]               # get chatmix
-    - [0x06, 0x35, 0x01, 0x00, 'settings.mic_side_tone']  # sidetone
+    - [0x06, 0x35, 'settings.mic_side_tone.enabled', 0x00, 'settings.mic_side_tone']  # sidetone
     - [0x06, 0x51, 'settings.pm_shutdown']                 # auto-off
     - [0x06, 0x09]               # save
 
@@ -101,7 +101,10 @@ device:
         min_label: off
         max_label: perc_100
         default: 0x00
-        update_sequence: [0x06, 0x35, 0x01, 0x00, 'value']
+        # spec sidetone: [0x06, 0x35, enabled, 0x00, amplitude]. GG turns it
+        # off with 06 35 00 00 00 (Windows capture, #337); the enabled byte
+        # used to be fixed at 1, so "off" was sidetone on at amplitude 0.
+        update_sequence: [0x06, 0x35, 'value.enabled', 0x00, 'value']
     power_management:
       pm_shutdown:
         type: button_group
