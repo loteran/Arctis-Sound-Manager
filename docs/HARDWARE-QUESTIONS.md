@@ -543,6 +543,14 @@ the fix. Glitch present regardless of period, or present with the daemon
 stopped entirely = rules out the poll, points back to "hardware defect"
 exactly as HeadsetControl's maintainer guessed, and ASM has nothing to fix.
 
+**Answered (2026-11-02, #348, Fabi0699, Nova 5 0x2232):** the poll is the
+trigger. 2 s gave 9 crackles in 3.5 min, 30 s gave 2 in 9.1 min; crackles
+cluster ~1 s after a poll; usbmon shows the audio reaching the dongle
+bit-exact. The dongle pushes 0xb9 (power), 0xbb (charging) and 0xb7
+(battery) on interface 5, as GG's `translate_sync_data` expects. Fixed:
+`status.poll_interval_s` per profile (default 2 s), 300 s on the Nova 5,
+pushes mapped in `nova_5.yaml`, EQ reconcile kept on the 2 s tick.
+
 ---
 
 ## INT-3 — Nova Elite OLED: what the ggoled report-descriptor dump says

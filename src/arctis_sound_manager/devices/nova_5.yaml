@@ -60,6 +60,11 @@ device:
 
   status:
     request: 0xb0
+    # GG asks for 0xb0 once after init and then lives on the pushes above. A
+    # 2 s poll made the headset crackle now and then (#348: 9 crackles in
+    # 3.5 min at 2 s, 2 in 9 min at 30 s); the pushes report power-on/off at
+    # once, so the poll is only a safety net for the battery level.
+    poll_interval_s: 300
     response_mapping:
       # Offset 0x02 is the spec's `(field unused uint8)` — see
       # base_arctis_nova_5_tx.device, `(struct headset_status)`. It used to be
@@ -79,6 +84,19 @@ device:
 
       - starts_with: 0x36
         wireless_mode: 0x01
+
+      # Pushed by the dongle on interface 5 without a request: GG's
+      # translate_sync_data (base_arctis_nova_5_tx) handles 0xB7 battery,
+      # 0xB9 connection and 0xBB charging, value at payload byte 2 behind the
+      # report id, so byte 1 here. Same encoding as the 0xb0 reply. Measured on
+      # a 0x2232 by Fabi0699 (#348): b9 02 = off, b9 03 = on, bb 01/03 =
+      # charging / on battery, b7 = percent.
+      - starts_with: 0xb9
+        headset_power_status: 0x01
+      - starts_with: 0xbb
+        cable_charging: 0x01
+      - starts_with: 0xb7
+        headset_battery_charge: 0x01
 
     representation:
       headset:

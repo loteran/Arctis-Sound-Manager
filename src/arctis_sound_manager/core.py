@@ -5484,23 +5484,35 @@ class CoreEngine:
         # plugged in, no packet arrives and on_device_status_changed never
         # fires. Polling at a fixed cadence detects the power-off within
         # `period` seconds and triggers redirect_audio_on_disconnect().
+        #
+        # `period` is the tick; the status request itself goes out every
+        # `status.poll_interval_s` of the profile. A family whose dongle pushes
+        # its state (Nova 5: 0xb7/0xb9/0xbb) declares a long interval, because
+        # every 0xb0 there risked a crackle (#348). The EQ reconcile below
+        # still runs on every tick: it is local, and a long poll interval must
+        # not delay a Sonar/custom EQ switch.
+        last_request = float('-inf')
         try:
             while not self._stopping:
                 await asyncio.sleep(period)
                 with self._device_lock:
-                    have_device = (
-                        self.usb_device is not None
-                        and self.device_config is not None
-                        and self.device_config.status is not None
-                    )
-                if have_device:
-                    try:
-                        self.request_device_status()
-                        self._note_status_poll_ok()
-                    except usb.core.USBError as e:
-                        self._note_status_poll_error(e)
-                    except Exception as e:
-                        self.logger.warning(f"Status poll failed: {e!r}")
+                    status = (self.device_config.status
+                              if self.usb_device is not None and self.device_config is not None
+                              else None)
+                if status is not None:
+                    interval = getattr(status, 'poll_interval_s', period)
+                    if not isinstance(interval, (int, float)):
+                        interval = period
+                    now = time.monotonic()
+                    if now - last_request >= interval:
+                        last_request = now
+                        try:
+                            self.request_device_status()
+                            self._note_status_poll_ok()
+                        except usb.core.USBError as e:
+                            self._note_status_poll_error(e)
+                        except Exception as e:
+                            self.logger.warning(f"Status poll failed: {e!r}")
                     # Keep the on-device EQ exclusive with the Sonar one. A
                     # no-op unless the mode changed since the last pass.
                     try:
