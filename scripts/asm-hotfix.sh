@@ -2,7 +2,8 @@
 # Arctis Sound Manager — try a fix before it is released
 #
 # A maintainer posts the exact command in your issue. It looks like:
-#   bash <(curl -fsSL https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/<commit>/scripts/asm-hotfix.sh) \
+#   curl -fsSL -o /tmp/asm-hotfix.sh https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/<commit>/scripts/asm-hotfix.sh
+#   bash /tmp/asm-hotfix.sh \
 #       <commit> --for 1.5.1 src/arctis_sound_manager/core.py …
 #
 # It downloads those files into ~/.local/state/asm-hotfix and makes your
@@ -13,7 +14,9 @@
 # first.
 #
 # Go back to the files your package installed:
-#   bash <(curl -fsSL https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/scripts/asm-hotfix.sh) --revert
+#   curl -fsSL -o /tmp/asm-hotfix.sh https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/scripts/asm-hotfix.sh
+#   bash /tmp/asm-hotfix.sh --revert
+# (Two commands rather than bash <(curl …): fish rejects process substitution.)
 #
 # Copyright (C) 2026 loteran — SPDX-License-Identifier: GPL-3.0-or-later
 set -euo pipefail
@@ -82,7 +85,9 @@ main() {
     do_apply "$commit" "$pkgdir" "$version" "${files[@]}"
     restart_asm
     say "Done. Please test, then report back in the issue."
-    say "To undo:  bash <(curl -fsSL $RAW/main/scripts/asm-hotfix.sh) --revert"
+    # Two commands, no <(…): fish (CachyOS's default shell) rejects process
+    # substitution, and this line is copied into whatever shell the user has.
+    say "To undo:  curl -fsSL -o /tmp/asm-hotfix.sh $RAW/main/scripts/asm-hotfix.sh && bash /tmp/asm-hotfix.sh --revert"
 }
 
 # The interpreter ASM really runs with: the one in asm-daemon's shebang.
