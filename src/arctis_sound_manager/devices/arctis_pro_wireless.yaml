@@ -59,15 +59,20 @@ device:
       - reply_to: 0x40aa
         headset_battery_charge: 0x00
 
+      # 0x42aa is not the spare battery's level, whatever the spec calls the
+      # field: on hardware it reads 0 with the slot empty and 3, then 4, once
+      # a battery is in, the base showing 2 bars of 4 meanwhile (#363;
+      # chameth.com saw the same 04 / 00). Only "a battery is in the base"
+      # is known, so that is all ASM shows.
       - reply_to: 0x42aa
-        charge_slot_battery_charge: 0x00
+        charge_slot_battery: 0x00
 
     representation:
       headset:
         - headset_power_status
         - headset_battery_charge
       gamedac:
-        - charge_slot_battery_charge
+        - charge_slot_battery
 
   online_status:
     status_variable: headset_power_status
@@ -229,7 +234,11 @@ device:
       type: percentage
       perc_min: 0
       perc_max: 4
-    charge_slot_battery_charge:
-      type: percentage
-      perc_min: 0
-      perc_max: 4
+    charge_slot_battery:
+      type: int_str_mapping
+      values:
+        0x00: no_battery
+        0x01: battery_in_base
+        0x02: battery_in_base
+        0x03: battery_in_base
+        0x04: battery_in_base

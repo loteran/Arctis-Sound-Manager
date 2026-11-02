@@ -67,8 +67,9 @@ def test_battery_comes_from_its_own_reply_not_rf_status():
     assert parsed["headset_battery_charge"] == 75
 
 
-def test_the_spare_battery_in_the_base_lands_where_the_channels_page_reads_it():
-    """charger_status (0x42aa) is the spare charging in the base's slot."""
+def test_the_spare_battery_reply_lands_on_its_own_request():
+    """charger_status (0x42aa) is the spare battery's slot in the base. Its
+    value is a presence state, not a level (#363)."""
     engine = _make_engine(_pro_wireless())
 
     for request in (0x41aa, 0x40aa, 0x42aa):
@@ -78,10 +79,10 @@ def test_the_spare_battery_in_the_base_lands_where_the_channels_page_reads_it():
     _read(engine, [0x04])
 
     assert engine.device_status["headset_battery_charge"] == 0x01
-    assert engine.device_status["charge_slot_battery_charge"] == 0x04
+    assert engine.device_status["charge_slot_battery"] == 0x04
     cfg = engine.device_config
-    assert "charge_slot_battery_charge" in cfg.status.representation["gamedac"]
-    assert parsed_status(engine.device_status, cfg)["charge_slot_battery_charge"] == 100
+    assert "charge_slot_battery" in cfg.status.representation["gamedac"]
+    assert parsed_status(engine.device_status, cfg)["charge_slot_battery"] == "battery_in_base"
 
 
 def test_a_frame_nobody_asked_for_is_not_read_as_battery():

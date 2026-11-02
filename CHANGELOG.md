@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Arctis Pro Wireless: no more made-up spare battery level** (#363). The base's charger reply says whether a battery is in the slot, not how full it is: ASM showed 100 % while the base showed 2 bars of 4. It now shows "In the Base" or "No Battery". The headset battery was already right. Thanks to Anotherdoomguy for the logs.
 - **`asm-cli tools probe` records only the probe's own replies** (#363). The status poll kept running during the probe, and on headsets whose replies carry no opcode (Arctis Pro Wireless) its frames were filed as answers to the probe's queries. The poll now pauses while the probe runs.
 
 ## [1.7.2] - 2 November 2026
