@@ -1,3 +1,29 @@
+arctis-sound-manager (1.7.2-1) noble; urgency=medium
+
+  * Arctis 7 (and any headset) kept on libusb by old udev rules (#342). An
+    /etc/udev/rules.d/91-steelseries-arctis.rules written before 1.7.0 has
+    no hidraw lines and hides the packaged file, so the hidraw transport
+    could never open and ASM fell back to libusb on every connect — after
+    handing the headset to the kernel driver and taking it back. Those rules
+    now count as outdated, so the setup dialog offers to rewrite them, and
+    ASM goes straight to libusb, saying why, instead of trying.
+  * Nova 5: no more crackles from ASM's status poll (#348). Each 2-second
+    status request had a small chance of an audible crackle in the headset.
+    The dongle reports power, charging and battery on its own, so ASM now
+    reads those reports and asks only every 5 minutes. Profiles can set
+    their own interval (status.poll_interval_s). Thanks to Fabi0699 for the
+    measurements and the fix.
+  * Arctis 7 / Arctis 1 Wireless: sidetone off is really off (#337). ASM
+    always sent the sidetone as enabled, so "off" meant enabled at level 0.
+    It now sends the enabled byte GG sends (a Windows GG capture from
+    franklin654 showed it).
+  * A headset unplugged is noticed even when udev leaves out its ids (#362).
+    ASM read the vendor/product only from udev's own properties and ignored
+    an event without them; it now falls back to the ids the kernel puts on
+    every USB event, as elegos/Linux-Arctis-Manager just did.
+
+ -- loteran <axel.valadon@gmail.com>  Mon, 02 Nov 2026 00:00:00 +0000
+
 arctis-sound-manager (1.7.1-1) noble; urgency=medium
 
   * Spatial Audio looks and works like Sonar's. The panel now shows the
