@@ -221,8 +221,11 @@ device:
     height: 48
     frame_report_size: 1025
     control_report_size: 33
-    packing: column_msb
-    verified: false
+    # GG's layout (8-row pages, bit 0 = top), confirmed on hardware by
+    # oled_page_probe.py: variants 1-3 right, the bit-flipped 4 wrong (#363,
+    # #305). The old column_msb drew the "garbled lines".
+    packing: page_lsb
+    verified: true
 
   status_parse:
     headset_power_status:

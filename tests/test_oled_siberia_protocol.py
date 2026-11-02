@@ -47,15 +47,16 @@ def test_profile_declares_the_siberia_screen():
     assert "gamedac" in cfg.status.representation
 
 
-def test_unconfirmed_layout_leaves_the_screen_to_the_base():
-    # column_msb drew noise on the reporter's base (#305): no screen, no DAC
-    # page, until the probe says which packing is right.
-    assert _pro_wireless().oled.verified is False
+def test_confirmed_layout_takes_the_screen():
+    # column_msb drew noise on the reporter's base (#305); oled_page_probe.py
+    # confirmed GG's page layout on hardware (#363), so the screen is ASM's.
+    config = _pro_wireless()
+    assert config.oled.verified is True and config.oled.packing == "page_lsb"
 
 
-def test_other_screens_stay_verified():
+def test_every_screen_is_verified():
     for config in load_device_configurations():
-        if config.oled is not None and config.name != "SteelSeries Arctis Pro Wireless":
+        if config.oled is not None:
             assert config.oled.verified, config.name
 
 

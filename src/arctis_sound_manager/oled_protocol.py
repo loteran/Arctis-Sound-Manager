@@ -226,7 +226,10 @@ class SiberiaOledProtocol(OledProtocol):
     CMD_WRITE_OFFSET = 0xD1
     CMD_DISPLAY = 0xD2
     CHECK_BYTE = 0xAA
-    PACKINGS = ("column_msb", "column_lsb", "row_msb", "row_lsb")
+    #: page_lsb is GG's own (utils.defConvertToColumnPackedByteFormat,
+    #: disassembled from GG 118): byte (y // 8) * width + x, bit y % 8, bit
+    #: 0 = top. Confirmed on a base by oled_page_probe.py (#363, for #305).
+    PACKINGS = ("column_msb", "column_lsb", "row_msb", "row_lsb", "page_lsb")
     #: The 0x0F in set_custom_write_mode reads as seconds. Re-taking the
     #: screen well inside that keeps it ours whichever way the firmware
     #: counts them (from the mode switch, or from the last frame).
@@ -267,15 +270,18 @@ class SiberiaOledProtocol(OledProtocol):
         """Repack a row-major MSB-first 1-bpp image into `packing`."""
         src_stride = (width + 7) // 8
         column = packing.startswith("column")
+        page = packing.startswith("page")
         lsb = packing.endswith("lsb")
         pages = (height + 7) // 8
-        out = [0] * (width * pages if column else src_stride * height)
+        out = [0] * (width * pages if column or page else src_stride * height)
         for y in range(height):
             for x in range(width):
                 idx = y * src_stride + x // 8
                 if idx >= len(pixel_data) or not (pixel_data[idx] >> (7 - x % 8)) & 1:
                     continue
-                if column:
+                if page:
+                    index, pos = (y // 8) * width + x, y % 8
+                elif column:
                     index, pos = x * pages + y // 8, y % 8
                 else:
                     index, pos = y * src_stride + x // 8, x % 8
