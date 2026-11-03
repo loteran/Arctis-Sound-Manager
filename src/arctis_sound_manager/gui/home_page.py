@@ -1517,7 +1517,14 @@ class _DeviceStatusBar(QWidget):
         else:
             self._headset_bat_pill.set_visible(False)
 
-        if dac_bat is not None:
+        if isinstance(dac_bat, str):
+            # A base that only says whether a spare is in its slot (Arctis Pro
+            # Wireless, #363/#367): its state, not a percentage.
+            color = "#8D96AA" if dac_bat == "no_battery" else _STATUS_ONLINE_COLOR
+            self._dac_bat_pill.set_value(
+                f"DAC  {I18n.translate('status_values', dac_bat)}", color)
+            self._dac_bat_pill.set_visible(True)
+        elif dac_bat is not None:
             bat_color = _battery_color(dac_bat)
             self._dac_bat_pill.set_value(f"DAC  {dac_bat}%", bat_color)
             self._dac_bat_pill.set_visible(True)
@@ -2178,6 +2185,10 @@ class HomePage(QWidget):
 
         headset_bat_val = headset_bat.get("value") if headset_bat.get("type") == "percentage" else None
         dac_bat_val = dac_bat.get("value") if dac_bat.get("type") == "percentage" else None
+        if dac_bat_val is None:
+            # No level, only a presence state (#367).
+            slot = gamedac.get("charge_slot_battery", {}).get("value")
+            dac_bat_val = slot if isinstance(slot, str) and slot else None
 
         # The wireless adapter keeps serving the last battery percentage it saw
         # long after the headset is switched off, so the number alone is not a

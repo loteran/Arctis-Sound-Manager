@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Arctis Pro Wireless: the spare battery shows on the Channels page and in the Plasma widget again** (#367). Since 1.7.3 the base reports whether a spare is in its slot rather than a made-up level, and those two places only knew the percentage. They now show "In the Base" / "No Battery".
 - **A replug no longer pins an app to its channel** (#353). When the router looked before the channels were back, it either fell back to Media or later saved WirePlumber putting the app back as your choice. It now waits for the channel, treats a return to the app's previous channel as a restore, and the loopback rebuild opens the same "ASM is reconfiguring" window as a filter-chain restart. Retested and traced by ziggityzack.
 
 ## [1.7.3] - 3 November 2026

@@ -39,6 +39,8 @@ PlasmoidItem {
     readonly property var headsetBattery: status.headset_battery_charge
     // Base station charging slot (Nova Pro Wireless family).
     readonly property var spareBattery: status.charge_slot_battery_charge
+    // Arctis Pro Wireless: whether a spare is in the base, no level (#367).
+    readonly property var spareSlot: status.charge_slot_battery
     readonly property bool hasBattery: headsetBattery !== undefined && !headsetOff
 
     function callDaemon(object, member, onValue) {
@@ -245,6 +247,11 @@ PlasmoidItem {
                 PlasmaComponents.Label {
                     text: root.spareBattery + "%"
                 }
+            }
+            PlasmaComponents.Label {
+                Kirigami.FormData.label: root.field("spare_battery")
+                visible: root.spareBattery === undefined && root.spareSlot !== undefined
+                text: root.spareSlot === "no_battery" ? root.tr("no_battery") : root.tr("battery_in_base")
             }
             PlasmaComponents.Label {
                 Kirigami.FormData.label: root.field("noise_cancelling")
