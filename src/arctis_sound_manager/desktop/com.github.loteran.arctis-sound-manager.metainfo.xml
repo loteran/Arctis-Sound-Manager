@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.7.3" date="2026-11-03">
+      <description>
+        <p>Arctis Pro Wireless: the base station's screen works (#305, #363). ASM drew it in the wrong byte layout, hence the garbled lines, and then left it alone. It now uses GG's layout, confirmed on a base with oled_page_probe.py by Anotherdoomguy, and the DAC page with the base's screen settings is back. Arctis Pro Wireless: no more made-up spare battery level (#363). The base's charger reply says whether a battery is in the slot, not how full it is: ASM showed 100 % while the base showed 2 bars of 4. It now shows "In the Base" or "No Battery". The headset battery was already right. Thanks to Anotherdoomguy for the logs. After a replug, apps go back to the channel they were on (#353). When the headset came back, a stream parked on the raw headset output was pulled onto Media and that was saved as if you had chosen it, so an app that was on Game stayed on Media for good. ASM now puts it back on its previous channel and saves nothing. Found by ziggityzack.</p>
+      </description>
+    </release>
     <release version="1.7.2" date="2026-11-02">
       <description>
         <p>Arctis 7 (and any headset) kept on libusb by old udev rules (#342). An /etc/udev/rules.d/91-steelseries-arctis.rules written before 1.7.0 has no hidraw lines and hides the packaged file, so the hidraw transport could never open and ASM fell back to libusb on every connect — after handing the headset to the kernel driver and taking it back. Those rules now count as outdated, so the setup dialog offers to rewrite them, and ASM goes straight to libusb, saying why, instead of trying. Nova 5: no more crackles from ASM's status poll (#348). Each 2-second status request had a small chance of an audible crackle in the headset. The dongle reports power, charging and battery on its own, so ASM now reads those reports and asks only every 5 minutes. Profiles can set their own interval (status.poll_interval_s). Thanks to Fabi0699 for the measurements and the fix. Arctis 7 / Arctis 1 Wireless: sidetone off is really off (#337). ASM always sent the sidetone as enabled, so "off" meant enabled at level 0. It now sends the enabled byte GG sends (a Windows GG capture from franklin654 showed it).</p>
@@ -199,11 +204,6 @@
     <release version="1.4.19" date="2026-09-04">
       <description>
         <p>Switching output device could crash the filter-chain (SIGSEGV). The. **A channel could go silent until something else in the chain was. **Clips dependencies were flagged missing on Fedora/Nobara even when a.</p>
-      </description>
-    </release>
-    <release version="1.4.18" date="2026-09-02">
-      <description>
-        <p>Copy cmd / Copy command buttons ne copient pas sous Wayland (Bazzite/KDE).</p>
       </description>
     </release>
   </releases>
