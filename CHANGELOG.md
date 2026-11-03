@@ -5,15 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.7.3] - 3 November 2026
 
 ### Fixed
-- **Nova Pro Wireless, Nova Pro Omni, Nova Elite: the line-out stream's mic level is no longer set to 0** (#337). The stream mix command ends with the mic level, and ASM only sent the main and aux levels, so every change (and every start on the Elite) set the stream's mic to 0. ASM now sends it, and the DAC page has a **Line Out Mic Volume** slider. A base already at 0 keeps 0 until you move it. Found in ziggityzack's GG capture.
-- **After a replug, apps go back to the channel they were on** (#353). When the headset came back, a stream parked on the raw headset output was pulled onto Media and that was saved as if you had chosen it, so an app that was on Game stayed on Media for good. ASM now puts it back on its previous channel and saves nothing. Found by ziggityzack.
 - **Arctis Pro Wireless: the base station's screen works** (#305, #363). ASM drew it in the wrong byte layout, hence the garbled lines, and then left it alone. It now uses GG's layout, confirmed on a base with `oled_page_probe.py` by Anotherdoomguy, and the DAC page with the base's screen settings is back.
-- **Nova 5: no periodic status poll at all** (#364). Fabi0699 measured that the dongle pushes every change itself (battery, cable, end of charge), so ASM asks only at connect, after resume and after power-on. Profiles can set `status.poll_interval_s: 0` for this.
 - **Arctis Pro Wireless: no more made-up spare battery level** (#363). The base's charger reply says whether a battery is in the slot, not how full it is: ASM showed 100 % while the base showed 2 bars of 4. It now shows "In the Base" or "No Battery". The headset battery was already right. Thanks to Anotherdoomguy for the logs.
+- **After a replug, apps go back to the channel they were on** (#353). When the headset came back, a stream parked on the raw headset output was pulled onto Media and that was saved as if you had chosen it, so an app that was on Game stayed on Media for good. ASM now puts it back on its previous channel and saves nothing. Found by ziggityzack.
+- **Nova Pro Wireless, Nova Pro Omni, Nova Elite: the line-out stream's mic level is no longer set to 0** (#337). The stream mix command ends with the mic level, and ASM only sent the main and aux levels, so every change (and every start on the Elite) set the stream's mic to 0. ASM now sends it, and the DAC page has a **Line Out Mic Volume** slider. A base already at 0 keeps 0 until you move it. Found in ziggityzack's GG capture.
+- **Nova 5: no periodic status poll at all** (#364). Fabi0699 measured that the dongle pushes every change itself (battery, cable, end of charge), so ASM asks only at connect, after resume and after power-on. Profiles can set `status.poll_interval_s: 0` for this.
 - **`asm-cli tools probe` records only the probe's own replies** (#363). The status poll kept running during the probe, and on headsets whose replies carry no opcode (Arctis Pro Wireless) its frames were filed as answers to the probe's queries. The poll now pauses while the probe runs.
+
+### Changed
+- **Presentation video** on the README and the website.
 
 ## [1.7.2] - 2 November 2026
 
