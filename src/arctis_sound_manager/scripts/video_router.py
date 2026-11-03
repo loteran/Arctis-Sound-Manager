@@ -951,6 +951,7 @@ def _process_tick(pulse: pulsectl.Pulse) -> None:
             continue
 
         seen_on = sink_idx_to_name.get(si.sink, "")
+        previous_channel = _last_channel.get(key)
         if seen_on in _CHANNEL_SINKS.values():
             _last_channel[key] = seen_on
 
@@ -965,6 +966,13 @@ def _process_tick(pulse: pulsectl.Pulse) -> None:
                     # accept the placement so it stops being re-checked, but
                     # write no override.
                     _pa_placed[key] = si.sink
+                elif (save_name == previous_channel
+                      and not _is_asm_channel(sink_idx_to_name.get(_pa_placed[key], ""))):
+                    # Back from the raw headset sink onto the very channel it
+                    # was on before a replug: WirePlumber or ASM restoring it,
+                    # not the user choosing it. Saving it pinned the app (#353).
+                    _pa_placed[key] = si.sink
+                    _pending_moves.pop(key, None)
                 elif _confirm_manual_move(key, app, save_name, overrides, now=pa_now):
                     _pa_placed[key] = si.sink
                 # else: still an unconfirmed candidate (issue #102) —
@@ -1013,12 +1021,23 @@ def _process_tick(pulse: pulsectl.Pulse) -> None:
                     # user's choice — saving it pinned an app that was on Game
                     # to Media for good after one replug (#353).
                     remembered = _last_channel.get(key)
-                    auto = remembered if remembered in sink_map else "Arctis_Media"
-                    adopted = True
-                    log.info(
-                        "Adopt: '%s' was on '%s' while Arctis is default — moving to %s",
-                        app, current_name, auto,
-                    )
+                    if remembered is not None and remembered not in sink_map:
+                        # Its channel is not back yet (the loopbacks are being
+                        # recreated): wait for it rather than fall back to
+                        # Media, which the next tick would undo (#353).
+                        auto = None
+                    elif remembered is not None:
+                        auto = remembered
+                    elif "Arctis_Media" in sink_map:
+                        auto = "Arctis_Media"
+                    else:
+                        auto = None
+                    if auto:
+                        adopted = True
+                        log.info(
+                            "Adopt: '%s' was on '%s' while Arctis is default — moving to %s",
+                            app, current_name, auto,
+                        )
             if auto and adopted:
                 wanted = auto
             elif auto:

@@ -731,6 +731,16 @@ class CoreEngine:
         # is brand new.
         self._device_session_id += 1
         self._hush_outputs_while_rebuilding({physical_game, physical_chat})
+        # The channels vanish and come back with new indices: what PipeWire or
+        # WirePlumber does to the streams meanwhile is not the user's choice,
+        # so tell the router not to save it (#353; same window the filter-chain
+        # restarts open). Closed once the streams have been put back below.
+        try:
+            from arctis_sound_manager import audio_reconfig
+            audio_reconfig.begin()
+        except Exception as e:  # noqa: BLE001 — never block a reconnect
+            self.logger.debug("setup_loopbacks: reconfig window not opened: %r", e)
+            audio_reconfig = None
         try:
             self.loopback_manager.recreate_all(specs)
             self.logger.info(
@@ -763,6 +773,14 @@ class CoreEngine:
                 )
         except Exception as exc:
             self.logger.error("setup_loopbacks: failed to recreate loopbacks: %r", exc)
+        finally:
+            # end() keeps a short tail, past which the router may record
+            # moves again; a window left open expires on its own.
+            if audio_reconfig is not None:
+                try:
+                    audio_reconfig.end()
+                except Exception:  # noqa: BLE001
+                    pass
 
     # Ticks the watchdog keeps retrying a channel's volume restore before giving
     # up. At the 5 s watchdog cadence this is a ~30 s window, comfortably longer

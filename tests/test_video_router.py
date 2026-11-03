@@ -1189,3 +1189,41 @@ def test_adopting_an_unknown_stream_still_uses_media_and_saves_nothing():
         _process_tick(pulse)
     assert si.sink == media.index
     mock_save.assert_not_called()
+
+
+def test_replug_race_channels_back_after_the_adopt_pass_saves_nothing():
+    """#353 retest (1.7.3): the router ran before the loopbacks were back, so
+    its channel was missing; it must wait, not fall back to Media, and the
+    stream WirePlumber then puts back on Game is a restore, not a choice."""
+    saved = MagicMock()
+
+    def tick(sinks, default):
+        with patch("arctis_sound_manager.scripts.video_router.get_headset_power",
+                   return_value=HeadsetPower.ON), \
+             patch("arctis_sound_manager.scripts.video_router.load_overrides", return_value={}), \
+             patch("arctis_sound_manager.scripts.video_router.save_overrides", saved), \
+             patch("arctis_sound_manager.audio_reconfig.in_progress", return_value=False):
+            pulse = _FakePulse(sinks, [si], default_sink_name=default)
+            _process_tick(pulse)
+            return pulse
+
+    raw_name = "alsa_output.usb-SteelSeries_Arctis_Nova_Elite-00.analog-stereo"
+    game, media, raw = _FakeSink(1, "Arctis_Game"), _FakeSink(2, "Arctis_Media"), _FakeSink(3, raw_name)
+    si = _FakeSinkInput(10, sink=game.index, proplist={"application.name": "ReplugTest3"})
+    tick([game, media, raw], game.name)
+
+    # Replug, channels not back yet: the stream sits on the raw sink.
+    raw2 = _FakeSink(13, raw_name)
+    si.sink = raw2.index
+    p = tick([raw2], "Arctis_Game")
+    assert p.moves == []
+
+    # Channels back; WirePlumber restores the stream onto Game by itself.
+    game2, media2 = _FakeSink(11, "Arctis_Game"), _FakeSink(12, "Arctis_Media")
+    si.sink = game2.index
+    for t in (100.0, 103.0, 106.0):
+        with patch.object(video_router.time, "monotonic", return_value=t):
+            tick([game2, media2, raw2], game2.name)
+
+    assert si.sink == game2.index
+    saved.assert_not_called()
