@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **After a replug, apps go back to the channel they were on** (#353). When the headset came back, a stream parked on the raw headset output was pulled onto Media and that was saved as if you had chosen it, so an app that was on Game stayed on Media for good. ASM now puts it back on its previous channel and saves nothing. Found by ziggityzack.
 - **Arctis Pro Wireless: the base station's screen works** (#305, #363). ASM drew it in the wrong byte layout, hence the garbled lines, and then left it alone. It now uses GG's layout, confirmed on a base with `oled_page_probe.py` by Anotherdoomguy, and the DAC page with the base's screen settings is back.
 - **Nova 5: no periodic status poll at all** (#364). Fabi0699 measured that the dongle pushes every change itself (battery, cable, end of charge), so ASM asks only at connect, after resume and after power-on. Profiles can set `status.poll_interval_s: 0` for this.
 - **Arctis Pro Wireless: no more made-up spare battery level** (#363). The base's charger reply says whether a battery is in the slot, not how full it is: ASM showed 100 % while the base showed 2 bars of 4. It now shows "In the Base" or "No Battery". The headset battery was already right. Thanks to Anotherdoomguy for the logs.

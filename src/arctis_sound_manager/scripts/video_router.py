@@ -227,6 +227,12 @@ def _auto_route(app: str, proplist: dict) -> str | None:
 # share a generic application.name, plain name otherwise).
 # Used to detect manual moves done outside the router (e.g. KDE audio mixer).
 _pa_placed: dict[str, int] = {}
+# The last ASM channel (Arctis_Game / _Chat / _Media) each app was seen on,
+# by NAME: a replug recreates the channels with new indices and parks the
+# stream on the raw headset sink, so _pa_placed's index cannot say where it
+# belongs any more. Never cleared on headset-off: it is the memory the replug
+# needs (#353).
+_last_channel: dict[str, str] = {}
 
 # Same for native PipeWire streams (sink node name), same keying.
 _native_placed: dict[str, str] = {}
@@ -944,6 +950,10 @@ def _process_tick(pulse: pulsectl.Pulse) -> None:
                 pulse.sink_input_move(si.index, pinned_index)
             continue
 
+        seen_on = sink_idx_to_name.get(si.sink, "")
+        if seen_on in _CHANNEL_SINKS.values():
+            _last_channel[key] = seen_on
+
         # Detect manual move: app was placed by router but is now elsewhere
         if key in _pa_placed and si.sink != _pa_placed[key]:
             current_name = _sink_name(sinks, si.sink)
@@ -980,6 +990,7 @@ def _process_tick(pulse: pulsectl.Pulse) -> None:
         # unconditionally below (R1).
         if wanted is None and arctis_is_default:
             auto = _auto_route(app, si.proplist)
+            adopted = False
             if not auto:
                 # Fallback adoption (issue #20): when Arctis is default
                 # but a stream still plays through another physical
@@ -996,12 +1007,21 @@ def _process_tick(pulse: pulsectl.Pulse) -> None:
                 # runs for streams that have none.
                 current_name = sink_idx_to_name.get(si.sink, "")
                 if current_name and not _is_asm_channel(current_name):
-                    auto = "Arctis_Media"
+                    # Back to the channel it was on before a replug parked it
+                    # on the raw sink; Media only for a stream never seen on
+                    # a channel. Not saved as an override: a fallback, not the
+                    # user's choice — saving it pinned an app that was on Game
+                    # to Media for good after one replug (#353).
+                    remembered = _last_channel.get(key)
+                    auto = remembered if remembered in sink_map else "Arctis_Media"
+                    adopted = True
                     log.info(
                         "Adopt: '%s' was on '%s' while Arctis is default — moving to %s",
                         app, current_name, auto,
                     )
-            if auto:
+            if auto and adopted:
+                wanted = auto
+            elif auto:
                 log.info("Auto-route: '%s' -> %s", app, auto)
                 overrides[key] = auto
                 save_overrides(overrides)

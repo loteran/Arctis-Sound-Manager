@@ -392,6 +392,7 @@ class _FakePulse:
 def _reset_router_globals():
     """Isolate module-level tracking state across tests in this file."""
     _pa_placed.clear()
+    video_router._last_channel.clear()
     _native_placed.clear()
     _move_times.clear()
     _pending_moves.clear()
@@ -1141,3 +1142,50 @@ def test_dont_reconnect_streams_are_left_alone():
     assert video_router._dont_reconnect({"node.dont-reconnect": True}) is True
     assert video_router._dont_reconnect({"node.dont-reconnect": "false"}) is False
     assert video_router._dont_reconnect({}) is False
+
+
+def test_replug_puts_the_app_back_on_its_channel_without_saving_an_override():
+    """#353: after a replug the stream lands on the raw headset sink. The
+    router used to adopt it onto Arctis_Media and save that as an override,
+    so an app that was on Game stayed on Media for good. It goes back to the
+    channel it was on, and nothing is written."""
+    game, media, raw = (_FakeSink(1, "Arctis_Game"), _FakeSink(2, "Arctis_Media"),
+                        _FakeSink(3, "alsa_output.usb-SteelSeries_Arctis_Nova_Elite-00.analog-stereo"))
+    si = _FakeSinkInput(10, sink=game.index, proplist={"application.name": "ReplugTest"})
+    patches = lambda saved: (  # noqa: E731
+        patch("arctis_sound_manager.scripts.video_router.get_headset_power",
+              return_value=HeadsetPower.ON),
+        patch("arctis_sound_manager.scripts.video_router.load_overrides", return_value={}),
+        patch("arctis_sound_manager.scripts.video_router.save_overrides", saved))
+    saved = MagicMock()
+
+    p1, p2, p3 = patches(saved)
+    with p1, p2, p3:
+        _process_tick(_FakePulse([game, media, raw], [si], default_sink_name=game.name))
+    # Replug: the channels come back with new indices, the stream on the raw sink.
+    game2, media2, raw2 = (_FakeSink(11, "Arctis_Game"), _FakeSink(12, "Arctis_Media"),
+                           _FakeSink(13, raw.name))
+    si.sink = raw2.index
+    pulse = _FakePulse([game2, media2, raw2], [si], default_sink_name=game2.name)
+    p1, p2, p3 = patches(saved)
+    with p1, p2, p3:
+        _process_tick(pulse)
+
+    assert si.sink == game2.index
+    saved.assert_not_called()
+
+
+def test_adopting_an_unknown_stream_still_uses_media_and_saves_nothing():
+    """#20: a stream the router never saw, on another output while Arctis is
+    default, is pulled onto Arctis_Media, transiently (#353)."""
+    game, media, spk = (_FakeSink(1, "Arctis_Game"), _FakeSink(2, "Arctis_Media"),
+                        _FakeSink(3, "alsa_output.pci-0000_00_1f.3.analog-stereo"))
+    si = _FakeSinkInput(10, sink=spk.index, proplist={"application.name": "NewApp"})
+    pulse = _FakePulse([game, media, spk], [si], default_sink_name=game.name)
+    with patch("arctis_sound_manager.scripts.video_router.get_headset_power",
+               return_value=HeadsetPower.ON), \
+         patch("arctis_sound_manager.scripts.video_router.load_overrides", return_value={}), \
+         patch("arctis_sound_manager.scripts.video_router.save_overrides") as mock_save:
+        _process_tick(pulse)
+    assert si.sink == media.index
+    mock_save.assert_not_called()
