@@ -64,6 +64,8 @@ def test_every_reply_is_adopted(monkeypatch):
         # audio_settings
         "volume_limiter": 0, "mic_volume": 8, "line_out": 1,
         "line_out_stream_main_left_volume": 100, "line_out_stream_aux_volume": 100,
+        # stream_mix mic, 0 on this base: what ASM's 3-value 0x47 left (#337)
+        "line_out_stream_mic_volume": 0,
         "mic_side_tone": 0,        # state off: the level byte (1) is not the value
         "mic_noise_reduction": 1,  # on, boom level 1
         "equalizer_mic": 0, "equalizer_bluetooth": 0,
@@ -117,6 +119,7 @@ def test_the_elite_reads_the_same_way(monkeypatch):
         "gain": 0, "mic_volume": 10, "line_out": 1, "equalizer_mic": 0,
         "equalizer_bluetooth": 1, "line_out_stream_main_left_volume": 100,
         "line_out_stream_aux_volume": 100,
+        "line_out_stream_mic_volume": 0,
         "mic_sidetone_boom": 5,  # on, level 5
         "mic_sidetone_ear": 5,
     }

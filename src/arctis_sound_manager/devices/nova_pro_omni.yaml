@@ -307,6 +307,7 @@ device:
         line_out: 0x93
         line_out_stream_main_left_volume: 0x9b   # stream_main
         line_out_stream_aux_volume: 0x9d
+        line_out_stream_mic_volume: 0x9e
         mic_noise_reduction: [0xa4, 0xa5]  # setting, boom level
         equalizer_mic: 0x95            # microphone_selected_eq_preset
         equalizer_bluetooth: 0x96      # bluetooth_selected_eq_preset
@@ -546,7 +547,7 @@ device:
         default: 100
         visible_when:
           line_out: 2
-        update_sequence: [0x01, 0x47, 'value', 'settings.line_out_stream_main_right_volume', 'settings.line_out_stream_aux_volume']
+        update_sequence: [0x01, 0x47, 'value', 'settings.line_out_stream_main_right_volume', 'settings.line_out_stream_aux_volume', 'settings.line_out_stream_mic_volume']
       line_out_stream_main_right_volume:
         type: slider
         min: 0
@@ -557,7 +558,7 @@ device:
         default: 100
         visible_when:
           line_out: 2
-        update_sequence: [0x01, 0x47, 'settings.line_out_stream_main_left_volume', 'value', 'settings.line_out_stream_aux_volume']
+        update_sequence: [0x01, 0x47, 'settings.line_out_stream_main_left_volume', 'value', 'settings.line_out_stream_aux_volume', 'settings.line_out_stream_mic_volume']
       line_out_stream_aux_volume:
         type: slider
         min: 0
@@ -568,7 +569,21 @@ device:
         default: 100
         visible_when:
           line_out: 2
-        update_sequence: [0x01, 0x47, 'settings.line_out_stream_main_left_volume', 'settings.line_out_stream_main_right_volume', 'value']
+        update_sequence: [0x01, 0x47, 'settings.line_out_stream_main_left_volume', 'settings.line_out_stream_main_right_volume', 'value', 'settings.line_out_stream_mic_volume']
+      # stream_mix (0x47) carries the mic level as its last byte (spec
+      # field `mic`; GG sends it, e.g. 47 64 64 64 0a, #337). ASM sent only
+      # main/main/aux, so the stream's mic was set to 0 on every write.
+      line_out_stream_mic_volume:
+        type: slider
+        min: 0
+        max: 100
+        step: 1
+        min_label: perc_0
+        max_label: perc_100
+        default: 100
+        visible_when:
+          line_out: 2
+        update_sequence: [0x01, 0x47, 'settings.line_out_stream_main_left_volume', 'settings.line_out_stream_main_right_volume', 'settings.line_out_stream_aux_volume', 'value']
       station_screensaver:
         type: button_group
         default: 0x01

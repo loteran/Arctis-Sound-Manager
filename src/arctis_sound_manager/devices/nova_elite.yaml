@@ -81,7 +81,7 @@ device:
     - [0x01, 0x88, 'settings.station_screensaver']
     - [0x01, 0x3c, 0x11, 0x03, 0x03]
     - [0x01, 0xb9, 'settings.transparent_noise_cancelling_level']
-    - [0x01, 0x47, 'settings.line_out_stream_main_left_volume', 'settings.line_out_stream_main_right_volume', 'settings.line_out_stream_aux_volume']
+    - [0x01, 0x47, 'settings.line_out_stream_main_left_volume', 'settings.line_out_stream_main_right_volume', 'settings.line_out_stream_aux_volume', 'settings.line_out_stream_mic_volume']
     - [0x01, 0x83, 'settings.station_screen_saver_timeout']
     - [0x01, 0xc1, 'settings.auto_off_time_minutes']
     - [0x01, 0xb8, 'settings.noise_cancelling_level']
@@ -128,7 +128,7 @@ device:
         line_out_stream_main_left_volume: 0x02
         line_out_stream_main_right_volume: 0x03
         line_out_stream_aux_volume: 0x04
-        line_out_stream_min_volume: 0x05
+        line_out_stream_mic_volume: 0x05
       - starts_with: 0x0749
         chatmix_enabled: 0x02
       - starts_with: 0x0783
@@ -362,6 +362,7 @@ device:
         equalizer_bluetooth: 0x96      # bluetooth_selected_eq_preset
         line_out_stream_main_left_volume: 0x9b   # stream_main
         line_out_stream_aux_volume: 0x9d
+        line_out_stream_mic_volume: 0x9e
         mic_sidetone_boom: [0xa9, 0x92]  # boom_sidetone_state, level
         mic_sidetone_ear: [0xab, 0xaa]   # on_ear_sidetone_state, level
 
@@ -548,7 +549,7 @@ device:
         default: 100
         visible_when:
           line_out: 2
-        update_sequence: [0x01, 0x47, 'value', 'settings.line_out_stream_main_right_volume', 'settings.line_out_stream_aux_volume']
+        update_sequence: [0x01, 0x47, 'value', 'settings.line_out_stream_main_right_volume', 'settings.line_out_stream_aux_volume', 'settings.line_out_stream_mic_volume']
       line_out_stream_main_right_volume:
         type: slider
         min: 0
@@ -559,7 +560,7 @@ device:
         default: 100
         visible_when:
           line_out: 2
-        update_sequence: [0x01, 0x47, 'settings.line_out_stream_main_left_volume', 'value', 'settings.line_out_stream_aux_volume']
+        update_sequence: [0x01, 0x47, 'settings.line_out_stream_main_left_volume', 'value', 'settings.line_out_stream_aux_volume', 'settings.line_out_stream_mic_volume']
       line_out_stream_aux_volume:
         type: slider
         min: 0
@@ -570,7 +571,21 @@ device:
         default: 100
         visible_when:
           line_out: 2
-        update_sequence: [0x01, 0x47, 'settings.line_out_stream_main_left_volume', 'settings.line_out_stream_main_right_volume', 'value']
+        update_sequence: [0x01, 0x47, 'settings.line_out_stream_main_left_volume', 'settings.line_out_stream_main_right_volume', 'value', 'settings.line_out_stream_mic_volume']
+      # stream_mix (0x47) carries the mic level as its last byte (spec
+      # field `mic`; GG sends it, e.g. 47 64 64 64 0a, #337). ASM sent only
+      # main/main/aux, so the stream's mic was set to 0 on every write.
+      line_out_stream_mic_volume:
+        type: slider
+        min: 0
+        max: 100
+        step: 1
+        min_label: perc_0
+        max_label: perc_100
+        default: 100
+        visible_when:
+          line_out: 2
+        update_sequence: [0x01, 0x47, 'settings.line_out_stream_main_left_volume', 'settings.line_out_stream_main_right_volume', 'settings.line_out_stream_aux_volume', 'value']
       chatmix_enabled:
         type: toggle
         values:

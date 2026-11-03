@@ -62,7 +62,7 @@ device:
     - [0x06, 0xb9, 'settings.transparent_level']
     - [0x06, 0x37, 'settings.mic_volume']         # Mic volume 100% (01 (mute) - a0 (100%))
     - [0x06, 0xb2, 'settings.bluetooth_power_status'] # BT on at power-up
-    - [0x06, 0x47, 'settings.line_out_stream_main_left_volume', 'settings.line_out_stream_main_right_volume', 'settings.line_out_stream_aux_volume']
+    - [0x06, 0x47, 'settings.line_out_stream_main_left_volume', 'settings.line_out_stream_main_right_volume', 'settings.line_out_stream_aux_volume', 'settings.line_out_stream_mic_volume']
     - [0x06, 0x83, 0x01]
     - [0x06, 0xbd, 'settings.noise_cancelling']
     - [0x06, 0x27, 'settings.gain']               # Audio Gain (0x01: low, 0x02: high)
@@ -226,6 +226,7 @@ device:
         line_out_stream_main_left_volume: 0x16
         line_out_stream_main_right_volume: 0x16
         line_out_stream_aux_volume: 0x18
+        line_out_stream_mic_volume: 0x19
     - request: 0x06b0
       starts_with: 0x06b0
       mapping:
@@ -364,7 +365,7 @@ device:
         default: 100
         visible_when:
           line_out: 2
-        update_sequence: [0x06, 0x47, 'value', 'settings.line_out_stream_main_right_volume', 'settings.line_out_stream_aux_volume']
+        update_sequence: [0x06, 0x47, 'value', 'settings.line_out_stream_main_right_volume', 'settings.line_out_stream_aux_volume', 'settings.line_out_stream_mic_volume']
       line_out_stream_main_right_volume:
         type: slider
         min: 0
@@ -375,7 +376,7 @@ device:
         default: 100
         visible_when:
           line_out: 2
-        update_sequence: [0x06, 0x47, 'settings.line_out_stream_main_left_volume', 'value', 'settings.line_out_stream_aux_volume']
+        update_sequence: [0x06, 0x47, 'settings.line_out_stream_main_left_volume', 'value', 'settings.line_out_stream_aux_volume', 'settings.line_out_stream_mic_volume']
       line_out_stream_aux_volume:
         type: slider
         min: 0
@@ -386,7 +387,21 @@ device:
         default: 100
         visible_when:
           line_out: 2
-        update_sequence: [0x06, 0x47, 'settings.line_out_stream_main_left_volume', 'settings.line_out_stream_main_right_volume', 'value']
+        update_sequence: [0x06, 0x47, 'settings.line_out_stream_main_left_volume', 'settings.line_out_stream_main_right_volume', 'value', 'settings.line_out_stream_mic_volume']
+      # stream_mix (0x47) carries the mic level as its last byte (spec
+      # field `mic`; GG sends it, e.g. 47 64 64 64 0a, #337). ASM sent only
+      # main/main/aux, so the stream's mic was set to 0 on every write.
+      line_out_stream_mic_volume:
+        type: slider
+        min: 0
+        max: 100
+        step: 1
+        min_label: perc_0
+        max_label: perc_100
+        default: 100
+        visible_when:
+          line_out: 2
+        update_sequence: [0x06, 0x47, 'settings.line_out_stream_main_left_volume', 'settings.line_out_stream_main_right_volume', 'settings.line_out_stream_aux_volume', 'value']
       station_home_screen_view:
         # home_screen_type (0x89): 0 detailed, 1 simple, per the spec's own
         # comment; read back from ux_settings offset 5 above.
