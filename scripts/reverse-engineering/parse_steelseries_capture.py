@@ -96,7 +96,7 @@ def main() -> None:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("pcap")
     ap.add_argument("actions", nargs="?", help="actions.txt from the capture script")
-    ap.add_argument("--device", help="USB device address to decode (default: the one that received the most commands)")
+    ap.add_argument("--device", help="USB device address to decode (default: the busiest device that also answers)")
     ap.add_argument("--report-id", help="HID report id prefix (default: the most common leading byte)")
     args = ap.parse_args()
 
@@ -106,7 +106,17 @@ def main() -> None:
         sys.exit("No host->device data in this capture — wrong USB tree picked?")
     print("Commands received per device address:",
           ", ".join(f"{d}: {c}" for d, c in per_dev.most_common()))
-    dev = args.device or per_dev.most_common(1)[0][0]
+    # The busiest device is not always the headset: on a Nova Elite capture
+    # (#337) an RGB controller on the same tree sent 20x more, and never
+    # answered. A SteelSeries device answers its queries, so prefer the
+    # busiest one that sent anything back.
+    answering = {d for _, d, dirn, _ in allrows if dirn == 1}
+    ranked = [d for d, _ in per_dev.most_common() if d in answering] or \
+             [d for d, _ in per_dev.most_common()]
+    dev = args.device or ranked[0]
+    if not args.device and dev != per_dev.most_common(1)[0][0]:
+        print(f"Picked device {dev}: the busiest one that answers "
+              f"(override with --device)")
     out_rows = [(t, p) for t, d, dirn, p in allrows if d == dev and dirn == 0]
     rid = (args.report_id or Counter(p[:2] for _, p in out_rows).most_common(1)[0][0]).lower()
     rows = [(t, p) for t, p in out_rows if p.startswith(rid)]
