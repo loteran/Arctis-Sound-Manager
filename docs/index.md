@@ -25,6 +25,26 @@ needs neither Wine nor a vendor driver.
 [Source](https://github.com/loteran/Arctis-Sound-Manager) ·
 [Discussions](https://github.com/loteran/Arctis-Sound-Manager/discussions)
 
+## Watch the presentation
+
+<div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;max-width:100%;">
+  <iframe src="https://www.youtube-nocookie.com/embed/j8nwJNg1EzA" title="Arctis Sound Manager — SteelSeries GG &amp; Sonar for Linux" style="position:absolute;top:0;left:0;width:100%;height:100%;border:0;" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe>
+</div>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "VideoObject",
+  "name": "Arctis Sound Manager — SteelSeries GG & Sonar for Linux (free & open source)",
+  "description": "A free, open-source replacement for SteelSeries GG and Sonar on Linux: channel mixer, Sonar parametric EQ, spatial audio, microphone processing, battery, ANC, sidetone, base station OLED, streamer mode and clips for 20+ Arctis headsets, built on PipeWire.",
+  "thumbnailUrl": "https://i.ytimg.com/vi/j8nwJNg1EzA/maxresdefault.jpg",
+  "uploadDate": "2026-11-02T22:00:00+01:00",
+  "duration": "PT2M48S",
+  "embedUrl": "https://www.youtube.com/embed/j8nwJNg1EzA",
+  "contentUrl": "https://www.youtube.com/watch?v=j8nwJNg1EzA"
+}
+</script>
+
 ## Install
 
 ```
