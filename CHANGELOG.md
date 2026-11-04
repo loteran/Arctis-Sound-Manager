@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Arctis Pro (2019) and Arctis 5: the daemon no longer pins a CPU core at 100 %** (#369). Their audio-only profiles (since 1.6.6) say "no dial interface" with -1, and ASM tried to listen on that interface in a tight loop. Diagnosed by bdowne01 (strace, bisected to 1.6.6).
 - **Arctis Pro Wireless: the spare battery shows on the Channels page and in the Plasma widget again** (#367). Since 1.7.3 the base reports whether a spare is in its slot rather than a made-up level, and those two places only knew the percentage. They now show "In the Base" / "No Battery".
 - **A replug no longer pins an app to its channel** (#353). When the router looked before the channels were back, it either fell back to Media or later saved WirePlumber putting the app back as your choice. It now waits for the channel, treats a return to the app's previous channel as a restore, and the loopback rebuild opens the same "ASM is reconfiguring" window as a filter-chain restart. Retested and traced by ziggityzack.
 

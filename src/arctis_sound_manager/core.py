@@ -2325,7 +2325,13 @@ class CoreEngine:
             # not hold (no hidraw node) is as good as one with no endpoint.
             endpoint, max_packet_size = (interface_id, 64) if hidraw.has(interface_id) else (None, None)
         else:
-            endpoint, max_packet_size = self.guess_interface_endpoint('in', interface_id)
+            try:
+                endpoint, max_packet_size = self.guess_interface_endpoint('in', interface_id)
+            except Exception:  # noqa: BLE001 — no such interface on this model
+                # Raised before any await, this returned at once and loop()
+                # resubmitted it at once: a busy loop (#369). Same as an
+                # interface without an endpoint.
+                endpoint, max_packet_size = None, None
 
         if not endpoint and endpoint != 0:
             # Declared in the YAML but absent on this model: permanent for as
@@ -2698,9 +2704,14 @@ class CoreEngine:
             return
 
         # All declared dial interfaces that are not already covered by the status listener
-        all_candidates = list(set(
-            [self.device_config.dial_interface_index] + self.device_config.dial_interface_candidates
-        ))
+        # A negative index is the YAML's "none" (audio-only profiles declare
+        # dial_interface_index: -1). Scanning it made listen_endpoint_loop
+        # raise at once on every turn and loop() resubmit it at once: 100 % of
+        # a core on the Arctis Pro 2019 and Arctis 5 since 1.6.6 (#369).
+        all_candidates = list({
+            i for i in [self.device_config.dial_interface_index] + self.device_config.dial_interface_candidates
+            if isinstance(i, int) and i >= 0
+        })
         extra_candidates = [i for i in all_candidates if i not in self.device_config.listen_interface_indexes]
 
         if not extra_candidates:
