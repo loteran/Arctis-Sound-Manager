@@ -3678,7 +3678,7 @@ class _NoiseGateCard(QWidget):
         root.addLayout(seuil_row)
 
         # Auto checkbox
-        self._auto_cb = QCheckBox("Calcule automatiquement le seuil de l'effet noise gate")
+        self._auto_cb = QCheckBox(_t("noise_gate_auto"))
         self._auto_cb.setChecked(state["noiseGate"]["auto"])
         self._auto_cb.toggled.connect(self._on_auto)
         root.addWidget(self._auto_cb)
