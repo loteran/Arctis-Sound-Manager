@@ -55,6 +55,19 @@ def test_returns_percent_when_cable_charging():
     assert _extract(_status("cable_charging", 100)) == 100
 
 
+def test_returns_none_when_standby():
+    # Nova Elite base: 'standby' (0x04) is what it reports for a headset that
+    # is switched off, battery at 0 — the tray drew "0%" (#372).
+    assert _extract(_status("standby", 0)) is None
+
+
+def test_returns_none_when_power_status_unmapped():
+    # A raw value the profile has no label for is not a confirmed "on" either.
+    headset = {"headset_battery_charge": {"value": 0, "type": "percentage"},
+               "headset_power_status": {"value": 0, "type": "label"}}
+    assert _extract({"headset": headset}) is None
+
+
 def test_returns_percent_when_power_status_absent():
     # No headset_power_status key: keep the pre-#124 behaviour (show battery).
     assert _extract(_status(None, 42)) == 42

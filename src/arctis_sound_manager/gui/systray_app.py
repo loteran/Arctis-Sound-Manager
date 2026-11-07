@@ -364,6 +364,12 @@ class QSystrayApp(QBaseDesktopApp):
         only handled 'off', missing Nova Pro Wireless/Elite/Omni and Arctis
         Pro Wireless, which report 'offline'). Original diagnosis and fix by
         @isaki (PR #125).
+
+        When the profile reports a power status at all, only a confirmed ON
+        shows the number: the Nova Elite's base answers 'standby' (0x04) for a
+        headset that is switched off, with the level at 0, and the tray drew
+        "0%" for it (#372, diagnosed by @ziggityzack). A profile with no power
+        status keeps showing its level, as before #124.
         """
         if not isinstance(status, dict):
             return None
@@ -373,7 +379,7 @@ class QSystrayApp(QBaseDesktopApp):
             bat = category.get('headset_battery_charge')
             if isinstance(bat, dict) and bat.get('type') == 'percentage':
                 power = category.get('headset_power_status')
-                if isinstance(power, dict) and normalize_power_value(power.get('value')) == HeadsetPower.OFF:
+                if isinstance(power, dict) and normalize_power_value(power.get('value')) != HeadsetPower.ON:
                     return None
                 try:
                     return int(bat['value'])
