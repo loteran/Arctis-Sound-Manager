@@ -520,6 +520,24 @@ def main():
     _queue_dialog(2500, _check_deps)
 
     # -- Preset sync (new Sonar presets added since install) ------------------
+    def _general_toggle(key: str) -> bool:
+        """A toggle from general_settings.yaml, True if unset or unreadable.
+
+        The GUI process reads the shared settings file directly, the same way
+        the tray reads ``systray_show_battery``: this runs before any settings
+        object is around, and holding one just for a boolean is not worth it.
+        """
+        try:
+            from arctis_sound_manager.constants import SETTINGS_FOLDER
+            from ruamel.yaml import YAML
+            f = SETTINGS_FOLDER / 'general_settings.yaml'
+            if f.is_file():
+                data = YAML(typ='safe').load(f.read_text(encoding='utf-8')) or {}
+                return bool(data.get(key, True))
+        except Exception:
+            pass
+        return True
+
     def _announce_new_presets_enabled() -> bool:
         """Whether to show the preset-sync dialog (setting, default True).
 
@@ -608,6 +626,11 @@ def main():
         QTimer.singleShot(0, q_object, _show)
 
     def _sync_presets():
+        # Off: no request to GitHub at all; bundled and already downloaded
+        # presets stay where they are (#370).
+        if not _general_toggle('preset_sync_enabled'):
+            log.info("Preset sync: disabled by preset_sync_enabled.")
+            return
         from arctis_sound_manager.preset_sync import PresetSyncWorker
         # force=True: check on every launch, not once a day. New Sonar preset
         # packs land at unpredictable times, and with the daily cache alone a

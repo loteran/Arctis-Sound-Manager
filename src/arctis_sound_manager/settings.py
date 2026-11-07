@@ -555,6 +555,10 @@ class GeneralSettings(JsonSerializable):
         ConfigSetting('systray_chatmix_osd', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('systray_master_osd', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('systray_icon_color', SettingType.BUTTON_GROUP, 0, values_mapping={0: 'systray_icon_color_auto', 1: 'systray_icon_color_white', 2: 'systray_icon_color_black'}),
+        # On by default: new Sonar presets are fetched from ASM's GitHub repo at
+        # each start, as GG updates its own. Off means no request at all, and
+        # the bundled presets plus any already downloaded stay (issue #370).
+        ConfigSetting('preset_sync_enabled', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         # On by default (issue #228): a preset library that grows on its own is
         # worth saying out loud once, otherwise people wonder whether the list
         # changed or they misremembered it. Off is for those who would rather a

@@ -702,6 +702,8 @@ The External Output card routes audio **directly** to the physical sink, bypassi
 
 ## Sharing and downloading EQ presets
 
+New Sonar presets that SteelSeries adds to GG are fetched from this repository at each start (one small request). To turn that off, switch off **Download new Sonar presets at startup** in **Settings**: nothing is requested any more, and the presets you already have stay.
+
 ASM lets you share any Sonar EQ preset with one click and import presets shared by the community.
 
 ### Exporting a preset

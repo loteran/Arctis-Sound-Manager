@@ -64,7 +64,9 @@ You do not start from a flat curve. **354 Sonar presets ship with the
 application** — 331 game profiles, 14 microphone and 9 chat — in Sonar's own
 shape: parametric EQ bands, bass and treble boost, voice clarity, smart volume,
 virtual surround. Pick your game from the list and the curve is applied to the
-Game channel, the way it would be in Sonar on Windows.
+Game channel, the way it would be in Sonar on Windows. When SteelSeries adds
+presets to GG, ASM downloads them at the next start; **Download new Sonar
+presets at startup** in Settings turns that off.
 
 Community presets are shared separately on the
 [ASM Presets site](https://loteran.github.io/asm-presets/), and you can save
