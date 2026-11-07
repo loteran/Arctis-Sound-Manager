@@ -45,13 +45,11 @@ device:
   command_transport: ctrl_output
   command_report_id: 0x00
 
-  # Inferred, not read: the USB layout is in no SteelSeries specification —
-  # their `sync-interface` is not the bInterfaceNumber, as the Nova 7 Gen 2
-  # already showed. Of this device's three HID interfaces (0, 1, 2) the
-  # 4-byte one is a dial or volume control and interface 2 is the usual place
-  # for the vendor channel. If it is wrong the daemon moves off it on the
-  # first ENOENT and says so in the log; scripts/reverse-engineering/
-  # gamedac_status_probe.py settles it on real hardware.
+  # Read from GG itself (#337, a USB capture of GG 123 driving a GameDAC):
+  # every SET_REPORT it sends, the 64-byte commands and the 1024-byte
+  # lighting feature reports alike, goes to wIndex 0, i.e. interface 0. This
+  # profile used to try interface 2 first, a guess made before any capture.
+  # Interface 2 stays as the fallback the daemon moves to on ENOENT.
 
   # No hid_usage_page here on purpose. The value that used to be here came from
   # the spec's `(sync-interface ...)`, which is a different declaration from
@@ -61,7 +59,7 @@ device:
   # as the command interface's is what shipped 1.4.10 (#216, #217). Absent is
   # honest here; a wrong page would be used to choose between vendor interfaces.
 
-  command_interface_index: [2, 0]
+  command_interface_index: [0, 2]
   listen_interface_indexes: [2]
 
   device_init:
@@ -83,13 +81,16 @@ device:
         media_mix: 0x02
         chat_mix: 0x03
 
-      # get_audio_settings. Sidetone sits past ten int32 EQ bands and the
-      # int32 mic volume, so the offsets are counted rather than guessed:
-      # command(1) host_mode(2) volume(3) dac_gain(4) volume_limiter(5)
-      # surround(6) surround_offload(7) eq_preset(8) eq1..10(9-48)
-      # mic_volume(49-52) sidetone(53).
+      # get_audio_settings. The reply carries no report-id byte (report 0
+      # is unnumbered), so the command is byte 0: host_mode 1, volume 2,
+      # dac_gain 3, volume_limiter 4, surround 5, surround_offload 6,
+      # eq_preset 7, eq1..10 8-47 (int32 each), mic_volume 48-51, sidetone
+      # 52, mic_agc 53, mic_noise_gate 54, aux_mode 55, line_out_mode 56.
+      # Checked on a real reply in #337: the EQ and mic volume bytes match
+      # what GG wrote with 0x33 / 0x37, and byte 56 is line_out_mode (1,
+      # speakers). This used to read 0x35, which is mic_agc.
       - starts_with: 0x0020
-        mic_side_tone: 0x35
+        mic_side_tone: 0x34
 
     representation:
       headset:
@@ -109,10 +110,11 @@ device:
   # are HIDIO 65. Report id 0x00 means unnumbered, so each report is one
   # byte shorter on the wire than the spec's chunk.
   #
-  # Not verified on hardware: the interface — the spec names a usage page,
-  # not an interface number; 2 is the command interface above.
+  # Interface 0, like the commands: GG's capture in #337 sent its feature
+  # reports there (it drew nothing on the screen during that capture, so the
+  # bitmap itself is still unchecked).
   oled:
-    interface: 2
+    interface: 0
     report_id: 0x00
     wvalue: 0x0300
     width: 128
