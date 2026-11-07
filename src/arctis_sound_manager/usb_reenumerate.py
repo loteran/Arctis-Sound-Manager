@@ -37,6 +37,48 @@ def sysfs_device_dir(
     return sys_root / (f"{bus}-" + ".".join(str(p) for p in port_numbers))
 
 
+def usbfs_holders(bus: int | None, address: int | None,
+                  proc_root: Path = Path('/proc'),
+                  exclude_pid: int | None = None) -> list[tuple[int, str]]:
+    """Other processes holding /dev/bus/usb/BBB/DDD open, as (pid, name).
+
+    A device another program has open (a leftover script driving the same
+    headset, #374) answers EBUSY to every claim, which looks exactly like a
+    wedged device. A USB reset cannot clear another process's claim, so the
+    caller should name the holder instead of resetting. Processes this user
+    cannot inspect are skipped: the result may be incomplete, never wrong.
+    """
+    if not isinstance(bus, int) or not isinstance(address, int) or not bus or not address:
+        return []
+    node = f'/dev/bus/usb/{int(bus):03d}/{int(address):03d}'
+    me = os.getpid() if exclude_pid is None else exclude_pid
+    holders: list[tuple[int, str]] = []
+    try:
+        entries = list(proc_root.iterdir())
+    except OSError:
+        return []
+    for entry in entries:
+        if not entry.name.isdigit() or int(entry.name) == me:
+            continue
+        try:
+            fds = list((entry / 'fd').iterdir())
+        except OSError:
+            continue
+        for fd in fds:
+            try:
+                target = os.readlink(fd)
+            except OSError:
+                continue
+            if target == node:
+                try:
+                    name = (entry / 'comm').read_text().strip()
+                except OSError:
+                    name = '?'
+                holders.append((int(entry.name), name))
+                break
+    return holders
+
+
 def reset_via_usbfs(usb_device: Any, logger: Any) -> bool:
     """Force a USBDEVFS_RESET on *usb_device*. Returns True on success.
 

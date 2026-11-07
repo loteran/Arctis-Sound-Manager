@@ -40,7 +40,7 @@ from arctis_sound_manager.settings import DeviceSettings, GeneralSettings
 from arctis_sound_manager.usb_devices_monitor import USBDevicesMonitor
 from arctis_sound_manager.charging_case import ChargingCaseMonitor
 from arctis_sound_manager.usb_reenumerate import (reset_via_usbfs,
-                                                  sysfs_device_dir,
+                                                  sysfs_device_dir, usbfs_holders,
                                                   refresh_libusb_context, sysfs_has_device)
 from arctis_sound_manager.utils import ObservableDict
 from arctis_sound_manager.oled_manager import OledManager
@@ -385,6 +385,15 @@ class CoreEngine:
     media_mix: int
     chat_mix: int
     _active_extra_dial_interfaces: list[int]
+
+
+    # Serializes a USB reset with any release of the same handle. The reset
+    # re-enumerates the device, so the pyudev thread sees it and releases the
+    # "stale" handle while USBDEVFS_RESET is still running on it in the main
+    # thread: libusb aborted the daemon on a destroyed mutex (#374). Never
+    # held across an await. Class-level: one engine per process, and several
+    # tests build theirs without __init__.
+    _usb_reset_lock = threading.Lock()
 
     def __init__(self) -> None:
         self.media_mix = 100
@@ -3355,6 +3364,18 @@ class CoreEngine:
                 "%s: skipping reset (last one %.0fs ago, minimum %.0fs)",
                 reason, since_last, _USB_RESET_MIN_INTERVAL_S)
             return
+        # Another program holding the device answers EBUSY to everything,
+        # which looks wedged but is not: a reset cannot take its claim away,
+        # and resetting under it is what crashed the daemon in #374. Name it.
+        holders = usbfs_holders(getattr(self.usb_device, 'bus', None),
+                                getattr(self.usb_device, 'address', None))
+        if holders:
+            self.logger.warning(
+                "%s: not resetting — another program has the headset open: %s. "
+                "Close it (it is competing with ASM for the device), then replug "
+                "the headset or restart ASM.", reason,
+                ", ".join(f"{name} (pid {pid})" for pid, name in holders))
+            return
         self._wedged_reset_spent = True
         self._last_usb_reset_monotonic = now
         asyncio.run_coroutine_threadsafe(self._escalate_to_usb_reset(reason), loop)
@@ -5728,15 +5749,23 @@ class CoreEngine:
                              getattr(self.usb_device, 'port_numbers', None)),
             reason,
         )
-        success = reset_via_usbfs(self.usb_device, self.logger)
-        self._record_usb_reset_attempt(reason, success)
-        if not success:
-            return
-        # reset() invalidates the libusb handle: dispose it and let
-        # configure_virtual_sinks() re-detect the (possibly re-addressed)
-        # device from scratch, same as any other same-device re-enumeration.
-        usb.util.dispose_resources(self.usb_device)
-        self.usb_device = None
+        with self._usb_reset_lock:
+            device = self.usb_device
+            if device is None:
+                # Released by a re-detection in the meantime: nothing to reset.
+                return
+            success = reset_via_usbfs(device, self.logger)
+            self._record_usb_reset_attempt(reason, success)
+            if not success:
+                return
+            # reset() invalidates the libusb handle: dispose it and let
+            # configure_virtual_sinks() re-detect the (possibly re-addressed)
+            # device from scratch, same as any other same-device re-enumeration.
+            # Under the lock, so a release on the pyudev thread cannot run
+            # while the reset is still in flight on this handle (#374).
+            usb.util.dispose_resources(device)
+            if self.usb_device is device:
+                self.usb_device = None
         await asyncio.sleep(_USB_RESET_SETTLE_S)
         # A reset re-enumerates the device, so the pyudev thread is very
         # likely already in configure_virtual_sinks() by now - same hazard as
@@ -5773,6 +5802,12 @@ class CoreEngine:
         stale handle keeps every interface claimed and subsequent transfers
         on the fresh handle fail with EBUSY (errno 16) indefinitely.
         """
+        # Waits for a USB reset in flight on this handle to finish (#374);
+        # the reset then leaves usb_device at None and this returns.
+        with self._usb_reset_lock:
+            self._release_usb_handle_locked()
+
+    def _release_usb_handle_locked(self) -> None:
         if self.usb_device is None:
             return
 
