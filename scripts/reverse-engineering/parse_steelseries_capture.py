@@ -97,10 +97,24 @@ def main() -> None:
     ap.add_argument("pcap")
     ap.add_argument("actions", nargs="?", help="actions.txt from the capture script")
     ap.add_argument("--device", help="USB device address to decode (default: the busiest device that also answers)")
-    ap.add_argument("--report-id", help="HID report id prefix (default: the most common leading byte)")
+    ap.add_argument("--report-id", help="HID report id prefix (default: the most common leading byte, if most "
+                         "commands share it; '' = no prefix, opcode at byte 0)")
     args = ap.parse_args()
 
     allrows = run_tshark(args.pcap)
+    vendors = subprocess.run(
+        ["tshark", "-r", args.pcap, "-Y", "usb.idVendor", "-T", "fields",
+         "-e", "usb.device_address", "-e", "usb.idVendor", "-e", "usb.idProduct"],
+        capture_output=True, text=True).stdout.split("\n")
+    known = {l.split("\t")[0]: l.split("\t")[1:] for l in vendors if l.count("\t") == 2}
+    if known and not any(v[0].lower() == "0x1038" for v in known.values()):
+        # USBPcap records one USB tree; a capture of the wrong one holds only
+        # the other devices (#337: an RGB controller instead of an Arctis Pro
+        # Wireless). A post-filtered file may have lost the descriptors, so
+        # this only warns when some descriptors are there and none is ours.
+        print("WARNING: no SteelSeries device (1038:xxxx) in this capture's descriptors: "
+              + ", ".join(f"{a}={v[0][2:]}:{v[1][2:]}" for a, v in sorted(known.items()))
+              + "\n  The wrong USBPcap tree was probably recorded; ask for a new capture.\n")
     per_dev = Counter(d for _, d, dirn, _ in allrows if dirn == 0)
     if not per_dev:
         sys.exit("No host->device data in this capture — wrong USB tree picked?")
@@ -118,17 +132,27 @@ def main() -> None:
         print(f"Picked device {dev}: the busiest one that answers "
               f"(override with --device)")
     out_rows = [(t, p) for t, d, dirn, p in allrows if d == dev and dirn == 0]
-    rid = (args.report_id or Counter(p[:2] for _, p in out_rows).most_common(1)[0][0]).lower()
+    # Most headsets prefix every command with a report id (06, 00…), so the
+    # opcode is the second byte. Some (Arctis Pro GameDAC, #337) send report
+    # 0 with no prefix: the first byte IS the opcode and no leading byte
+    # dominates. Then keep every command and read the opcode at byte 0.
+    lead, lead_n = Counter(p[:2] for _, p in out_rows).most_common(1)[0]
+    if args.report_id is not None:
+        rid = args.report_id.lower()
+    else:
+        rid = lead if lead_n * 2 > len(out_rows) else ""
+    op_at = 2 if rid else 0
     rows = [(t, p) for t, p in out_rows if p.startswith(rid)]
     in_rows = [(t, p) for t, d, dirn, p in allrows if d == dev and dirn == 1]
-    print(f"Device {dev}: {len(rows)} host->device commands starting with 0x{rid}, "
+    prefix = f"starting with 0x{rid}" if rid else "(no report id prefix: opcode = byte 0)"
+    print(f"Device {dev}: {len(rows)} host->device commands {prefix}, "
           f"{len(in_rows)} frames back\n")
 
     if not args.actions:
         # No log: just list unique commands grouped by opcode.
         groups: dict[str, list[str]] = defaultdict(list)
         for _, p in rows:
-            op = p[2:4] if len(p) >= 4 else "??"
+            op = p[op_at:op_at + 2] if len(p) >= op_at + 2 else "??"
             if p not in groups[op]:
                 groups[op].append(p)
         for op in sorted(groups):
@@ -196,7 +220,7 @@ def main() -> None:
         for label, sig in items:
             value = label.split("=", 1)[1].strip() if "=" in label else label
             for p in sig:
-                opcodes[p[2:4]].append((value, p))
+                opcodes[p[op_at:op_at + 2]].append((value, p))
         # The opcode that appears across the setting's values is the candidate.
         best = sorted(opcodes.items(), key=lambda kv: -len({v for v, _ in kv[1]}))
         print(f"\n{setting}:")

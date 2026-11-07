@@ -946,6 +946,27 @@ function Find-USBPcapCMD {
     return $null
 }
 
+# True if the capture holds a USB device descriptor with idVendor 0x1038:
+# bLength 0x12, bDescriptorType 0x01, then idVendor at offset 8 (38 10).
+# The descriptors come first in the file, so the first 4 MB are enough.
+function Test-SteelSeriesInCapture($path) {
+    $fs = [System.IO.File]::OpenRead($path)
+    try {
+        $buf = New-Object byte[] ([Math]::Min($fs.Length, 4MB))
+        $n = $fs.Read($buf, 0, $buf.Length)
+    } finally { $fs.Close() }
+    # IndexOf jumps natively between 0x12 bytes; a byte-by-byte PowerShell
+    # loop over 4 MB takes far too long on PS 5.1.
+    $i = [Array]::IndexOf($buf, [byte]0x12, 0)
+    while ($i -ge 0 -and $i -le $n - 10) {
+        if ($buf[$i + 1] -eq 0x01 -and $buf[$i + 8] -eq 0x38 -and $buf[$i + 9] -eq 0x10) {
+            return $true
+        }
+        $i = [Array]::IndexOf($buf, [byte]0x12, $i + 1)
+    }
+    return $false
+}
+
 Write-Host "=== Arctis Sound Manager - USB capture of SteelSeries GG ===" -ForegroundColor Cyan
 
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
@@ -1209,6 +1230,19 @@ if (-not (Test-Path $pcap) -or (Get-Item $pcap).Length -eq 0) {
     Write-Host "No capture found at $pcap." -ForegroundColor Red
     Write-Host "Run the script again and type the output path exactly as shown in step 2."
     exit 1
+}
+# USBPcap writes the descriptor of every device on the tree at the start of
+# the file. No SteelSeries one (idVendor 0x1038) means the wrong tree was
+# picked in step 2: such a capture only holds the other devices' traffic
+# (#337, an Arctis Pro Wireless run that recorded a Razer controller).
+if (-not (Test-SteelSeriesInCapture $pcap)) {
+    Write-Host ""
+    Write-Host "Your SteelSeries device is not in this capture." -ForegroundColor Red
+    Write-Host "The USB tree typed in step 2 was not the one it is plugged into."
+    Write-Host "Run the script again and type another USBPcap number in step 2"
+    Write-Host "(in the capture window, the right tree lists 'SteelSeries' or the headset's name)."
+    $keep = Read-Host "Type k to package this capture anyway, or just Enter to stop here"
+    if ($keep -notmatch '^\s*k') { exit 1 }
 }
 $zip = "$outDir.zip"
 if (Test-Path $zip) { Remove-Item $zip }
