@@ -61,6 +61,28 @@ run() {
     "$@"
 }
 
+# curl, retried. GitHub has had spells of timeouts and dropped connections on
+# unauthenticated downloads, the kind this script makes: a single failed fetch
+# of the repository key read as "no signing key" (#378). A loop rather than
+# --retry-all-errors, which curl before 7.71 (Ubuntu 20.04) does not know, and
+# --retry alone does not retry a connection that died mid-transfer. --retry
+# covers the 5xx answers; the loop, the connections that failed, timed out or
+# died (7, 28, 35, 52, 55, 56). Anything else (a 404, no network at all) fails
+# at once, so a missing Launchpad series costs no wait.
+fetch() {
+    local attempt rc
+    for attempt in 1 2 3 4; do
+        rc=0
+        curl -fsSL --retry 3 --connect-timeout 15 "$@" || rc=$?
+        case "$rc" in
+            0) return 0 ;;
+            7|28|35|52|55|56) [ "$attempt" -lt 4 ] && sleep $((attempt * 2)) ;;
+            *) return "$rc" ;;
+        esac
+    done
+    return "$rc"
+}
+
 confirm() {
     [ "$ASSUME_YES" -eq 1 ] && return 0
     [ "$DRY_RUN" -eq 1 ]    && return 0
@@ -106,7 +128,7 @@ pacman_repo_install() {
     command -v pacman >/dev/null 2>&1 || die "pacman not found — is this really an Arch-family system?"
     local key="/tmp/asm-repo.key"
 
-    run curl -fsSL "$PACMAN_REPO/arctis-sound-manager.key" -o "$key"
+    run fetch "$PACMAN_REPO/arctis-sound-manager.key" -o "$key"
     if [ "$DRY_RUN" -eq 0 ]; then
         # A throwaway home: the user's own GnuPG setup (keyboxd, agent, a
         # broken gpg.conf) must not decide whether we can read a key file.
@@ -177,7 +199,7 @@ GITHUB_API="https://api.github.com/repos/loteran/Arctis-Sound-Manager/releases/l
 
 # Prints the latest released version ("1.4.10"), or nothing if unreachable.
 latest_version() {
-    curl -fsSL "$GITHUB_API" 2>/dev/null \
+    fetch "$GITHUB_API" 2>/dev/null \
         | sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"v\{0,1\}\([^"]*\)".*/\1/p' \
         | head -n 1
 }
@@ -193,7 +215,7 @@ series_obsolete() {
     local series active
     series="$( [ -f /etc/os-release ] && . /etc/os-release && echo "${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}")"
     [ -n "$series" ] || return 1
-    active="$(curl -fsSL "$LAUNCHPAD_API/$series" 2>/dev/null \
+    active="$(fetch "$LAUNCHPAD_API/$series" 2>/dev/null \
         | sed -n 's/.*"active":[[:space:]]*\(true\|false\).*/\1/p' | head -n 1)"
     [ "$active" = "false" ]
 }
@@ -204,7 +226,7 @@ series_obsolete() {
 # after the build window (a build that failed outright, as 1.4.8 did) is.
 release_age_hours() {
     local published now
-    published="$(curl -fsSL "$GITHUB_API" 2>/dev/null \
+    published="$(fetch "$GITHUB_API" 2>/dev/null \
         | sed -n 's/^[[:space:]]*"published_at":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
     [ -n "$published" ] || return 0
     published="$(date -u -d "$published" +%s 2>/dev/null)" || return 0
@@ -214,7 +236,7 @@ release_age_hours() {
 
 # Prints the download URL of that release's .deb.
 latest_deb_url() {
-    curl -fsSL "$GITHUB_API" 2>/dev/null \
+    fetch "$GITHUB_API" 2>/dev/null \
         | sed -n 's/.*"browser_download_url":[[:space:]]*"\([^"]*_all\.deb\)".*/\1/p' \
         | head -n 1
 }
@@ -235,7 +257,7 @@ deb_install() {
     url="$(latest_deb_url)"
     [ -n "$url" ] || die "Couldn't find the .deb of the latest release — install manually: $REPO_URL/releases/latest"
     tmp="$(mktemp -d)"
-    run curl -fsSL "$url" -o "$tmp/$PKG.deb"
+    run fetch "$url" -o "$tmp/$PKG.deb"
     run sudo apt-get update
     run sudo apt-get install -y "$tmp/$PKG.deb"
     warn "Installed from the release .deb — apt will NOT upgrade ASM on its own here."

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The installer retries its downloads** (#378). When GitHub times out or drops unauthenticated downloads, a single failed fetch of the repository key looked like there was no signing key at all. `install.sh` now retries a dropped or timed-out connection and a server error a few times, and still fails at once on a missing page. Reported by Sleaker.
+
 ## [1.7.5] - 8 November 2026
 
 ### Added
