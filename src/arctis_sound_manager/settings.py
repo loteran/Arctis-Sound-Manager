@@ -521,6 +521,13 @@ class GeneralSettings(JsonSerializable):
     # Same bar, same place, for the Master volume (the headset's own output)
     systray_master_osd: bool = False
 
+    # Fetch new Sonar presets from GitHub at GUI start (#370), and announce
+    # them in a dialog (#228). Declared here, not only in settings_config:
+    # a ConfigSetting without an annotated field never reaches to_dict(), so
+    # the Settings page has no row to draw, and __init__ drops it on load.
+    preset_sync_enabled: bool = True
+    preset_sync_announce: bool = True
+
     # UI theme
     theme: str = "steelseries"
 
