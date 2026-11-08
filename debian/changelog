@@ -1,3 +1,28 @@
+arctis-sound-manager (1.7.5-1) noble; urgency=medium
+
+  * Arctis Nova 5: the curve stored on the headset can be read back (#347).
+    The Nova 5 has no 0x32 query: the curve comes back with the audio
+    settings (0x20), one byte earlier than on the Nova 7 and with the gain
+    in the form it is written in. ASM now reads it that way, so asm-cli
+    shows the curve the headset really holds, even when the slot name says
+    Flat. Wireless curve only for now. Thanks to gouwschristo for the layout
+    and the capture.
+  * Arctis Pro Wireless: the sound card no longer disappears (#365). The
+    base is two USB devices, 0x1290 for its controls and 0x1294 for its
+    audio. ASM listed 0x1294 as a second control id, so when it showed up
+    first ASM took it for the headset and detached its audio interface from
+    the kernel, which removed the sound card until the base was replugged.
+    0x1294 is now only used to find the sound card, and ASM no longer
+    detaches any interface that is not a HID one, on every headset. Reported
+    by N0SY1.
+  * The log says what a base station reported at start, and what ASM sent it
+    (#376). A setting that went back to another value after a replug left no
+    trace: a reply equal to the saved value, or no reply at all, was not
+    logged. Both are now, along with the saved values sent at start, so a
+    bug report shows whether the base or ASM changed the value.
+
+ -- loteran <axel.valadon@gmail.com>  Sun, 08 Nov 2026 00:00:00 +0000
+
 arctis-sound-manager (1.7.4-1) noble; urgency=medium
 
   * A setting to stop downloading new Sonar presets (#370). ASM checks this
