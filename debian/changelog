@@ -1,3 +1,17 @@
+arctis-sound-manager (1.7.6-1) noble; urgency=medium
+
+  * The Sonar preset download settings now show up in Settings (#370).
+    Download new Sonar presets at startup and Announce new Sonar presets at
+    startup, added in 1.7.4, never reached the Settings page, so neither
+    could be turned off from there. Both now appear in the General group.
+  * The installer retries its downloads (#378). When GitHub times out or
+    drops unauthenticated downloads, a single failed fetch of the repository
+    key looked like there was no signing key at all. install.sh now retries
+    a dropped or timed-out connection and a server error a few times, and
+    still fails at once on a missing page. Reported by Sleaker.
+
+ -- loteran <axel.valadon@gmail.com>  Sun, 08 Nov 2026 00:00:00 +0000
+
 arctis-sound-manager (1.7.5-1) noble; urgency=medium
 
   * Arctis Nova 5: the curve stored on the headset can be read back (#347).
