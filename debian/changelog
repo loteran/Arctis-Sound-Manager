@@ -1,3 +1,46 @@
+arctis-sound-manager (1.7.4-1) noble; urgency=medium
+
+  * A setting to stop downloading new Sonar presets (#370). ASM checks this
+    project's GitHub repository at each start for the presets SteelSeries
+    adds to GG. Download new Sonar presets at startup in Settings (on by
+    default) turns that off: no request is made, and the presets you already
+    have stay.
+  * Three new Sonar game presets from GG 123.
+  * Nova Pro Wireless: the daemon no longer crashes when another program
+    holds the headset (#374). Every init command failed, ASM reset the USB
+    device, and the handle was released while the reset was still running on
+    it, which made libusb abort. The two are now serialized, and when
+    another program has the headset open ASM names it in the log instead of
+    resetting. Reported and diagnosed by phifogg.
+  * Nova Elite: the tray no longer shows 0 % for a headset that is off
+    (#372). The base reports "standby" for it, and the tray only hid the
+    level on "off". It now shows the level only for a headset confirmed on.
+    Diagnosed by ziggityzack.
+  * Arctis Pro GameDAC: commands go to the right interface, and sidetone is
+    read at the right place (#337). A capture of GG driving a GameDAC showed
+    it talks to interface 0, which ASM only tried second, and that ASM read
+    the sidetone one byte too far (the mic AGC). Thanks to ziggityzack for
+    the capture.
+  * The noise gate's auto-threshold checkbox is translated (#368). It showed
+    in French in every language. Reported by Fabi0699.
+  * Arctis Pro (2019) and Arctis 5: the daemon no longer pins a CPU core at
+    100 % (#369). Their audio-only profiles (since 1.6.6) say "no dial
+    interface" with -1, and ASM tried to listen on that interface in a tight
+    loop. Diagnosed by bdowne01 (strace, bisected to 1.6.6).
+  * Arctis Pro Wireless: the spare battery shows on the Channels page and in
+    the Plasma widget again (#367). Since 1.7.3 the base reports whether a
+    spare is in its slot rather than a made-up level, and those two places
+    only knew the percentage. They now show "In the Base" / "No Battery".
+  * A replug no longer pins an app to its channel (#353). When the router
+    looked before the channels were back, it either fell back to Media or
+    later saved WirePlumber putting the app back as your choice. It now
+    waits for the channel, treats a return to the app's previous channel as
+    a restore, and the loopback rebuild opens the same "ASM is
+    reconfiguring" window as a filter-chain restart. Retested and traced by
+    ziggityzack.
+
+ -- loteran <axel.valadon@gmail.com>  Sun, 08 Nov 2026 00:00:00 +0000
+
 arctis-sound-manager (1.7.3-1) noble; urgency=medium
 
   * Arctis Pro Wireless: the base station's screen works (#305, #363). ASM

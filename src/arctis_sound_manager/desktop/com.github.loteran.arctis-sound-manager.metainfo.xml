@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.7.4" date="2026-11-08">
+      <description>
+        <p>A setting to stop downloading new Sonar presets (#370). ASM checks this project's GitHub repository at each start for the presets SteelSeries adds to GG. Download new Sonar presets at startup in Settings (on by default) turns that off: no request is made, and the presets you already have stay. Three new Sonar game presets from GG 123. Nova Pro Wireless: the daemon no longer crashes when another program holds the headset (#374). Every init command failed, ASM reset the USB device, and the handle was released while the reset was still running on it, which made libusb abort. The two are now serialized, and when another program has the headset open ASM names it in the log instead of resetting. Reported and diagnosed by phifogg.</p>
+      </description>
+    </release>
     <release version="1.7.3" date="2026-11-03">
       <description>
         <p>Arctis Pro Wireless: the base station's screen works (#305, #363). ASM drew it in the wrong byte layout, hence the garbled lines, and then left it alone. It now uses GG's layout, confirmed on a base with oled_page_probe.py by Anotherdoomguy, and the DAC page with the base's screen settings is back. Arctis Pro Wireless: no more made-up spare battery level (#363). The base's charger reply says whether a battery is in the slot, not how full it is: ASM showed 100 % while the base showed 2 bars of 4. It now shows "In the Base" or "No Battery". The headset battery was already right. Thanks to Anotherdoomguy for the logs. After a replug, apps go back to the channel they were on (#353). When the headset came back, a stream parked on the raw headset output was pulled onto Media and that was saved as if you had chosen it, so an app that was on Game stayed on Media for good. ASM now puts it back on its previous channel and saves nothing. Found by ziggityzack.</p>
@@ -199,11 +204,6 @@
     <release version="1.4.20" date="2026-09-05">
       <description>
         <p>**Reverted the #223 and #230 fixes from 1.4.19: they made filter-chain</p>
-      </description>
-    </release>
-    <release version="1.4.19" date="2026-09-04">
-      <description>
-        <p>Switching output device could crash the filter-chain (SIGSEGV). The. **A channel could go silent until something else in the chain was. **Clips dependencies were flagged missing on Fedora/Nobara even when a.</p>
       </description>
     </release>
   </releases>
