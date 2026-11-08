@@ -349,8 +349,11 @@ ENCODERS = {
 # This is the failure mode the raw hex in read_hardware_eq() exists for: at
 # offset 1 the reply still decoded into ten plausible-looking bands.
 
-def decode_band(data: bytes) -> EqBand:
+def decode_band(data: bytes, gain_encoding: str = GAIN_DECIBEL_SIGNED) -> EqBand:
     """Six bytes → EqBand, the inverse of :func:`encode_band`.
+
+    *gain_encoding* is the family's (see GAIN_OFFSET_BINARY): the Nova 5
+    reports its gain in the same biased form it is written in (#347).
 
     The *incoming* eqBand struct uses narrower types than the outgoing one:
     gain is a plain signed byte (not the float32 encode_band's caller
@@ -361,11 +364,16 @@ def decode_band(data: bytes) -> EqBand:
         raise ValueError(f"eq band frame too short: {len(data)} bytes (need 6)")
     frequency = int.from_bytes(data[0:2], "little")
     filter_type = data[2]
-    gain_raw = int.from_bytes(data[3:4], "little", signed=True)
+    if gain_encoding == GAIN_OFFSET_BINARY:
+        gain_db = data[3] / 2 - 10
+    elif gain_encoding == GAIN_DECIBEL_SIGNED:
+        gain_db = int.from_bytes(data[3:4], "little", signed=True) / 10
+    else:
+        raise ValueError(f"unknown gain encoding {gain_encoding!r}")
     q_raw = int.from_bytes(data[4:6], "little")
     return EqBand(
         frequency=frequency,
-        gain_db=gain_raw / 10,
+        gain_db=gain_db,
         q=q_raw / 1000,
         filter_type=filter_type,
     )
@@ -381,14 +389,20 @@ _EQ_BAND_SIZE = 6
 _EQ_BAND_COUNT = 10
 
 
-def decode_eq_preset_data(response: list[int]) -> list[EqBand]:
+def decode_eq_preset_data(response: list[int], band_start: int = _EQ_BAND_START,
+                          gain_encoding: str = GAIN_DECIBEL_SIGNED) -> list[EqBand]:
     """Decode a `get_eq_preset_data` (0x32) reply into its ten EqBand.
 
     Raises ValueError if the reply is shorter than expected — deliberately,
     rather than returning bands built from padding. See the module-level note
     above for the offset this assumes and why.
+
+    The defaults are the 0x32 families'. The Nova 5 has no 0x32: its curve
+    comes back in the audio settings reply (0x20), which echoes no
+    connection_type (band 1 at offset 1) and carries the biased gain (#347).
+    Both mistakes decode without raising, so a profile must say which it is.
     """
-    needed = _EQ_BAND_START + _EQ_BAND_SIZE * _EQ_BAND_COUNT
+    needed = band_start + _EQ_BAND_SIZE * _EQ_BAND_COUNT
     if len(response) < needed:
         raise ValueError(
             f"get_eq_preset_data reply too short: got {len(response)} bytes, "
@@ -396,8 +410,8 @@ def decode_eq_preset_data(response: list[int]) -> list[EqBand]:
         )
     data = bytes(b & 0xFF for b in response)
     return [
-        decode_band(data[_EQ_BAND_START + i * _EQ_BAND_SIZE:
-                          _EQ_BAND_START + (i + 1) * _EQ_BAND_SIZE])
+        decode_band(data[band_start + i * _EQ_BAND_SIZE:
+                         band_start + (i + 1) * _EQ_BAND_SIZE], gain_encoding)
         for i in range(_EQ_BAND_COUNT)
     ]
 

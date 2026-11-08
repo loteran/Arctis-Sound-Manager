@@ -7,8 +7,12 @@ device:
   init_sleep_length_ms: 1500
   vendor_id: 0x1038
   product_ids:
-    - 0x1290 # Arctis Pro Wireless
-    - 0x1294 # Arctis Pro Wireless (alternate PID)
+    - 0x1290 # Arctis Pro Wireless (HID: the base's command channel)
+  # The base's second USB device: the ALSA card, no vendor channel (GG's
+  # sshz_dtshpx_endpoint_vidpid). Its interface 0 is AudioControl, and taking
+  # it from snd-usb-audio removes the sound card (#365).
+  audio_product_ids:
+    - 0x1294
   command_padding:
     length: 31
     position: end

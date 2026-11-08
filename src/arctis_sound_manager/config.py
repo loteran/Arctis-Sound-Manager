@@ -115,10 +115,19 @@ class HardwareEqReadback:
     a profile by analogy with a sibling family.
     """
 
-    def __init__(self, band_query: int, name_query: int, connection_type: int = 0x00):
+    def __init__(self, band_query: int, name_query: int, connection_type: int = 0x00,
+                 band_start: int = 2, gain_encoding: str | None = None):
         self.band_query = int(band_query)
         self.name_query = int(name_query)
         self.connection_type = int(connection_type)
+        # Where band 1 starts in the band_query reply: 2 after a 0x32 echo and
+        # its connection_type, 1 in the Nova 5's 0x20 reply, which echoes no
+        # connection_type (#347).
+        self.band_start = int(band_start)
+        # None: the family's own hardware_eq.gain_encoding, filled in by
+        # DeviceConfiguration. The Nova 5 reads its gain back in the form it
+        # is written in.
+        self.gain_encoding = gain_encoding
 
 
 class ConfigStatusResponseMapping:
@@ -423,6 +432,16 @@ class DeviceConfiguration:
         self.channel_label = raw_config.get('channel_label', '')
         self.vendor_id = raw_config.get('vendor_id', 0)
         self.product_ids = raw_config.get('product_ids', [])
+        # Optional. PIDs of a second USB device the same hardware enumerates
+        # that carries only its audio: the Arctis Pro Wireless base is 0x1290
+        # for HID and 0x1294 for the ALSA card. They are used to find the ALSA
+        # nodes and to rescan on hotplug, never opened, detached or claimed:
+        # listed in product_ids, 0x1294 could be picked as *the* device while
+        # 0x1290 was not enumerated yet, and its interface 0, the AudioControl
+        # one, was detached from snd-usb-audio, taking the sound card with it
+        # (#365).
+        self.audio_product_ids: list[int] = [
+            int(p) for p in raw_config.get('audio_product_ids', []) or []]
         # True for the profile that stands in for 'no SteelSeries hardware'.
         # See the validation block below and _setup_generic_device (#189).
         self.generic = bool(raw_config.get('generic', False))
@@ -553,6 +572,9 @@ class DeviceConfiguration:
         self.hardware_eq_zero = int(hardware_eq.get('zero_at', 20))
         readback = hardware_eq.get('readback', None)
         self.hardware_eq_readback = HardwareEqReadback(**readback) if readback else None
+        if self.hardware_eq_readback is not None and self.hardware_eq_readback.gain_encoding is None:
+            self.hardware_eq_readback.gain_encoding = str(
+                self.hardware_eq_options.get('gain_encoding', 'decibel_signed'))
 
         if not self.name:
             raise ValueError("Invalid configuration: 'device.name' must be specified and non-empty")
@@ -611,6 +633,13 @@ class DeviceConfiguration:
                 raise ValueError("Invalid configuration: 'device.listen_interface_indexes' must be a non-empty list")
             if any(i < 0 for i in self.listen_interface_indexes):
                 raise ValueError("Invalid configuration: 'device.listen_interface_indexes' must contain only non-negative integers")
+
+        overlap = set(self.product_ids) & set(self.audio_product_ids)
+        if overlap:
+            raise ValueError(
+                "Invalid configuration: 'device.audio_product_ids' must not repeat "
+                "product_ids — an audio-only PID must never be selected as the "
+                "device ASM talks to: " + ', '.join(f'0x{p:04x}' for p in sorted(overlap)))
 
         raw_padding = raw_config.get('command_padding', {})
         if raw_padding:

@@ -2634,7 +2634,12 @@ class CoreEngine:
 
     def on_device_connected(self, vendor_id: int, product_id: int, product_name: str = '') -> None:
         for device_config in self.device_configurations:
-            if device_config.vendor_id == vendor_id and product_id in device_config.product_ids:
+            # An audio-only PID (the Pro Wireless base's ALSA card, #365) is
+            # not selected by the scan, but its arrival is still a reason to
+            # run it: the card may show up after the HID device was set up.
+            if device_config.vendor_id == vendor_id and (
+                    product_id in device_config.product_ids
+                    or product_id in getattr(device_config, 'audio_product_ids', [])):
                 if self._detect_lock.locked():
                     # A detection is already in progress (e.g. a burst of udev
                     # 'add' events for the same device) — skip this one instead
@@ -3230,7 +3235,9 @@ class CoreEngine:
         # Try all PIDs from the device config — HID and audio PIDs often differ
         # (e.g. Arctis Pro Wireless: HID=0x1290, audio=0x1294).
         all_pids: list[int] | None = (
-            self.device_config.product_ids if self.device_config else None
+            [*self.device_config.product_ids,
+             *getattr(self.device_config, 'audio_product_ids', [])]
+            if self.device_config else None
         )
         for attempt in range(attempts):
             game_sink, chat_sink = self.pa_audio_manager.get_arctis_sinks_classified(
@@ -3285,8 +3292,16 @@ class CoreEngine:
             # replies a moment to land first; past that, defaults go out as
             # they always did.
             if replies is not None and not replies.wait(_READBACK_WAIT_S):
-                self.logger.debug("settings readback: a query went unanswered "
-                                  "before device_init")
+                # INFO, not debug: a base station that stays silent here gets
+                # ASM's saved values pushed over its own, and a bug report
+                # must show that this is what happened (#376).
+                unanswered = [
+                    bytes(self.device_config.settings_readback[i].request).hex(' ')
+                    for i in sorted(self._readback_pending)
+                    if i < len(self.device_config.settings_readback)]
+                self.logger.info("Settings readback: no reply to %s within %.1fs; "
+                                 "device_init sends the saved values",
+                                 ', '.join(unanswered) or 'a query', _READBACK_WAIT_S)
         finally:
             self._readback_wins_window = False
         failed, attempted = self._send_device_init_sequence(context="init_device")
@@ -3449,6 +3464,19 @@ class CoreEngine:
             if pace:
                 time.sleep(pace)
         self._last_settings_push = time.monotonic()
+        # The saved values this pass wrote, in one line: with the readback
+        # line above it, a setting that resets on replug shows who reset it
+        # (#376).
+        sent = {
+            token.split('.')[1]: self.device_settings.get(
+                token.split('.')[1], self._setting_default(token.split('.')[1]))
+            for frame in self.device_config.device_init if isinstance(frame, list)
+            for token in frame
+            if isinstance(token, str) and token.startswith('settings.')
+        } if getattr(self, 'device_settings', None) is not None else {}
+        if sent:
+            self.logger.info("%s sent the saved settings: %s", context,
+                             ', '.join(f"{n}={v}" for n, v in sent.items()))
         return failed, attempted
 
     def _schedule_settings_replay(self) -> None:
@@ -4225,7 +4253,7 @@ class CoreEngine:
 
         present = {intf.bInterfaceNumber: intf for intf in cfg}
         declared_intf = present.get(declared)
-        if declared_intf is not None:
+        if declared_intf is not None and declared_intf.bInterfaceClass == 3:
             page = self._hid_usage_page(declared)
             if page is None or page >= 0xFF00:
                 # Either it is the control channel, whatever page the
@@ -4260,6 +4288,7 @@ class CoreEngine:
             "Command interface resolved to %d from its HID usage page "
             "(the profile says %d, which %s)", chosen, declared,
             "this device does not have" if declared_intf is None
+            else "is not a HID interface" if declared_intf.bInterfaceClass != 3
             else "is not a vendor interface")
 
     def _retarget_command_interface(self) -> None:
@@ -4762,6 +4791,19 @@ class CoreEngine:
         except Exception:
             return "unknown"
 
+    @staticmethod
+    def _non_hid_interfaces(usb_device: TypedDevice) -> dict[int, int]:
+        """bInterfaceNumber → bInterfaceClass of every interface that is not HID.
+
+        Empty when the descriptors cannot be read: no proof, nothing excluded.
+        """
+        try:
+            cfg = usb_device.get_active_configuration()
+            return {intf.bInterfaceNumber: intf.bInterfaceClass
+                    for intf in cfg if intf.bInterfaceClass != 3}
+        except Exception:  # noqa: BLE001 — mocks, a device gone mid-call
+            return {}
+
     def kernel_detach(self, usb_device: TypedDevice, config: DeviceConfiguration) -> bool:
         """Detach the kernel driver from every interface ASM uses, then claim it.
 
@@ -4805,7 +4847,18 @@ class CoreEngine:
         self.logger.info(f"Detaching kernel driver for device: {usb_device.idVendor:04x}:{usb_device.idProduct:04x} ({config.name})")
 
         had_eacces = False
+        not_hid = self._non_hid_interfaces(usb_device)
         for interface in self._all_used_interfaces(config):
+            if interface in not_hid:
+                # Never take a non-HID interface from its driver: on an audio
+                # device that is snd-usb-audio, and losing the AudioControl
+                # interface removes the whole sound card (#365).
+                self.logger.warning(
+                    "Not detaching interface %d of %04x:%04x (%s): it is not a HID "
+                    "interface (class 0x%02x), so it cannot be the vendor channel.",
+                    interface, usb_device.idVendor, usb_device.idProduct, config.name,
+                    not_hid[interface])
+                continue
             try:
                 if usb_device.is_kernel_driver_active(interface):
                     self.logger.info(f"Kernel driver active on interface {interface}, detaching...")
@@ -4917,7 +4970,13 @@ class CoreEngine:
                 self._readback_done.set()
             device_wins = (self._readback_wins_window is True
                            and getattr(self.device_config, 'settings_readback_wins', False) is True)
-            for name, value in readback.values_from(response).items():
+            values = readback.values_from(response)
+            if device_wins:
+                # What the base reported, kept or not: a setting that resets
+                # on replug must show whether the base or ASM reset it (#376).
+                self.logger.info("Settings readback from the base station: %s",
+                                 ', '.join(f"{n}={v}" for n, v in values.items()))
+            for name, value in values.items():
                 if self.device_settings.was_chosen_by_user(name) and not device_wins:
                     continue
                 if self.device_settings.get(name, None) == value:
@@ -5082,7 +5141,11 @@ class CoreEngine:
                 result['bands'] = [
                     {'frequency': b.frequency, 'gain_db': b.gain_db,
                      'q': b.q, 'filter_type': b.filter_type}
-                    for b in decode_eq_preset_data(band_response)
+                    for b in decode_eq_preset_data(
+                        band_response,
+                        band_start=getattr(readback, 'band_start', 2),
+                        gain_encoding=getattr(readback, 'gain_encoding', None)
+                        or 'decibel_signed')
                 ]
             except ValueError as e:
                 result['bands'] = None

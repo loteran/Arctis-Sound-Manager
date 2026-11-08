@@ -127,6 +127,16 @@ device:
     # GG raises its inter-command delay to 600 ms between the name and the
     # bands for this family, and its USB timeout with it.
     frame_delay_ms: 600
+    # Read-back, confirmed on a 1038:2232 (#347, thanks gouwschristo). There
+    # is no 0x32 on this family: the audio settings read (0x20) returns the
+    # stored curve with mic volume, sidetone and the limiter. Its band 1
+    # starts at offset 1 (no connection_type echo), and its gain is the
+    # offset_binary form above. Both mistakes decode without raising.
+    # Wireless curve only: 0x22 is the Bluetooth one, untested so far.
+    readback:
+      band_query: 0x20
+      name_query: 0xa6
+      band_start: 1
 
   online_status:
     status_variable: headset_power_status
