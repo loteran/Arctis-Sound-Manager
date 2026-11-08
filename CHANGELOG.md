@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.5] - 8 November 2026
+
 ### Added
 - **Arctis Nova 5: the curve stored on the headset can be read back** (#347). The Nova 5 has no `0x32` query: the curve comes back with the audio settings (`0x20`), one byte earlier than on the Nova 7 and with the gain in the form it is written in. ASM now reads it that way, so `asm-cli` shows the curve the headset really holds, even when the slot name says Flat. Wireless curve only for now. Thanks to gouwschristo for the layout and the capture.
 

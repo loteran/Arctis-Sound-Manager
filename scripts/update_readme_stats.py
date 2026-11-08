@@ -159,7 +159,8 @@ def _supported_pids() -> set[str]:
         in_block = False
         for line in yml.read_text().splitlines():
             stripped = line.strip()
-            if stripped.startswith("product_ids:"):
+            # audio_product_ids: the audio half of a two-device base (#365).
+            if stripped.startswith(("product_ids:", "audio_product_ids:")):
                 in_block = True
                 continue
             if in_block:

@@ -1299,6 +1299,8 @@ Thanks to everyone who has contributed code, fixes, or community support:
 | [Fabi0699](https://github.com/Fabi0699) | Traced the Nova 5 crackling to ASM's status poll with usbmon and timing statistics, decoded the dongle's power/charging/battery push reports and proposed the fix ([#348](https://github.com/loteran/Arctis-Sound-Manager/issues/348)); an hour of push logs that let the Nova 5 drop the status poll entirely ([#364](https://github.com/loteran/Arctis-Sound-Manager/issues/364)) |
 | [Anotherdoomguy](https://github.com/Anotherdoomguy) | Logged the Arctis Pro Wireless base's raw replies and ran the screen probe that confirmed GG's OLED layout, fixing the base screen and the spare-battery reading ([#363](https://github.com/loteran/Arctis-Sound-Manager/issues/363), [#305](https://github.com/loteran/Arctis-Sound-Manager/issues/305)) |
 | [phifogg](https://github.com/phifogg) | Traced a daemon abort on a Nova Pro Wireless to a USB reset racing the release of the same handle, from an Apport trace, and found the other program holding the headset that triggered it ([#374](https://github.com/loteran/Arctis-Sound-Manager/issues/374)) |
+| [gouwschristo](https://github.com/gouwschristo) | Worked out how the Arctis Nova 5 reports its stored EQ curve (the `0x20` audio settings reply, band offset and gain encoding) and posted the real reply ASM now decodes ([#347](https://github.com/loteran/Arctis-Sound-Manager/issues/347)) |
+| [N0SY1](https://github.com/N0SY1) | Reported the Arctis Pro Wireless sound card vanishing with the `lsusb -t` that showed its audio interface left without a driver ([#365](https://github.com/loteran/Arctis-Sound-Manager/issues/365)) |
 
 ---
 
