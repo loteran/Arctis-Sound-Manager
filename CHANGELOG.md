@@ -5,9 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.7.6] - 8 November 2026
 
 ### Fixed
+- **The Sonar preset download settings now show up in Settings** (#370). **Download new Sonar presets at startup** and **Announce new Sonar presets at startup**, added in 1.7.4, never reached the Settings page, so neither could be turned off from there. Both now appear in the General group.
 - **The installer retries its downloads** (#378). When GitHub times out or drops unauthenticated downloads, a single failed fetch of the repository key looked like there was no signing key at all. `install.sh` now retries a dropped or timed-out connection and a server error a few times, and still fails at once on a missing page. Reported by Sleaker.
 
 ## [1.7.5] - 8 November 2026
