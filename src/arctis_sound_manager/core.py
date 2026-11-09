@@ -4410,6 +4410,10 @@ class CoreEngine:
             self.logger.warning(f'Unknown setting: {setting}')
             return
 
+        if not config.update_sequence and getattr(config, 'ten_band_eq', None) is None:
+            # A value kept only to be sent inside another setting's frame.
+            return
+
         self._send_setting(config, value)
 
     def _send_setting(self, config, value: int) -> bool:
@@ -4976,15 +4980,28 @@ class CoreEngine:
                 # on replug must show whether the base or ASM reset it (#376).
                 self.logger.info("Settings readback from the base station: %s",
                                  ', '.join(f"{n}={v}" for n, v in values.items()))
+            # Settings the profile marks `hidden` are values ASM keeps only to
+            # write them back inside a frame (the GameBuds' call maps): the
+            # user never chose them, so they always follow the device.
+            hidden = {
+                c.name
+                for section in self.device_config.settings.values()
+                for c in section if getattr(c, 'hidden', False) is True
+            }
             for name, value in values.items():
-                if self.device_settings.was_chosen_by_user(name) and not device_wins:
+                if (self.device_settings.was_chosen_by_user(name) and not device_wins
+                        and name not in hidden):
                     continue
                 if self.device_settings.get(name, None) == value:
                     continue
                 self.logger.info(
                     "Adopting %s=%s read back from the %s", name, value,
                     "base station" if device_wins else "headset (never set here)")
-                self.device_settings.settings[name] = value
+                if readback.silent:
+                    # Stored, not written back: see SettingsReadback.
+                    dict.__setitem__(self.device_settings.settings, name, value)
+                else:
+                    self.device_settings.settings[name] = value
 
     def _resolve_raw_response_waiters(self, response: list[int]) -> None:
         """Hand a raw listen-endpoint frame to whoever is awaiting its opcode.

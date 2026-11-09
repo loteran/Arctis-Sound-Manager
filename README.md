@@ -173,6 +173,7 @@ The SteelSeries GG and Sonar alternative for Linux: manage your **SteelSeries Ar
 - **Microphone volume on the Arctis 7 and Arctis 1 Wireless families** _(in testing)_
 - **Headset access: hidraw (default) or libusb** — with hidraw the kernel keeps the headset's interfaces and the system keeps seeing the battery; ASM falls back to libusb on its own if hidraw cannot open, and libusb stays available in Settings; udev rules written before 1.7.0 lack the hidraw lines, and the setup dialog offers to rewrite them (`asm-cli udev write-rules --force --reload` does the same)
 - **Arctis GameBuds audio source** _(in testing)_ — play from the 2.4 GHz dongle or from Bluetooth
+- **Arctis GameBuds button remapping** _(in testing)_ — a Buttons card on the Headset page assigns an action (play/pause, volume, track, voice assistant, noise control, mic mute, Quick Switch or nothing) to each touch gesture, for the 2.4 GHz dongle and Bluetooth at once; the 4 gestures SteelSeries GG does not offer (3 taps, medium press) are marked experimental
 - **Arctis Pro Wireless settings** _(in testing)_ — volume limiter, muted-mic LED, screensaver and screen delay, Bluetooth at power-up and game mute during calls, next to sidetone, auto-off and screen brightness
 - **DAC OLED display** _(Nova Pro Wireless / X, Nova Elite, Nova Pro Omni, Arctis Pro GameDAC, Arctis Pro Wireless base)_:
   - Toggle original vs custom display mode

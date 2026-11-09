@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Arctis GameBuds: the touch gestures can be remapped.** A new Buttons card on the Headset page (shown only for the GameBuds profiles) assigns an action to each of the 8 gestures the firmware has: 1, 2 and 3 taps and the medium press, on each earbud. GG offers only 4 of them; the other 4 are marked experimental. Like GG, ASM writes the same action for the 2.4 GHz dongle and Bluetooth, and keeps the in-call actions and hold flags the earbuds report. The current assignment is read from the status reply, and a reply with an empty table (earbuds not connected) is ignored.
+- Device profiles: `settings_readback` accepts `skip_if_all_zero: [first, last]` and `silent: true`, and a setting marked `hidden: true` is kept only to be written back inside another setting's frame and always follows the device.
+
 ## [1.7.6] - 8 November 2026
 
 ### Fixed

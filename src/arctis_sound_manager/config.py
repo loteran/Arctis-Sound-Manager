@@ -69,11 +69,22 @@ class SettingsReadback:
     (GG's HIDOUTPUTFEATUREIN, the Nova Elite and Omni): the request goes out
     as usual, the answer is read with GET_REPORT `report_id`, `size` bytes,
     and `starts_with` is matched against what that returns.
+
+    `skip_if_all_zero: [first, last]` (offsets, both included) distrusts a
+    reply whose bytes in that range are all zero: a headset that is not
+    connected answers with an empty table, and adopting it would later be
+    written back as "every button unassigned" (GameBuds' button maps).
+
+    `silent: true` stores the adopted values without firing the settings
+    observer, i.e. without writing them back to the device. For a group of
+    settings that one command sends together (the GameBuds' button table),
+    adopting them one by one would otherwise send a half-updated frame.
     """
 
     def __init__(self, request: int | list[int], starts_with: int,
                  mapping: dict[str, int | list[int]], reply: str = 'frame',
-                 report_id: int | None = None, size: int | None = None):
+                 report_id: int | None = None, size: int | None = None,
+                 skip_if_all_zero: list[int] | None = None, silent: bool = False):
         self.request = (_hex_bytes(int(request)) if isinstance(request, int)
                         else [int(b) for b in request])
         self.starts_with = int(starts_with)
@@ -87,12 +98,22 @@ class SettingsReadback:
         self.feature = reply == 'feature'
         self.report_id = int(report_id) if report_id is not None else None
         self.size = int(size) if size is not None else None
+        if skip_if_all_zero is not None and len(skip_if_all_zero) != 2:
+            raise ValueError("settings_readback skip_if_all_zero must be [first, last]")
+        self.skip_if_all_zero = ([int(o) for o in skip_if_all_zero]
+                                 if skip_if_all_zero is not None else None)
+        self.silent = bool(silent)
 
     def matches(self, response: list[int]) -> bool:
         return list(response[:len(self.prefix)]) == self.prefix
 
     def values_from(self, response: list[int]) -> dict[str, int]:
         values = {}
+        if self.skip_if_all_zero is not None:
+            first, last = self.skip_if_all_zero
+            guarded = list(response[first:last + 1])
+            if len(guarded) == last - first + 1 and not any(guarded):
+                return values
         for name, offset in self.mapping.items():
             if isinstance(offset, list):
                 state, level = offset

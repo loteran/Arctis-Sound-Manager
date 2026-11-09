@@ -203,6 +203,38 @@ device:
       frame: [0x22]
       fields: {level: 1}
 
+
+  # Current button table, from the same 0xb0 reply as the status. Offsets are
+  # the rf_map byte of each gesture, then its call map, then the two hold flags.
+  # A table whose first six bytes are all zero is not trusted (earbuds not
+  # connected or in the case): adopting it would unassign every gesture on the
+  # next write. silent: the eighteen values are one command, so adopting them
+  # must not send it.
+  settings_readback:
+    - request: 0xb0
+      starts_with: 0xb0
+      skip_if_all_zero: [0x0e, 0x13]
+      silent: true
+      mapping:
+        right_1_tap: 0x0e
+        right_1_tap_call: 0x10
+        right_2_tap: 0x11
+        right_2_tap_call: 0x13
+        right_3_tap: 0x14
+        right_3_tap_call: 0x16
+        left_1_tap: 0x17
+        left_1_tap_call: 0x19
+        left_2_tap: 0x1a
+        left_2_tap_call: 0x1c
+        left_3_tap: 0x1d
+        left_3_tap_call: 0x1f
+        right_med_hold: 0x20
+        right_med_hold_call: 0x22
+        left_med_hold: 0x23
+        left_med_hold_call: 0x25
+        right_hold: 0x26
+        left_hold: 0x27
+
   settings:
     microphone:
       mic_volume:
@@ -348,3 +380,248 @@ device:
           0x5a: 90_minutes
         default: 0x1e
         update_sequence: [0xc1, 'value']
+
+    # Touch gestures (GG exposes four of the eight). One 0xc9 frame carries the
+    # whole table: per gesture the action on the 2.4 GHz dongle, on Bluetooth
+    # and during a call, then the two hold flags. GG writes the same action to
+    # dongle and Bluetooth and never changes the call actions or the flags, so
+    # each gesture below is one choice written twice, and the call actions and
+    # flags are hidden values that follow what the earbuds report (see
+    # settings_readback). Values are HID consumer usages. The section makes the
+    # Headset page show a "Buttons" card, only for profiles that declare it.
+    buttons:
+      right_1_tap:
+        type: button_group
+        values_mapping:
+          0xcd: btn_play_pause
+          0xe9: btn_volume_up
+          0xea: btn_volume_down
+          0xb5: btn_next_track
+          0xb6: btn_previous_track
+          0x51: btn_voice_assistant
+          0x49: btn_noise_control
+          0xe2: btn_mic_mute
+          0x53: btn_quick_switch
+          0x00: btn_unassigned
+        default: 0xcd
+        update_sequence: &buttons_frame
+          - 0xc9
+          - 'settings.right_1_tap'
+          - 'settings.right_1_tap'
+          - 'settings.right_1_tap_call'
+          - 'settings.right_2_tap'
+          - 'settings.right_2_tap'
+          - 'settings.right_2_tap_call'
+          - 'settings.right_3_tap'
+          - 'settings.right_3_tap'
+          - 'settings.right_3_tap_call'
+          - 'settings.left_1_tap'
+          - 'settings.left_1_tap'
+          - 'settings.left_1_tap_call'
+          - 'settings.left_2_tap'
+          - 'settings.left_2_tap'
+          - 'settings.left_2_tap_call'
+          - 'settings.left_3_tap'
+          - 'settings.left_3_tap'
+          - 'settings.left_3_tap_call'
+          - 'settings.right_med_hold'
+          - 'settings.right_med_hold'
+          - 'settings.right_med_hold_call'
+          - 'settings.left_med_hold'
+          - 'settings.left_med_hold'
+          - 'settings.left_med_hold_call'
+          - 'settings.right_hold'
+          - 'settings.left_hold'
+      right_2_tap:
+        type: button_group
+        values_mapping:
+          0xcd: btn_play_pause
+          0xe9: btn_volume_up
+          0xea: btn_volume_down
+          0xb5: btn_next_track
+          0xb6: btn_previous_track
+          0x51: btn_voice_assistant
+          0x49: btn_noise_control
+          0xe2: btn_mic_mute
+          0x53: btn_quick_switch
+          0x00: btn_unassigned
+        default: 0xb5
+        update_sequence: *buttons_frame
+      right_3_tap:
+        type: button_group
+        # Not offered by GG, untested on hardware.
+        experimental: true
+        values_mapping:
+          0xcd: btn_play_pause
+          0xe9: btn_volume_up
+          0xea: btn_volume_down
+          0xb5: btn_next_track
+          0xb6: btn_previous_track
+          0x51: btn_voice_assistant
+          0x49: btn_noise_control
+          0xe2: btn_mic_mute
+          0x53: btn_quick_switch
+          0x00: btn_unassigned
+        default: 0x00
+        update_sequence: *buttons_frame
+      left_1_tap:
+        type: button_group
+        values_mapping:
+          0xcd: btn_play_pause
+          0xe9: btn_volume_up
+          0xea: btn_volume_down
+          0xb5: btn_next_track
+          0xb6: btn_previous_track
+          0x51: btn_voice_assistant
+          0x49: btn_noise_control
+          0xe2: btn_mic_mute
+          0x53: btn_quick_switch
+          0x00: btn_unassigned
+        default: 0x49
+        update_sequence: *buttons_frame
+      left_2_tap:
+        type: button_group
+        values_mapping:
+          0xcd: btn_play_pause
+          0xe9: btn_volume_up
+          0xea: btn_volume_down
+          0xb5: btn_next_track
+          0xb6: btn_previous_track
+          0x51: btn_voice_assistant
+          0x49: btn_noise_control
+          0xe2: btn_mic_mute
+          0x53: btn_quick_switch
+          0x00: btn_unassigned
+        default: 0xb6
+        update_sequence: *buttons_frame
+      left_3_tap:
+        type: button_group
+        # Not offered by GG, untested on hardware.
+        experimental: true
+        values_mapping:
+          0xcd: btn_play_pause
+          0xe9: btn_volume_up
+          0xea: btn_volume_down
+          0xb5: btn_next_track
+          0xb6: btn_previous_track
+          0x51: btn_voice_assistant
+          0x49: btn_noise_control
+          0xe2: btn_mic_mute
+          0x53: btn_quick_switch
+          0x00: btn_unassigned
+        default: 0x00
+        update_sequence: *buttons_frame
+      right_med_hold:
+        type: button_group
+        # Not offered by GG, untested on hardware.
+        experimental: true
+        values_mapping:
+          0xcd: btn_play_pause
+          0xe9: btn_volume_up
+          0xea: btn_volume_down
+          0xb5: btn_next_track
+          0xb6: btn_previous_track
+          0x51: btn_voice_assistant
+          0x49: btn_noise_control
+          0xe2: btn_mic_mute
+          0x53: btn_quick_switch
+          0x00: btn_unassigned
+        default: 0x00
+        update_sequence: *buttons_frame
+      left_med_hold:
+        type: button_group
+        # Not offered by GG, untested on hardware.
+        experimental: true
+        values_mapping:
+          0xcd: btn_play_pause
+          0xe9: btn_volume_up
+          0xea: btn_volume_down
+          0xb5: btn_next_track
+          0xb6: btn_previous_track
+          0x51: btn_voice_assistant
+          0x49: btn_noise_control
+          0xe2: btn_mic_mute
+          0x53: btn_quick_switch
+          0x00: btn_unassigned
+        default: 0x00
+        update_sequence: *buttons_frame
+      right_1_tap_call:
+        # Kept only to be written back inside the frame; follows the earbuds.
+        type: slider
+        hidden: true
+        min: 0x00
+        max: 0xff
+        step: 1
+        default: 0x50
+      right_2_tap_call:
+        # Kept only to be written back inside the frame; follows the earbuds.
+        type: slider
+        hidden: true
+        min: 0x00
+        max: 0xff
+        step: 1
+        default: 0x52
+      right_3_tap_call:
+        # Kept only to be written back inside the frame; follows the earbuds.
+        type: slider
+        hidden: true
+        min: 0x00
+        max: 0xff
+        step: 1
+        default: 0x00
+      left_1_tap_call:
+        # Kept only to be written back inside the frame; follows the earbuds.
+        type: slider
+        hidden: true
+        min: 0x00
+        max: 0xff
+        step: 1
+        default: 0x50
+      left_2_tap_call:
+        # Kept only to be written back inside the frame; follows the earbuds.
+        type: slider
+        hidden: true
+        min: 0x00
+        max: 0xff
+        step: 1
+        default: 0x52
+      left_3_tap_call:
+        # Kept only to be written back inside the frame; follows the earbuds.
+        type: slider
+        hidden: true
+        min: 0x00
+        max: 0xff
+        step: 1
+        default: 0x00
+      right_med_hold_call:
+        # Kept only to be written back inside the frame; follows the earbuds.
+        type: slider
+        hidden: true
+        min: 0x00
+        max: 0xff
+        step: 1
+        default: 0x00
+      left_med_hold_call:
+        # Kept only to be written back inside the frame; follows the earbuds.
+        type: slider
+        hidden: true
+        min: 0x00
+        max: 0xff
+        step: 1
+        default: 0x00
+      right_hold:
+        # Kept only to be written back inside the frame; follows the earbuds.
+        type: slider
+        hidden: true
+        min: 0x00
+        max: 0xff
+        step: 1
+        default: 0x00
+      left_hold:
+        # Kept only to be written back inside the frame; follows the earbuds.
+        type: slider
+        hidden: true
+        min: 0x00
+        max: 0xff
+        step: 1
+        default: 0x00
