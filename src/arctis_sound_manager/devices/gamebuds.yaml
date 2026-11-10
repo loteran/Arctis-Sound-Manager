@@ -381,7 +381,7 @@ device:
         default: 0x1e
         update_sequence: [0xc1, 'value']
 
-    # Touch gestures (GG exposes four of the eight). One 0xc9 frame carries the
+    # Touch gestures (GG exposes four of the eight, and so does ASM). One 0xc9 frame carries the
     # whole table: per gesture the action on the 2.4 GHz dongle, on Bluetooth
     # and during a call, then the two hold flags. GG writes the same action to
     # dongle and Bluetooth and never changes the call actions or the flags, so
@@ -448,22 +448,15 @@ device:
         default: 0xb5
         update_sequence: *buttons_frame
       right_3_tap:
-        type: button_group
-        # Not offered by GG, untested on hardware.
-        experimental: true
-        values_mapping:
-          0xcd: btn_play_pause
-          0xe9: btn_volume_up
-          0xea: btn_volume_down
-          0xb5: btn_next_track
-          0xb6: btn_previous_track
-          0x51: btn_voice_assistant
-          0x49: btn_noise_control
-          0xe2: btn_mic_mute
-          0x53: btn_quick_switch
-          0x00: btn_unassigned
+        # Not offered by GG. Assigning it broke the firmware's own action
+        # for this gesture until a reset in GG (#337), so it is only
+        # written back as the earbuds report it.
+        type: slider
+        hidden: true
+        min: 0x00
+        max: 0xff
+        step: 1
         default: 0x00
-        update_sequence: *buttons_frame
       left_1_tap:
         type: button_group
         values_mapping:
@@ -495,56 +488,35 @@ device:
         default: 0xb6
         update_sequence: *buttons_frame
       left_3_tap:
-        type: button_group
-        # Not offered by GG, untested on hardware.
-        experimental: true
-        values_mapping:
-          0xcd: btn_play_pause
-          0xe9: btn_volume_up
-          0xea: btn_volume_down
-          0xb5: btn_next_track
-          0xb6: btn_previous_track
-          0x51: btn_voice_assistant
-          0x49: btn_noise_control
-          0xe2: btn_mic_mute
-          0x53: btn_quick_switch
-          0x00: btn_unassigned
+        # Not offered by GG. Assigning it broke the firmware's own action
+        # for this gesture until a reset in GG (#337), so it is only
+        # written back as the earbuds report it.
+        type: slider
+        hidden: true
+        min: 0x00
+        max: 0xff
+        step: 1
         default: 0x00
-        update_sequence: *buttons_frame
       right_med_hold:
-        type: button_group
-        # Not offered by GG, untested on hardware.
-        experimental: true
-        values_mapping:
-          0xcd: btn_play_pause
-          0xe9: btn_volume_up
-          0xea: btn_volume_down
-          0xb5: btn_next_track
-          0xb6: btn_previous_track
-          0x51: btn_voice_assistant
-          0x49: btn_noise_control
-          0xe2: btn_mic_mute
-          0x53: btn_quick_switch
-          0x00: btn_unassigned
+        # Not offered by GG. Assigning it broke the firmware's own action
+        # for this gesture until a reset in GG (#337), so it is only
+        # written back as the earbuds report it.
+        type: slider
+        hidden: true
+        min: 0x00
+        max: 0xff
+        step: 1
         default: 0x00
-        update_sequence: *buttons_frame
       left_med_hold:
-        type: button_group
-        # Not offered by GG, untested on hardware.
-        experimental: true
-        values_mapping:
-          0xcd: btn_play_pause
-          0xe9: btn_volume_up
-          0xea: btn_volume_down
-          0xb5: btn_next_track
-          0xb6: btn_previous_track
-          0x51: btn_voice_assistant
-          0x49: btn_noise_control
-          0xe2: btn_mic_mute
-          0x53: btn_quick_switch
-          0x00: btn_unassigned
+        # Not offered by GG. Assigning it broke the firmware's own action
+        # for this gesture until a reset in GG (#337), so it is only
+        # written back as the earbuds report it.
+        type: slider
+        hidden: true
+        min: 0x00
+        max: 0xff
+        step: 1
         default: 0x00
-        update_sequence: *buttons_frame
       right_1_tap_call:
         # Kept only to be written back inside the frame; follows the earbuds.
         type: slider

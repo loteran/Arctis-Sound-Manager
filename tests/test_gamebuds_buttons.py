@@ -144,4 +144,7 @@ def test_buttons_card_only_for_gamebuds_profiles():
         assert has == (f.name == "gamebuds.yaml"), f.name
     sections = _config().settings["buttons"]
     visible = [c.name for c in sections if not getattr(c, "hidden", False)]
-    assert len(visible) == 8 and len(sections) == 18
+    # Only GG's four: assigning 3 taps or the medium press broke the
+    # firmware's own action for it until a reset in GG (#337).
+    assert sorted(visible) == ["left_1_tap", "left_2_tap", "right_1_tap", "right_2_tap"]
+    assert len(sections) == 18
