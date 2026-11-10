@@ -182,6 +182,24 @@ device:
     bands_carry_connection: false
     frame_delay_ms: 600
 
+  # The headset's own current values, read before device_init so a setting
+  # the user never chose in ASM keeps what it had instead of ASM's default.
+  # The spec gives this family the Nova 5's exact 0x20 reply (ten 6-byte EQ
+  # bands, then mic volume, sidetone and volume limiter at 61-63), which a
+  # real Nova 5 confirmed (#331); 0xa0 carries the sleep timer at 1. A Nova 3
+  # Wireless probe (#331, mic 10 / sidetone 5 / limiter on) read them there.
+  settings_readback:
+    - request: 0x20
+      starts_with: 0x20
+      mapping:
+        mic_volume: 0x3d
+        mic_side_tone: 0x3e
+        volume_limiter: 0x3f
+    - request: 0xa0
+      starts_with: 0xa0
+      mapping:
+        pm_shutdown: 0x01
+
   # Read-only queries for `asm-cli tools probe` (generated from the
   # spec by gg_draft.py): their raw replies check a spec layout
   # on real hardware in one pass. Constants only — nothing is set.

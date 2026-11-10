@@ -8,8 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Arctis GameBuds: the touch gestures can be remapped.** A new Buttons card on the Headset page (shown only for the GameBuds profiles) assigns an action to each of the 8 gestures the firmware has: 1, 2 and 3 taps and the medium press, on each earbud. GG offers only 4 of them; the other 4 are marked experimental. Like GG, ASM writes the same action for the 2.4 GHz dongle and Bluetooth, and keeps the in-call actions and hold flags the earbuds report. The current assignment is read from the status reply, and a reply with an empty table (earbuds not connected) is ignored.
+- **Arctis GameBuds: the touch gestures can be remapped.** A new Buttons card on the Headset page (shown only for the GameBuds profiles) assigns an action to the 1- and 2-tap gesture of each earbud, the four SteelSeries GG offers. The firmware has four more (3 taps and the medium press), but assigning them broke their built-in action until a reset in GG, so ASM only writes them back as the earbuds report them. Like GG, ASM writes the same action for the 2.4 GHz dongle and Bluetooth, and keeps the in-call actions and hold flags the earbuds report. The current assignment is read from the status reply, and a reply with an empty table (earbuds not connected) is ignored.
 - Device profiles: `settings_readback` accepts `skip_if_all_zero: [first, last]` and `silent: true`, and a setting marked `hidden: true` is kept only to be written back inside another setting's frame and always follows the device.
+
+### Fixed
+- **Nova Pro Wireless, Elite and Omni: a setting made on the base station is no longer overwritten at start** (#376). ASM asks the base for its settings before pushing its own, but gave it half a second, and a Nova Pro Wireless right after it enumerates takes longer; ASM then sent its saved values over the base's, so a mic gain set from the base's menu went back to ASM's value at every replug. Base stations now get 3 seconds, and if they still have not answered, ASM leaves the settings that answer covers alone and adopts the base's values when the answer comes. Reported by @Anvnamnet.
+- **Arctis Nova 3 Wireless: mic volume, sidetone, volume limiter and sleep timer are read from the headset at start** (#331), so values set elsewhere are kept instead of replaced by ASM's defaults. Byte positions checked on a real headset by @DarNCelsius.
 
 ## [1.7.6] - 8 November 2026
 

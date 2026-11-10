@@ -106,7 +106,7 @@ def test_short_reply_does_not_crash():
 
 
 def test_profiles_without_readback_do_nothing():
-    config = DeviceConfiguration(YAML(typ="safe").load(DEVICES / "nova_3_wireless.yaml"))
+    config = DeviceConfiguration(YAML(typ="safe").load(DEVICES / "arctis_7_plus.yaml"))
     engine = _engine()
     engine.device_config = config
     engine.send_command = MagicMock()
