@@ -69,7 +69,51 @@ def test_an_unanswered_readback_is_logged_at_info(caplog, monkeypatch):
     engine = _engine()
     engine._request_settings_readback.return_value = threading.Event()  # never set
     engine._send_device_init_sequence.return_value = (0, 1)
-    monkeypatch.setattr("arctis_sound_manager.core._READBACK_WAIT_S", 0.0)
+    monkeypatch.setattr("arctis_sound_manager.core._READBACK_WINS_WAIT_S", 0.0)
     with caplog.at_level(logging.INFO, logger="test376"):
         CoreEngine.init_device(engine)
     assert "Settings readback: no reply to 06 20" in caplog.text
+
+
+def test_a_late_base_keeps_its_own_values(monkeypatch):
+    """The base answered after device_init: the saved mic gain (1) must not
+    have gone out over the one set on the base (4), and the late reply wins."""
+    monkeypatch.setattr("arctis_sound_manager.core.time.sleep", lambda s: None)
+    monkeypatch.setattr("arctis_sound_manager.core._READBACK_WINS_WAIT_S", 0.0)
+    engine = _engine()
+    engine.device_settings.settings = {"mic_volume": 1}
+    engine._readback_late_wins = set()
+    engine._readback_wins_window = False
+    engine._request_settings_readback.return_value = threading.Event()  # never set
+    engine._send_device_init_sequence.side_effect = (
+        lambda context, keep_device_values=frozenset():
+        CoreEngine._send_device_init_sequence(engine, context, keep_device_values))
+    engine.send_command.return_value = True
+    engine.translate_init_bytes.side_effect = lambda b: [x if isinstance(x, int) else 0 for x in b]
+    engine._setting_default.return_value = 0
+
+    CoreEngine.init_device(engine)
+
+    sent = [call.args[0][:2] for call in engine.send_command.call_args_list]
+    assert [0x06, 0x37] not in sent           # mic_volume left to the base
+    assert [0x06, 0x47] not in sent           # stream mix: all four covered by 06 20
+    assert engine._readback_late_wins == {0, 1, 2}
+
+    CoreEngine._absorb_settings_readback(engine, _audio_settings_reply(4))
+    assert engine.device_settings.settings["mic_volume"] == 4
+    assert engine._readback_late_wins == {1, 2}
+
+    # Once answered, a later reply no longer overrides a choice made here.
+    engine.device_settings.settings["mic_volume"] = 6
+    CoreEngine._absorb_settings_readback(engine, _audio_settings_reply(4))
+    assert engine.device_settings.settings["mic_volume"] == 6
+
+
+def test_a_headset_without_readback_wins_still_gets_the_saved_values(monkeypatch):
+    monkeypatch.setattr("arctis_sound_manager.core.time.sleep", lambda s: None)
+    engine = _engine()
+    engine.send_command.return_value = True
+    engine.translate_init_bytes.side_effect = lambda b: [x if isinstance(x, int) else 0 for x in b]
+    engine._setting_default.return_value = 0
+    CoreEngine._send_device_init_sequence(engine)
+    assert [0x06, 0x37] in [c.args[0][:2] for c in engine.send_command.call_args_list]

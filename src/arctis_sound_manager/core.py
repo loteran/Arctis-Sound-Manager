@@ -215,6 +215,12 @@ _DERIVED_TOKENS = {
 # the profile's settings anyway. A reply takes milliseconds; this only bounds
 # a headset that never answers.
 _READBACK_WAIT_S = 0.5
+# A base station (`settings_readback_wins`) answers later than that — over a
+# second on a Nova Pro Wireless right after it enumerates — and its reply is
+# the one that counts, so it gets longer. Still unanswered past it, device_init
+# leaves the settings that reply covers alone and the reply wins when it comes
+# (#376: the saved mic gain kept going out over the one set on the base).
+_READBACK_WINS_WAIT_S = 3.0
 _SETTINGS_REPLAY_SETTLE_S = 1.5
 _SETTINGS_REPLAY_MIN_INTERVAL_S = 5.0
 
@@ -467,6 +473,10 @@ class CoreEngine:
         # True only between the start readback and device_init: a late reply
         # must not undo what device_init has just pushed.
         self._readback_wins_window = False
+        # Readback queries a base station had not answered when device_init
+        # ran: their reply still wins when it arrives, since device_init did
+        # not push the settings they cover (#376).
+        self._readback_late_wins: set[int] = set()
 
         # Requests sent whose replies carry no opcode (status mappings with
         # `reply_to`), oldest first: the device answers in order, so the next
@@ -3285,26 +3295,41 @@ class CoreEngine:
         # Ask the headset what it currently has, before pushing anything. The
         # replies land on the listen loop and only fill in settings the user
         # never chose here — see _absorb_settings_readback().
+        device_wins = getattr(self.device_config, 'settings_readback_wins', False) is True
+        wait = _READBACK_WINS_WAIT_S if device_wins else _READBACK_WAIT_S
+        keep_device_values: set[str] = set()
         self._readback_wins_window = True
         try:
             replies = self._request_settings_readback()
             # device_init resolves `settings.*` when it sends them, so give the
             # replies a moment to land first; past that, defaults go out as
             # they always did.
-            if replies is not None and not replies.wait(_READBACK_WAIT_S):
-                # INFO, not debug: a base station that stays silent here gets
-                # ASM's saved values pushed over its own, and a bug report
-                # must show that this is what happened (#376).
-                unanswered = [
-                    bytes(self.device_config.settings_readback[i].request).hex(' ')
-                    for i in sorted(self._readback_pending)
-                    if i < len(self.device_config.settings_readback)]
-                self.logger.info("Settings readback: no reply to %s within %.1fs; "
-                                 "device_init sends the saved values",
-                                 ', '.join(unanswered) or 'a query', _READBACK_WAIT_S)
+            if replies is not None and not replies.wait(wait):
+                # INFO, not debug: a bug report must show which values were
+                # pushed without the device's answer (#376).
+                readbacks = self.device_config.settings_readback
+                pending = sorted(i for i in self._readback_pending if i < len(readbacks))
+                unanswered = [bytes(readbacks[i].request).hex(' ') for i in pending]
+                if device_wins:
+                    # A base station keeps its settings and has its own menu:
+                    # pushing the saved values here would undo whatever was
+                    # set there, with the reply only a second away. Leave
+                    # them, and let the reply win when it lands.
+                    self._readback_late_wins = set(pending)
+                    keep_device_values = {
+                        name for i in pending for name in readbacks[i].mapping}
+                    self.logger.info("Settings readback: no reply to %s within %.1fs; "
+                                     "device_init leaves %s to the base station",
+                                     ', '.join(unanswered) or 'a query', wait,
+                                     ', '.join(sorted(keep_device_values)))
+                else:
+                    self.logger.info("Settings readback: no reply to %s within %.1fs; "
+                                     "device_init sends the saved values",
+                                     ', '.join(unanswered) or 'a query', wait)
         finally:
             self._readback_wins_window = False
-        failed, attempted = self._send_device_init_sequence(context="init_device")
+        failed, attempted = self._send_device_init_sequence(
+            context="init_device", keep_device_values=keep_device_values)
 
         # Not _apply_stored_eq() directly: in Sonar mode the stored curve must
         # not be reinstated at all, or the headset would colour the sound
@@ -3395,7 +3420,9 @@ class CoreEngine:
         self._last_usb_reset_monotonic = now
         asyncio.run_coroutine_threadsafe(self._escalate_to_usb_reset(reason), loop)
 
-    def _send_device_init_sequence(self, context: str = "init_device") -> tuple[int, int]:
+    def _send_device_init_sequence(self, context: str = "init_device",
+                                   keep_device_values: set[str] | frozenset[str] = frozenset(),
+                                   ) -> tuple[int, int]:
         """Push the profile's `device_init` frames to the headset.
 
         Split out of :meth:`init_device` so the power-on replay sends exactly
@@ -3408,6 +3435,9 @@ class CoreEngine:
         failing after their retry, and of frames actually sent (pure settle
         pauses excluded from both) — the caller uses this to tell "one
         incompatible opcode" from "the device stopped answering entirely".
+
+        A frame made only of settings in *keep_device_values* is not sent: the
+        device's own value for them is about to be read back (#376).
         """
         if not (self.device_config and self.device_config.device_init):
             return 0, 0
@@ -3424,11 +3454,21 @@ class CoreEngine:
         # general mechanism behind it, not specific to those two opcodes.
         pace = (self.device_config.time_between_commands_ms or 0) / 1000
 
+        def frame_settings(frame) -> list[str]:
+            return [token.split('.')[1] for token in frame
+                    if isinstance(token, str) and token.startswith('settings.')]
+
+        def left_to_device(frame) -> bool:
+            names = frame_settings(frame) if isinstance(frame, list) else []
+            return bool(names) and all(n in keep_device_values for n in names)
+
         for index, bytes in enumerate(self.device_config.device_init, start=1):
             pause = init_entry_pause_seconds(bytes)
             if pause is not None:
                 # A settle time the profile author asked for, not a frame.
                 time.sleep(pause)
+                continue
+            if left_to_device(bytes):
                 continue
 
             # One retry on a failed write — most failures here are transient
@@ -3468,11 +3508,10 @@ class CoreEngine:
         # line above it, a setting that resets on replug shows who reset it
         # (#376).
         sent = {
-            token.split('.')[1]: self.device_settings.get(
-                token.split('.')[1], self._setting_default(token.split('.')[1]))
-            for frame in self.device_config.device_init if isinstance(frame, list)
-            for token in frame
-            if isinstance(token, str) and token.startswith('settings.')
+            name: self.device_settings.get(name, self._setting_default(name))
+            for frame in self.device_config.device_init
+            if isinstance(frame, list) and not left_to_device(frame)
+            for name in frame_settings(frame)
         } if getattr(self, 'device_settings', None) is not None else {}
         if sent:
             self.logger.info("%s sent the saved settings: %s", context,
@@ -4919,6 +4958,7 @@ class CoreEngine:
             return None
         endpoint = self.get_command_endpoint_address()
         self._readback_pending = set(range(len(self.device_config.settings_readback)))
+        self._readback_late_wins = set()
         self._readback_done.clear()
         for index, readback in enumerate(self.device_config.settings_readback):
             try:
@@ -4972,7 +5012,11 @@ class CoreEngine:
             self._readback_pending.discard(index)
             if not self._readback_pending:
                 self._readback_done.set()
-            device_wins = (self._readback_wins_window is True
+            late = getattr(self, '_readback_late_wins', None)
+            answered_late = isinstance(late, set) and index in late
+            if answered_late:
+                late.discard(index)
+            device_wins = ((self._readback_wins_window is True or answered_late)
                            and getattr(self.device_config, 'settings_readback_wins', False) is True)
             values = readback.values_from(response)
             if device_wins:
