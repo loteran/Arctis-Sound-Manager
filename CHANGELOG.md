@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.7.7] - 10 November 2026
 
 ### Added
 - **Arctis GameBuds: the touch gestures can be remapped.** A new Buttons card on the Headset page (shown only for the GameBuds profiles) assigns an action to the 1- and 2-tap gesture of each earbud, the four SteelSeries GG offers. The firmware has four more (3 taps and the medium press), but assigning them broke their built-in action until a reset in GG, so ASM only writes them back as the earbuds report them. Like GG, ASM writes the same action for the 2.4 GHz dongle and Bluetooth, and keeps the in-call actions and hold flags the earbuds report. The current assignment is read from the status reply, and a reply with an empty table (earbuds not connected) is ignored.
