@@ -10,7 +10,7 @@
   "kernel-release": "v7.3",
   "kernel-usb-audio": "e0d8e8de8bcb1ef7b749033b5af5518ba8df7bec",
   "libusb": "v1.0.30",
-  "linux-arctis-manager": "7aa13ab6f779b8bd5228d8c7601d1c4fab9a04aa",
+  "linux-arctis-manager": "3fccda7c42ee49e07eb7593aa71e3fab2ca7f0a6",
   "pipewire": "1.6.11",
   "pulsectl": "24.12.0",
   "pyside6": "6.12.0",
