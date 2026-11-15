@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.8] - 15 November 2026
+
+### Added
+- **Arctis 5 (2017) is now recognised** (#331). The `1038:1250` model gets sidetone, mic noise reduction and dynamic range compression, written the way SteelSeries GG does. The headset's own EQ is not mapped: the Sonar EQ covers it. Built from a GG capture by @DonutWrecker.
+
+### Fixed
+- **Apps go back to their channel after the dongle is replugged** (#382, #386). With the dongle unplugged, PipeWire moves apps to another output (HDMI, speakers), and ASM saved that as the app's chosen output, so every later replug sent the app back there. A move away from an output that has disappeared is no longer saved. Apps already stuck on another output come back once dragged to their channel. Reported by @Fabi0699, diagnosed by @PointyKite.
+- **Bluetooth outputs work with the Game, Chat and Media channels** (#385). A Bluetooth device name contains colons, which broke the `pw-loopback` command line, so the three channels died at every start. Diagnosed by @PointyKite.
+- **hidraw transport: no more reset loop when another program re-binds the headset** (#383). fwupd's SteelSeries plugin re-binds the HID driver every 20 seconds, which replaces the hidraw node; ASM kept reading the old one and reset the headset over and over. It now reopens the new node in place. Diagnosed by @GaryBaker54.
+
 ## [1.7.7] - 10 November 2026
 
 ### Added
