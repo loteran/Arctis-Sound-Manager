@@ -40,14 +40,18 @@ import fcntl
 import logging
 import os
 import select
+import time
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 import usb.core
 
 logger = logging.getLogger(__name__)
 
 _SYS_USB = Path('/sys/bus/usb/devices')
+# How long reopen() waits for a replaced node to appear and for udev to give
+# it the rules' MODE (the kernel creates it root 0600).
+_REOPEN_WAIT_S = 2.0
 
 #: Written by the daemon at each acquisition (CoreEngine._record_usb_transport),
 #: read by the bug report: which transport was asked for, which one is active.
@@ -119,10 +123,15 @@ def _sysfs_hid_dir(node: Path) -> Path:
 class HidrawTransport:
     """Open hidraw nodes for one headset, keyed by USB interface number."""
 
-    def __init__(self, nodes: dict[int, Path]):
+    def __init__(self, nodes: dict[int, Path],
+                 locate: Callable[[int], Path | None] | None = None):
         self.nodes = dict(nodes)
         self._fds: dict[int, int] = {}
         self._numbered: dict[int, bool] = {}
+        # Finds an interface's current node again; without it a replaced
+        # node cannot be reopened (#383).
+        self._locate = locate
+        self._reopens = 0
         try:
             for iface, node in self.nodes.items():
                 self._fds[iface] = os.open(node, os.O_RDWR | os.O_CLOEXEC)
@@ -155,47 +164,121 @@ class HidrawTransport:
             raise usb.core.USBError(f"no hidraw node for interface {iface}",
                                     errno=errno.ENOENT) from None
 
+    def is_stale(self, iface: int) -> bool:
+        """True when the node held open is no longer the interface's node.
+
+        Anything that re-binds the HID driver (fwupd's SteelSeries plugin
+        polls the receiver every 20 s, #383) makes the kernel delete the
+        hidraw node and create a new one. The fd still open on the old one
+        then only ever returns EIO / ENODEV, though the device is fine.
+        """
+        fd, node = self._fds.get(iface), self.nodes.get(iface)
+        if fd is None or node is None:
+            return False
+        try:
+            held = os.fstat(fd)
+        except OSError:
+            return True
+        try:
+            current = os.stat(node)
+        except OSError:
+            return True
+        return held.st_nlink == 0 or (held.st_ino, held.st_rdev) != (current.st_ino, current.st_rdev)
+
+    def reopen(self, iface: int) -> bool:
+        """Open the interface's new node onto the same fd number.
+
+        dup2() keeps the number, so a thread that already fetched it never
+        lands on a closed or reused descriptor. False when the node was not
+        replaced (a genuine EIO, left to the caller's recovery) or the new
+        one cannot be found or opened in time.
+        """
+        if self._locate is None or not self.is_stale(iface):
+            return False
+        deadline = time.monotonic() + _REOPEN_WAIT_S
+        while True:
+            node = self._locate(iface)
+            if node is not None:
+                try:
+                    new_fd = os.open(node, os.O_RDWR | os.O_CLOEXEC)
+                except OSError as e:
+                    if e.errno not in (errno.EACCES, errno.EPERM, errno.ENOENT):
+                        logger.warning("hidraw: cannot reopen %s: %s", node, e)
+                        return False
+                else:
+                    try:
+                        fd = self._fds.get(iface)
+                        if fd is None:  # closed meanwhile
+                            return False
+                        os.dup2(new_fd, fd, inheritable=False)
+                    finally:
+                        os.close(new_fd)
+                    old = self.nodes.get(iface)
+                    self.nodes[iface] = node
+                    self._numbered[iface] = self._read_numbered(node)
+                    self._reopens += 1
+                    if self._reopens == 1 or self._reopens % 50 == 0:
+                        logger.info(
+                            "hidraw: interface %d node replaced (%s → %s, another program "
+                            "re-bound the HID driver) — reopened in place (×%d)",
+                            iface, old, node, self._reopens)
+                    return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.1)
+
+    def _call(self, iface: int, op: Callable[[int], object]):
+        """Run *op* on the interface's fd; after a replaced node, reopen and
+        retry once (#383). OSError comes out as USBError, as from libusb."""
+        try:
+            return op(self._fd(iface))
+        except usb.core.USBError:
+            raise
+        except OSError as e:
+            if e.errno in (errno.EIO, errno.ENODEV) and self.reopen(iface):
+                try:
+                    return op(self._fd(iface))
+                except OSError as e2:
+                    raise usb.core.USBError(str(e2), errno=e2.errno) from e2
+            raise usb.core.USBError(str(e), errno=e.errno) from e
+
     def _framed(self, iface: int, data: list[int] | bytes) -> bytes:
         """ASM's frame with the report number hidraw expects in front."""
         data = bytes(b & 0xFF for b in data)
         return data if self.uses_report_ids(iface) else b'\x00' + data
 
     def write_output(self, iface: int, data: list[int] | bytes) -> int:
-        try:
-            return os.write(self._fd(iface), self._framed(iface, data))
-        except OSError as e:
-            raise usb.core.USBError(str(e), errno=e.errno) from e
+        return self._call(iface, lambda fd: os.write(fd, self._framed(iface, data)))
 
     def send_feature(self, iface: int, data: list[int] | bytes) -> None:
-        buf = bytearray(self._framed(iface, data))
-        try:
-            fcntl.ioctl(self._fd(iface), HIDIOCSFEATURE(len(buf)), buf)
-        except OSError as e:
-            raise usb.core.USBError(str(e), errno=e.errno) from e
+        def op(fd: int) -> None:
+            buf = bytearray(self._framed(iface, data))
+            fcntl.ioctl(fd, HIDIOCSFEATURE(len(buf)), buf)
+        self._call(iface, op)
 
     def get_feature(self, iface: int, report_id: int, size: int) -> list[int]:
         """A feature report as GET_REPORT returns it: report id first when
         the interface numbers its reports, `size` bytes at most."""
-        buf = bytearray(max(size, 1))
-        buf[0] = report_id & 0xFF
-        try:
-            n = fcntl.ioctl(self._fd(iface), HIDIOCGFEATURE(len(buf)), buf, True)
-        except OSError as e:
-            raise usb.core.USBError(str(e), errno=e.errno) from e
-        data = bytes(buf[:n]) if isinstance(n, int) and n > 0 else bytes(buf)
+        def op(fd: int) -> bytes:
+            buf = bytearray(max(size, 1))
+            buf[0] = report_id & 0xFF
+            n = fcntl.ioctl(fd, HIDIOCGFEATURE(len(buf)), buf, True)
+            return bytes(buf[:n]) if isinstance(n, int) and n > 0 else bytes(buf)
+        data = self._call(iface, op)
         return list(data if self.uses_report_ids(iface) else data[1:])
 
     def read(self, iface: int, size: int, timeout_ms: int) -> list[int]:
-        fd = self._fd(iface)
-        try:
+        def op(fd: int) -> bytes | None:
             ready, _, _ = select.select([fd], [], [], timeout_ms / 1000)
             if not ready:
-                raise usb.core.USBError("Operation timed out", errno=errno.ETIMEDOUT)
+                return None
             # A whole report, whatever the endpoint size: a short buffer
             # truncates it (the very thing libusb reported as EOVERFLOW).
-            return list(os.read(fd, max(size, 4096)))
-        except OSError as e:
-            raise usb.core.USBError(str(e), errno=e.errno) from e
+            return os.read(fd, max(size, 4096))
+        data = self._call(iface, op)
+        if data is None:
+            raise usb.core.USBError("Operation timed out", errno=errno.ETIMEDOUT)
+        return list(data)
 
     def close(self) -> None:
         for fd in self._fds.values():

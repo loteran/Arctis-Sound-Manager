@@ -116,7 +116,7 @@ def test_hidraw_choice_opens_the_nodes_and_detaches_nothing(monkeypatch):
     engine, config, usb_device = _engine(1)
     monkeypatch.setattr(core, "find_hidraw_nodes", lambda bus, ports, ifaces: {4: Path("/dev/hidraw3")})
     monkeypatch.setattr(core, "HidrawTransport",
-                        type("FakeTransport", (HidrawTransport,), {"__init__": lambda self, nodes: setattr(self, "nodes", nodes),
+                        type("FakeTransport", (HidrawTransport,), {"__init__": lambda self, nodes, locate=None: setattr(self, "nodes", nodes),
                                                                     "describe": lambda self: ""}))
 
     assert CoreEngine.kernel_detach(engine, usb_device, config)

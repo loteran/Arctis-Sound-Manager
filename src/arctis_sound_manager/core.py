@@ -5361,7 +5361,10 @@ class CoreEngine:
             error: OSError | None = None
             if command in nodes:
                 try:
-                    self._hidraw = HidrawTransport(nodes)
+                    bus = getattr(usb_device, 'bus', None)
+                    ports = getattr(usb_device, 'port_numbers', None)
+                    self._hidraw = HidrawTransport(
+                        nodes, locate=lambda i: find_hidraw_nodes(bus, ports, [i]).get(i))
                     break
                 except OSError as e:
                     error = e
