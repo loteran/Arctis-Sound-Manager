@@ -292,8 +292,11 @@ def _build_pw_loopback_argv(spec: LoopbackSpec) -> list[str]:
         # WirePlumber >= 0.5 resolves target.object (object.serial / node.name
         # lookup) with priority over node.target; without it the stream can be
         # linked to the physical ALSA sink instead of the EQ (issue #102).
-        f" target.object={spec.target}"
-        f" node.target={spec.target}"   # kept for WirePlumber 0.4.x compat
+        # Quoted: a Bluetooth node name (bluez_output.AA:BB:...) contains
+        # colons, which SPA-JSON reads as a key separator — unquoted, every
+        # pw-loopback exited with "Expected object key" (#385).
+        f' target.object="{spec.target}"'
+        f' node.target="{spec.target}"'   # kept for WirePlumber 0.4.x compat
         # WirePlumber's restore-stream (node.stream.restore-target, default true)
         # re-applies a previously stored target for streams with a stable
         # node.name, overriding target.object at every recreate. A poisoned entry
