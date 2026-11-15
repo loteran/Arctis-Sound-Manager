@@ -1,0 +1,93 @@
+# SteelSeries Arctis 5 (2017), 1038:1250 — #331.
+#
+# Decoded from a SteelSeries GG capture on Windows (GG 123.0.0) sent by
+# DonutWrecker. Like the 2018 model the HID interface (5) declares the
+# Consumer page, but GG drives the headset's DSP through it: output reports
+# 0x04 (38 bytes) as SET_REPORT on the control pipe, wValue 0x0204. The
+# interrupt IN endpoint only answers report 0x06 queries (report 0x07); the
+# volume wheel, ChatMix dial and mic mute are analog/firmware and send no
+# HID report: listening on 5 only ever times out.
+#
+# Frame: 04 40 <len> <op> <register...> <value...>. Values are little-endian.
+#   sidetone          04 40 02 12 c6 <lo> <hi>       off 0000, low 0100, medium 0180, high 0400
+#   mic noise reduct. 04 40 06 10 f6 60 09 2c 01 <lo> <hi>
+#                                                    high 0000, medium 2000, low 4fff, off 7fff
+#   dynamic range     04 40 0c 10 c7 <a0> <a1> 00 12 00 <b> 32 00 00 08
+#     compression                                    off 0001/00, low 0180/0c, medium 0200/06, high 0400/fa
+# Each setting is followed in the capture by GG's own 04 40 01 11 54 9b,
+# which it also sends on its own every few seconds — a read/keep-alive,
+# not a commit: the setting is heard before it.
+#
+# Not mapped: the hardware EQ (5 biquads written as raw Q14 coefficients,
+# 04 40 0b 10 <band> b0 b1 b2 a1 a2 03); the Sonar EQ in software covers it.
+# Mic volume is the USB Audio mixer control (no HID traffic). DTS
+# Headphone:X is computed on the PC by GG, not in the headset.
+device:
+  name: SteelSeries Arctis 5 (2017)
+  vendor_id: 0x1038
+  product_ids:
+    - 0x1250 # Arctis 5 (2017)
+
+  time_between_commands_ms: 15
+  init_sleep_length_ms: 100
+
+  command_padding:
+    length: 39
+    position: end
+    filler: 0x00
+
+  command_transport: ctrl_output
+  command_report_id: 0x04
+  command_interface_index: [5, 0]
+  listen_interface_indexes: [5]   # only report 0x07 replies; nothing unsolicited
+
+  device_init:
+    - [0x04, 0x40, 0x02, 0x12, 0xc6, 'settings.mic_side_tone.b0', 'settings.mic_side_tone.b1']
+    - [0x04, 0x40, 0x06, 0x10, 0xf6, 0x60, 0x09, 0x2c, 0x01,
+       'settings.mic_noise_reduction.b0', 'settings.mic_noise_reduction.b1']
+    - [0x04, 0x40, 0x0c, 0x10, 0xc7, 'settings.dynamic_range_compression.b0',
+       'settings.dynamic_range_compression.b1', 0x00, 0x12, 0x00,
+       'settings.dynamic_range_compression.b2', 0x32, 0x00, 0x00, 0x08]
+
+  status:
+    request: 0x0000
+    response_mapping: []
+    representation: {}
+
+  audio:
+    spatial_engine: hesuvi
+
+  settings:
+    microphone:
+      mic_side_tone:
+        type: button_group
+        values_mapping:
+          0x0000: off
+          0x0100: low
+          0x0180: medium
+          0x0400: high
+        default: 0x0000
+        update_sequence: [0x04, 0x40, 0x02, 0x12, 0xc6, 'value.b0', 'value.b1']
+      mic_noise_reduction:
+        type: button_group
+        values_mapping:
+          0x7fff: off
+          0x4fff: low
+          0x2000: medium
+          0x0000: high
+        default: 0x7fff
+        update_sequence: [0x04, 0x40, 0x06, 0x10, 0xf6, 0x60, 0x09, 0x2c, 0x01, 'value.b0', 'value.b1']
+    audio:
+      dynamic_range_compression:
+        # Two fields move together: bytes 5-6 and byte 10. value = a | b << 16.
+        type: button_group
+        values_mapping:
+          0x000100: off
+          0x0c0180: low
+          0x060200: medium
+          0xfa0400: high
+        default: 0x000100
+        update_sequence: [0x04, 0x40, 0x0c, 0x10, 0xc7, 'value.b0', 'value.b1', 0x00, 0x12, 0x00,
+                          'value.b2', 0x32, 0x00, 0x00, 0x08]
+
+  status_parse: {}

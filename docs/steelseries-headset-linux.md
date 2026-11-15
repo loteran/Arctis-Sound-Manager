@@ -67,7 +67,7 @@ something provides it.
 - Arctis Nova Pro Wireless, Nova Pro Wired, Nova Pro Omni, Nova Elite
 - Arctis Nova 7 and Nova 7P (Gen 1 and Gen 2), Nova 5 Wireless, Nova 4,
   Nova 3 and Nova 3 Wireless
-- Arctis 7, 7+, 7P, 7X, 9 Wireless, 1 Wireless, 5, Pro Wireless and
+- Arctis 7, 7+, 7P, 7X, 9 Wireless, 1 Wireless, 5 (2017 and 2018), Pro Wireless and
   Pro with GameDAC
 - Arctis GameBuds
 

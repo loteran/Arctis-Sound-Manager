@@ -196,6 +196,12 @@ _DERIVED_TOKENS = {
     # seconds on two bytes (Arctis 9 inactivity_timer, #331).
     'value.minutes_as_seconds_hi': lambda value: (value * 60) >> 8 & 0xff,
     'value.minutes_as_seconds_lo': lambda value: (value * 60) & 0xff,
+    # Byte n (little-endian) of a value wider than one byte: a setting whose
+    # frame carries a 16-bit level, or several fields that move together
+    # (Arctis 5 2017 dynamic range compression, #331).
+    'value.b0': lambda value: value & 0xff,
+    'value.b1': lambda value: value >> 8 & 0xff,
+    'value.b2': lambda value: value >> 16 & 0xff,
 }
 
 

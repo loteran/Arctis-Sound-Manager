@@ -36,7 +36,7 @@ $ErrorActionPreference = 'Stop'
 # name what is plugged in; an unknown id is captured all the same.
 $Models = @{
     '12B3'='Arctis 1/7X/7P Wireless'; '12B6'='Arctis 1/7X/7P Wireless'; '12D7'='Arctis 1/7X/7P Wireless'; '12D5'='Arctis 1/7X/7P Wireless'
-    '12AA'='Arctis 5'
+    '12AA'='Arctis 5'; '1250'='Arctis 5 (2017)'
     '220C'='Arctis 7+'; '220E'='Arctis 7+'; '2212'='Arctis 7+'; '2216'='Arctis 7+'; '2236'='Arctis 7+'
     '1260'='Arctis 7 / Pro'; '12AD'='Arctis 7 / Pro'; '1252'='Arctis 7 / Pro'
     '12C2'='Arctis 9 Wireless'
