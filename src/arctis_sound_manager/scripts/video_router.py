@@ -966,6 +966,14 @@ def _process_tick(pulse: pulsectl.Pulse) -> None:
                     # accept the placement so it stops being re-checked, but
                     # write no override.
                     _pa_placed[key] = si.sink
+                elif _pa_placed[key] not in sink_idx_to_name:
+                    # The sink we put it on is gone (dongle unplugged, loopbacks
+                    # recreated on reconnect): PipeWire evicted the stream to
+                    # whatever was left, the user chose nothing. Saving it
+                    # pinned the app to HDMI/analog for good (#382, #386).
+                    # Forget the placement so the normal pass re-places it.
+                    _pa_placed.pop(key, None)
+                    _pending_moves.pop(key, None)
                 elif (save_name == previous_channel
                       and not _is_asm_channel(sink_idx_to_name.get(_pa_placed[key], ""))):
                     # Back from the raw headset sink onto the very channel it
@@ -1117,6 +1125,10 @@ def _process_tick(pulse: pulsectl.Pulse) -> None:
                 save_name = _override_target(current)
                 if save_name is None:
                     _native_placed[key] = current
+                elif placed not in sink_map:
+                    # Same eviction case as the PA pass (#382, #386).
+                    _native_placed.pop(key, None)
+                    _pending_moves.pop(key, None)
                 elif _confirm_manual_move(key, app, save_name, overrides, now=now):
                     _native_placed[key] = current
                 # else: still an unconfirmed candidate (issue #102) —

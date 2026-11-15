@@ -1227,3 +1227,42 @@ def test_replug_race_channels_back_after_the_adopt_pass_saves_nothing():
 
     assert si.sink == game2.index
     saved.assert_not_called()
+
+
+def test_unplug_eviction_to_hdmi_is_not_saved_and_replug_restores_channel():
+    """#382 / #386: with the dongle unplugged the Arctis_* sinks vanish and
+    PipeWire evicts the stream to HDMI/analog. That stayed put past the
+    stability delay and was saved as a manual move, so the app was pinned
+    to the monitor for good and every replug sent it back there."""
+    saved = MagicMock()
+    media = _FakeSink(2, "Arctis_Media")
+    game = _FakeSink(1, "Arctis_Game")
+    hdmi = _FakeSink(5, "alsa_output.pci-0000_03_00.1.hdmi-stereo-extra1")
+    si = _FakeSinkInput(10, sink=media.index, proplist={"application.name": "EvictTest"})
+    clock = [1000.0]
+
+    def tick(sinks, default):
+        with patch("arctis_sound_manager.scripts.video_router.get_headset_power",
+                   return_value=HeadsetPower.ON), \
+             patch("arctis_sound_manager.scripts.video_router.load_overrides", return_value={}), \
+             patch("arctis_sound_manager.scripts.video_router.save_overrides", saved), \
+             patch("arctis_sound_manager.audio_reconfig.in_progress", return_value=False), \
+             patch("arctis_sound_manager.scripts.video_router.time.monotonic",
+                   side_effect=lambda: clock[0]):
+            _process_tick(_FakePulse(sinks, [si], default_sink_name=default))
+
+    tick([game, media, hdmi], game.name)
+    # Unplugged: only HDMI is left, the stream was evicted onto it.
+    si.sink = hdmi.index
+    for _ in range(4):
+        clock[0] += 1.5
+        tick([hdmi], hdmi.name)
+    saved.assert_not_called()
+
+    # Replug: the channels come back with new indices.
+    game2, media2 = _FakeSink(11, "Arctis_Game"), _FakeSink(12, "Arctis_Media")
+    for _ in range(2):
+        clock[0] += 1.5
+        tick([game2, media2, hdmi], game2.name)
+    assert si.sink == media2.index
+    saved.assert_not_called()
