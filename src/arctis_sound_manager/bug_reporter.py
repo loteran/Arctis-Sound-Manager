@@ -957,9 +957,12 @@ def collect_system_info() -> dict:
     # separate `asm-cli diagnose` process asks about them.
     info['usb_resume_reset'] = _usb_resume_reset_info()
     try:
-        info['usb_access'] = _usb_access_info()
+        # Own key: 'usb_access' is the device-node/udev section filled later
+        # (_usb_access), which used to overwrite this one, so no report ever
+        # said which transport was in use (#389).
+        info['usb_transport'] = _usb_access_info()
     except Exception as e:
-        info['usb_access'] = f'(error: {e!r})'
+        info['usb_transport'] = f'(error: {e!r})'
 
 
     # What the daemon actually decodes from the device: the battery level, the
@@ -1428,12 +1431,12 @@ def format_bug_report(traceback_str: Optional[str] = None) -> str:
             '',
         ]
 
-    usb_access = info.get('usb_access', '')
-    if usb_access:
+    usb_transport = info.get('usb_transport', '')
+    if usb_transport:
         lines += [
             '## USB access (libusb or hidraw)',
             '```',
-            usb_access,
+            usb_transport,
             '```',
             '',
         ]

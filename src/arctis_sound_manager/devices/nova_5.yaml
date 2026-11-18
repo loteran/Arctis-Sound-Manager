@@ -100,12 +100,25 @@ device:
         cable_charging: 0x01
       - starts_with: 0xb7
         headset_battery_charge: 0x01
+      # ChatMix dial, Nova 5X only: GG registers software ChatMix
+      # (MM_DEVICE_FEATURE_SOFTWARE_CHATMIX_FINITE) in arctis_nova_5x_tx and
+      # its translate_sync_data maps 0x45 to game level at payload byte 2 and
+      # chat level at byte 3 (0-100), so bytes 1 and 2 here — the same frame
+      # the Nova 7 pushes. The plain Nova 5 has no dial and never sends it,
+      # and the ChatMix bar only shows once both values have arrived (#388).
+      # The 0xb0 reply carries the same two levels, not read: on the plain
+      # Nova 5 they would drive a mix nobody can move.
+      - starts_with: 0x45
+        media_mix: 0x01
+        chat_mix: 0x02
 
     representation:
       headset:
         - headset_power_status
         - headset_battery_charge
         - cable_charging
+        - chat_mix
+        - media_mix
       wireless:
         - wireless_mode
 
@@ -253,6 +266,14 @@ device:
         update_sequence: [0xa3, 'value']
 
   status_parse:
+    media_mix:
+      type: percentage
+      perc_min: 0
+      perc_max: 100
+    chat_mix:
+      type: percentage
+      perc_min: 0
+      perc_max: 100
     headset_power_status:
       type: on_off
       off: 0x02

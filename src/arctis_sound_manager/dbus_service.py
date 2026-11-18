@@ -12,7 +12,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from dbus_next.aio.message_bus import MessageBus
-from dbus_next.constants import RequestNameReply
+from dbus_next.constants import MessageType, RequestNameReply
+from dbus_next.message import Message
 from dbus_next.service import ServiceInterface, method, signal
 
 from arctis_sound_manager.charging_case import status_category
@@ -859,6 +860,44 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
 
         return result
 
+class BusNameTakenError(RuntimeError):
+    """Another process owns ASM's well-known D-Bus name.
+
+    Not a crash: the daemon exits with this message instead of writing a crash
+    report (#387). The single-instance lock already stops a second asm-daemon,
+    so whoever holds the name here is something else on the same session bus
+    — the upstream Linux-Arctis-Manager uses the same name.
+    """
+
+
+async def describe_name_owner(bus, name: str) -> str:
+    """'pid N (cmdline)' of the connection owning *name*, or '' if unknown."""
+    async def _call(member: str, arg: str):
+        reply = await bus.call(Message(
+            destination='org.freedesktop.DBus', path='/org/freedesktop/DBus',
+            interface='org.freedesktop.DBus', member=member,
+            signature='s', body=[arg]))
+        if reply is None or reply.message_type != MessageType.METHOD_RETURN:
+            return None
+        return reply.body[0]
+
+    try:
+        owner = await _call('GetNameOwner', name)
+        if not owner:
+            return ''
+        pid = await _call('GetConnectionUnixProcessID', owner)
+        if not pid:
+            return f'connection {owner}'
+        try:
+            raw = Path(f'/proc/{pid}/cmdline').read_bytes()
+            cmd = raw.replace(b'\0', b' ').decode(errors='replace').strip()
+        except OSError:
+            cmd = ''
+        return f'pid {pid} ({cmd})' if cmd else f'pid {pid}'
+    except Exception:  # noqa: BLE001 — a description, never a second failure
+        return ''
+
+
 class DbusManager:
     _instance: 'DbusManager|None' = None
 
@@ -936,10 +975,13 @@ class DbusManager:
                 if detect_init() == "dinit"
                 else "systemctl --user stop arctis-manager.service"
             )
-            raise RuntimeError(
-                f"D-Bus name {DBUS_BUS_NAME!r} is already taken (reply={reply.name}). "
-                "Another asm-daemon is probably running — stop it with "
-                f"`{stop_cmd}` or `pkill -f asm-daemon` and retry."
+            owner = await describe_name_owner(bus, DBUS_BUS_NAME)
+            raise BusNameTakenError(
+                f"D-Bus name {DBUS_BUS_NAME!r} is already taken (reply={reply.name}"
+                f"{', held by ' + owner if owner else ''}). "
+                "Another asm-daemon, or the upstream Linux-Arctis-Manager, is "
+                f"running on this session — stop it (`{stop_cmd}`, or quit the "
+                "other program) and retry."
             )
         self.log.info(f"D-Bus name {DBUS_BUS_NAME!r} acquired ({reply.name}).")
 

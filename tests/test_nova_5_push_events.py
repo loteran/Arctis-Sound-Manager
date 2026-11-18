@@ -44,6 +44,15 @@ def test_charging_and_battery_push_frames():
     assert engine.device_status["headset_battery_charge"] == 0x50
 
 
+def test_nova_5x_chatmix_dial_push():
+    """#388: the 5X pushes its dial as 0x45 <game> <chat>, 0-100."""
+    engine = _make_engine(_nova_5())
+    _read(engine, [0x45, 0x64, 0x28])
+    parsed = parsed_status(engine.device_status, engine.device_config)
+    assert parsed["media_mix"] == 100
+    assert parsed["chat_mix"] == 40
+
+
 def test_profile_poll_interval():
     assert _nova_5().status.poll_interval_s == 0
     other = DeviceConfiguration(_yaml.load(DEVICES_DIR / "arctis_7.yaml"))
@@ -97,3 +106,4 @@ def test_zero_interval_never_polls_but_reconciles(monkeypatch):
     _run_ticks(monkeypatch, engine, 5)
     engine.request_device_status.assert_not_called()
     assert engine.reconcile_hardware_eq_mode.call_count == 5
+

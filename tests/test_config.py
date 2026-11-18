@@ -36,17 +36,18 @@ def test_config_parse():
 
     assert config.status is not None
     assert config.status.request == 0x06b0
-    assert len(config.status.response_mapping) == 9
+    assert len(config.status.response_mapping) == 10
     assert config.status.response_mapping[0].starts_with == 0x0725
     assert config.status.response_mapping[1].starts_with == 0x0620
     assert config.status.response_mapping[2].starts_with == 0x0731
     assert config.status.response_mapping[4].starts_with == 0x0745
-    assert config.status.response_mapping[8].starts_with == 0x06b0
+    assert config.status.response_mapping[9].starts_with == 0x06b0
+    assert config.status.response_mapping[8].starts_with == 0x07b7  # battery push (#337)
     assert len(config.status.response_mapping[0].__dict__.keys()) == 2
     assert len(config.status.response_mapping[1].__dict__.keys()) == 2
     assert len(config.status.response_mapping[2].__dict__.keys()) == 3
     assert len(config.status.response_mapping[4].__dict__.keys()) == 3
-    assert len(config.status.response_mapping[8].__dict__.keys()) == 15
+    assert len(config.status.response_mapping[9].__dict__.keys()) == 15
     assert hasattr(config.status.response_mapping[8], 'headset_power_status')
     assert len(config.status.representation.keys()) == 5
     assert list(config.status.representation.keys()) == ['headset', 'mic', 'gamedac', 'bluetooth', 'wireless']

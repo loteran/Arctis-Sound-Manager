@@ -330,7 +330,14 @@ def main():
 
     sys.excepthook = _crash_handler
 
-    asyncio.run(main_async())
+    from arctis_sound_manager.dbus_service import BusNameTakenError
+    try:
+        asyncio.run(main_async())
+    except BusNameTakenError as exc:
+        # Someone else's daemon, not a bug in this one: say who and exit,
+        # without a crash report (#387).
+        logging.getLogger('Daemon').error('%s', exc)
+        sys.exit(1)
 
 
 if __name__ == '__main__':

@@ -188,6 +188,20 @@ def test_the_bug_report_follows_the_choice(tmp_path, monkeypatch):
     assert "/dev/bus/usb/001/018" in text and "hidraw3" not in text
 
 
+def test_report_keeps_both_usb_sections(monkeypatch):
+    """#389: the udev/device-node section used to overwrite the transport one
+    under the same info key, so no report said whether hidraw was in use."""
+    from arctis_sound_manager import bug_reporter
+
+    monkeypatch.setattr(bug_reporter, "collect_system_info", lambda: {
+        "usb_transport": "chosen in Settings: hidraw",
+        "usb_access": "/etc/udev/rules.d/91-steelseries-arctis.rules: mode 0o644",
+    })
+    text = bug_reporter.format_bug_report()
+    assert "chosen in Settings: hidraw" in text
+    assert "91-steelseries-arctis.rules" in text
+
+
 def test_udev_rules_cover_the_hidraw_nodes():
     from arctis_sound_manager.udev_rules import render_rules, render_uaccess_rules
 

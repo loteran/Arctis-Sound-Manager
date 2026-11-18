@@ -125,6 +125,17 @@ device:
       - starts_with: 0x07b9
         transparent_noise_cancelling_level: 0x02
 
+      # Pushed by the base when the headset battery, the spare battery or the
+      # headset's state changes: GG's translate_sync_data reads 0xB7 as
+      # headset battery (byte 2), charger battery (3) and charging (4).
+      # Byte 4 uses the 0x06b0 reply's power encoding (01 off, 02 on the
+      # cable, 08 on), checked on a GG capture (#337: 07 b7 00 07 01 at
+      # power-off, 07 b7 08 07 08 back on, 07 b7 08 07 02 on the cable).
+      - starts_with: 0x07b7
+        headset_battery_charge: 0x02
+        charge_slot_battery_charge: 0x03
+        headset_power_status: 0x04
+
       - starts_with: 0x06b0
         bluetooth_powerup_state: 0x02
         bluetooth_auto_mute: 0x03

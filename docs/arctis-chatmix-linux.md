@@ -55,7 +55,8 @@ audio, unbalancing the very dial you are turning.
 ## Which headsets have it
 
 Every Arctis with a physical ChatMix dial, including the Nova Pro Wireless, Nova
-Pro Wired, Nova Pro Omni, Nova Elite, Nova 7 and Nova 5 families. The
+Pro Wired, Nova Pro Omni, Nova Elite, Nova 7 family and the Nova 5X (the
+plain Nova 5 has no dial: SteelSeries gives it no ChatMix either). The
 [supported devices page](device_support.md) lists every model with its USB
 Product ID.
 
