@@ -5,11 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.7.9] - 18 November 2026
 
 ### Added
 - **Arctis Nova 5X: the ChatMix dial works** (#388). The headset pushes the dial's position as SteelSeries GG reads it, and ASM did not decode it, so the dial did nothing. The plain Nova 5 has no dial. Reported by @nakliss.
 - **Arctis Nova Pro Wireless: battery and headset state update the moment they change** (#337). The base station pushes them when a battery level changes, the headset is switched off or on, or plugged in to charge; ASM now reads that push instead of waiting for its next status poll. Found in a SteelSeries GG capture by @Anotherdoomguy.
+- **3 new Sonar game presets from SteelSeries GG 124**: Enshrouded, Phantom Blade Zero and The Outlast Trials.
 
 ### Fixed
 - **The daemon no longer reports a crash when another program holds its D-Bus name** (#387). It now says which process holds it (process id and command line) and exits. The upstream Linux-Arctis-Manager uses the same name, so it cannot run alongside ASM. Reported by @druidican.
