@@ -46,6 +46,20 @@ HID_CONSTANTS_FN = "support.InitHIDCommandChunkTypeConstants"
 # Any immediate this long is an address or a RIP displacement: it moves with
 # every build and says nothing about what the code does.
 _ADDRESS = re.compile(r"0x[0-9a-f]{5,}")
+# Capstone prints small negative immediates as "-1" or "0xffffffffffffffff",
+# and xchg's operands in either order, depending on its version: GG 124
+# "changed" every hid-io function on that alone (#392). _canon folds both
+# before the address mask eats the long form.
+_NEG64 = re.compile(r"\b0x(f[0-9a-f]{15})\b")
+_XCHG = re.compile(r"^xchg (\S+), (\S+)$")
+
+
+def _canon(ins: str) -> str:
+    ins = _NEG64.sub(lambda m: str(int(m.group(1), 16) - (1 << 64)), ins)
+    m = _XCHG.match(ins)
+    if m:
+        ins = "xchg " + ", ".join(sorted(m.groups()))
+    return ins
 
 
 def _load_recover_key():
@@ -59,7 +73,7 @@ rk = _load_recover_key()
 
 
 def _fingerprint(lines: list[str]) -> str:
-    masked = "\n".join(_ADDRESS.sub("A", line.split(" ", 1)[1]) for line in lines)
+    masked = "\n".join(_ADDRESS.sub("A", _canon(line.split(" ", 1)[1])) for line in lines)
     return hashlib.sha256(masked.encode()).hexdigest()[:16]
 
 

@@ -425,11 +425,23 @@ def _resolve_spatial_tuning(store: dict, key: str, legacy: dict | None) -> tuple
     return None, "none"
 
 
+def _preset_path(name: str, tag: str) -> Path:
+    """The file a user preset called *name* lives in.
+
+    A "/" in the name used to be read as a folder, so saving a preset named
+    like GG's "Content/Media/Talking" crashed (#391). It becomes U+2215
+    (DIVISION SLASH), which looks the same in the preset list; every save,
+    lookup and delete goes through here, so they all agree on the file.
+    """
+    safe = name.replace("/", "\u2215").replace("\0", "")
+    return _PRESETS_DIR / f"{safe} {tag}.json"
+
+
 def _strip_preset_spatial_tuning(channel: str, name: str) -> None:
     """Drop the tuning keys from a user preset's saved Spatial block, so a
     "forget" or "save for all" is not undone by that file on the next load."""
     tag = _CHANNEL_TAG.get(channel, "[Game]")
-    path = _PRESETS_DIR / f"{name} {tag}.json"
+    path = _preset_path(name, tag)
     if not path.exists():
         return
     try:
@@ -515,7 +527,7 @@ def _save_custom_preset(channel: str, name: str, bands: list,
         preset_data["macros"] = {k: round(float(v), 2) for k, v in macros.items()}
     if settings:
         preset_data["settings"] = settings
-    path = _PRESETS_DIR / f"{name} {tag}.json"
+    path = _preset_path(name, tag)
     path.write_text(json.dumps(preset_data, indent=2, ensure_ascii=False))
     return path
 
@@ -530,12 +542,12 @@ def _read_preset_macros(path: Path) -> dict[str, float] | None:
 
 def _is_custom_preset(channel: str, name: str) -> bool:
     tag = _CHANNEL_TAG.get(channel, "[Game]")
-    return (_PRESETS_DIR / f"{name} {tag}.json").exists()
+    return _preset_path(name, tag).exists()
 
 
 def _delete_custom_preset(channel: str, name: str) -> bool:
     tag = _CHANNEL_TAG.get(channel, "[Game]")
-    path = _PRESETS_DIR / f"{name} {tag}.json"
+    path = _preset_path(name, tag)
     if path.exists():
         path.unlink()
         return True
@@ -2696,7 +2708,7 @@ class SpatialAudioWidget(QWidget):
         if not name:
             return False
         tag = _CHANNEL_TAG.get(self._sonar_channel, "[Game]")
-        path = _PRESETS_DIR / f"{name} {tag}.json"
+        path = _preset_path(name, tag)
         try:
             spatial = (json.loads(path.read_text()).get("settings") or {}).get("spatial") \
                 if path.exists() else None

@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **The daemon no longer reports a crash when another program holds its D-Bus name** (#387). It now says which process holds it (process id and command line) and exits. The upstream Linux-Arctis-Manager uses the same name, so it cannot run alongside ASM. Reported by @druidican.
 - **Bug reports say again which headset access (hidraw or libusb) is in use** (#389). Another section of the report overwrote it.
+- **Saving a Sonar preset whose name contains a `/` no longer crashes** (#391). The slash was read as a folder; it is now kept in the name as a look-alike character. Reported by @GalacticGamer6.
 
 ## [1.7.8] - 15 November 2026
 
