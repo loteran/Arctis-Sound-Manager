@@ -46,6 +46,10 @@ jobs:
         run: |
           for _ in $(seq 60); do
             read -r commit status < <(gh api "repos/${GITHUB_REPOSITORY}/pages/builds/latest" --jq '"\(.commit) \(.status)"')
+            # A later push (the release's packaging sync) can supersede this
+            # commit's Pages build; that commit postdates the checkout, so
+            # fetch it before asking whether it contains ours.
+            git cat-file -e "${commit}^{commit}" 2>/dev/null || git fetch -q origin "$commit" || true
             if [ "$status" = built ] && git merge-base --is-ancestor "$GITHUB_SHA" "$commit"; then
               exit 0
             fi
