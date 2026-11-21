@@ -4057,6 +4057,60 @@ def _spatial_enabled(channel: str) -> bool:
         return True
 
 
+# ── Auto Spatial Audio: source dwell ─────────────────────────────────────────
+# A single watchdog snapshot is not proof of surround content: a Cloudflare
+# challenge page can open an 8-channel audio context for a few seconds while
+# it checks the browser. Acting on that tick moved the whole channel to HeSuVi
+# and back. Require the source to persist before turning spatial on; stereo
+# still releases immediately, as before.
+_AUTO_SPATIAL_ENGAGE_S = 10.0  # 2 watchdog ticks at 5 s
+# per channel: {"on": bool, "since": monotonic timestamp or None}
+_auto_spatial_state: dict[str, dict] = {}
+
+
+def _spatial_now() -> float:
+    """Monotonic clock for the Auto Spatial Audio dwell (patchable in tests)."""
+    import time
+    return time.monotonic()
+
+
+def _auto_spatial_engaged(channel: str, surround_source: bool) -> bool:
+    """Return the debounced Auto Spatial Audio state for *channel*.
+
+    Auto turns on only after *surround_source* has been true for
+    :data:`_AUTO_SPATIAL_ENGAGE_S`; a source that goes stereo before then
+    cancels the pending engage. Stereo releases immediately, matching the
+    pre-existing behaviour. The first evaluation adopts the current source,
+    so a daemon start on a genuine 5.1 stream does not wait.
+
+    State is per channel and per process; the daemon's five-second watchdog
+    is the clock in normal operation.
+    """
+    now = _spatial_now()
+    state = _auto_spatial_state.get(channel)
+    if state is None:
+        _auto_spatial_state[channel] = {
+            "on": bool(surround_source),
+            "since": now if surround_source else None,
+        }
+        return bool(surround_source)
+
+    if not surround_source:
+        state["on"] = False
+        state["since"] = None
+        return False
+    if state["on"]:
+        return True
+    if state["since"] is None:
+        state["since"] = now
+        return False
+    if now - state["since"] >= _AUTO_SPATIAL_ENGAGE_S:
+        state["on"] = True
+        state["since"] = None
+        return True
+    return False
+
+
 def ensure_spatial_eq_links(
     channels: tuple[str, ...] | None = None,
     data: list | None = None,
@@ -4097,6 +4151,11 @@ def ensure_spatial_eq_links(
     physical-FL/FR, i.e. clean stereo. (An adapter 8→2 downmix of the
     psd-upmixed signal WOULD colour the sound — center/surround re-summed —
     which is exactly why we link channel-matched, not through a downmixer.)
+
+    Auto mode (``_spatial_auto``) requires the source to persist for
+    :data:`_AUTO_SPATIAL_ENGAGE_S` before it turns on — see
+    :func:`_auto_spatial_engaged`. Stereo releases immediately; manual mode
+    is unchanged.
 
     Parameters
     ----------
@@ -4145,10 +4204,18 @@ def ensure_spatial_eq_links(
             enabled = False
         if enabled and _spatial_auto(channel):
             # Virtual surround for 5.1/7.1 sources only: stereo (music, a game
-            # already rendering for headphones) plays as it is. Re-evaluated
-            # every watchdog tick, and moving this link restarts nothing.
-            enabled = sink_has_multichannel_stream(
-                f"Arctis_{channel.capitalize()}", data)
+            # already rendering for headphones) plays as it is. The source is
+            # re-evaluated every watchdog tick, but it must persist for
+            # _AUTO_SPATIAL_ENGAGE_S before spatial turns on, so a challenge
+            # page's short 8-channel probe cannot flip the channel.
+            enabled = _auto_spatial_engaged(
+                channel,
+                sink_has_multichannel_stream(
+                    f"Arctis_{channel.capitalize()}", data),
+            )
+        else:
+            # Manual or disabled: no automatic source decision is in flight.
+            _auto_spatial_state.pop(channel, None)
         # Each channel links to its OWN HeSuVi chain (issue #169): Game keeps the
         # historical un-suffixed node, Media routes to effect_input.…-hesuvi-media,
         # so their independent Immersion/Distance never bleed into each other.

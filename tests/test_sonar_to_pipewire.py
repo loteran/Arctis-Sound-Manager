@@ -3012,6 +3012,100 @@ def test_ensure_spatial_eq_links_media_targets_media_hesuvi(monkeypatch):
                       "effect_input.virtual-surround-7.1-hesuvi-media")]
 
 
+# ── Auto Spatial Audio — source dwell ────────────────────────────────────────
+
+_MEDIA_DOWNMIX = "effect_input.sonar-media-downmix"
+_MEDIA_HESUVI = "effect_input.virtual-surround-7.1-hesuvi-media"
+
+
+def _auto_spatial_steps(monkeypatch, *, auto=True):
+    """Drive ensure_spatial_eq_links(("media",)) one watchdog tick at a time."""
+    state = {"surround": False, "target": None, "auto": auto}
+    monkeypatch.setattr(_s2p_p3, "_spatial_enabled", lambda ch: True)
+    monkeypatch.setattr(_s2p_p3, "_spatial_mode", lambda ch: "headphones")
+    monkeypatch.setattr(_s2p_p3, "_spatial_auto", lambda ch: state["auto"])
+    monkeypatch.setattr(_s2p_p3, "_auto_spatial_state", {}, raising=False)
+    monkeypatch.setattr(_s2p_p3, "channel_destination",
+                        lambda ch, data=None: "alsa_output.test-headset")
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.sink_has_multichannel_stream",
+        lambda sink, data=None: state["surround"],
+    )
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.pw_node_exists",
+        lambda name, data=None: True,
+    )
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.node_input_channel_count",
+        lambda name, data=None: 2,
+    )
+    monkeypatch.setattr(
+        "arctis_sound_manager.pw_utils.ensure_loopback_link",
+        lambda playback, target, data=None: state.__setitem__("target", target) or True,
+    )
+
+    def step(surround: bool) -> str:
+        state["surround"] = surround
+        _s2p_p3.ensure_spatial_eq_links(("media",))
+        return state["target"]
+
+    return step
+
+
+def test_auto_spatial_ignores_a_one_tick_multichannel_blip(monkeypatch):
+    """A 2–6 s >2ch snapshot must not flip the channel to HeSuVi."""
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["now"])
+    step = _auto_spatial_steps(monkeypatch)
+
+    assert step(False) == _MEDIA_DOWNMIX
+    clock["now"] += 5
+    assert step(True) == _MEDIA_DOWNMIX
+    clock["now"] += 5
+    assert step(False) == _MEDIA_DOWNMIX
+
+
+def test_auto_spatial_engages_after_the_source_persists(monkeypatch):
+    """A genuine 5.1/7.1 source engages after the 10 s dwell."""
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["now"])
+    step = _auto_spatial_steps(monkeypatch)
+
+    assert step(False) == _MEDIA_DOWNMIX
+    for _ in range(2):                       # first tick, then 5 s later
+        clock["now"] += 5
+        assert step(True) == _MEDIA_DOWNMIX
+    clock["now"] += 5                        # 10 s since the first tick
+    assert step(True) == _MEDIA_HESUVI
+
+
+def test_auto_spatial_releases_immediately_on_stereo(monkeypatch):
+    """A stereo source releases the channel on the next tick."""
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["now"])
+    step = _auto_spatial_steps(monkeypatch)
+
+    assert step(False) == _MEDIA_DOWNMIX
+    for _ in range(3):
+        clock["now"] += 5
+        target = step(True)
+    assert target == _MEDIA_HESUVI
+
+    clock["now"] += 5
+    assert step(False) == _MEDIA_DOWNMIX
+
+
+def test_manual_spatial_mode_is_not_debounced(monkeypatch):
+    """Auto off keeps the explicit Spatial ON immediate."""
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["now"])
+    step = _auto_spatial_steps(monkeypatch, auto=False)
+
+    assert step(False) == _MEDIA_HESUVI
+    clock["now"] += 5
+    assert step(True) == _MEDIA_HESUVI
+
+
 def test_hesuvi_conf_spatial_drift_detection():
     """The drift check compares the conf header's baked percentages against the
     saved JSON — the trigger that makes the sliders live (#169)."""
@@ -4350,6 +4444,9 @@ def test_a_surround_stream_is_told_from_stereo_by_its_format(formats, expected):
     ([8], "effect_input.virtual-surround-7.1-hesuvi"),
 ])
 def test_spatial_auto_spatialises_surround_sources_only(monkeypatch, formats, target):
+    # The dwell state is per process; give each case the fresh start a daemon
+    # gets, so [2] does not leave [8] mid-transition.
+    monkeypatch.setattr(_s2p_p3, "_auto_spatial_state", {}, raising=False)
     monkeypatch.setattr(_s2p_p3, "_spatial_enabled", lambda ch: True)
     monkeypatch.setattr(_s2p_p3, "_spatial_auto", lambda ch: True)
     monkeypatch.setattr(_s2p_p3, "_get_physical_out_game", lambda: "alsa_output.dest")
