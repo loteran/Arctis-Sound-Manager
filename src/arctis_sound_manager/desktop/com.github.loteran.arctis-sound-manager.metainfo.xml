@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.7.10" date="2026-11-24">
+      <description>
+        <p>Audio visualisers and other recorders stay on the channel you set them to (#398). The media router moved every program recording a channel to Game unless it had an override, so cava set to Media was pulled onto Game a few seconds after starting. Only game clip recorders (Steam Game Recording, gpu-screen-recorder) are now sent to Game. Reported by @nagaisa. Auto Spatial Audio no longer switches to virtual surround for a few seconds every five minutes (#397). A Cloudflare challenge page opens a short 8-channel audio stream while it checks the browser, and Auto acted on it. A surround source now has to last 10 seconds before Auto turns spatial on; going back to stereo is still immediate. Diagnosed and fixed by @Azykle.</p>
+      </description>
+    </release>
     <release version="1.7.9" date="2026-11-18">
       <description>
         <p>Arctis Nova 5X: the ChatMix dial works (#388). The headset pushes the dial's position as SteelSeries GG reads it, and ASM did not decode it, so the dial did nothing. The plain Nova 5 has no dial. Reported by @nakliss. Arctis Nova Pro Wireless: battery and headset state update the moment they change (#337). The base station pushes them when a battery level changes, the headset is switched off or on, or plugged in to charge; ASM now reads that push instead of waiting for its next status poll. Found in a SteelSeries GG capture by @Anotherdoomguy. 3 new Sonar game presets from SteelSeries GG 124: Enshrouded, Phantom Blade Zero and The Outlast Trials.</p>
@@ -199,11 +204,6 @@
     <release version="1.4.26" date="2026-09-14">
       <description>
         <p>The daemon froze on wake from suspend (1.4.25 regression, #238). Two. Chat channel routed to an external output device now stays stereo instead of collapsing to mono/left-only, since ASM now owns its link (PipeWire no longer force-negotiates the chat EQ output to the headset's native mono PCM format). (#242). Turning the Aux channel off (or back on) never actually told the daemon.</p>
-      </description>
-    </release>
-    <release version="1.4.25" date="2026-09-13">
-      <description>
-        <p>**Nova Pro Omni: the ChatMix knob did nothing after boot until the daemon. A failed init frame was never retried. send_command() logs USB errors. **ChatMix on the Nova Pro Omni also stayed dead specifically after a system.</p>
       </description>
     </release>
   </releases>
