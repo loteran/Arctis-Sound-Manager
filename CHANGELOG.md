@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.10] - 24 November 2026
+
+### Fixed
+- **Audio visualisers and other recorders stay on the channel you set them to** (#398). The media router moved every program recording a channel to Game unless it had an override, so cava set to Media was pulled onto Game a few seconds after starting. Only game clip recorders (Steam Game Recording, gpu-screen-recorder) are now sent to Game. Reported by @nagaisa.
+- **Auto Spatial Audio no longer switches to virtual surround for a few seconds every five minutes** (#397). A Cloudflare challenge page opens a short 8-channel audio stream while it checks the browser, and Auto acted on it. A surround source now has to last 10 seconds before Auto turns spatial on; going back to stereo is still immediate. Diagnosed and fixed by @Azykle.
+
 ## [1.7.9] - 18 November 2026
 
 ### Added
