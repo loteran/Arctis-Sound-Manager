@@ -680,16 +680,41 @@ def _is_monitor_source(name: str) -> bool:
     return name.endswith(_MONITOR_SUFFIX)
 
 
-def _capture_target_source(props: dict, sources, overrides: dict):
-    """The monitor a recording stream belongs on, or None if it is absent.
+# Issue #398: falling back to Game for EVERY monitor reader herded audio
+# visualisers (cava, a wallpaper's spectrum) onto Game seconds after the user
+# had pointed them at Media. The user's choice cannot be read off the stream:
+# pipewire-pulse turns "@DEFAULT_MONITOR@" into target.object=<default sink>
+# exactly as it does an explicit "Arctis_Media.monitor" (pulse-server.c,
+# do_create_record_stream), so Steam reading the default monitor and cava
+# pinned to Media carry the same properties. The Game default is therefore
+# kept for the recorders it was written for — game clip recorders, whose
+# whole purpose is the game audio — and every other recorder is left where
+# it was put unless routing_overrides.json names a channel for it.
+_GAME_RECORDERS = frozenset({"steam", "gpu-screen-recorder"})
 
-    Honours routing_overrides.json, so a recorder can be pinned to Chat or
-    Media, and falls back to the Game channel — where the game audio lives,
-    and what a recorder wants in the overwhelming majority of cases.
+
+def _is_game_recorder(props: dict) -> bool:
+    """Whether a capture stream belongs to a game clip recorder."""
+    names = (props.get("application.name", ""),
+             props.get("application.process.binary", ""))
+    return any(isinstance(n, str) and n.strip().lower() in _GAME_RECORDERS
+               for n in names)
+
+
+def _capture_target_source(props: dict, sources, overrides: dict):
+    """The monitor a recording stream belongs on, or None to leave it alone.
+
+    Honours routing_overrides.json, so any recorder can be pinned to a
+    channel. Without an override only game clip recorders fall back to the
+    Game channel; see _GAME_RECORDERS for why the rest are not touched.
     """
     app = props.get("application.name", "")
     key = app_override_key(app, props.get("application.process.binary", ""))
-    channel_sink = _lookup_override(overrides, key, app) or _CHANNEL_SINKS["game"]
+    channel_sink = _lookup_override(overrides, key, app)
+    if channel_sink is None:
+        if not _is_game_recorder(props):
+            return None
+        channel_sink = _CHANNEL_SINKS["game"]
     wanted = channel_sink + _MONITOR_SUFFIX
     return next((s for s in sources if s.name == wanted), None)
 

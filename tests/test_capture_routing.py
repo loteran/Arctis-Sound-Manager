@@ -195,3 +195,61 @@ def test_asm_clip_recorder_streams_are_left_on_their_channels():
 
     assert pulse.moves == []
     assert (chat.source, media.source) == (2, 1)
+
+
+# ── Issue #398: only game recorders default to Game ──────────────────────────
+
+def _visualiser(source_index: int, name: str = "cava") -> _FakeSourceOutput:
+    # cava asking for Arctis_Media.monitor: pipewire-pulse records the sink
+    # name in target.object, the same as it does for @DEFAULT_MONITOR@.
+    return _FakeSourceOutput(13, source_index, {
+        "application.name": name, "application.process.binary": name,
+        "media.class": "Stream/Input/Audio", "target.object": "Arctis_Media",
+        "stream.capture.sink": "true",
+    })
+
+
+def test_visualiser_pointed_at_media_is_left_there():
+    """The reported case: cava set to Media was pulled onto Game seconds later."""
+    cava = _visualiser(1)
+    pulse = _FakePulse(_sources(), [cava])
+
+    video_router._route_capture_streams(pulse, HeadsetPower.ON, {})
+
+    assert pulse.moves == []
+    assert cava.source == 1
+
+
+@pytest.mark.parametrize("on_source", [0, 2])
+def test_unknown_recorder_is_not_moved_from_any_monitor(on_source):
+    """Without an override, a non-game recorder stays on the monitor it reads."""
+    pulse = _FakePulse(_sources(), [_visualiser(on_source, "Waywallen Daemon")])
+
+    video_router._route_capture_streams(pulse, HeadsetPower.ON, {})
+
+    assert pulse.moves == []
+
+
+def test_override_still_moves_a_non_game_recorder():
+    """routing_overrides.json remains the way to pin any recorder."""
+    pulse = _FakePulse(_sources(), [_visualiser(0)])
+
+    video_router._route_capture_streams(pulse, HeadsetPower.ON, {"cava": "Arctis_Media"})
+
+    assert pulse.moves == [(13, 1)]
+
+
+@pytest.mark.parametrize("props", [
+    {"application.name": "Steam"},
+    {"application.name": "steam"},
+    {"application.name": "gpu-screen-recorder"},
+    {"application.name": "GPU Screen Recorder", "application.process.binary": "gpu-screen-recorder"},
+])
+def test_game_recorders_default_to_game(props):
+    """#225 stays fixed: a clip recorder on Media is moved to the Game monitor."""
+    so = _FakeSourceOutput(14, 1, {**props, "media.class": "Stream/Input/Audio"})
+    pulse = _FakePulse(_sources(), [so])
+
+    video_router._route_capture_streams(pulse, HeadsetPower.ON, {})
+
+    assert pulse.moves == [(14, 0)]
