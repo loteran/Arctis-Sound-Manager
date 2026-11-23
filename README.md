@@ -1306,6 +1306,7 @@ Thanks to everyone who has contributed code, fixes, or community support:
 | [GaryBaker54](https://github.com/GaryBaker54) | Traced the hidraw reset loop to fwupd re-binding the HID driver every 20 seconds and designed the in-place reopen of the replaced node ([#383](https://github.com/loteran/Arctis-Sound-Manager/issues/383)) |
 | [DonutWrecker](https://github.com/DonutWrecker) | Windows GG capture and USB/HID descriptors of the Arctis 5 (2017), from which its device profile was built ([#331](https://github.com/loteran/Arctis-Sound-Manager/issues/331)) |
 | [N0SY1](https://github.com/N0SY1) | Reported the Arctis Pro Wireless sound card vanishing with the `lsusb -t` that showed its audio interface left without a driver ([#365](https://github.com/loteran/Arctis-Sound-Manager/issues/365)) |
+| [Azykle](https://github.com/Azykle) | Traced Auto Spatial Audio flipping to virtual surround on a Cloudflare challenge page's short 8-channel audio probe, measured it, and fixed it with a 10 s source dwell (PR [#397](https://github.com/loteran/Arctis-Sound-Manager/pull/397)) |
 
 ---
 
