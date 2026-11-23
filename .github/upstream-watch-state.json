@@ -1,6 +1,6 @@
 {
   "dbus-next": "0.2.3",
-  "distrobox": "1.8.2.5",
+  "distrobox": "1.8.2.6",
   "ggoled": "45d3b42d21e3f97b0d58f1475887e409c7c26fb9",
   "headsetcontrol": "163c6edf744c28804d95e3653e5ea7bc9486b46c",
   "headsetcontrol-release": "4.3.0",
@@ -10,7 +10,7 @@
   "kernel-release": "v7.3",
   "kernel-usb-audio": "ae78fd83cc14f2a3cefd56bd6553e0c6d81031e4",
   "libusb": "v1.0.30",
-  "linux-arctis-manager": "81c634223afeaae9616fb4332a599407ed66c6ab",
+  "linux-arctis-manager": "ba5088b521124f914904c53bd3dc373c2ad4b50c",
   "pipewire": "1.6.11",
   "pulsectl": "24.12.0",
   "pyside6": "6.12.0",
