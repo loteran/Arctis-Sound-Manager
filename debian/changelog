@@ -1,3 +1,20 @@
+arctis-sound-manager (1.7.10-1) noble; urgency=medium
+
+  * Audio visualisers and other recorders stay on the channel you set them
+    to (#398). The media router moved every program recording a channel to
+    Game unless it had an override, so cava set to Media was pulled onto
+    Game a few seconds after starting. Only game clip recorders (Steam Game
+    Recording, gpu-screen-recorder) are now sent to Game. Reported by
+    @nagaisa.
+  * Auto Spatial Audio no longer switches to virtual surround for a few
+    seconds every five minutes (#397). A Cloudflare challenge page opens a
+    short 8-channel audio stream while it checks the browser, and Auto acted
+    on it. A surround source now has to last 10 seconds before Auto turns
+    spatial on; going back to stereo is still immediate. Diagnosed and fixed
+    by @Azykle.
+
+ -- loteran <axel.valadon@gmail.com>  Tue, 24 Nov 2026 00:00:00 +0000
+
 arctis-sound-manager (1.7.9-1) noble; urgency=medium
 
   * Arctis Nova 5X: the ChatMix dial works (#388). The headset pushes the
