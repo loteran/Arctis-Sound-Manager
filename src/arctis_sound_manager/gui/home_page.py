@@ -995,10 +995,10 @@ class AudioCard(QWidget):
         self._refresh_output_label()
 
     def set_disconnected(self):
-        self._ignore_change = True
-        self._slider.setValue(0)
+        # The slider stays where it was, locked: the channel is gone for now,
+        # its volume is not changed. Dropped to 0 it read as "the volume was
+        # turned down" when the headset was unplugged (it comes back as it was).
         self._pct_label.setText("—")
-        self._ignore_change = False
         self._slider.setEnabled(False)
 
     def set_connected(self):
@@ -1537,6 +1537,14 @@ class _DeviceStatusBar(QWidget):
         for pill in (self._conn_pill, self._headset_bat_pill, self._dac_bat_pill,
                      self._case_bat_pill):
             pill.apply_theme()
+
+    def set_generic(self, output: str):
+        """The no-headset mode: no headset to report on, only where sound goes."""
+        self._conn_pill.set_value(
+            I18n.get_instance().translate('ui', 'generic_mode_status').format(
+                device=output or "—"), _STATUS_ONLINE_COLOR)
+        self._headset_bat_pill.set_visible(False)
+        self._dac_bat_pill.set_visible(False)
 
     def set_no_device(self):
         # Through I18n like every other user-visible string: this one was
@@ -2229,6 +2237,14 @@ class HomePage(QWidget):
 
     @Slot(object)
     def update_status(self, status: dict):
+        # The no-headset mode answers "online" (so nothing reads it as "no
+        # device", #202); here it is shown as what it is, not as a headset.
+        generic = getattr(self, "_generic_device", None)
+        if generic is not None:
+            self._status_bar.set_generic(generic.get("output", ""))
+            self._headset_name_lbl.hide()
+            self._master_card.set_hw_gauge("", None)
+            return
         if not status:
             self._status_bar.set_no_device()
             self._headset_name_lbl.hide()
@@ -2303,9 +2319,10 @@ class HomePage(QWidget):
         self._balance_factors = levels(SimpleNamespace(**{
             k: general[k] for k in ("output_balance_enabled", "output_volume_left",
                                     "output_volume_right") if k in general}))
-        device_name = settings.get("device_name", "")
-        if device_name:
-            self._last_device_name = device_name
+        # Cleared as well as set: a name kept after its headset was unplugged
+        # went on showing as connected (with the no-headset mode's status).
+        self._last_device_name = settings.get("device_name", "") or ""
+        self._generic_device = settings.get("generic_device")
 
     # ── Update notification ────────────────────────────────────────────────────
 

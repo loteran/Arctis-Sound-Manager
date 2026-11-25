@@ -120,7 +120,7 @@ def _engine(*, generic_mode: bool, output: str | None = "alsa_output.usb-Generic
     engine.redirect_to_media_sink = MagicMock()
     engine.init_device = MagicMock()
     engine.teardown = MagicMock()
-    engine._resolve_sink_name = lambda w: w or None
+    engine._resolve_sink_name = lambda w, source=False: w or None
     return engine
 
 
@@ -179,7 +179,7 @@ def test_an_absent_output_device_waits_instead_of_failing():
     """Bluetooth earbuds in their case are the ordinary situation, not an
     error: the mode reports it once and comes back when they do."""
     engine = _engine(generic_mode=True, output="bluez_output.gone")
-    engine._resolve_sink_name = lambda w: None
+    engine._resolve_sink_name = lambda w, source=False: None
 
     handled = engine._setup_generic_device()
 

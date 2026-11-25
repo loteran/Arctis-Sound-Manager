@@ -447,6 +447,13 @@ class QEventsSection(QWidget):
         ])
         rows['login'].setVisible(True)
 
+        # The no-headset mode: there is no headset to connect, disconnect,
+        # mute, idle or take off — rows about one would describe settings that
+        # do nothing in this mode.
+        if settings.get('generic_device') is not None:
+            for key in ('connect', 'disconnect', 'mute', 'idle', 'wear'):
+                rows[key].setVisible(False)
+
     # ── Microphone switching: one bit per event of micro_autoswitch ──────────
 
     def _on_mic_toggled(self, bit: int, state: Qt.CheckState) -> None:

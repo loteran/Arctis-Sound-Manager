@@ -365,6 +365,8 @@ class HeadsetPage(QWidget):
 
     @Slot(object)
     def update_status(self, status: dict):
+        if getattr(self, "_generic", False):
+            status = {}      # no headset: no power or battery tiles
         self._status_tiles.update_status(status)
         self._anc_widget.update_status(status)
         self._events.update_status(status)
@@ -377,14 +379,27 @@ class HeadsetPage(QWidget):
         vendor_id   = settings.get("vendor_id", "")
         product_id  = settings.get("product_id", "")
         device_name = settings.get("device_name", "")
-        if device_name:
+        generic = settings.get("generic_device")
+        self._generic = generic is not None
+        if generic is not None:
+            # No headset: say so, and where the sound and the microphone are.
+            self._device_name_label.setText(I18n.translate("ui", "generic_mode_title"))
+            self._vendor_label.setText(I18n.translate("ui", "generic_output_line").format(
+                device=generic.get("output") or "—"))
+            self._product_label.setText(
+                I18n.translate("ui", "generic_input_line").format(device=generic["input"])
+                if generic.get("input") else I18n.translate("ui", "generic_no_input"))
+        elif device_name:
             self._device_name_label.setText(device_name)
             from arctis_sound_manager.telemetry import maybe_send
             maybe_send(device_name, str(product_id))
-        if vendor_id:
-            self._vendor_label.setText(f"Vendor ID:   {vendor_id}")
-        if product_id:
-            self._product_label.setText(f"Product ID:  {product_id}")
+            self._vendor_label.setText(f"Vendor ID:   {vendor_id}" if vendor_id else "")
+            self._product_label.setText(f"Product ID:  {product_id}" if product_id else "")
+        else:
+            # Unplugged: the last headset's name stayed, reading as connected.
+            self._device_name_label.setText(I18n.translate("ui", "no_device"))
+            self._vendor_label.setText("")
+            self._product_label.setText("")
 
         # Changed in Settings (or by another instance) — follow it. This is the
         # whole of the synchronisation: both pickers read the same value out of
