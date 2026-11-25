@@ -369,8 +369,19 @@ def colour_map(src: dict[str, str], dst: dict[str, str]) -> dict[str, str]:
     return {k: v for k, v in mapping.items() if k != v.lower()}
 
 
+_CHEVRON_URL = re.compile(r"url\(([^)]*chevron-(up|down)-([0-9a-fA-F]{6})\.svg)\)")
+
+
 def translate_sheet(sheet: str, mapping: dict[str, str]) -> str:
-    if not sheet or not mapping or "#" not in sheet:
+    if not sheet or not mapping:
+        return sheet
+    if "chevron-" in sheet:
+        # Drop-down arrows are files named after their colour (_chevron_icon).
+        def arrow(m: re.Match) -> str:
+            new = mapping.get("#" + m.group(3).lower())
+            return f"url({_chevron_icon(new, m.group(2) == 'up')})" if new else m.group(0)
+        sheet = _CHEVRON_URL.sub(arrow, sheet)
+    if "#" not in sheet:
         return sheet
     return _HEX_COLOR.sub(lambda m: mapping.get(m.group(0).lower(), m.group(0)), sheet)
 

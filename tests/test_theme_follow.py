@@ -53,3 +53,12 @@ def test_tinted_icon_follows(themed):
     T.set_active_theme("neon")
     T.retheme_widgets()
     assert icon._color == T.THEMES["neon"]["ACCENT"]
+
+
+def test_arrow_files_named_after_their_colour_follow(themed, monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    mapping = T.colour_map(T.THEMES["aurora"], T.THEMES["neon"])
+    old = T._chevron_icon(T.THEMES["aurora"]["TEXT_SECONDARY"], False)
+    sheet = f"QComboBox::down-arrow {{ image: url({old}); }}"
+    new = T.translate_sheet(sheet, mapping)
+    assert T.THEMES["neon"]["TEXT_SECONDARY"].lstrip("#").lower() in new
