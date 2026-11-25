@@ -2661,7 +2661,10 @@ class HomePage(QWidget):
             # Output below, which may be a different, unrelated sink entirely.
             sink_master = _headset_sink(sinks)
             if sink_master is not None:
-                master_pct = round(sink_master.volume.value_flat * 100)
+                # The loudest side, not the average: with a left/right balance
+                # (output_balance) the average is not what the slider sets.
+                from arctis_sound_manager.output_balance import main_volume
+                master_pct = round(main_volume(sink_master) * 100)
                 self._master_card.set_volume(master_pct)
                 self._sink_master = sink_master
 
@@ -3226,7 +3229,21 @@ class HomePage(QWidget):
         self._apply_volume(self._sink_ext, value)
 
     def _on_master_volume_changed(self, value: int):
-        self._apply_volume(self._sink_master, value)
+        pulse = self._get_pulse()
+        if pulse is None or self._sink_master is None:
+            return
+        # Through output_balance so moving the main volume keeps the
+        # left/right levels instead of evening both sides out.
+        from arctis_sound_manager import output_balance
+        from arctis_sound_manager.settings import GeneralSettings
+        try:
+            fresh = next((s for s in pulse.sink_list() if s.name == self._sink_master.name), None)
+            if fresh is not None:
+                output_balance.set_main_volume(
+                    pulse, fresh, value / 100.0,
+                    output_balance.levels(GeneralSettings.read_from_file()))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Error setting master volume: %s", exc)
 
     def _on_aux_channel_volume_changed(self, value: int):
         self._apply_volume(getattr(self, "_sink_aux", None), value)

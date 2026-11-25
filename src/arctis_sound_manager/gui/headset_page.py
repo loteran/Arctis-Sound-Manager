@@ -191,6 +191,14 @@ class HeadsetPage(QWidget):
         layout.addWidget(self._anc_section)
         layout.addSpacing(8)
 
+        # Separate left/right output level (hearing that differs between the
+        # ears), sliders hidden behind their own toggle. It sits at the bottom
+        # of the General card, which is rebuilt with the device's sections, so
+        # _sync_setting_cards() moves it into each new card.
+        from arctis_sound_manager.gui.output_balance_widget import QOutputBalanceWidget
+        self._balance_widget = QOutputBalanceWidget()
+        self._balance_widget.setVisible(False)
+
         # Rebuilt only when the device's set of sections changes; see
         # _sync_setting_cards().
         self._cards_layout = QVBoxLayout()
@@ -239,6 +247,7 @@ class HeadsetPage(QWidget):
         self._device_selector.setStyleSheet(card_contents_qss())
         self._status_tiles.apply_theme()
         self._anc_section.apply_theme()
+        self._balance_widget.apply_theme()
         for card in self._setting_cards:
             card.apply_theme()
 
@@ -341,6 +350,7 @@ class HeadsetPage(QWidget):
         station's settings belong to the DAC page. A daemon too old to send
         each setting's section gets everything in a single card.
         """
+        self._balance_widget.update_from_settings(settings.get('general') or {})
         values = settings.get('device') or {}
         groups: dict[str | None, list[str]] = {}
         for name, config in (settings.get('settings_config') or {}).items():
@@ -356,6 +366,9 @@ class HeadsetPage(QWidget):
         if wanted == self._card_groups:
             return
 
+        # Out of the old card first: deleteLater() takes its children with it.
+        self._balance_widget.setParent(self._content)
+        self._balance_widget.setVisible(False)
         for card in self._setting_cards:
             self._cards_layout.removeWidget(card)
             card.deleteLater()
@@ -366,6 +379,11 @@ class HeadsetPage(QWidget):
             self._cards_layout.addWidget(card)
             self._setting_cards.append(card)
         self._card_groups = wanted
+        host = next((card for (section, _), card in zip(wanted, self._setting_cards)
+                     if section == 'headset'), self._setting_cards[0] if self._setting_cards else None)
+        if host is not None:
+            host.layout().addWidget(self._balance_widget)
+            self._balance_widget.setVisible(True)
 
     def _update_anc_visibility(self, settings: dict) -> None:
         """Show the ANC section only for headsets that actually have it.
