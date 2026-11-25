@@ -150,6 +150,9 @@ class QMainApp(QBaseDesktopApp):
         set_active_theme(self._general_settings.theme)
         # Apply global dark stylesheet with saved theme
         app.setStyleSheet(build_qss(self._general_settings.theme))
+        # Before any page is built: skip re-applying unchanged widget sheets.
+        from arctis_sound_manager.gui.theme import install_stylesheet_dedup
+        install_stylesheet_dedup()
 
         # D-Bus wrapper
         self.dbus_wrapper = DbusWrapper()
@@ -226,7 +229,10 @@ class QMainApp(QBaseDesktopApp):
         page = self._built_pages.get(index)
         if page is not None or index not in self._LAZY_PAGES:
             return page
-        page = self._LAZY_PAGES[index]()
+        # Built inside the stack, not built and then inserted: moving a
+        # finished page into the window made Qt re-style and re-lay-out its
+        # whole tree (0.2-0.4 s for the Help page alone).
+        page = self._LAZY_PAGES[index](self._stack)
         self._built_pages[index] = page
         placeholder = self._stack.widget(index)
         current = self._stack.currentIndex()
@@ -493,7 +499,8 @@ class QMainApp(QBaseDesktopApp):
         # Stacked pages
         self._stack = QStackedWidget()
 
-        self._home_page      = HomePage()
+        # Built with the stack as parent from the start (see _page()).
+        self._home_page      = HomePage(self._stack)
         # The Video tab is always present. When Clips is not on, it shows the
         # install screen (what it does, which packages it needs, and a one-click
         # install) instead of the recorder.
@@ -560,13 +567,13 @@ class QMainApp(QBaseDesktopApp):
         from arctis_sound_manager.gui.clips_install_page import ClipsInstallPage
 
         if clips_setup.clips_active():
-            page = ClipsPage()
+            page = ClipsPage(self._stack)
             disabled = getattr(page, "clips_disabled", None)
             if disabled is not None:
                 disabled.connect(self._sync_clips_page)
             return page
 
-        page = ClipsInstallPage()
+        page = ClipsInstallPage(self._stack)
         page.clips_installed.connect(self._sync_clips_page)
         return page
 

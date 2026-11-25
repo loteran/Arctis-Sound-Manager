@@ -289,6 +289,35 @@ def set_preview_colors(colors: dict[str, str] | None) -> None:
     _PREVIEW_COLORS = colors
 
 
+def install_stylesheet_dedup() -> None:
+    """Make QWidget.setStyleSheet() a no-op when the sheet is unchanged.
+
+    Every setStyleSheet() makes Qt re-style the widget and its whole subtree,
+    even when the text is the one it already has. The pages theme themselves
+    when built, and their parents theme them again right after (the Sonar
+    channel tabs three times over): on the Equalizer page 273 of 760 calls
+    repeated a widget's current sheet, ~85 % of its styling time. A changed
+    sheet — a theme switch — still goes through.
+
+    Nothing here relies on re-setting the same sheet to re-evaluate property
+    selectors: [active=true] buttons refresh with style().unpolish/polish().
+    Python-side only; Qt's own C++ calls are unaffected. Idempotent.
+    """
+    from PySide6.QtWidgets import QWidget
+
+    if getattr(QWidget.setStyleSheet, "_asm_dedup", False):
+        return
+    original = QWidget.setStyleSheet
+
+    def setStyleSheet(self, sheet):  # noqa: N802 — Qt's name
+        if self.styleSheet() == sheet:
+            return
+        original(self, sheet)
+
+    setStyleSheet._asm_dedup = True
+    QWidget.setStyleSheet = setStyleSheet
+
+
 def set_active_theme(name: str) -> None:
     """Set the globally active theme by name (falls back to 'steelseries')."""
     global _ACTIVE_THEME
