@@ -374,6 +374,11 @@ device:
       wear_sense:
         # Fix: was update_sequence [0x27, 'value'] — swapped with
         # volume_limiter above, see that comment.
+        # Pausing on removal is an AVRCP command to the Bluetooth source: over
+        # the 2.4 GHz dongle the buds send nothing (no media key arrives on
+        # the dongle's consumer-control interface). The Headset page's Events
+        # card says so instead of promising a pause.
+        only_over: bluetooth
         type: toggle
         values:
           off: 0x00

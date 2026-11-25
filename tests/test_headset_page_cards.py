@@ -45,12 +45,13 @@ def test_one_card_per_section_in_profile_order(qapp):
     page = HeadsetPage()
     page.update_settings(_payload({
         "mic_volume": _config("microphone"),
-        "pm_shutdown": _config("power_management"),
+        "bluetooth_auto_off": _config("power_management"),
+        "pm_shutdown": _config("power_management"),     # an Events-card setting
         "mic_side_tone": _config("microphone"),
     }))
     assert _groups(page) == [
         ("microphone", ("mic_volume", "mic_side_tone")),
-        ("power_management", ("pm_shutdown",)),
+        ("power_management", ("bluetooth_auto_off",)),
     ]
     assert [card.title.text() for card in page._setting_cards] == ["Microphone", "Power"]
 
