@@ -140,7 +140,11 @@ COLOR_LABEL_KEYS: dict[str, str] = {
 }
 
 USER_THEMES_DIR = Path(os.environ.get('XDG_CONFIG_HOME') or (Path.home() / '.config')) / "arctis-sound-manager" / "themes"
-BUILTIN_THEME_IDS = frozenset(THEMES)
+# "Follow the system": colours read from the desktop's palette (the KDE colour
+# scheme, through the platform theme) each time they are asked for.
+SYSTEM_THEME_ID = "system"
+
+BUILTIN_THEME_IDS = frozenset(THEMES) | {SYSTEM_THEME_ID}
 PREVIEW_THEME_ID = "__preview__"
 
 # ── Active theme state ────────────────────────────────────────────────────────
@@ -190,7 +194,57 @@ def reload_user_themes() -> None:
         logging.warning("Failed to scan user themes dir", exc_info=True)
 
 
+def _mix(a, b, amount: float) -> str:
+    """*a* moved *amount* of the way towards *b*, as #rrggbb."""
+    from PySide6.QtGui import QColor
+    a, b = QColor(a), QColor(b)
+    return QColor(round(a.red() + (b.red() - a.red()) * amount),
+                  round(a.green() + (b.green() - a.green()) * amount),
+                  round(a.blue() + (b.blue() - a.blue()) * amount)).name()
+
+
+def system_colors() -> dict[str, str]:
+    """The ASM palette made from the desktop's: background, cards, buttons and
+    text from its window and button colours, the accent from its selection
+    colour. The channel colours keep the default theme's. Without a running
+    application (or a palette) the default theme stands in."""
+    colors = dict(THEMES["steelseries"])
+    try:
+        from PySide6.QtGui import QGuiApplication, QPalette
+        if QGuiApplication.instance() is None:
+            return colors
+        pal = QGuiApplication.palette()
+        role = QPalette.ColorRole
+        window = pal.color(role.Window)
+        text = pal.color(role.WindowText).name()
+        button = pal.color(role.Button)
+        accent = pal.color(role.Highlight).name()
+        dark = window.lightness() < 128
+        bg = window.name()
+        toward = "#ffffff" if dark else "#000000"
+        colors.update({
+            "BG_MAIN": bg,
+            "BG_SIDEBAR": _mix(bg, "#000000" if dark else "#ffffff", 0.18),
+            "BG_CARD": _mix(bg, toward, 0.05),
+            "BG_BUTTON": button.name(),
+            "BG_BUTTON_HOVER": _mix(button.name(), toward, 0.10),
+            "BG_SIDEBAR_ACTIVE": _mix(bg, accent, 0.25),
+            "ACCENT": accent,
+            "ACCENT2": pal.color(role.Link).name(),
+            "TEXT_PRIMARY": text,
+            "TEXT_SECONDARY": _mix(text, bg, 0.40),
+            "BORDER": _mix(bg, text, 0.15),
+            "TOGGLE_ON": accent,
+            "TOGGLE_OFF": button.name(),
+        })
+    except Exception:
+        logging.debug("could not read the system palette", exc_info=True)
+    return colors
+
+
 def get_theme(name: str) -> dict[str, str]:
+    if name == SYSTEM_THEME_ID:
+        return system_colors()
     if name == PREVIEW_THEME_ID:
         return _PREVIEW_COLORS or THEMES["steelseries"]
     if name in THEMES:
@@ -200,7 +254,17 @@ def get_theme(name: str) -> dict[str, str]:
     return THEMES["steelseries"]
 
 
+def _system_label() -> str:
+    try:
+        from arctis_sound_manager.i18n import I18n
+        return I18n.translate("ui", "theme_follow_system")
+    except Exception:
+        return "Follow the system"
+
+
 def get_theme_label(name: str) -> str:
+    if name == SYSTEM_THEME_ID:
+        return _system_label()
     if name in THEMES_LABELS:
         return THEMES_LABELS[name]
     if name in _USER_LABELS:
@@ -209,7 +273,7 @@ def get_theme_label(name: str) -> str:
 
 
 def all_theme_labels() -> dict[str, str]:
-    result: dict[str, str] = dict(THEMES_LABELS)
+    result: dict[str, str] = {SYSTEM_THEME_ID: _system_label(), **THEMES_LABELS}
     user_sorted = dict(sorted(_USER_LABELS.items(), key=lambda kv: kv[1].lower()))
     result.update(user_sorted)
     return result
@@ -326,7 +390,7 @@ def install_stylesheet_dedup() -> None:
 def set_active_theme(name: str) -> None:
     """Set the globally active theme by name (falls back to 'steelseries')."""
     global _ACTIVE_THEME, _APPLIED
-    if name in THEMES or name in _USER_THEMES or name == PREVIEW_THEME_ID:
+    if name in THEMES or name in _USER_THEMES or name in (PREVIEW_THEME_ID, SYSTEM_THEME_ID):
         _ACTIVE_THEME = name
     else:
         _ACTIVE_THEME = "steelseries"
@@ -423,6 +487,10 @@ def retheme_widgets() -> None:
             translated = translate_sheet(sheet, mapping)
             if translated != sheet:
                 widget.setStyleSheet(translated)
+
+
+def active_theme_name() -> str:
+    return _ACTIVE_THEME
 
 
 def active_theme() -> dict:

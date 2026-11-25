@@ -62,3 +62,15 @@ def test_arrow_files_named_after_their_colour_follow(themed, monkeypatch, tmp_pa
     sheet = f"QComboBox::down-arrow {{ image: url({old}); }}"
     new = T.translate_sheet(sheet, mapping)
     assert T.THEMES["neon"]["TEXT_SECONDARY"].lstrip("#").lower() in new
+
+
+def test_follow_the_system_reads_the_palette():
+    from PySide6.QtGui import QColor, QPalette
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])
+    colors = T.get_theme(T.SYSTEM_THEME_ID)
+    assert set(T.THEMES["steelseries"]) <= set(colors)
+    assert QColor(colors["ACCENT"]) == app.palette().color(QPalette.ColorRole.Highlight)
+    assert QColor(colors["BG_MAIN"]) == app.palette().color(QPalette.ColorRole.Window)
+    assert next(iter(T.all_theme_labels())) == T.SYSTEM_THEME_ID      # listed first
+    assert T.is_builtin(T.SYSTEM_THEME_ID)                            # not editable
