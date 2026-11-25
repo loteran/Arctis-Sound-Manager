@@ -156,9 +156,15 @@ _INTERFACE_KEYS = ('systray_show_battery', 'systray_chatmix_osd', 'systray_maste
 # The redirect-on-(dis)connect, automatic mic switching and startup settings
 # live in the Headset page's Events card (events_section.EVENT_GENERAL_KEYS),
 # worded as what happens when; they are left out here.
-_AUDIO_KEYS = ('external_output_device', 'hrir_id', 'pipewire_quantum')
-_MICRO_KEYS = ('micro_input_source',)
-_GENERIC_KEYS = ('usb_transport', 'generic_device_mode', 'generic_output_device', 'generic_input_device')
+# Shown elsewhere, next to what they affect: the Output channel's device on
+# the Output tab and card, the surround profile in Spatial Audio (Sonar), the
+# preferred device on the Headset page, the Micro EQ's input on the Micro tab.
+_SHOWN_ELSEWHERE = ('external_output_device', 'hrir_id', 'preferred_device',
+                    'micro_input_source')
+_GENERIC_KEYS = ('generic_device_mode', 'generic_output_device', 'generic_input_device')
+# Technical settings most people never touch: how ASM reaches the headset,
+# and PipeWire's buffer size.
+_ADVANCED_KEYS = ('usb_transport', 'pipewire_quantum')
 
 
 def _settings_panel_qss() -> str:
@@ -287,8 +293,8 @@ class DevicePage(QWidget):
         # Whatever no other group claims lands here, so a setting added to
         # GeneralSettings shows up even before it is given a group.
         self._general_widget = self._add_settings_group(
-            general, None, exclude=_INTERFACE_KEYS + _AUDIO_KEYS + _MICRO_KEYS + _GENERIC_KEYS
-            + EVENT_GENERAL_KEYS)
+            general, None, exclude=_INTERFACE_KEYS + _SHOWN_ELSEWHERE + _GENERIC_KEYS
+            + _ADVANCED_KEYS + EVENT_GENERAL_KEYS)
 
         update_row = self._add_row(general, I18n.translate("ui", "check_for_updates"),
                                    self._check_update_btn)
@@ -331,9 +337,9 @@ class DevicePage(QWidget):
         # The headset's own settings (sidetone, mic volume, noise cancelling…)
         # live on the Headset page, next to the headset they change. This page
         # keeps what belongs to the app.
-        self._add_settings_group(self._add_card(content_layout, "settings_group_audio"), _AUDIO_KEYS)
-        self._add_settings_group(self._add_card(content_layout, "settings_group_micro"), _MICRO_KEYS)
-        self._add_settings_group(self._add_card(content_layout, "settings_group_generic"), _GENERIC_KEYS)
+        self._generic_group = self._add_settings_group(
+            self._add_card(content_layout, "settings_group_generic"), _GENERIC_KEYS)
+        self._add_settings_group(self._add_card(content_layout, "settings_group_advanced"), _ADVANCED_KEYS)
 
         content_layout.addStretch(1)
 
@@ -530,6 +536,14 @@ class DevicePage(QWidget):
     def update_settings(self, settings: dict):
         for widget in self._settings_groups:
             widget.update_settings(settings)
+        # The no-headset mode's devices mean nothing until that mode is on;
+        # shown beside the headset's own settings they read as if they
+        # applied to it.
+        mode = bool((settings.get('general') or {}).get('generic_device_mode', False))
+        for key in ('generic_output_device', 'generic_input_device'):
+            row = self._generic_group._settings_widgets.get(key)
+            if row is not None:
+                row.setVisible(mode)
 
     # ── Language ───────────────────────────────────────────────────────────────
 
