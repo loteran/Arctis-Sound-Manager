@@ -598,9 +598,16 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
             elif isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 100:
                 self.logger.error('SetSetting %s: expected 0-100, got %r', setting, value)
                 return False
+            from arctis_sound_manager import output_balance
+            from arctis_sound_manager.settings import GeneralSettings
+            before = output_balance.levels(gs)
             setattr(gs, setting, value)
-            gs.write_to_file()
-            threading.Thread(target=self.core_engine.apply_output_balance,
+            # Read-modify-write: the GUI writes this file too (the theme), and
+            # writing the daemon's start-up copy back would undo its changes.
+            on_disk = GeneralSettings.read_from_file()
+            setattr(on_disk, setting, value)
+            on_disk.write_to_file()
+            threading.Thread(target=self.core_engine.apply_output_balance, args=(before,),
                              name='asm-output-balance', daemon=True).start()
             return True
 

@@ -1088,11 +1088,13 @@ class CoreEngine:
         except Exception as exc:
             self.logger.error("recreate_loopbacks_game_media: unexpected error: %r", exc)
 
-    def apply_output_balance(self) -> bool:
+    def apply_output_balance(self, current: tuple[float, float] | None = None) -> bool:
         """Put the saved left/right levels on the headset's output sink(s).
 
         With the option off this evens the sides out, so turning it off
-        actually restores the balance. Returns True when a volume changed.
+        actually restores the balance. *current* is the balance the sinks were
+        set to before a setting changed (see output_balance.apply). Returns
+        True when a volume changed.
         """
         from arctis_sound_manager import output_balance
         if not device_state.is_device_set():
@@ -1107,7 +1109,8 @@ class CoreEngine:
             # watchdog's executor, and a pulsectl connection is not thread-safe.
             with pulsectl.Pulse('asm-output-balance') as pulse:
                 return output_balance.apply(pulse, sinks,
-                                            output_balance.levels(self.general_settings))
+                                            output_balance.levels(self.general_settings),
+                                            current)
         except Exception as exc:  # noqa: BLE001 — a sink mid-recreation, retried next tick
             self.logger.debug("apply_output_balance failed: %r", exc)
             return False
