@@ -1485,15 +1485,18 @@ class _DeviceStatusBar(QWidget):
         self._conn_pill = _Pill()
         self._headset_bat_pill = _Pill()
         self._dac_bat_pill = _Pill()
+        self._case_bat_pill = _Pill()
 
         layout.addWidget(self._conn_pill)
         layout.addWidget(self._headset_bat_pill)
         layout.addWidget(self._dac_bat_pill)
+        layout.addWidget(self._case_bat_pill)
 
         self.set_no_device()
 
     def apply_theme(self, t=None) -> None:
-        for pill in (self._conn_pill, self._headset_bat_pill, self._dac_bat_pill):
+        for pill in (self._conn_pill, self._headset_bat_pill, self._dac_bat_pill,
+                     self._case_bat_pill):
             pill.apply_theme()
 
     def set_no_device(self):
@@ -1504,15 +1507,19 @@ class _DeviceStatusBar(QWidget):
             I18n.get_instance().translate('ui', 'no_device_detected'), "#8D96AA")
         self._headset_bat_pill.set_visible(False)
         self._dac_bat_pill.set_visible(False)
+        self._case_bat_pill.set_visible(False)
 
-    def update(self, power_status, headset_bat, dac_bat):
+    def update(self, power_status, headset_bat, dac_bat, buds=None, case_bat=None):
         color = _status_color(power_status)
         label = _status_label(power_status)
         self._conn_pill.set_value(label, color)
 
         if headset_bat is not None:
             bat_color = _battery_color(headset_bat)
-            self._headset_bat_pill.set_value(f"Headset  {headset_bat}%", bat_color)
+            # Earbuds: each bud's own level ("L 95% · R 100%"), coloured by
+            # the lower one, which is what headset_bat already is.
+            text = f"Buds  {buds}" if buds else f"Headset  {headset_bat}%"
+            self._headset_bat_pill.set_value(text, bat_color)
             self._headset_bat_pill.set_visible(True)
         else:
             self._headset_bat_pill.set_visible(False)
@@ -1530,6 +1537,14 @@ class _DeviceStatusBar(QWidget):
             self._dac_bat_pill.set_visible(True)
         else:
             self._dac_bat_pill.set_visible(False)
+
+        if case_bat is not None:
+            self._case_bat_pill.set_value(
+                f"{I18n.translate('ui', 'headset_tile_case_battery_charge')}  {case_bat}%",
+                _battery_color(case_bat))
+            self._case_bat_pill.set_visible(True)
+        else:
+            self._case_bat_pill.set_visible(False)
 
 
 def _battery_color(pct: int) -> str:
@@ -2203,7 +2218,11 @@ class HomePage(QWidget):
         if normalize_power_value(power) is HeadsetPower.OFF:
             headset_bat_val = None
 
-        self._status_bar.update(power, headset_bat_val, dac_bat_val)
+        from arctis_sound_manager.battery_summary import buds_text, case_percent
+        self._status_bar.update(
+            power, headset_bat_val, dac_bat_val,
+            buds=buds_text(status) if headset_bat_val is not None else None,
+            case_bat=case_percent(status))
 
         # The GameDAC wheel attenuates in the DAC itself, on top of Master.
         # Shown beside Master for reference only, never applied to it (#268).

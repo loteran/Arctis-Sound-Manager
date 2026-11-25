@@ -52,6 +52,7 @@ class _Stub:
     # The real helper: what turns a status payload into a percentage or None
     # is the behaviour under test here, not something worth re-mocking.
     _extract_battery_percent = staticmethod(QSystrayApp._extract_battery_percent)
+    _tooltip_text = staticmethod(QSystrayApp._tooltip_text)
 
     def __init__(self):
         self.logger = MagicMock()

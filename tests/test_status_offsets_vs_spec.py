@@ -276,7 +276,9 @@ def test_gamebuds_reads_nothing_past_wear_sense_status():
     # The two derived (dict-valued) fields only ever combine offsets that are
     # themselves within range.
     for combinator in (v for v in mapping.__dict__.values() if isinstance(v, dict)):
-        for offsets in combinator.values():
+        for op, offsets in combinator.items():
+            if op == 'if_connected':
+                offsets = offsets['value'] + offsets['status']
             assert all(o <= GAMEBUDS_LAST_DEFINED_OFFSET for o in offsets)
 
 

@@ -54,7 +54,10 @@ def tile_columns(count: int) -> int:
     return -(-count // rows)
 
 # Status keys whose value is a level worth drawing, not just printing.
-_BAR_KEYS = frozenset({'headset_battery_charge', 'charge_slot_battery_charge'})
+_BAR_KEYS = frozenset({'headset_battery_charge', 'charge_slot_battery_charge',
+                       'left_bud_battery', 'right_bud_battery',
+                       'case_battery_charge', 'case_left_battery_charge',
+                       'case_right_battery_charge'})
 
 # The dial's two sides. Shown together as the ChatMix bar, not as two tiles.
 _CHATMIX_KEYS = ('media_mix', 'chat_mix')
@@ -286,7 +289,12 @@ class StatusTiles(QWidget):
             self.chatmix.set_levels(*mix)
         self.chatmix.setVisible(has_mix)
 
-        entries = [(k, e) for k, e in flat.items() if not (has_mix and k in _CHATMIX_KEYS)]
+        # With a tile per earbud, the combined level is only their minimum:
+        # a third battery tile would repeat one of them.
+        has_buds = 'left_bud_battery' in flat or 'right_bud_battery' in flat
+        entries = [(k, e) for k, e in flat.items()
+                   if not (has_mix and k in _CHATMIX_KEYS)
+                   and not (has_buds and k == 'headset_battery_charge')]
         # Reuse tiles rather than rebuild them: status arrives every second.
         while len(self._tiles) < len(entries):
             self._tiles.append(_StatusTile(self))
