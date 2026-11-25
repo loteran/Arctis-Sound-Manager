@@ -1088,6 +1088,30 @@ class CoreEngine:
         except Exception as exc:
             self.logger.error("recreate_loopbacks_game_media: unexpected error: %r", exc)
 
+    def apply_output_balance(self) -> bool:
+        """Put the saved left/right levels on the headset's output sink(s).
+
+        With the option off this evens the sides out, so turning it off
+        actually restores the balance. Returns True when a volume changed.
+        """
+        from arctis_sound_manager import output_balance
+        if not device_state.is_device_set():
+            return False
+        sinks = {name for name in (device_state.get_physical_out_game(),
+                                   device_state.get_physical_out_chat()) if name}
+        if not sinks:
+            return False
+        try:
+            import pulsectl
+            # Its own short connection: this runs from the D-Bus thread and the
+            # watchdog's executor, and a pulsectl connection is not thread-safe.
+            with pulsectl.Pulse('asm-output-balance') as pulse:
+                return output_balance.apply(pulse, sinks,
+                                            output_balance.levels(self.general_settings))
+        except Exception as exc:  # noqa: BLE001 — a sink mid-recreation, retried next tick
+            self.logger.debug("apply_output_balance failed: %r", exc)
+            return False
+
     def recreate_loopback_single(self, channel: str) -> None:
         """Recreate the loopback for a single channel, leaving all others intact.
 
@@ -1888,6 +1912,17 @@ class CoreEngine:
                 from arctis_sound_manager.sonar_to_pipewire import ensure_physical_output_links
                 await _enforce_hop("physical output", ensure_physical_output_links,
                                    skip_targets=_physical_skip_targets)
+
+                # Left/right output level: re-asserted while it is on, since
+                # anything outside ASM that sets the headset's volume flat
+                # (and a re-created sink after a power cycle) loses it.
+                if getattr(getattr(self, 'general_settings', None),
+                           'output_balance_enabled', False):
+                    try:
+                        await asyncio.get_running_loop().run_in_executor(
+                            None, self.apply_output_balance)
+                    except Exception as exc:  # noqa: BLE001 — never end the tick
+                        self.logger.debug("output balance pass failed: %r", exc)
 
                 # ── Micro EQ capture link-enforcement (issue #127) ────────────
                 # effect_input.sonar-micro-eq runs with node.autoconnect=false /

@@ -371,6 +371,14 @@ class GeneralSettings(JsonSerializable):
     # SetSetting, which writes the conf and restarts the filter-chain once.
     streamer_mode: bool = False
 
+    # Separate left/right output level on the headset, for hearing that differs
+    # between the ears (output_balance.py). Off by default, and the two levels
+    # only apply while it is on, so a stray drag cannot unbalance anyone.
+    # Percent of the main volume, per side.
+    output_balance_enabled: bool = False
+    output_volume_left: int = 100
+    output_volume_right: int = 100
+
     # Purely a display preference (#262): unlike aux_enabled above, this
     # never reaches the daemon — Output isn't a channel it creates or tears
     # down, just the physical/external routing card the Home page always

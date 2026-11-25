@@ -589,6 +589,21 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
         # Arctis_Aux sink existed — the "A" button then had nowhere to move a
         # stream to and silently did nothing until the next daemon start
         # (#209).
+        if setting in ('output_balance_enabled', 'output_volume_left', 'output_volume_right'):
+            gs = self.core_engine.general_settings
+            if setting == 'output_balance_enabled':
+                if not isinstance(value, bool):
+                    self.logger.error('SetSetting %s: expected bool, got %r', setting, value)
+                    return False
+            elif isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 100:
+                self.logger.error('SetSetting %s: expected 0-100, got %r', setting, value)
+                return False
+            setattr(gs, setting, value)
+            gs.write_to_file()
+            threading.Thread(target=self.core_engine.apply_output_balance,
+                             name='asm-output-balance', daemon=True).start()
+            return True
+
         if setting == 'aux_enabled':
             gs = self.core_engine.general_settings
             if not isinstance(value, bool):
