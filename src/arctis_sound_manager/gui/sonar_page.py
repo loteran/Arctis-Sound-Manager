@@ -4160,13 +4160,11 @@ class SonarPage(QWidget):
         self._apply_all_worker: _ApplyAllWorker | None = None
         self._pending_apply_all: bool = False
 
-        # Fix stale configs (broken builtins, wrong locations, duplicate HeSuVi
-        # node, …) — off the UI thread: the page is built with the main window
-        # at start-up, and a fix ends in a filter-chain (or PipeWire) restart
-        # the build used to sit and wait for. Nothing below reads the confs.
-        import threading
-        threading.Thread(target=_repair_stale_configs, name="asm-sonar-config-check",
-                         daemon=True).start()
+        # The stale-config check (_repair_stale_configs) is not run here: the
+        # page is now built in the background, often at login inside the
+        # tray's prebuild, and a fix ends in a filter-chain or PipeWire
+        # restart. QMainApp runs it when the window is first shown, as it
+        # used to happen when the window was built on that first open.
 
         self.setStyleSheet(f"background-color: {BG_MAIN};")
 

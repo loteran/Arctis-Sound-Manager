@@ -161,7 +161,7 @@ class QMainApp(QBaseDesktopApp):
         self.dbus_wrapper = DbusWrapper()
         self.dbus_wrapper.sig_settings.connect(self.on_settings_received)
         self.dbus_wrapper.sig_status.connect(self.on_status_received)
-        DbusWrapper.show_splash()
+        self._first_shown = False   # see _on_first_show
         # Once now, so the pages built in the background (often inside the
         # tray's prebuild, window hidden) already have their real values when
         # first shown. Polling starts and stops with visibility, as before.
@@ -387,7 +387,24 @@ class QMainApp(QBaseDesktopApp):
 
     # ── Visibility ────────────────────────────────────────────────────────────
 
+    def _on_first_show(self) -> None:
+        """What opening the window did when it was built on that first open.
+
+        The window is now usually built at login, hidden (the tray's
+        prebuild). The OLED splash and the Sonar stale-config check — whose
+        fix restarts the filter-chain or PipeWire, cutting audio — belong to
+        the user opening ASM, not to that background build.
+        """
+        self._first_shown = True
+        DbusWrapper.show_splash()
+        import threading
+        from arctis_sound_manager.gui.sonar_page import _repair_stale_configs
+        threading.Thread(target=_repair_stale_configs, name="asm-sonar-config-check",
+                         daemon=True).start()
+
     def _on_visibility_changed(self, visible: bool):
+        if visible and not self._first_shown:
+            self._on_first_show()
         if visible:
             # Settings can now arrive with the window hidden (fetched when it
             # is built); a permission problem is reported when it is shown.
