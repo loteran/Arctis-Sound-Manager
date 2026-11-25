@@ -382,11 +382,16 @@ class QEventsSection(QWidget):
                 int(general.get('redirect_audio_on_connect_channel', 0) or 0), 'redirect_channel_media'))
             sound = (_t('event_sound_to_channel', device=settings.get('device_name') or 'Arctis',
                         channel=channel), True)
+            # The daemon's rule (core.hand_channels_back_to_headset): a channel
+            # sent elsewhere on the Channels page comes back on connection.
+            channels_back = [(_t(f'event_channels_back_{who}'), True)]
         else:
             sound = (_t('event_sound_stays'), False)
+            channels_back = []
         rows['connect'].set_content(
             _t(f'event_connect_title_{who}'), _t(f'event_connect_when_{who}'),
-            [sound, mic_outcome(_MIC_ON_CONNECTION, _t(f'event_mic_to_headset_{who}'))])
+            [sound, *channels_back,
+             mic_outcome(_MIC_ON_CONNECTION, _t(f'event_mic_to_headset_{who}'))])
         rows['connect'].setVisible(True)
 
         # Disconnects
