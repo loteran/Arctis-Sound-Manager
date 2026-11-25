@@ -4296,7 +4296,10 @@ class SonarPage(QWidget):
         # below the frame instead.
         self._tabs.currentChanged.connect(self._fit_tabs_to_current)
         self._fit_tabs_to_current(self._tabs.currentIndex())
-        root.addWidget(self._tabs)
+        # Top-aligned: a layout centres a widget that is shorter than the slot
+        # it was given, and the tabs then jumped up and down with the height
+        # of the open tab.
+        root.addWidget(self._tabs, 0, Qt.AlignmentFlag.AlignTop)
         root.addStretch(1)
 
         # Load external output target from settings
