@@ -1064,6 +1064,8 @@ class CoreEngine:
                 self.logger.info("recreate_loopbacks_game_media: no device, skipping")
                 return
             sonar = self._read_eq_mode_is_sonar()
+            if sonar:
+                self._repair_sonar_configs()
             physical_game = device_state.get_physical_out_game()
             physical_chat = device_state.get_physical_out_chat()
             dev_name = device_state.get_channel_label()
@@ -1087,6 +1089,37 @@ class CoreEngine:
             )
         except Exception as exc:
             self.logger.error("recreate_loopbacks_game_media: unexpected error: %r", exc)
+
+    def _repair_sonar_configs(self) -> None:
+        """Write the Sonar-only confs a switch to Sonar needs, here in the daemon.
+
+        check_and_fix_stale_configs() writes the Spatial Audio chains (HeSuVi,
+        and Media's own …-hesuvi-media since #169) only in Sonar mode and only
+        in a process that has the device registered. The daemon ran it at
+        connect time alone, so a daemon that connected in Custom mode never
+        wrote them, and the GUI that flips the mode cannot: Media's EQ was then
+        linked into a surround node that did not exist, and Media went silent
+        in Sonar until the next replug. The GUI calls recreate_loopbacks_game_
+        media right after the switch, so this is the first place the daemon
+        learns of it.
+        """
+        try:
+            from arctis_sound_manager.sonar_to_pipewire import check_and_fix_stale_configs
+            fixed, needs_pw_restart = check_and_fix_stale_configs()
+            if not fixed:
+                return
+            from arctis_sound_manager import service_control as sc
+            if needs_pw_restart:
+                self.logger.info("Sonar mode: stale PipeWire configs migrated — restarting PipeWire")
+                sc.restart("pipewire", "wireplumber", "pipewire-pulse", timeout=20)
+                sc.restart("filter-chain", timeout=20)
+            else:
+                self.logger.info("Sonar mode: Sonar configs written — restarting filter-chain")
+                # Forced: the GUI restarted it a moment ago, before these
+                # confs existed, and the debounce would count that as enough.
+                sc.restart("filter-chain", timeout=15, force=True)
+        except Exception as exc:  # noqa: BLE001 — never block the loopback rebuild
+            self.logger.warning("Sonar config repair failed: %r", exc)
 
     def recreate_loopback_single(self, channel: str) -> None:
         """Recreate the loopback for a single channel, leaving all others intact.
@@ -1172,6 +1205,15 @@ class CoreEngine:
             # that helper, alongside apply_hrir_choice's identical restart path.
             if apply_spatial_audio_change():
                 self.logger.info("Spatial Audio changed — filter-chain restarted to apply (#169)")
+            else:
+                # A plain on/off toggle changes no conf, only where each EQ's
+                # output is linked. The GUI moves that link itself, but its
+                # process has no device registered: "off" resolves to the
+                # stereo downmix only once the physical output is known, so
+                # there it linked nothing and the switch took effect only when
+                # the watchdog came round, up to ~10 s later. Here it is known.
+                from arctis_sound_manager.sonar_to_pipewire import ensure_spatial_eq_links
+                ensure_spatial_eq_links()
         except Exception as exc:
             self.logger.warning("apply_spatial_audio failed: %r", exc)
         finally:
@@ -1888,6 +1930,7 @@ class CoreEngine:
                 from arctis_sound_manager.sonar_to_pipewire import ensure_physical_output_links
                 await _enforce_hop("physical output", ensure_physical_output_links,
                                    skip_targets=_physical_skip_targets)
+
 
                 # ── Micro EQ capture link-enforcement (issue #127) ────────────
                 # effect_input.sonar-micro-eq runs with node.autoconnect=false /
