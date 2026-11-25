@@ -4179,7 +4179,7 @@ class SonarPage(QWidget):
             root.addSpacing(4)
 
             subtitle = QLabel(_t("sonar"))
-            subtitle.setStyleSheet("color: #666666; font-size: 20pt; font-weight: bold; background: transparent;")
+            subtitle.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 20pt; font-weight: bold; background: transparent;")
             root.addWidget(subtitle)
             root.addSpacing(20)
 

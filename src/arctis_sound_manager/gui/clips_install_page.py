@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
 )
 
 import arctis_sound_manager.gui.theme as _theme
+from arctis_sound_manager.gui.components import SectionTitle
 from arctis_sound_manager.gui import clips_setup
 from arctis_sound_manager.i18n import I18n
 
@@ -104,9 +105,8 @@ class ClipsInstallPage(QWidget):
         root.setSpacing(16)
         root.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        title = QLabel(_tr("clips_install_title", "Video Clips"))
-        title.setStyleSheet("font-size: 22pt; font-weight: bold; background: transparent;")
-        root.addWidget(title)
+        self._title = SectionTitle(_tr("clips_install_title", "Video Clips"))
+        root.addWidget(self._title)
 
         # Two keys joined here rather than one carrying a "\n\n": the language
         # files are INI, which has no escape for a newline — a single key
@@ -375,6 +375,7 @@ class ClipsInstallPage(QWidget):
         """Repaint after a theme change (called by main_app). The rows and the
         manual-command field carry inline colors, so rebuild them from the
         active theme; the static labels restyle on their own."""
+        self._title.apply_theme()
         self._style_buttons()
         try:
             self._refresh()
