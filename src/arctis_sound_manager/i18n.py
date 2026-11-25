@@ -111,9 +111,18 @@ class I18n:
         # than replacing it: upstream ships most locales as empty Crowdin stubs,
         # and a stub in HOME_LANG_FOLDER used to hide a complete bundled
         # translation entirely. Keys it does carry still win.
+        bundled_ok = False
         if lang_file == home_path and sys_path.is_file():
+            bundled_ok = _read_lang_file(self.translations, sys_path)
+        read_ok = _read_lang_file(self.translations, lang_file)
+        if not read_ok and bundled_ok:
+            # The download is unreadable but the bundled file was fine: keep
+            # that, read afresh (the failed read may have half-filled the
+            # parser), instead of dropping to the default language.
+            logger.warning(f'Ignoring unreadable {lang_file}; using the bundled {sys_path}')
+            self.translations = RawConfigParser()
             _read_lang_file(self.translations, sys_path)
-        if not _read_lang_file(self.translations, lang_file) and self._lang != default:
+        elif not read_ok and self._lang != default:
             # Selected locale is unreadable even after sanitizing — fall back to
             # the default rather than leaving the UI with an empty catalogue.
             fallback = Path(__file__).parent / 'lang' / f'{default}.ini'

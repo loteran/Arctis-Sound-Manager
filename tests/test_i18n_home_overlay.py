@@ -37,3 +37,9 @@ def test_keys_in_the_download_still_win(monkeypatch, tmp_path):
 
 def test_without_a_download_the_bundled_file_is_used(monkeypatch, tmp_path):
     assert _load(monkeypatch, tmp_path, None).get('ui', 'b') == 'bundled B'
+
+
+def test_an_unreadable_download_keeps_the_bundled_file(monkeypatch, tmp_path):
+    """Not the default language: the bundled translation was fine."""
+    t = _load(monkeypatch, tmp_path, "[ui]\na = x\n[ui]\nb = y\n")   # duplicate section
+    assert t.get("ui", "a") == "bundled A"
