@@ -847,6 +847,18 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
             auto_label = 'Arctis microphone (default)'
             manual_label = "Manual routing (don't force)"
 
+        # "Auto" is the current device's own microphone; say which, or that
+        # there is none — it read "Arctis microphone" with no Arctis attached.
+        try:
+            generic = self.core_engine.generic_devices()
+            if isinstance(generic, dict):
+                auto_label = (I18n.translate('settings_values', 'micro_source_auto_generic')
+                              .format(device=generic.get('input') or '—'))
+            elif self.core_engine.device_config is None:
+                auto_label = I18n.translate('settings_values', 'micro_source_auto_absent')
+        except Exception:
+            pass
+
         result: list[dict[str, str]] = [
             {'id': '__auto__', 'name': auto_label},
             {'id': '__manual__', 'name': manual_label},
