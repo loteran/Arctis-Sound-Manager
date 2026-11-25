@@ -92,6 +92,13 @@ def apply(app=None) -> None:
     if app is None:
         return
     try:
+        if _theme._ACTIVE_THEME == _theme.SYSTEM_THEME_ID:
+            # Following the desktop: its own decoration colours are the right
+            # ones. Hand the title bar back (no-op when it is already).
+            if app.property(_PROPERTY):
+                app.setProperty(_PROPERTY, None)
+                QCoreApplication.sendEvent(app, QEvent(QEvent.Type.ApplicationPaletteChange))
+            return
         text = colour_scheme(_theme.active_theme())
         # A new name for new colours: KWin reads the file by its path and may
         # keep what it read before under the same one.

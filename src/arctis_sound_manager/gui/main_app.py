@@ -7,7 +7,7 @@ Main application window — ArctisSonar GUI visual style.
 """
 import logging
 
-from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Slot
+from PySide6.QtCore import QCoreApplication, QObject, QSize, Qt, QTimer, QUrl, Slot
 from pathlib import Path
 
 from PySide6.QtGui import QDesktopServices, QIcon, QPainter, QPixmap
@@ -133,6 +133,38 @@ class _Sidebar(QWidget):
             b.set_scale(factor)
 
 
+
+class _SystemPaletteWatch(QObject):
+    """Re-applies the "follow the system" theme when the desktop palette changes."""
+
+    def __init__(self, controller):
+        super().__init__()
+        self._controller = controller
+        self._pending = False
+
+    def eventFilter(self, obj, event):
+        from PySide6.QtCore import QEvent, QTimer
+        if (event.type() == QEvent.Type.ApplicationPaletteChange and not self._pending
+                and obj is QCoreApplication.instance()):
+            from arctis_sound_manager.gui.theme import SYSTEM_THEME_ID, active_theme_name
+            if active_theme_name() == SYSTEM_THEME_ID:
+                self._pending = True
+                QTimer.singleShot(0, self._reapply)
+        return False
+
+    def _reapply(self):
+        from arctis_sound_manager.gui.theme import SYSTEM_THEME_ID
+        try:
+            self._controller._apply_theme(SYSTEM_THEME_ID, save=False)
+        finally:
+            # Events this re-apply itself sent (the title bar hand-back) have
+            # been delivered by now; a later desktop change starts afresh.
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(0, self._clear)
+
+    def _clear(self):
+        self._pending = False
+
 class QMainApp(QBaseDesktopApp):
     app: QApplication
     main_window: QMainAppProtoWidget
@@ -157,6 +189,10 @@ class QMainApp(QBaseDesktopApp):
         # Title bar and frame in the theme too, where the desktop allows (KDE).
         from arctis_sound_manager.gui import window_frame
         window_frame.apply(app)
+        # "Follow the system": a new desktop colour scheme reaches the app as
+        # a palette change; the theme is rebuilt from it.
+        self._system_palette_watch = _SystemPaletteWatch(self)
+        app.installEventFilter(self._system_palette_watch)
         # Before any page is built: skip re-applying unchanged widget sheets.
         from arctis_sound_manager.gui.theme import install_stylesheet_dedup
         install_stylesheet_dedup()
