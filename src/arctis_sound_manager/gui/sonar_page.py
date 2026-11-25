@@ -25,7 +25,7 @@ from arctis_sound_manager.gui.search_pick_dialog import SearchPickDialog
 from arctis_sound_manager.gui.settings_widget import QSettingsWidget
 from arctis_sound_manager.i18n import I18n
 
-from PySide6.QtCore import QThread, Qt, QTimer, Signal, Slot
+from PySide6.QtCore import QSize, QThread, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
@@ -41,6 +41,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QPushButton,
     QSizePolicy,
+    QTabWidget,
     QSlider,
     QVBoxLayout,
     QWidget,
@@ -4130,6 +4131,37 @@ def _micro_source_qss() -> str:
     """
 
 
+class _FitTabWidget(QTabWidget):
+    """A QTabWidget as tall as its open tab, not its tallest one.
+
+    QTabWidget sizes itself from every page (ignoring their size policies),
+    so the channel tabs all got the height of the tallest — Media with
+    Spatial Audio expanded, or Micro — and the shorter ones a band of empty
+    frame under their settings. The tab bar and frame around the pages are
+    kept as Qt computes them; only the page part follows the open tab.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # Never taller than it asks for: QTabWidget expands by default and
+        # would soak up spare page height into the frame again.
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+
+    def _fit(self, base: QSize, page_hint) -> QSize:
+        current = self.currentWidget()
+        if current is None or self.count() == 0:
+            return base
+        tallest = max(page_hint(self.widget(i)).height() for i in range(self.count()))
+        chrome = base.height() - tallest
+        return QSize(base.width(), chrome + page_hint(current).height())
+
+    def sizeHint(self) -> QSize:  # noqa: N802 — Qt's name
+        return self._fit(super().sizeHint(), lambda w: w.sizeHint())
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 — Qt's name
+        return self._fit(super().minimumSizeHint(), lambda w: w.minimumSizeHint())
+
+
 class SonarPage(QWidget):
     def __init__(self, embedded: bool = False, parent: QWidget | None = None):
         super().__init__(parent)
@@ -4195,8 +4227,7 @@ class SonarPage(QWidget):
         root.addSpacing(12)
 
         # ── Channel tabs ──────────────────────────────────────────────────────
-        from PySide6.QtWidgets import QTabWidget
-        self._tabs = QTabWidget()
+        self._tabs = _FitTabWidget()
         self._tabs.setStyleSheet(_channel_tabs_qss())
 
         self._game_widget   = SonarChannelWidget("game")
@@ -4259,7 +4290,14 @@ class SonarPage(QWidget):
         self._tabs.addTab(self._micro_widget,  _t("micro"))
         self._tabs.addTab(self._output_widget, _t("output"))
 
-        root.addWidget(self._tabs, 1)
+        # The frame hugs the open tab: a QTabWidget is as tall as its tallest
+        # tab (Media with Spatial Audio expanded), which left a large empty
+        # band inside the frame under the shorter ones. Spare page height goes
+        # below the frame instead.
+        self._tabs.currentChanged.connect(self._fit_tabs_to_current)
+        self._fit_tabs_to_current(self._tabs.currentIndex())
+        root.addWidget(self._tabs)
+        root.addStretch(1)
 
         # Load external output target from settings
         self._load_output_target()
@@ -4564,6 +4602,10 @@ class SonarPage(QWidget):
         if self._pending_apply_all:
             self._pending_apply_all = False
             self._schedule_apply_all()
+
+    def _fit_tabs_to_current(self, _index: int) -> None:
+        """A new tab, a new height (see _FitTabWidget)."""
+        self._tabs.updateGeometry()
 
     def update_settings(self, settings: dict) -> None:
         """The daemon's settings push, for the Micro tab's input picker."""
