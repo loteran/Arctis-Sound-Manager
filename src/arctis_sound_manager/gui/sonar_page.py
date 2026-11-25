@@ -4093,17 +4093,16 @@ def _channel_tabs_qss() -> str:
         QTabWidget::pane {{
             border: 1px solid {_theme.c('BORDER')};
             border-radius: 10px;
-            border-top-left-radius: 0;
             background: transparent;
             top: -1px;
             padding: 12px;
         }}
         QTabWidget::tab-bar {{
-            /* Flush with the panel's left edge. Without a position here the
-               platform style places the bar, and Breeze puts it a pixel to
-               the right: the first tab's border then steps in from the
-               panel's. */
-            left: 0px;
+            /* Set in from the panel's rounded corner, like a folder tab. Flush
+               with the edge, the first tab's border had to meet the panel's
+               exactly, and the platform style places the bar unless told
+               (Breeze a pixel right): a visible step where they met. */
+            left: 14px;
         }}
         QTabBar::tab {{
             background: transparent;
