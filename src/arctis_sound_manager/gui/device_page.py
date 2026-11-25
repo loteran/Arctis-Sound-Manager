@@ -291,7 +291,11 @@ class DevicePage(QWidget):
         # GeneralSettings shows up even before it is given a group.
         self._general_widget = self._add_settings_group(
             general, None, exclude=_INTERFACE_KEYS + _AUDIO_KEYS + _MICRO_KEYS + _GENERIC_KEYS
-            + _ADVANCED_KEYS + EVENT_GENERAL_KEYS)
+            + _ADVANCED_KEYS + EVENT_GENERAL_KEYS
+            # Chosen on the Headset page, in the device card, which offers it
+            # when more than one device is connected (with one there is
+            # nothing to choose).
+            + ('preferred_device',))
 
         update_row = self._add_row(general, I18n.translate("ui", "check_for_updates"),
                                    self._check_update_btn)
