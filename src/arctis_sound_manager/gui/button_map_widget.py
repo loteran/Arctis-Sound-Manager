@@ -132,20 +132,21 @@ class QButtonMapWidget(QSettingsWidget):
         layout = QHBoxLayout(header)
         layout.setContentsMargins(0, 0, 8, 0)
         layout.setSpacing(4)
-        secondary = _theme.c("TEXT_SECONDARY")
+        # The theme's text colour, like the side captions above.
+        colour = _theme.c("TEXT_PRIMARY")
         if gesture.endswith("_tap"):
             taps = int(gesture[0])
             for i in range(taps):
                 if i:
                     plus = QLabel("+")
-                    plus.setStyleSheet(f"color: {secondary}; font-weight: bold; background: transparent;")
+                    plus.setStyleSheet(f"color: {colour}; font-weight: bold; background: transparent;")
                     layout.addWidget(plus)
-                layout.addWidget(SvgIconWidget(TAP_ICON, secondary, size=_ICON))
+                layout.addWidget(SvgIconWidget(TAP_ICON, colour, size=_ICON))
             header.setToolTip(_t("button_gesture_taps", count=taps))
         else:
-            layout.addWidget(SvgIconWidget(TAP_ICON, secondary, size=_ICON))
+            layout.addWidget(SvgIconWidget(TAP_ICON, colour, size=_ICON))
             label = QLabel(_t(f"button_gesture_{gesture}"))
-            label.setStyleSheet(f"color: {secondary}; background: transparent;")
+            label.setStyleSheet(f"color: {colour}; background: transparent;")
             layout.addWidget(label)
         layout.addStretch(1)
         return header
