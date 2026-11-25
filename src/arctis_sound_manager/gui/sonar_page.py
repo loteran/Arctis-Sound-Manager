@@ -4376,13 +4376,23 @@ class SonarPage(QWidget):
 
         The routing side is unaffected: resolvers match either spelling, which
         is why this only ever showed up as a display bug.
+
+        Except where several sinks share the nick: every output of one USB
+        card is "USB Audio", the list then keys them by node.name (#339), and
+        storing the nick made the choice ambiguous again — the daemon resolved
+        it to whichever output came first (an unconnected S/PDIF jack, where
+        the user had picked the speakers). The same rule as the list: the nick
+        only when it names this sink alone.
         """
         try:
             import pulsectl
             with pulsectl.Pulse("asm-output-canonical") as pulse:
-                for sink in pulse.sink_list():
+                sinks = pulse.sink_list()
+                for sink in sinks:
                     if sink.name == node_name:
-                        return sink.proplist.get("node.nick", "") or node_name
+                        nick = sink.proplist.get("node.nick", "")
+                        shared = sum(1 for s in sinks if s.proplist.get("node.nick", "") == nick) > 1
+                        return node_name if (not nick or shared) else nick
         except Exception:
             pass
         return node_name
