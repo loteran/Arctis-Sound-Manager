@@ -131,22 +131,21 @@ class OutputSelector(QWidget):
         """
         try:
             import pulsectl
-            from arctis_sound_manager.pw_utils import is_external_output_sink
+            from arctis_sound_manager.pw_utils import (
+                is_external_output_sink, sink_label, unstable_nicks)
         except ImportError:
             return []
 
         devices: list[tuple[str, str]] = []
         try:
             with pulsectl.Pulse("asm-output-selector") as pulse:
-                for sink in pulse.sink_list():
+                sinks = pulse.sink_list()
+                # "USB Audio #2" says nothing; "USB Audio S/PDIF Output" does.
+                unstable = unstable_nicks(sinks)
+                for sink in sinks:
                     if not is_external_output_sink(sink, allow_headset=True):
                         continue
-                    props = sink.proplist
-                    label = (props.get("node.description")
-                             or props.get("node.nick")
-                             or getattr(sink, "description", "")
-                             or sink.name)
-                    devices.append((sink.name, label))
+                    devices.append((sink.name, sink_label(sink, unstable) or sink.name))
         except Exception as exc:
             logger.debug("could not list outputs: %s", exc)
         return devices

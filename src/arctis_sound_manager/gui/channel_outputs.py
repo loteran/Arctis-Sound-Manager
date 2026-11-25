@@ -78,7 +78,9 @@ def channel_output_options(sinks) -> list[tuple[str, str]]:
     the headset ASM already feeds it.
     """
     from arctis_sound_manager.i18n import I18n
-    from arctis_sound_manager.pw_utils import is_external_output_sink
+    from arctis_sound_manager.pw_utils import is_external_output_sink, sink_label, unstable_nicks
+
+    unstable = unstable_nicks(sinks)
 
     def _label(sink) -> str:
         # pulsectl's own description before the node name. Both PipeWire
@@ -88,10 +90,9 @@ def channel_output_options(sinks) -> list[tuple[str, str]]:
         # name belongs, which reads as a bug rather than a device.
         # build_sink_options() already ends its ladder this way for the
         # D-Bus pickers (#134 / #146); these combos never got it.
-        return (sink.proplist.get("node.description")
-                or sink.proplist.get("node.nick")
-                or getattr(sink, "description", "")
-                or sink.name)
+        # A nick the card's other outputs share ("USB Audio #2") gives way
+        # to the full description (pw_utils.sink_label).
+        return sink_label(sink, unstable) or sink.name
 
     physical = [s for s in sinks if is_external_output_sink(s)]
     # Name the headset rather than saying "Headset". The default entry is a

@@ -695,6 +695,50 @@ def app_override_key(name: str, binary: str) -> str:
 STEELSERIES_VENDOR_ID = "0x1038"
 
 
+_NICK_SUFFIX = re.compile(r" #\d+$")
+
+
+def unstable_nicks(sinks) -> set[str]:
+    """The ``node.nick`` values that cannot identify a sink over time.
+
+    WirePlumber names every output of one card alike ("USB Audio") and tells
+    them apart by a suffix — "USB Audio", "USB Audio #1", "USB Audio #2" — in
+    the order the nodes appear. That order changes between restarts and
+    replugs: a setting saved as "USB Audio" meant the speakers one session and
+    the S/PDIF jack the next (silence). A nick shared outright (#339) is the
+    same problem without the suffix. Any nick whose base several sinks have is
+    no identity; those sinks are stored by node.name and listed by their full
+    description ("USB Audio S/PDIF Output").
+    """
+    groups: dict[str, int] = {}
+    nicks = []
+    for sink in sinks:
+        nick = (getattr(sink, "proplist", None) or {}).get("node.nick", "")
+        if nick:
+            nicks.append(nick)
+            base = _NICK_SUFFIX.sub("", nick)
+            groups[base] = groups.get(base, 0) + 1
+    return {n for n in nicks if groups[_NICK_SUFFIX.sub("", n)] > 1}
+
+
+def sink_identity(sink, unstable: set[str]) -> str:
+    """The id a setting stores for *sink*: its nick when that is stable."""
+    node_name = sink.proplist.get("node.name", "") or getattr(sink, "name", "")
+    nick = sink.proplist.get("node.nick", "")
+    return node_name if (not nick or nick in unstable) and node_name else (nick or node_name)
+
+
+def sink_label(sink, unstable: set[str]) -> str:
+    """What a picker shows for *sink*: a name that tells siblings apart."""
+    props = sink.proplist
+    nick = props.get("node.nick", "")
+    description = getattr(sink, "description", "") or ""
+    if nick in unstable:
+        return props.get("node.description", "") or description or nick
+    return (props.get("node.description", "") or nick or description
+            or props.get("node.name", "") or getattr(sink, "name", ""))
+
+
 def is_external_output_sink(sink, allow_headset: bool = False) -> bool:
     """Return True if *sink* is a hardware output the user can route a channel to.
 
