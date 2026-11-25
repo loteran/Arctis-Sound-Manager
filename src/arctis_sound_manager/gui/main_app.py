@@ -162,6 +162,11 @@ class QMainApp(QBaseDesktopApp):
         self.dbus_wrapper.sig_settings.connect(self.on_settings_received)
         self.dbus_wrapper.sig_status.connect(self.on_status_received)
         DbusWrapper.show_splash()
+        # Once now, so the pages built in the background (often inside the
+        # tray's prebuild, window hidden) already have their real values when
+        # first shown. Polling starts and stops with visibility, as before.
+        self.dbus_wrapper.request_settings(one_time=True)
+        self.dbus_wrapper.request_status(one_time=True)
 
         # Build window
         self.main_window = self._build_window()
@@ -322,10 +327,10 @@ class QMainApp(QBaseDesktopApp):
         page.setGeometry(self._stack.contentsRect())
         page.grab()
 
-    def _on_langs_updated(self, codes) -> None:
+    def _on_langs_updated(self, _codes) -> None:
         settings_page = self._built(PAGE_SETTINGS)
         if settings_page is not None:
-            settings_page.rebuild_lang_combo(codes)
+            settings_page.rebuild_lang_combo()
 
     # Reached from elsewhere (the tray, profile and theme handling): built on
     # demand, so nothing can find one missing.
@@ -384,6 +389,9 @@ class QMainApp(QBaseDesktopApp):
 
     def _on_visibility_changed(self, visible: bool):
         if visible:
+            # Settings can now arrive with the window hidden (fetched when it
+            # is built); a permission problem is reported when it is shown.
+            self._check_permission_error(self.settings)
             self.logger.debug("App is visible — starting D-Bus polling")
             self.dbus_wrapper.request_settings()
             self.dbus_wrapper.request_status()
@@ -762,12 +770,17 @@ class QMainApp(QBaseDesktopApp):
             self._switch_page(PAGE_HOME)
 
         self._apply_hardware_eq_settings(settings)
+        self._check_permission_error(settings)
 
+    def _check_permission_error(self, settings: dict) -> None:
+        if not settings:
+            return
         # Daemon flagged a USB EACCES on the currently-attached device. The
         # rules file might be valid (so the startup dialog at gui.py:142
         # didn't fire) but they weren't applied to this device because it
         # was plugged in before they took effect. Offer a one-click reload.
-        if settings.get('permission_error') and not getattr(self, '_perm_dialog_shown', False):
+        if (settings.get('permission_error') and not getattr(self, '_perm_dialog_shown', False)
+                and self.main_window.isVisible()):
             self._perm_dialog_shown = True
             from arctis_sound_manager.gui.udev_dialog import UdevRulesDialog
             from PySide6.QtWidgets import QDialog
