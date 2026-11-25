@@ -34,23 +34,31 @@ _BATCH_TIMEOUT_S = 900
 
 # ── what the machine has ──────────────────────────────────────────────────────
 
-def missing_checks() -> list:
-    """Every Clips dependency this machine does not have.
+def probe() -> list[tuple]:
+    """Every Clips dependency check with whether it is present: one pass.
+
+    Each detect() is a subprocess (gst-inspect for the GStreamer elements), so
+    a screen that needs several answers should take them all from one probe
+    rather than ask missing_checks(), present_names() and so on in turn.
 
     A probe that raises counts as missing: the question being answered is "can
     this record?", and a check that cannot answer has not said yes.
     """
     from arctis_sound_manager.system_deps_checker import clip_dep_checks
 
-    missing = []
+    results = []
     for check in clip_dep_checks():
         try:
             ok = bool(check.detect())
         except Exception:  # noqa: BLE001
             ok = False
-        if not ok:
-            missing.append(check)
-    return missing
+        results.append((check, ok))
+    return results
+
+
+def missing_checks() -> list:
+    """Every Clips dependency this machine does not have."""
+    return [check for check, ok in probe() if not ok]
 
 
 def present_names() -> set[str]:
@@ -62,16 +70,7 @@ def present_names() -> set[str]:
     package managers' output, and it reports what is *true* rather than what a
     command claimed.
     """
-    from arctis_sound_manager.system_deps_checker import clip_dep_checks
-
-    present = set()
-    for check in clip_dep_checks():
-        try:
-            if check.detect():
-                present.add(check.name)
-        except Exception:  # noqa: BLE001
-            pass
-    return present
+    return {check.name for check, ok in probe() if ok}
 
 
 def blocking_missing() -> list:
@@ -125,11 +124,15 @@ def isolated_venv() -> bool:
     return True
 
 
-def bindings_unreachable() -> bool:
-    """Whether PyGObject is missing *and* no package manager can fix it here."""
+def bindings_unreachable(missing: list | None = None) -> bool:
+    """Whether PyGObject is missing *and* no package manager can fix it here.
+
+    *missing* is a caller's own probe result, to avoid probing again."""
     if not isolated_venv():
         return False
-    return any(c.name.startswith("PyGObject") for c in missing_checks())
+    if missing is None:
+        missing = missing_checks()
+    return any(c.name.startswith("PyGObject") for c in missing)
 
 
 def clips_enabled() -> bool:

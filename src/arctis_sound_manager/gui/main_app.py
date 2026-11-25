@@ -79,6 +79,9 @@ PAGE_SETTINGS = 5
 PAGE_HELP = 6
 PAGE_THEME_EDITOR = 7
 
+# Pause between background page builds (see QMainApp._background_step).
+_BACKGROUND_STEP_GAP_MS = 50
+
 
 #: Sidebar icon sizes. Help is deliberately smaller — see the note on
 #: top_pages_def in _build_window.
@@ -150,12 +153,20 @@ class QMainApp(QBaseDesktopApp):
         set_active_theme(self._general_settings.theme)
         # Apply global dark stylesheet with saved theme
         app.setStyleSheet(build_qss(self._general_settings.theme))
+        # Before any page is built: skip re-applying unchanged widget sheets.
+        from arctis_sound_manager.gui.theme import install_stylesheet_dedup
+        install_stylesheet_dedup()
 
         # D-Bus wrapper
         self.dbus_wrapper = DbusWrapper()
         self.dbus_wrapper.sig_settings.connect(self.on_settings_received)
         self.dbus_wrapper.sig_status.connect(self.on_status_received)
-        DbusWrapper.show_splash()
+        self._first_shown = False   # see _on_first_show
+        # Once now, so the pages built in the background (often inside the
+        # tray's prebuild, window hidden) already have their real values when
+        # first shown. Polling starts and stops with visibility, as before.
+        self.dbus_wrapper.request_settings(one_time=True)
+        self.dbus_wrapper.request_status(one_time=True)
 
         # Build window
         self.main_window = self._build_window()
@@ -163,24 +174,10 @@ class QMainApp(QBaseDesktopApp):
         # Initialise theme-before-edit tracker
         self._theme_before_edit: str = "steelseries"
 
-        # Wire theme change signal
-        self._device_page.sig_theme_changed.connect(self._apply_theme)
-        self._device_page.sig_theme_create.connect(self._open_theme_editor_new)
-        self._device_page.sig_theme_edit.connect(self._open_theme_editor_edit)
-        self._theme_editor_page.sig_preview.connect(self._on_theme_preview)
-        self._theme_editor_page.sig_saved.connect(self._on_theme_saved)
-        self._theme_editor_page.sig_cancelled.connect(self._on_theme_editor_cancelled)
-
-        # Wire D-Bus signals to pages
+        # Wire D-Bus signals to the pages built so far. The others are wired
+        # in _wire_page() when they are built (see _page()).
         self.dbus_wrapper.sig_status.connect(self._home_page.update_status)
-        self.dbus_wrapper.sig_status.connect(self._headset_page.update_status)
-        self.dbus_wrapper.sig_status.connect(self._device_page.update_status)
-        self.dbus_wrapper.sig_status.connect(self._dac_page.update_status)
         self.dbus_wrapper.sig_settings.connect(self._home_page.update_settings)
-        self.dbus_wrapper.sig_settings.connect(self._headset_page.update_settings)
-        self.dbus_wrapper.sig_settings.connect(self._equalizer_page.update_settings)
-        self.dbus_wrapper.sig_settings.connect(self._dac_page.update_settings)
-        self.dbus_wrapper.sig_settings.connect(self._device_page.update_settings)
 
         # DAC tab hidden by default until device confirms it has a DAC
         self._sidebar_buttons[PAGE_DAC].setVisible(False)
@@ -194,35 +191,172 @@ class QMainApp(QBaseDesktopApp):
         self._update_worker = UpdateCheckWorker(project_version())
         self._update_worker.result.connect(self._home_page.on_update_available)
         self._update_worker.start()
-        self._device_page.sig_update_result.connect(self._home_page.on_update_available)
 
         # Check for new/updated translation files (non-blocking)
         from arctis_sound_manager.lang_updater import LangUpdateWorker
         self._lang_worker = LangUpdateWorker()
-        self._lang_worker.langs_updated.connect(self._device_page.rebuild_lang_combo)
+        self._lang_worker.langs_updated.connect(self._on_langs_updated)
         self._lang_worker.start()
 
         # Wire profile bar
         self._home_page.profile_bar.sig_apply.connect(self._on_apply_profile)
         self._home_page.profile_bar.sig_changed.connect(self._on_profiles_changed)
 
-        # A preset picked on a Channels card: show it on the Equalizer page too
-        self._home_page.sig_eq_preset_applied.connect(
-            self._equalizer_page._sonar_page.notify_external_preset_change)
-
-        # The cards' output buttons drive the Equalizer page's own selectors,
-        # so a device picked on either page shows on both
-        sonar = self._equalizer_page._sonar_page
-        self._home_page.set_output_pickers({
-            "game": sonar._game_output_selector,
-            "chat": sonar._chat_output_selector,
-            "media": sonar._media_output_selector,
-            "aux": sonar._aux_output_selector,
-            "output": sonar._output_selector,
-        })
-
         self.destroyed.connect(self.sig_stop)
         self.main_window.visibilityChanged.connect(self._on_visibility_changed)
+
+        # The other pages are built — and rendered once off-screen — in the
+        # background straight after the window, one per step (see
+        # _background_step). The window (Home) is up first; the Equalizer comes
+        # early in the queue because it has to exist regardless: Home's output
+        # buttons drive its output selectors, and its Output selector applies
+        # automatic fallbacks.
+        self._background_queue = [PAGE_HOME, PAGE_EQUALIZER, PAGE_HEADSET, PAGE_SETTINGS,
+                                  PAGE_HELP, PAGE_CLIPS, PAGE_DAC]
+        QTimer.singleShot(0, self._background_step)
+
+    # ── Pages built on first use ──────────────────────────────────────────────
+    #
+    # Only Home (the start page) and Clips are built with the window. The rest
+    # are built when first shown — or when something reaches for them, through
+    # the properties below — then given the latest settings and status kept in
+    # self.settings / self.status, and wired to the live updates from there.
+
+    _LAZY_PAGES = {
+        PAGE_EQUALIZER: EqualizerPage,
+        PAGE_HEADSET: HeadsetPage,
+        PAGE_DAC: DacPage,
+        PAGE_SETTINGS: DevicePage,
+        PAGE_HELP: HelpPage,
+        PAGE_THEME_EDITOR: ThemeEditorPage,
+    }
+
+    def _built(self, index: int):
+        """The page at *index* if it has been built, else None."""
+        return self._built_pages.get(index)
+
+    def _page(self, index: int):
+        """The page at *index*, built (and wired, and fed) if it was not yet."""
+        page = self._built_pages.get(index)
+        if page is not None or index not in self._LAZY_PAGES:
+            return page
+        # Built inside the stack, not built and then inserted: moving a
+        # finished page into the window made Qt re-style and re-lay-out its
+        # whole tree (0.2-0.4 s for the Help page alone).
+        page = self._LAZY_PAGES[index](self._stack)
+        self._built_pages[index] = page
+        placeholder = self._stack.widget(index)
+        current = self._stack.currentIndex()
+        self._stack.insertWidget(index, page)
+        self._stack.removeWidget(placeholder)
+        placeholder.deleteLater()
+        self._stack.setCurrentIndex(current)
+        self._wire_page(index, page)
+        # What it would have received had it existed: settings first, as the
+        # daemon sends them, then the status.
+        if self.settings and hasattr(page, "update_settings"):
+            page.update_settings(self.settings)
+        if self.status and hasattr(page, "update_status"):
+            page.update_status(self.status)
+        return page
+
+    def _wire_page(self, index: int, page) -> None:
+        if hasattr(page, "update_settings"):
+            self.dbus_wrapper.sig_settings.connect(page.update_settings)
+        if hasattr(page, "update_status"):
+            self.dbus_wrapper.sig_status.connect(page.update_status)
+
+        if index == PAGE_EQUALIZER:
+            self._apply_hardware_eq_settings(self.settings)
+            sonar = page._sonar_page
+            # A preset picked on a Channels card: show it on this page too
+            self._home_page.sig_eq_preset_applied.connect(
+                sonar.notify_external_preset_change)
+            # The cards' output buttons drive this page's own selectors, so a
+            # device picked on either page shows on both
+            self._home_page.set_output_pickers({
+                "game": sonar._game_output_selector,
+                "chat": sonar._chat_output_selector,
+                "media": sonar._media_output_selector,
+                "aux": sonar._aux_output_selector,
+                "output": sonar._output_selector,
+            })
+        elif index == PAGE_SETTINGS:
+            page.sig_theme_changed.connect(self._apply_theme)
+            page.sig_theme_create.connect(self._open_theme_editor_new)
+            page.sig_theme_edit.connect(self._open_theme_editor_edit)
+            page.sig_update_result.connect(self._home_page.on_update_available)
+        elif index == PAGE_THEME_EDITOR:
+            page.sig_preview.connect(self._on_theme_preview)
+            page.sig_saved.connect(self._on_theme_saved)
+            page.sig_cancelled.connect(self._on_theme_editor_cancelled)
+
+    def _background_step(self) -> None:
+        """Build and pre-render the next page in the queue, then yield.
+
+        Building a page is only part of what its first visit cost: showing it
+        then laid it out and painted it for the first time (0.25 s for Help).
+        Rendering it once off-screen beforehand does that work here, so even
+        the first visit only paints. One page per step, with a pause between,
+        keeps an already open window responsive; inside the tray's background
+        prebuild it is all done before the window is first opened.
+        """
+        if getattr(self, "_stopping", False) or not self._background_queue:
+            return
+        index = self._background_queue.pop(0)
+        try:
+            if index == PAGE_DAC and not self.settings.get('has_dac', False):
+                pass                    # hidden without a DAC; built if it ever shows
+            elif index in self._LAZY_PAGES:
+                self._prerender(self._page(index))
+            else:
+                self._prerender(self._stack.widget(index))
+        except Exception:  # noqa: BLE001 — a page that fails here is built on first visit
+            self.logger.debug("background build of page %d failed", index, exc_info=True)
+        QTimer.singleShot(_BACKGROUND_STEP_GAP_MS, self._background_step)
+
+    def _prerender(self, page) -> None:
+        """Lay out and paint *page* once, hidden, at the size it is shown at."""
+        if page is None or page.isVisible():
+            return              # the page on screen has done all this already
+        layout = self.main_window.layout()
+        if layout is not None:
+            # Never shown yet (the tray's prebuild): the stack's real size is
+            # only known once the window's layout has run.
+            layout.activate()
+        page.setGeometry(self._stack.contentsRect())
+        page.grab()
+
+    def _on_langs_updated(self, _codes) -> None:
+        settings_page = self._built(PAGE_SETTINGS)
+        if settings_page is not None:
+            settings_page.rebuild_lang_combo()
+
+    # Reached from elsewhere (the tray, profile and theme handling): built on
+    # demand, so nothing can find one missing.
+    @property
+    def _equalizer_page(self):
+        return self._page(PAGE_EQUALIZER)
+
+    @property
+    def _headset_page(self):
+        return self._page(PAGE_HEADSET)
+
+    @property
+    def _dac_page(self):
+        return self._page(PAGE_DAC)
+
+    @property
+    def _device_page(self):
+        return self._page(PAGE_SETTINGS)
+
+    @property
+    def _help_page(self):
+        return self._page(PAGE_HELP)
+
+    @property
+    def _theme_editor_page(self):
+        return self._page(PAGE_THEME_EDITOR)
 
     # ── Theme ─────────────────────────────────────────────────────────────────
 
@@ -234,15 +368,11 @@ class QMainApp(QBaseDesktopApp):
         self.app.setStyleSheet(build_qss(theme_name))
         for btn in self._sidebar_buttons:
             btn.update_colors(t)
-        # Propagate to every page that implements apply_theme
+        # Propagate to every page that implements apply_theme. Pages not built
+        # yet need nothing: they read the active theme when they are built.
         for page in (
             self._home_page,
-            self._equalizer_page,
-            self._headset_page,
-            self._dac_page,
-            self._device_page,
-            self._help_page,
-            self._theme_editor_page,
+            *self._built_pages.values(),
             getattr(self, "_clips_page", None),
         ):
             if hasattr(page, "apply_theme"):
@@ -257,8 +387,28 @@ class QMainApp(QBaseDesktopApp):
 
     # ── Visibility ────────────────────────────────────────────────────────────
 
+    def _on_first_show(self) -> None:
+        """What opening the window did when it was built on that first open.
+
+        The window is now usually built at login, hidden (the tray's
+        prebuild). The OLED splash and the Sonar stale-config check — whose
+        fix restarts the filter-chain or PipeWire, cutting audio — belong to
+        the user opening ASM, not to that background build.
+        """
+        self._first_shown = True
+        DbusWrapper.show_splash()
+        import threading
+        from arctis_sound_manager.gui.sonar_page import _repair_stale_configs
+        threading.Thread(target=_repair_stale_configs, name="asm-sonar-config-check",
+                         daemon=True).start()
+
     def _on_visibility_changed(self, visible: bool):
+        if visible and not self._first_shown:
+            self._on_first_show()
         if visible:
+            # Settings can now arrive with the window hidden (fetched when it
+            # is built); a permission problem is reported when it is shown.
+            self._check_permission_error(self.settings)
             self.logger.debug("App is visible — starting D-Bus polling")
             self.dbus_wrapper.request_settings()
             self.dbus_wrapper.request_status()
@@ -412,27 +562,23 @@ class QMainApp(QBaseDesktopApp):
         # Stacked pages
         self._stack = QStackedWidget()
 
-        self._home_page      = HomePage()
-        self._equalizer_page = EqualizerPage()
-        self._headset_page   = HeadsetPage()
-        self._dac_page       = DacPage()
-        self._device_page    = DevicePage()
+        # Built with the stack as parent from the start (see _page()).
+        self._home_page      = HomePage(self._stack)
         # The Video tab is always present. When Clips is not on, it shows the
         # install screen (what it does, which packages it needs, and a one-click
         # install) instead of the recorder.
         self._clips_page = self._build_clips_page()
-        self._help_page      = HelpPage()
 
-        self._theme_editor_page = ThemeEditorPage()
-
-        self._stack.addWidget(self._home_page)        # index 0 → Home
-        self._stack.addWidget(self._equalizer_page)   # index 1 → Equalizer
-        self._stack.addWidget(self._headset_page)     # index 2 → Headset
-        self._stack.addWidget(self._dac_page)         # index 3 → DAC
-        self._stack.addWidget(self._clips_page)       # index 4 → Clips
-        self._stack.addWidget(self._device_page)      # index 5 → Settings
-        self._stack.addWidget(self._help_page)        # index 6 → Help
-        self._stack.addWidget(self._theme_editor_page) # index 7 → Theme Editor
+        # Every sidebar index is also its stack index, so the pages built on
+        # first use (_page()) hold their place with an empty widget until then.
+        self._built_pages: dict = {}
+        for index in range(PAGE_THEME_EDITOR + 1):
+            if index == PAGE_HOME:
+                self._stack.addWidget(self._home_page)
+            elif index == PAGE_CLIPS:
+                self._stack.addWidget(self._clips_page)
+            else:
+                self._stack.addWidget(QWidget())
 
         content_layout.addWidget(self._stack)
         root_layout.addWidget(content_wrapper, stretch=1)
@@ -447,6 +593,7 @@ class QMainApp(QBaseDesktopApp):
     # ── Page switching ────────────────────────────────────────────────────────
 
     def _switch_page(self, index: int):
+        self._page(index)
         self._stack.setCurrentIndex(index)
         # The theme editor has no button of its own; it lights up Settings.
         active_idx = PAGE_SETTINGS if index == PAGE_THEME_EDITOR else index
@@ -483,13 +630,13 @@ class QMainApp(QBaseDesktopApp):
         from arctis_sound_manager.gui.clips_install_page import ClipsInstallPage
 
         if clips_setup.clips_active():
-            page = ClipsPage()
+            page = ClipsPage(self._stack)
             disabled = getattr(page, "clips_disabled", None)
             if disabled is not None:
                 disabled.connect(self._sync_clips_page)
             return page
 
-        page = ClipsInstallPage()
+        page = ClipsInstallPage(self._stack)
         page.clips_installed.connect(self._sync_clips_page)
         return page
 
@@ -639,20 +786,18 @@ class QMainApp(QBaseDesktopApp):
         if not has_dac and self._stack.currentIndex() == PAGE_DAC:
             self._switch_page(PAGE_HOME)
 
-        # Headsets with no on-device equaliser can't do anything with the
-        # custom band sliders; only offer the switch to those that can (#146).
-        if 'has_hardware_eq' in settings:
-            self._equalizer_page.set_hardware_eq_available(
-                bool(settings['has_hardware_eq']))
-        if 'hardware_eq_range_db' in settings:
-            self._equalizer_page.set_hardware_eq_range(
-                int(settings['hardware_eq_range_db']))
+        self._apply_hardware_eq_settings(settings)
+        self._check_permission_error(settings)
 
+    def _check_permission_error(self, settings: dict) -> None:
+        if not settings:
+            return
         # Daemon flagged a USB EACCES on the currently-attached device. The
         # rules file might be valid (so the startup dialog at gui.py:142
         # didn't fire) but they weren't applied to this device because it
         # was plugged in before they took effect. Offer a one-click reload.
-        if settings.get('permission_error') and not getattr(self, '_perm_dialog_shown', False):
+        if (settings.get('permission_error') and not getattr(self, '_perm_dialog_shown', False)
+                and self.main_window.isVisible()):
             self._perm_dialog_shown = True
             from arctis_sound_manager.gui.udev_dialog import UdevRulesDialog
             from PySide6.QtWidgets import QDialog
@@ -678,6 +823,18 @@ class QMainApp(QBaseDesktopApp):
                     "open — closing it, there is nothing left to fix."
                 )
                 dlg.reject()
+
+    def _apply_hardware_eq_settings(self, settings: dict) -> None:
+        """Headsets with no on-device equaliser can't do anything with the
+        custom band sliders; only offer the switch to those that can (#146).
+        Also run when the Equalizer page is built, from the stored settings."""
+        equalizer = self._built(PAGE_EQUALIZER)
+        if equalizer is None or not settings:
+            return
+        if 'has_hardware_eq' in settings:
+            equalizer.set_hardware_eq_available(bool(settings['has_hardware_eq']))
+        if 'hardware_eq_range_db' in settings:
+            equalizer.set_hardware_eq_range(int(settings['hardware_eq_range_db']))
 
     def on_status_received(self, status: dict):
         if status == self.status:
