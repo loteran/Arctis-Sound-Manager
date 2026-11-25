@@ -63,10 +63,31 @@ def channel_values(channel_names: list[str], main: float,
     return out
 
 
-def main_volume(sink: Any) -> float:
-    """The main volume of a sink: its loudest channel."""
+def main_volume(sink: Any, factors: tuple[float, float] = (1.0, 1.0)) -> float:
+    """The main volume *sink* is set to, given the balance *factors*.
+
+    Read from the side with the larger factor: its channels are main × that
+    factor. Taking the loudest channel as the main volume is only right when
+    one side is at 100 % — with both below it, that read back a lower main
+    volume, which the next pass scaled down again, and the headset faded
+    towards silence one watchdog tick at a time. Reading every channel as
+    channel ÷ factor is no better on a sink not balanced yet (flat after a
+    reconnect): the quieter side's factor inflates it and the louder side
+    jumps up. Using the louder side's channels keeps both cases right.
+    """
     values = list(getattr(sink.volume, 'values', []) or [])
-    return max(values) if values else float(sink.volume.value_flat)
+    if not values:
+        return float(sink.volume.value_flat)
+    left, right = factors
+    lead_factor = max(left, right)
+    if lead_factor <= 0:
+        return max(values)
+    lead = {side for side, f in (('left', left), ('right', right)) if f == lead_factor}
+    names = _channel_names(sink)
+    on_lead = [v for n, v in zip(names, values) if _side(n) in lead]
+    if not on_lead:                      # mono / no left-right channels
+        return max(values)
+    return min(1.0, max(on_lead) / lead_factor)
 
 
 def _channel_names(sink: Any) -> list[str]:
@@ -85,13 +106,17 @@ def set_main_volume(pulse: Any, sink: Any, main: float, factors: tuple[float, fl
 
 def is_balanced(sink: Any, factors: tuple[float, float]) -> bool:
     """Does *sink* already carry this balance (at whatever main volume)?"""
-    want = channel_values(_channel_names(sink), main_volume(sink), factors)
+    want = channel_values(_channel_names(sink), main_volume(sink, factors), factors)
     have = list(sink.volume.values)
     return len(want) == len(have) and all(abs(a - b) <= _TOLERANCE for a, b in zip(want, have))
 
 
-def apply(pulse: Any, sink_names: set[str], factors: tuple[float, float]) -> bool:
+def apply(pulse: Any, sink_names: set[str], factors: tuple[float, float],
+          current: tuple[float, float] | None = None) -> bool:
     """Bring the named sinks to *factors*, keeping their main volume.
+
+    *current* is the balance the sink was last set to, when it differs (a
+    slider just moved); the main volume is read back with it.
 
     Returns True when anything was changed. Sinks already balanced are left
     alone, so this is cheap to call on every watchdog tick.
@@ -102,7 +127,9 @@ def apply(pulse: Any, sink_names: set[str], factors: tuple[float, float]) -> boo
             continue
         if is_balanced(sink, factors):
             continue
-        set_main_volume(pulse, sink, main_volume(sink), factors)
+        # Read back under the *current* balance: that is what the sink is set
+        # to now. With the new factors a changed balance would be misread.
+        set_main_volume(pulse, sink, main_volume(sink, current or factors), factors)
         logger.info("Output balance: %s → left %d%%, right %d%%",
                     sink.name, round(factors[0] * 100), round(factors[1] * 100))
         changed = True

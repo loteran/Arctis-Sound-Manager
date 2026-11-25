@@ -2234,6 +2234,12 @@ class HomePage(QWidget):
     def update_settings(self, settings: dict):
         general = settings.get("general", {})
         self._ext_device_nick = general.get("external_output_device") or None
+        # The left/right balance (output_balance), for the master slider.
+        from types import SimpleNamespace
+        from arctis_sound_manager.output_balance import levels
+        self._balance_factors = levels(SimpleNamespace(**{
+            k: general[k] for k in ("output_balance_enabled", "output_volume_left",
+                                    "output_volume_right") if k in general}))
         device_name = settings.get("device_name", "")
         if device_name:
             self._last_device_name = device_name
@@ -2664,7 +2670,8 @@ class HomePage(QWidget):
                 # The loudest side, not the average: with a left/right balance
                 # (output_balance) the average is not what the slider sets.
                 from arctis_sound_manager.output_balance import main_volume
-                master_pct = round(main_volume(sink_master) * 100)
+                master_pct = round(main_volume(
+                    sink_master, getattr(self, "_balance_factors", (1.0, 1.0))) * 100)
                 self._master_card.set_volume(master_pct)
                 self._sink_master = sink_master
 
@@ -3235,13 +3242,12 @@ class HomePage(QWidget):
         # Through output_balance so moving the main volume keeps the
         # left/right levels instead of evening both sides out.
         from arctis_sound_manager import output_balance
-        from arctis_sound_manager.settings import GeneralSettings
         try:
             fresh = next((s for s in pulse.sink_list() if s.name == self._sink_master.name), None)
             if fresh is not None:
                 output_balance.set_main_volume(
                     pulse, fresh, value / 100.0,
-                    output_balance.levels(GeneralSettings.read_from_file()))
+                    getattr(self, "_balance_factors", (1.0, 1.0)))
         except Exception as exc:  # noqa: BLE001
             logger.warning("Error setting master volume: %s", exc)
 
