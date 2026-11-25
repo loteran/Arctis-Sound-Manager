@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from arctis_sound_manager.gui.components import DividerLine
+from arctis_sound_manager.gui.components import DividerLine, SectionTitle
 from arctis_sound_manager.gui.report_dialog import ReportBugDialog
 from arctis_sound_manager.i18n import I18n
 import arctis_sound_manager.gui.theme as _theme
@@ -2606,8 +2606,10 @@ class HelpPage(QWidget):
         outer.setSpacing(0)
 
         # ── Header (title + lang selector) — fixed, outside scroll ──────────
+        # Painted from the active theme in apply_theme(); the module-level
+        # BG_MAIN is the default theme's and left a grey band on any other.
         header_widget = QWidget()
-        header_widget.setStyleSheet(f"background-color: {BG_MAIN};")
+        self._header_widget = header_widget
         header_layout = QVBoxLayout(header_widget)
         header_layout.setContentsMargins(36, 28, 36, 0)
         header_layout.setSpacing(6)
@@ -2615,10 +2617,7 @@ class HelpPage(QWidget):
         title_row = QHBoxLayout()
         title_row.setSpacing(16)
 
-        self._title_label = QLabel("Help")
-        self._title_label.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 28pt; font-weight: bold; background: transparent;"
-        )
+        self._title_label = SectionTitle("Help")
         title_row.addWidget(self._title_label, stretch=1)
 
         # Report a bug button
@@ -2629,7 +2628,7 @@ class HelpPage(QWidget):
         )
         report_btn = QPushButton(I18n.translate('ui', 'report_bug'))
         report_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        report_btn.setStyleSheet(_BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, hover=BG_BUTTON_HOVER))
+        self._report_btn, self._report_btn_qss = report_btn, _BTN
         report_btn.clicked.connect(lambda: ReportBugDialog(parent=self).exec())
         title_row.addWidget(report_btn)
         header_layout.addLayout(title_row)
@@ -2655,7 +2654,7 @@ class HelpPage(QWidget):
         )
 
         self._content_widget = QWidget()
-        self._content_widget.setStyleSheet(f"background-color: {BG_MAIN};")
+        self._content_widget.setObjectName("helpContent")
         self._content_layout = QVBoxLayout(self._content_widget)
         self._content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._content_layout.setContentsMargins(36, 24, 36, 36)
@@ -2664,7 +2663,9 @@ class HelpPage(QWidget):
         scroll.setWidget(self._content_widget)
         outer.addWidget(scroll, stretch=1)
 
-        self._set_language(I18n.current_lang())
+        # apply_theme() builds the sections; building them here first as well
+        # made every page build lay the whole manual out twice.
+        self._current_lang = I18n.current_lang()
         I18n.on_language_changed(lambda: self._set_language(I18n.current_lang()))
 
         # Apply the currently-active theme on first paint.
@@ -2676,13 +2677,32 @@ class HelpPage(QWidget):
         """Restyle the help page for the current active theme."""
         self.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
 
-        self._title_label.setStyleSheet(
-            f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 28pt; font-weight: bold; background: transparent;"
-        )
+        self._header_widget.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+        self._report_btn.setStyleSheet(self._report_btn_qss.format(
+            bg=_theme.c('BG_BUTTON'), fg=_theme.c('TEXT_PRIMARY'), hover=_theme.c('BG_BUTTON_HOVER')))
+        self._title_label.apply_theme()
         self._subtitle_label.setStyleSheet(
             f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 11pt; background: transparent;"
         )
-        self._content_widget.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+        # One stylesheet for all section cards, matched by object name. Each
+        # card, heading, divider and body used to get its own setStyleSheet:
+        # ~200 separate parses, most of this page's build time.
+        self._content_widget.setStyleSheet(f"""
+            QWidget#helpContent {{ background-color: {_theme.c('BG_MAIN')}; }}
+            QWidget#helpCard {{
+                background-color: {_theme.c('BG_CARD')}; border-radius: 10px;
+                border: 1px solid {_theme.c('BORDER')};
+            }}
+            QLabel#helpHeading {{
+                color: {_theme.c('TEXT_PRIMARY')}; font-size: 14pt; font-weight: bold;
+                background: transparent; padding: 0; border: none;
+            }}
+            QWidget#helpSep {{ background-color: {_theme.c('BORDER')}; border: none; }}
+            QLabel#helpBody {{
+                color: {_theme.c('TEXT_SECONDARY')}; font-size: 11pt;
+                background: transparent; padding: 0; border: none;
+            }}
+        """)
 
         # Rebuild the content section cards with the new theme colors
         self._set_language(self._current_lang)
@@ -2707,30 +2727,29 @@ class HelpPage(QWidget):
         while self._content_layout.count():
             item = self._content_layout.takeAt(0)
             if item.widget():
+                # Hidden now: deleteLater() only runs on the next event-loop
+                # pass, and until then the old cards drew under the new ones.
+                item.widget().hide()
                 item.widget().deleteLater()
 
     def _add_section(self, heading: str, body: str) -> None:
         # Section card — uses active-theme colors so apply_theme rebuilds correctly
         accent_link = _theme.c("ACCENT")
         card = QWidget()
-        card.setStyleSheet(
-            f"background-color: {_theme.c('BG_CARD')}; border-radius: 10px; "
-            f"border: 1px solid {_theme.c('BORDER')};"
-        )
+        card.setObjectName("helpCard")
+        card.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(20, 16, 20, 16)
         card_layout.setSpacing(8)
 
         h_label = QLabel(heading)
-        h_label.setStyleSheet(
-            f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 14pt; font-weight: bold; "
-            "background: transparent; padding: 0;"
-        )
+        h_label.setObjectName("helpHeading")
         card_layout.addWidget(h_label)
 
         sep = QWidget()
         sep.setFixedHeight(1)
-        sep.setStyleSheet(f"background-color: {_theme.c('BORDER')};")
+        sep.setObjectName("helpSep")
+        sep.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         card_layout.addWidget(sep)
 
         import re as _re
@@ -2741,10 +2760,7 @@ class HelpPage(QWidget):
         )
         b_label = QLabel(html_body)
         b_label.setWordWrap(True)
-        b_label.setStyleSheet(
-            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 11pt; background: transparent; "
-            "padding: 0; line-height: 1.5;"
-        )
+        b_label.setObjectName("helpBody")
         b_label.setTextFormat(Qt.TextFormat.RichText)
         b_label.setOpenExternalLinks(True)
         b_label.setTextInteractionFlags(

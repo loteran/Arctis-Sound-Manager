@@ -45,12 +45,13 @@ def test_one_card_per_section_in_profile_order(qapp):
     page = HeadsetPage()
     page.update_settings(_payload({
         "mic_volume": _config("microphone"),
-        "pm_shutdown": _config("power_management"),
+        "bluetooth_auto_off": _config("power_management"),
+        "pm_shutdown": _config("power_management"),     # an Events-card setting
         "mic_side_tone": _config("microphone"),
     }))
     assert _groups(page) == [
         ("microphone", ("mic_volume", "mic_side_tone")),
-        ("power_management", ("pm_shutdown",)),
+        ("power_management", ("bluetooth_auto_off",)),
     ]
     assert [card.title.text() for card in page._setting_cards] == ["Microphone", "Power"]
 
@@ -141,3 +142,24 @@ def test_a_long_choice_becomes_a_drop_down_in_a_compact_card(qapp):
     assert combo is not None and combo.currentIndex() == 5
     assert not long_row.findChildren(QPushButton)
     assert len(short_row.findChildren(QPushButton)) == 4
+
+
+def test_the_device_card_says_what_is_there(qapp):
+    """A headset by name; the no-headset mode as such; nothing once unplugged —
+    the last headset's name used to stay, reading as connected."""
+    from arctis_sound_manager.i18n import I18n
+    page = HeadsetPage()
+    page.update_settings({**_payload({}), "device_name": "Arctis GameBuds",
+                          "vendor_id": "0x1038", "product_id": "0x230a"})
+    assert page._device_name_label.text() == "Arctis GameBuds"
+
+    page.update_settings({**_payload({}),
+                          "generic_device": {"output": "USB Audio Speakers", "input": ""}})
+    assert page._device_name_label.text() == I18n.translate("ui", "generic_mode_title")
+    assert "USB Audio Speakers" in page._vendor_label.text()
+    page.update_status({"headset": {"headset_power_status": {"value": "online", "type": "label"}}})
+    assert page._status_tiles._status == {}          # no power tile for no headset
+
+    page.update_settings(_payload({}))
+    assert page._device_name_label.text() == I18n.translate("ui", "no_device")
+    assert page._vendor_label.text() == ""

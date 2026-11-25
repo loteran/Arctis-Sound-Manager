@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from arctis_sound_manager.gui import button_map_widget
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
 
 from arctis_sound_manager.gui.anc_widget import QAncWidget
@@ -24,6 +25,7 @@ from arctis_sound_manager.gui.components import (
     SectionTitle,
     SvgIconWidget,
 )
+from arctis_sound_manager.gui.events_section import EVENT_DEVICE_KEYS
 from arctis_sound_manager.gui.headset_cards import (
     SettingsCard,
     StatusTiles,
@@ -47,6 +49,38 @@ _CHATMIX_WIDTH = 340
 
 # The base station's settings have their own panel on the DAC page.
 _SECTIONS_SHOWN_ELSEWHERE = frozenset({'station'})
+
+# Noise cancelling: the mode, and each family's level settings, all shown in
+# the noise cancelling card (names differ between profiles).
+_TRANSPARENCY_LEVEL_KEYS = ('noise_level', 'transparent_level', 'transparent_noise_cancelling_level')
+_ANC_LEVEL_KEYS = ('anc_level', 'noise_cancelling_level')
+_ANC_CARD_KEYS = frozenset(('noise_cancelling',) + _TRANSPARENCY_LEVEL_KEYS + _ANC_LEVEL_KEYS)
+
+# Settings shown in another card than the profile's section puts them in:
+# the volume limiter changes the sound, so it sits with the other sound
+# settings.
+_SECTION_OVERRIDES = {'volume_limiter': 'audio'}
+
+
+class _AncBody(QWidget):
+    """The noise cancelling card's body: the mode buttons, then the level
+    slider for the selected mode (see HeadsetPage._show_anc_level)."""
+
+    def __init__(self, modes: QWidget, levels: list[QWidget]):
+        super().__init__()
+        self._modes, self._levels = modes, levels
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        layout.addWidget(modes)
+        for level in levels:
+            level.setVisible(False)
+            layout.addWidget(level)
+
+    def apply_theme(self) -> None:
+        self._modes.apply_theme()
+        for level in self._levels:
+            level.apply_theme()
 
 
 class HeadsetPage(QWidget):
@@ -174,6 +208,17 @@ class HeadsetPage(QWidget):
         card_layout.addWidget(chatmix)
         layout.addSpacing(16)
 
+        # What happens automatically, by event (connecting, disconnecting, not
+        # used for a while, …): each with its outcome worded from the current
+        # settings, and its controls behind "Change". Those settings appear
+        # here only — the cards below and the Settings page leave them out.
+        from arctis_sound_manager.gui.events_section import QEventsSection
+        self._events = QEventsSection()
+        self._events_card = SettingsCard(
+            I18n.translate("ui", "events_title"), self._events, content)
+        # Added at the bottom of the page (below), under the settings people
+        # change more often: these are set once and rarely revisited.
+
         # ── The headset's own settings ────────────────────────────────────────
         # Sidetone, mic volume, the volume limiter, auto power-off… everything
         # the device profile declares, one card per section of the profile.
@@ -185,8 +230,18 @@ class HeadsetPage(QWidget):
         # Nova 7P, for one) — dead controls read as a broken app rather than as
         # an absent feature. Shown only once the daemon reports the setting.
         self._anc_widget = QAncWidget()
+        # The level for the selected mode sits under the mode buttons, here
+        # rather than in the Audio card, which used to repeat the mode as a
+        # second "ANC" row with both level sliders beside it.
+        self._anc_levels = {
+            'transparent': QSettingsWidget(None, None, "device", keys=_TRANSPARENCY_LEVEL_KEYS,
+                                           compact=True),
+            'on': QSettingsWidget(None, None, "device", keys=_ANC_LEVEL_KEYS, compact=True),
+        }
+        self._anc_widget.mode_changed.connect(self._show_anc_level)
         self._anc_section = SettingsCard(
-            I18n.translate("ui", "noise_cancelling"), self._anc_widget, content)
+            I18n.translate("ui", "noise_cancelling"),
+            _AncBody(self._anc_widget, list(self._anc_levels.values())), content)
         self._anc_section.setVisible(False)
         layout.addWidget(self._anc_section)
         layout.addSpacing(8)
@@ -207,6 +262,8 @@ class HeadsetPage(QWidget):
         layout.addLayout(self._cards_layout)
         self._setting_cards: list[SettingsCard] = []
         self._card_groups: list[tuple[str | None, tuple[str, ...]]] = []
+        layout.addSpacing(8)
+        layout.addWidget(self._events_card)
         layout.addStretch(1)
 
         scroll.setWidget(content)
@@ -248,6 +305,7 @@ class HeadsetPage(QWidget):
         self._status_tiles.apply_theme()
         self._anc_section.apply_theme()
         self._balance_widget.apply_theme()
+        self._events_card.apply_theme()
         for card in self._setting_cards:
             card.apply_theme()
 
@@ -307,8 +365,11 @@ class HeadsetPage(QWidget):
 
     @Slot(object)
     def update_status(self, status: dict):
+        if getattr(self, "_generic", False):
+            status = {}      # no headset: no power or battery tiles
         self._status_tiles.update_status(status)
         self._anc_widget.update_status(status)
+        self._events.update_status(status)
         keys = status_key_names(status)
         for card in self._setting_cards:
             card.body.set_available_status_keys(keys)
@@ -318,14 +379,27 @@ class HeadsetPage(QWidget):
         vendor_id   = settings.get("vendor_id", "")
         product_id  = settings.get("product_id", "")
         device_name = settings.get("device_name", "")
-        if device_name:
+        generic = settings.get("generic_device")
+        self._generic = generic is not None
+        if generic is not None:
+            # No headset: say so, and where the sound and the microphone are.
+            self._device_name_label.setText(I18n.translate("ui", "generic_mode_title"))
+            self._vendor_label.setText(I18n.translate("ui", "generic_output_line").format(
+                device=generic.get("output") or "—"))
+            self._product_label.setText(
+                I18n.translate("ui", "generic_input_line").format(device=generic["input"])
+                if generic.get("input") else I18n.translate("ui", "generic_no_input"))
+        elif device_name:
             self._device_name_label.setText(device_name)
             from arctis_sound_manager.telemetry import maybe_send
             maybe_send(device_name, str(product_id))
-        if vendor_id:
-            self._vendor_label.setText(f"Vendor ID:   {vendor_id}")
-        if product_id:
-            self._product_label.setText(f"Product ID:  {product_id}")
+            self._vendor_label.setText(f"Vendor ID:   {vendor_id}" if vendor_id else "")
+            self._product_label.setText(f"Product ID:  {product_id}" if product_id else "")
+        else:
+            # Unplugged: the last headset's name stayed, reading as connected.
+            self._device_name_label.setText(I18n.translate("ui", "no_device"))
+            self._vendor_label.setText("")
+            self._product_label.setText("")
 
         # Changed in Settings (or by another instance) — follow it. This is the
         # whole of the synchronisation: both pickers read the same value out of
@@ -351,6 +425,14 @@ class HeadsetPage(QWidget):
         each setting's section gets everything in a single card.
         """
         self._balance_widget.update_from_settings(settings.get('general') or {})
+        for panel in self._anc_levels.values():
+            panel.update_settings(settings)
+        configs = settings.get('settings_config') or {}
+        visible_transparency = any(
+            isinstance(configs.get(k), dict) and not configs[k].get('hidden')
+            for k in _TRANSPARENCY_LEVEL_KEYS)
+        self._anc_widget.set_level_row_fallback(not visible_transparency)
+        self._events.update_settings(settings)
         values = settings.get('device') or {}
         if 'noise_cancelling' in values:
             self._anc_widget.apply_saved_mode(values['noise_cancelling'])
@@ -358,11 +440,15 @@ class HeadsetPage(QWidget):
         for name, config in (settings.get('settings_config') or {}).items():
             if name not in values or not isinstance(config, dict):
                 continue
-            section = config.get('section')
+            section = _SECTION_OVERRIDES.get(name, config.get('section'))
             if section in _SECTIONS_SHOWN_ELSEWHERE:
                 continue
             if config.get('hidden') or not config.get('type'):
                 continue
+            if name in EVENT_DEVICE_KEYS:
+                continue                # shown in the Events card instead
+            if name in _ANC_CARD_KEYS:
+                continue                # shown in the noise cancelling card
             groups.setdefault(section, []).append(name)
         wanted = [(section, tuple(names)) for section, names in groups.items()]
         if wanted == self._card_groups:
@@ -376,7 +462,10 @@ class HeadsetPage(QWidget):
             card.deleteLater()
         self._setting_cards = []
         for section, names in wanted:
-            body = QSettingsWidget(None, None, "device", keys=names, compact=True)
+            if button_map_widget.fits(names):
+                body = button_map_widget.QButtonMapWidget(names)
+            else:
+                body = QSettingsWidget(None, None, "device", keys=names, compact=True)
             card = SettingsCard(section_title(section), body, self._content)
             self._cards_layout.addWidget(card)
             self._setting_cards.append(card)
@@ -386,6 +475,12 @@ class HeadsetPage(QWidget):
         if host is not None:
             host.layout().addWidget(self._balance_widget)
             self._balance_widget.setVisible(True)
+
+    def _show_anc_level(self, mode: str) -> None:
+        """Transparent shows the transparency level, ANC the ANC level, Off
+        neither."""
+        for key, panel in self._anc_levels.items():
+            panel.setVisible(key == mode)
 
     def _update_anc_visibility(self, settings: dict) -> None:
         """Show the ANC section only for headsets that actually have it.

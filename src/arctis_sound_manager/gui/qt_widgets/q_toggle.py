@@ -34,6 +34,13 @@ class QToggle(QCheckBox):
 
     def start_animation_transition(self, value: bool):
         self.animation.stop()
+        if not self.isVisible():
+            # Being created with its value, or updated on a page not on
+            # screen: nothing to watch, so no slide. A switch made "on" used to
+            # slide over from "off" the first time its page was looked at.
+            self._circle_position = self._rest_position(value == Qt.CheckState.Checked)
+            self.update()
+            return
 
         self.animation.setEndValue(self._rest_position(value == Qt.CheckState.Checked))
 

@@ -2653,8 +2653,8 @@ class SpatialAudioWidget(QWidget):
         tuning_hint.setWordWrap(True)
         tuning_hint.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt;")
         tuning.addWidget(tuning_hint)
-        tuning.addWidget(self._slider_row("Performance / Immersion", "immersion"))
-        tuning.addWidget(self._slider_row("Distance", "distance"))
+        tuning.addWidget(self._slider_row(_t("spatial_immersion"), "immersion"))
+        tuning.addWidget(self._slider_row(_t("spatial_distance"), "distance"))
         reset_row = QHBoxLayout()
         self._reset_gains_btn = QPushButton(_t("spatial_channel_levels_reset"))
         self._reset_gains_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -2666,6 +2666,18 @@ class SpatialAudioWidget(QWidget):
         tuning.addStretch(1)
         body.addLayout(tuning, 1)
         detail_layout.addLayout(body)
+
+        # Which HRIR the virtual surround uses — one setting for the whole app,
+        # so the Game and Media tabs show the same choice. It used to sit on
+        # the Settings page as "HRIR / Spatial Audio profile", away from the
+        # only thing it affects.
+        self._hrir = QSettingsWidget(None, None, "general", keys=("hrir_id",), compact=True,
+                                     labels={"hrir_id": _t("spatial_hrir")})
+        detail_layout.addWidget(self._hrir)
+        self._hrir_hint = QLabel(_t("spatial_hrir_hint"))
+        self._hrir_hint.setWordWrap(True)
+        self._hrir_hint.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt;")
+        detail_layout.addWidget(self._hrir_hint)
         # Breathing room under the disc, so it does not touch the next card.
         detail_layout.addSpacing(16)
 
@@ -2675,6 +2687,10 @@ class SpatialAudioWidget(QWidget):
         self._pin_min_height()
 
     # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def update_settings(self, settings: dict) -> None:
+        """The daemon's settings push, for the surround profile picker."""
+        self._hrir.update_settings(settings)
 
     def _pin_min_height(self) -> None:
         """Make the minimum height explicit, so the channel tab cannot squeeze
@@ -2944,6 +2960,7 @@ class SpatialAudioWidget(QWidget):
             QPushButton:disabled {{ color: grey; }}
         """
         self.setStyleSheet(_slider_qss)
+        self._hrir.apply_theme()
         self._sync_mode()
 
     def get_state(self) -> dict:
@@ -4255,6 +4272,27 @@ class _FitTabWidget(QTabWidget):
         return self._fit(super().minimumSizeHint(), lambda w: w.minimumSizeHint())
 
 
+def _repair_stale_configs() -> None:
+    """check_and_fix_stale_configs(), and the restart a fix needs."""
+    import logging
+    log = logging.getLogger(__name__)
+    try:
+        fixed, needs_pw_restart = check_and_fix_stale_configs()
+        if not fixed:
+            return
+        if needs_pw_restart:
+            # One-time migration: static HeSuVi was in pipewire.conf.d and created a
+            # duplicate node that silenced the Game channel.  A full PipeWire restart
+            # is required to unload the old node; subsequent runs won't need this.
+            log.info("Stale static HeSuVi config removed — restarting PipeWire to clear duplicate node")
+            sc.restart("pipewire", "wireplumber", "pipewire-pulse", "filter-chain", timeout=20)
+        else:
+            log.info("Stale Sonar configs fixed, restarting filter-chain")
+            sc.restart("filter-chain", timeout=15)
+    except Exception:  # noqa: BLE001 — a background check must not take the GUI down
+        log.warning("Sonar config check failed", exc_info=True)
+
+
 class SonarPage(QWidget):
     def __init__(self, embedded: bool = False, parent: QWidget | None = None):
         super().__init__(parent)
@@ -4264,22 +4302,11 @@ class SonarPage(QWidget):
         self._apply_all_worker: _ApplyAllWorker | None = None
         self._pending_apply_all: bool = False
 
-        # Fix stale configs (broken builtins, wrong locations, duplicate HeSuVi node, …)
-        fixed, needs_pw_restart = check_and_fix_stale_configs()
-        if fixed:
-            import logging
-            if needs_pw_restart:
-                # One-time migration: static HeSuVi was in pipewire.conf.d and created a
-                # duplicate node that silenced the Game channel.  A full PipeWire restart
-                # is required to unload the old node; subsequent runs won't need this.
-                logging.getLogger(__name__).info(
-                    "Stale static HeSuVi config removed — restarting PipeWire to clear duplicate node"
-                )
-                sc.restart("pipewire", "wireplumber", "pipewire-pulse", "filter-chain",
-                           timeout=20)
-            else:
-                logging.getLogger(__name__).info("Stale Sonar configs fixed, restarting filter-chain")
-                sc.restart("filter-chain", timeout=15)
+        # The stale-config check (_repair_stale_configs) is not run here: the
+        # page is now built in the background, often at login inside the
+        # tray's prebuild, and a fix ends in a filter-chain or PipeWire
+        # restart. QMainApp runs it when the window is first shown, as it
+        # used to happen when the window was built on that first open.
 
         self.setStyleSheet(f"background-color: {BG_MAIN};")
 
@@ -4294,7 +4321,7 @@ class SonarPage(QWidget):
             root.addSpacing(4)
 
             subtitle = QLabel(_t("sonar"))
-            subtitle.setStyleSheet("color: #666666; font-size: 20pt; font-weight: bold; background: transparent;")
+            subtitle.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 20pt; font-weight: bold; background: transparent;")
             root.addWidget(subtitle)
             root.addSpacing(20)
 
@@ -4714,8 +4741,13 @@ class SonarPage(QWidget):
         self._tabs.updateGeometry()
 
     def update_settings(self, settings: dict) -> None:
-        """The daemon's settings push, for the Micro tab's input picker."""
+        """The daemon's settings push: the Micro tab's input picker, and the
+        surround profile in each Spatial Audio section."""
         self._micro_source.update_settings(settings)
+        for widget in (self._game_widget, self._media_widget, self._aux_widget):
+            spatial = getattr(widget, "_spatial", None)
+            if spatial is not None:
+                spatial.update_settings(settings)
 
     def apply_theme(self, t=None) -> None:
         """Restyle the Sonar page and all its channel widgets for the active theme."""
@@ -4732,8 +4764,8 @@ class SonarPage(QWidget):
             self._micro_source.apply_theme()
 
         # Propagate to each channel widget (they own cards, macro sliders, etc.)
-        for widget in (self._game_widget, self._media_widget, self._chat_widget,
-                       self._micro_widget, self._output_widget):
+        for widget in (self._game_widget, self._media_widget, self._aux_widget,
+                       self._chat_widget, self._micro_widget, self._output_widget):
             widget.apply_theme(t)
 
     def apply_all_from_files(self) -> None:

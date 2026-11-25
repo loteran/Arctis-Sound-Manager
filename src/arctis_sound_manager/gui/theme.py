@@ -6,6 +6,7 @@
 import configparser
 import logging
 import os
+import re
 from pathlib import Path
 
 THEMES = {
@@ -139,7 +140,11 @@ COLOR_LABEL_KEYS: dict[str, str] = {
 }
 
 USER_THEMES_DIR = Path(os.environ.get('XDG_CONFIG_HOME') or (Path.home() / '.config')) / "arctis-sound-manager" / "themes"
-BUILTIN_THEME_IDS = frozenset(THEMES)
+# "Follow the system": colours read from the desktop's palette (the KDE colour
+# scheme, through the platform theme) each time they are asked for.
+SYSTEM_THEME_ID = "system"
+
+BUILTIN_THEME_IDS = frozenset(THEMES) | {SYSTEM_THEME_ID}
 PREVIEW_THEME_ID = "__preview__"
 
 # ── Active theme state ────────────────────────────────────────────────────────
@@ -189,7 +194,57 @@ def reload_user_themes() -> None:
         logging.warning("Failed to scan user themes dir", exc_info=True)
 
 
+def _mix(a, b, amount: float) -> str:
+    """*a* moved *amount* of the way towards *b*, as #rrggbb."""
+    from PySide6.QtGui import QColor
+    a, b = QColor(a), QColor(b)
+    return QColor(round(a.red() + (b.red() - a.red()) * amount),
+                  round(a.green() + (b.green() - a.green()) * amount),
+                  round(a.blue() + (b.blue() - a.blue()) * amount)).name()
+
+
+def system_colors() -> dict[str, str]:
+    """The ASM palette made from the desktop's: background, cards, buttons and
+    text from its window and button colours, the accent from its selection
+    colour. The channel colours keep the default theme's. Without a running
+    application (or a palette) the default theme stands in."""
+    colors = dict(THEMES["steelseries"])
+    try:
+        from PySide6.QtGui import QGuiApplication, QPalette
+        if QGuiApplication.instance() is None:
+            return colors
+        pal = QGuiApplication.palette()
+        role = QPalette.ColorRole
+        window = pal.color(role.Window)
+        text = pal.color(role.WindowText).name()
+        button = pal.color(role.Button)
+        accent = pal.color(role.Highlight).name()
+        dark = window.lightness() < 128
+        bg = window.name()
+        toward = "#ffffff" if dark else "#000000"
+        colors.update({
+            "BG_MAIN": bg,
+            "BG_SIDEBAR": _mix(bg, "#000000" if dark else "#ffffff", 0.18),
+            "BG_CARD": _mix(bg, toward, 0.05),
+            "BG_BUTTON": button.name(),
+            "BG_BUTTON_HOVER": _mix(button.name(), toward, 0.10),
+            "BG_SIDEBAR_ACTIVE": _mix(bg, accent, 0.25),
+            "ACCENT": accent,
+            "ACCENT2": pal.color(role.Link).name(),
+            "TEXT_PRIMARY": text,
+            "TEXT_SECONDARY": _mix(text, bg, 0.40),
+            "BORDER": _mix(bg, text, 0.15),
+            "TOGGLE_ON": accent,
+            "TOGGLE_OFF": button.name(),
+        })
+    except Exception:
+        logging.debug("could not read the system palette", exc_info=True)
+    return colors
+
+
 def get_theme(name: str) -> dict[str, str]:
+    if name == SYSTEM_THEME_ID:
+        return system_colors()
     if name == PREVIEW_THEME_ID:
         return _PREVIEW_COLORS or THEMES["steelseries"]
     if name in THEMES:
@@ -199,7 +254,17 @@ def get_theme(name: str) -> dict[str, str]:
     return THEMES["steelseries"]
 
 
+def _system_label() -> str:
+    try:
+        from arctis_sound_manager.i18n import I18n
+        return I18n.translate("ui", "theme_follow_system")
+    except Exception:
+        return "Follow the system"
+
+
 def get_theme_label(name: str) -> str:
+    if name == SYSTEM_THEME_ID:
+        return _system_label()
     if name in THEMES_LABELS:
         return THEMES_LABELS[name]
     if name in _USER_LABELS:
@@ -208,7 +273,7 @@ def get_theme_label(name: str) -> str:
 
 
 def all_theme_labels() -> dict[str, str]:
-    result: dict[str, str] = dict(THEMES_LABELS)
+    result: dict[str, str] = {SYSTEM_THEME_ID: _system_label(), **THEMES_LABELS}
     user_sorted = dict(sorted(_USER_LABELS.items(), key=lambda kv: kv[1].lower()))
     result.update(user_sorted)
     return result
@@ -289,13 +354,143 @@ def set_preview_colors(colors: dict[str, str] | None) -> None:
     _PREVIEW_COLORS = colors
 
 
+def install_stylesheet_dedup() -> None:
+    """Make QWidget.setStyleSheet() a no-op when the sheet is unchanged, and
+    translate default-theme colours in it to the active theme's (see
+    retheme_widgets).
+
+    Every setStyleSheet() makes Qt re-style the widget and its whole subtree,
+    even when the text is the one it already has. The pages theme themselves
+    when built, and their parents theme them again right after (the Sonar
+    channel tabs three times over): on the Equalizer page 273 of 760 calls
+    repeated a widget's current sheet, ~85 % of its styling time. A changed
+    sheet — a theme switch — still goes through.
+
+    Nothing here relies on re-setting the same sheet to re-evaluate property
+    selectors: [active=true] buttons refresh with style().unpolish/polish().
+    Python-side only; Qt's own C++ calls are unaffected. Idempotent.
+    """
+    from PySide6.QtWidgets import QWidget
+
+    if getattr(QWidget.setStyleSheet, "_asm_dedup", False):
+        return
+    original = QWidget.setStyleSheet
+
+    def setStyleSheet(self, sheet):  # noqa: N802 — Qt's name
+        # Default-theme colours (the module constants) -> the active theme.
+        sheet = translate_sheet(sheet, _default_to_active())
+        if self.styleSheet() == sheet:
+            return
+        original(self, sheet)
+
+    setStyleSheet._asm_dedup = True
+    QWidget.setStyleSheet = setStyleSheet
+
+
 def set_active_theme(name: str) -> None:
     """Set the globally active theme by name (falls back to 'steelseries')."""
-    global _ACTIVE_THEME
-    if name in THEMES or name in _USER_THEMES or name == PREVIEW_THEME_ID:
+    global _ACTIVE_THEME, _APPLIED
+    if name in THEMES or name in _USER_THEMES or name in (PREVIEW_THEME_ID, SYSTEM_THEME_ID):
         _ACTIVE_THEME = name
     else:
         _ACTIVE_THEME = "steelseries"
+    if _APPLIED is None:
+        # The first theme set, before any widget exists: what they are built in.
+        _APPLIED = dict(active_theme())
+
+
+# ── Inline stylesheets follow the theme ───────────────────────────────────────
+# Widgets colour themselves with inline stylesheets, written either from c()
+# (the theme active when they were built) or from the module-level constants
+# below, which are the default theme's. Neither followed a theme switch unless
+# the widget's own apply_theme() rewrote it, and many had none: after a switch
+# parts of each page kept the old theme, and the constants showed the default
+# theme's orange and greys on every theme. Rather than chase each widget, every
+# inline stylesheet is translated by colour role: on setStyleSheet() from the
+# default palette to the active one, and on a theme switch (retheme_widgets())
+# from the colours the widgets carry to the new ones. No built-in theme uses a
+# default-theme colour in a different role (tests/test_theme_follow.py), so a
+# colour written through c() is never mistaken for a constant; within a theme
+# where roles share a value, the first role in this order wins.
+_ROLE_PRIORITY = (
+    "ACCENT", "TEXT_PRIMARY", "TEXT_SECONDARY", "BG_MAIN", "BG_CARD", "BG_BUTTON",
+    "BG_BUTTON_HOVER", "BORDER", "BG_SIDEBAR", "BG_SIDEBAR_ACTIVE", "TOGGLE_ON",
+    "TOGGLE_OFF", "ACCENT2", "COLOR_GAME", "COLOR_CHAT", "COLOR_AUX", "COLOR_HDMI",
+    "COLOR_AUX2", "COLOR_MASTER", "COLOR_MIC",
+)
+_HEX_COLOR = re.compile(r"#[0-9a-fA-F]{6}\b")
+_APPLIED: dict[str, str] | None = None      # the colours the widgets carry
+_DEFAULT_MAP: tuple[tuple, dict[str, str]] = ((), {})
+
+
+def colour_map(src: dict[str, str], dst: dict[str, str]) -> dict[str, str]:
+    """Lower-case colour in `src` -> the colour of the same role in `dst`."""
+    mapping: dict[str, str] = {}
+    for key in _ROLE_PRIORITY:
+        value = src.get(key)
+        if value and key in dst:
+            mapping.setdefault(value.lower(), dst[key])
+    return {k: v for k, v in mapping.items() if k != v.lower()}
+
+
+_CHEVRON_URL = re.compile(r"url\(([^)]*chevron-(up|down)-([0-9a-fA-F]{6})\.svg)\)")
+
+
+def translate_sheet(sheet: str, mapping: dict[str, str]) -> str:
+    if not sheet or not mapping:
+        return sheet
+    if "chevron-" in sheet:
+        # Drop-down arrows are files named after their colour (_chevron_icon).
+        def arrow(m: re.Match) -> str:
+            new = mapping.get("#" + m.group(3).lower())
+            return f"url({_chevron_icon(new, m.group(2) == 'up')})" if new else m.group(0)
+        sheet = _CHEVRON_URL.sub(arrow, sheet)
+    if "#" not in sheet:
+        return sheet
+    return _HEX_COLOR.sub(lambda m: mapping.get(m.group(0).lower(), m.group(0)), sheet)
+
+
+def translate_colour(colour: str) -> str:
+    """One default-theme colour -> the active theme's (for painted widgets)."""
+    if not isinstance(colour, str):
+        return colour
+    return _default_to_active().get(colour.lower(), colour)
+
+
+def _default_to_active() -> dict[str, str]:
+    global _DEFAULT_MAP
+    active = active_theme()
+    key = (_ACTIVE_THEME, tuple(sorted(active.items())))
+    if _DEFAULT_MAP[0] != key:
+        _DEFAULT_MAP = (key, colour_map(THEMES["steelseries"], active))
+    return _DEFAULT_MAP[1]
+
+
+def retheme_widgets() -> None:
+    """After set_active_theme(): carry every widget's inline stylesheet over
+    from the colours it was written in to the active theme's. Call before the
+    pages' own apply_theme(), which then rewrite what they know about."""
+    global _APPLIED
+    from PySide6.QtWidgets import QApplication
+    new = dict(active_theme())
+    old, _APPLIED = _APPLIED or new, new
+    mapping = colour_map(old, new)
+    if not mapping:
+        return
+    for widget in QApplication.allWidgets():
+        # Widgets that paint with a remembered colour (tinted SVG icons).
+        hook = getattr(widget, "retheme_colours", None)
+        if callable(hook):
+            hook(mapping)
+        sheet = widget.styleSheet()
+        if sheet:
+            translated = translate_sheet(sheet, mapping)
+            if translated != sheet:
+                widget.setStyleSheet(translated)
+
+
+def active_theme_name() -> str:
+    return _ACTIVE_THEME
 
 
 def active_theme() -> dict:

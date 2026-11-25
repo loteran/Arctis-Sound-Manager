@@ -399,6 +399,7 @@ def test_the_tab_offers_to_enable_rather_than_install_what_is_already_there(
     QApplication.instance() or QApplication([])
 
     page = ClipsInstallPage()
+    page._first_refresh()          # what opening the tab does
     try:
         assert page._install_btn.text() == "Enable"
         assert page._recheck_btn.isHidden() is True
@@ -786,3 +787,28 @@ def test_inside_a_container_the_batch_elevates_with_sudo_not_pkexec(monkeypatch)
     assert ok
     assert seen[0][:2] == ["sudo", "-n"]
     assert "pkexec" not in seen[0]
+
+
+def test_the_install_page_probes_when_shown_not_when_built(monkeypatch):
+    """The window builds this page at start-up whether or not the tab is ever
+    opened, and each probe is a gst-inspect subprocess. One pass per refresh."""
+    pytest.importorskip("PySide6")
+    from PySide6.QtWidgets import QApplication
+
+    from arctis_sound_manager.gui.clips_install_page import ClipsInstallPage
+
+    probes = []
+    check = sdc.DepCheck(
+        name="PyGObject (gi)", severity=sdc.Severity.BLOCKING, feature="clip capture",
+        detect=lambda: probes.append(1) or True,
+        install_commands={"arch": ["pacman", "-S", "gi"]})
+    monkeypatch.setattr(sdc, "clip_dep_checks", lambda: [check])
+    QApplication.instance() or QApplication([])
+
+    page = ClipsInstallPage()
+    try:
+        assert probes == []                    # built, not probed
+        page._first_refresh()
+        assert len(probes) == 1                # one pass for list, command, buttons
+    finally:
+        page.deleteLater()
