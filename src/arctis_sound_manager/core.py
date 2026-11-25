@@ -1109,17 +1109,32 @@ class CoreEngine:
             if not fixed:
                 return
             from arctis_sound_manager import service_control as sc
+            # The filter-chain restart is forced either way: the GUI restarted
+            # it a moment ago, before these confs existed, and the debounce
+            # would count that as enough.
             if needs_pw_restart:
                 self.logger.info("Sonar mode: stale PipeWire configs migrated — restarting PipeWire")
                 sc.restart("pipewire", "wireplumber", "pipewire-pulse", timeout=20)
-                sc.restart("filter-chain", timeout=20)
+                sc.restart("filter-chain", timeout=20, force=True)
             else:
                 self.logger.info("Sonar mode: Sonar configs written — restarting filter-chain")
-                # Forced: the GUI restarted it a moment ago, before these
-                # confs existed, and the debounce would count that as enough.
                 sc.restart("filter-chain", timeout=15, force=True)
+            # The caller links the Game/Media loopbacks into their EQ nodes
+            # right after this; the restart has just taken those nodes down.
+            self._wait_for_nodes(("effect_input.sonar-game-eq", "effect_input.sonar-media-eq"))
         except Exception as exc:  # noqa: BLE001 — never block the loopback rebuild
             self.logger.warning("Sonar config repair failed: %r", exc)
+
+    def _wait_for_nodes(self, names: tuple[str, ...], timeout_s: float = 8.0) -> bool:
+        """Poll until every node in *names* is in the graph, or *timeout_s*."""
+        from arctis_sound_manager.pw_utils import pw_node_exists
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            if all(pw_node_exists(name) for name in names):
+                return True
+            time.sleep(0.15)
+        self.logger.warning("Nodes still missing after %.0f s: %s", timeout_s, ", ".join(names))
+        return False
 
     def recreate_loopback_single(self, channel: str) -> None:
         """Recreate the loopback for a single channel, leaving all others intact.

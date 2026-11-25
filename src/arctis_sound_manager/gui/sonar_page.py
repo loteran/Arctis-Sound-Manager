@@ -1118,6 +1118,13 @@ class _ApplyAllWorker(QThread):
             # chain — still needs it.
             if _live_apply_conf_changes(before):
                 log.info("_ApplyAllWorker: applied live, no filter-chain restart")
+                # The routing still has to follow: a profile can flip Spatial
+                # Audio, which changes no conf, only where each EQ is linked.
+                # The daemon relinks (the GUI cannot resolve every target —
+                # no device registered here), as on the restart path below.
+                DbusWrapper.apply_spatial_audio()
+                from arctis_sound_manager.sonar_to_pipewire import ensure_micro_capture_link
+                ensure_micro_capture_link()
                 self.done.emit(True)
                 return
 

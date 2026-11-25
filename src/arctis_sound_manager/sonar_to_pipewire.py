@@ -3159,7 +3159,7 @@ _BQ_CONTROL_RE = re.compile(
 )
 
 
-_LADSPA_HEADER_RE = re.compile(r'^\s*\{\s*type\s*=\s*ladspa\s+name\s*=\s*(\S+)\s')
+_LADSPA_HEADER_RE = re.compile(r'^\s*\{\s*type\s*=\s*ladspa\s+name\s*=\s*(\S+)(?:\s|$)')
 _LADSPA_INLINE_RE = re.compile(
     r'^(\s*\{\s*type\s*=\s*ladspa\s+name\s*=\s*(\S+)\s.*?control\s*=\s*\{)(.*)(\}\s*\}\s*)$'
 )
@@ -3209,9 +3209,16 @@ def diff_filter_conf(old_text: str, new_text: str, *, ladspa: bool = False,
         if old_line == new_line:
             if header:
                 pending_name = header.group(1)
-            lheader = _LADSPA_HEADER_RE.match(old_line) if ladspa else None
-            pending_ladspa = (lheader.group(1) if lheader and 'control' not in old_line
-                              else None)
+            if ladspa:
+                # Held across the node's other unchanged lines (plugin = …,
+                # label = … written on lines of their own) until its control
+                # line or the next node's header.
+                lheader = _LADSPA_HEADER_RE.match(old_line)
+                if lheader:
+                    pending_ladspa = lheader.group(1) if 'control' not in old_line else None
+                elif (header or _LADSPA_CONTROL_RE.match(old_line)
+                      or _BQ_CONTROL_RE.match(old_line)):
+                    pending_ladspa = None
             continue
 
         if ladspa:

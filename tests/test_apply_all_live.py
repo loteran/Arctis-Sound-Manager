@@ -55,3 +55,13 @@ def test_live_apply_plan(tmp_path, monkeypatch):
 
     conf.write_text('nodes = [\n]')                               # shape change
     assert sonar_page._live_apply_conf_changes(before) is False
+
+
+def test_multi_line_ladspa_node():
+    """plugin / label on lines of their own: the node is still matched."""
+    def conf(level):
+        return "\n".join(["{ type = ladspa  name = compressor",
+                           "  plugin = /p.so", "  label = sc4m",
+                           f'  control = {{ "Ratio (1:n)" = {level} }} }}'])
+    assert diff_filter_conf(conf("2.0"), conf("3.0"), ladspa=True) == {
+        "compressor": {"Ratio (1:n)": 3.0}}
