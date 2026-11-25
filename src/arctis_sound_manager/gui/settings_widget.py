@@ -532,11 +532,12 @@ class QSettingsWidget(QWidget):
             else:
                 main_layout.addWidget(widget, 1)
 
-            # What changing it does to playback, where the profile says
-            # (effect: instant / interrupts / switches_connection). Only
-            # stated where it was verified on the hardware: no field, no note.
+            # What changing it does to playback, where that is out of the
+            # ordinary (effect: interrupts / switches_connection), verified on
+            # the hardware. Taking effect at once is what anyone expects and
+            # goes unmarked: no field, no note.
             effect = getattr(config, 'effect', None)
-            if effect:
+            if effect and effect != 'instant':
                 effect_note = QLabel(I18n.translate('ui', f'setting_effect_{effect}'))
                 effect_note.setObjectName('setting_effect_note')
                 effect_note.setStyleSheet(
