@@ -979,6 +979,47 @@ class _ApplyWorker(QThread):
             self.done.emit(False)
 
 
+def _snapshot_live_confs() -> dict[str, tuple[Path, str | None]]:
+    """Every filter-chain conf an Apply-All can rewrite, keyed by the node its
+    controls live on: ``{node_name: (path, text or None)}``."""
+    from arctis_sound_manager.sonar_to_pipewire import (
+        _hesuvi_conf_name, _hesuvi_input_node, spatial_channels)
+    conf_dir = Path.home() / ".config" / "pipewire" / "filter-chain.conf.d"
+    paths = {f"effect_input.sonar-{ch}-eq": conf_dir / f"sonar-{ch}-eq.conf"
+             for ch in ("game", "media", "chat", "output", "micro")}
+    for ch in spatial_channels():
+        paths[_hesuvi_input_node(ch)] = conf_dir / _hesuvi_conf_name(ch)
+    return {node: (path, path.read_text() if path.exists() else None)
+            for node, path in paths.items()}
+
+
+def _live_apply_conf_changes(before: dict[str, tuple[Path, str | None]]) -> bool:
+    """Apply what changed since *before* to the running filter-chain.
+
+    True when nothing changed or every change was a control value that was set
+    live. False when a restart is needed: a conf appeared, vanished or changed
+    shape, or a set-param failed (the new conf is on disk, so the restart the
+    caller then does converges either way).
+    """
+    from arctis_sound_manager.pw_utils import set_filter_controls
+
+    plan: dict[str, dict[str, float]] = {}
+    for node, (path, old) in before.items():
+        new = path.read_text() if path.exists() else None
+        if new == old:
+            continue
+        if old is None or new is None:
+            return False
+        diff = diff_filter_conf(old, new, ladspa=True)
+        if diff is None:
+            return False
+        if diff:
+            plan[node] = {f"{name}:{control}": value
+                          for name, fields in diff.items()
+                          for control, value in fields.items()}
+    return all(set_filter_controls(node, controls) for node, controls in plan.items())
+
+
 class _ApplyAllWorker(QThread):
     """Apply all EQ channels (game/media/chat/micro) in a single filter-chain restart."""
     done = Signal(bool)
@@ -1003,6 +1044,7 @@ class _ApplyAllWorker(QThread):
                 smart_state = {"enabled": False, "level": 0.0, "loudness": "balanced"}
             game_spatial = _load_spatial_audio("game")
             media_spatial = _load_spatial_audio("media")
+            before = _snapshot_live_confs()
 
             # Generate conf for each channel. "output" is included so its EQ
             # profile is (re)applied on every global apply and its config never
@@ -1065,6 +1107,26 @@ class _ApplyAllWorker(QThread):
             # the EQ confs just written above.
             from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
             DbusWrapper.regenerate_hesuvi_sync()
+
+            # Volume Boost and the Smart Volume level only move control values
+            # (the boost biquad, the compressor's ratio/makeup, the HeSuVi
+            # limiter's compensation). Push those to the running graph like
+            # _ApplyWorker does for a curve edit: the restart below recreates
+            # every channel and its Arctis_* loopback, and a browser whose
+            # output vanishes under it pauses playback. Only a shape change —
+            # Smart Volume turned on or off, Boost leaving 0 dB on a HeSuVi
+            # chain — still needs it.
+            if _live_apply_conf_changes(before):
+                log.info("_ApplyAllWorker: applied live, no filter-chain restart")
+                # The routing still has to follow: a profile can flip Spatial
+                # Audio, which changes no conf, only where each EQ is linked.
+                # The daemon relinks (the GUI cannot resolve every target —
+                # no device registered here), as on the restart path below.
+                DbusWrapper.apply_spatial_audio()
+                from arctis_sound_manager.sonar_to_pipewire import ensure_micro_capture_link
+                ensure_micro_capture_link()
+                self.done.emit(True)
+                return
 
             # Profile-switch path (apply_all_from_files). Same Discord-safe
             # strategy as _ApplyWorker: restart filter-chain only (recreates all
@@ -1893,6 +1955,11 @@ class SonarChannelWidget(QWidget):
                 scl.addStretch(1)
 
             root.addWidget(settings_card)
+
+        # Every tab is as tall as the tallest one (Media/Aux with Spatial Audio
+        # expanded). Without this the spare height went into the cards — the
+        # preset card on the Game tab grew to three times its size.
+        root.addStretch(1)
 
         # Load initial preset
         self._load_initial()
@@ -2913,6 +2980,18 @@ class SpatialAudioWidget(QWidget):
 
 # ── Boost de Volume widget ────────────────────────────────────────────────────
 
+def _restart_hint(key: str) -> QLabel:
+    """Which changes restart the audio engine (and so can pause playback).
+
+    _ApplyAllWorker applies a value change live; only a change of graph shape
+    restarts the filter-chain, recreating every channel under the apps.
+    """
+    hint = QLabel(_t(key))
+    hint.setWordWrap(True)
+    hint.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt;")
+    return hint
+
+
 class BoostVolumeWidget(QWidget):
     """
     Adds a linear gain node at the end of every channel's filter chain.
@@ -2958,6 +3037,7 @@ class BoostVolumeWidget(QWidget):
         self._db_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         row1.addWidget(self._db_label)
         root.addLayout(row1)
+        root.addWidget(_restart_hint("volume_boost_restart_hint"))
 
         # Slider
         self._detail = QWidget()
@@ -3080,6 +3160,7 @@ class SmartVolumeWidget(QWidget):
         row1.addWidget(title)
         row1.addStretch(1)
         root.addLayout(row1)
+        root.addWidget(_restart_hint("smart_volume_restart_hint"))
 
         # Detail section
         self._detail = QWidget()
@@ -4111,8 +4192,15 @@ def _channel_tabs_qss() -> str:
             border-top-left-radius: 8px;
             border-top-right-radius: 8px;
             padding: 7px 20px;
-            margin-right: 2px;
+            margin-right: 0;
             font-size: 11pt;
+        }}
+        QTabBar::tab:!selected {{
+            /* The tabs cover the row the panel's top border is drawn in, so
+               an unselected tab draws that line itself; without it the panel
+               had no top edge from the first tab to the last. No gap between
+               tabs, or the line breaks there. */
+            border-bottom: 1px solid {_theme.c('BORDER')};
         }}
         QTabBar::tab:selected {{
             background: {_theme.c('BG_MAIN')};
