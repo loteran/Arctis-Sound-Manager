@@ -19,6 +19,7 @@ import subprocess
 from pathlib import Path
 
 from arctis_sound_manager import service_control as sc
+from arctis_sound_manager.gui.qt_widgets.no_wheel_slider import NoWheelSlider
 from arctis_sound_manager.gui.channel_output_selector import ChannelOutputSelector
 from arctis_sound_manager.gui.output_selector import OutputSelector
 from arctis_sound_manager.gui.search_pick_dialog import SearchPickDialog
@@ -69,10 +70,8 @@ def _svg_icon(svg_name: str, color: str, size: int = 20) -> QIcon:
     return QIcon(pixmap)
 
 
-class _NoWheelSlider(QSlider):
-    """QSlider that ignores wheel events so the parent QScrollArea can scroll."""
-    def wheelEvent(self, event):
-        event.ignore()
+# The page scrolls under the pointer; a slider takes the wheel once clicked.
+_NoWheelSlider = NoWheelSlider
 from arctis_sound_manager.gui.qt_widgets.no_wheel_combo import NoWheelComboBox
 from arctis_sound_manager.gui.qt_widgets.q_toggle import QToggle
 from arctis_sound_manager.system_deps_checker import _find_ladspa_plugin
@@ -2268,7 +2267,7 @@ class _SpeakerGainPopup(QFrame):
         lay.addLayout(head)
         row = QHBoxLayout()
         row.setSpacing(8)
-        self._slider = QSlider(Qt.Orientation.Horizontal)
+        self._slider = NoWheelSlider(Qt.Orientation.Horizontal)
         # Half-dB steps: the slider holds dB x 2.
         self._slider.setMinimum(int(CHANNEL_GAIN_MIN_DB * 2))
         self._slider.setMaximum(int(CHANNEL_GAIN_MAX_DB * 2))

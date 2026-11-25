@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QPushButton,
                                QSizePolicy, QSlider, QVBoxLayout, QWidget)
 
 from arctis_sound_manager.config import ConfigSetting, SettingType
+from arctis_sound_manager.gui.qt_widgets.no_wheel_slider import NoWheelSlider
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
 from arctis_sound_manager.gui.qt_widgets.no_wheel_combo import NoWheelComboBox
 from arctis_sound_manager.gui.qt_widgets.q_dual_state import QDualState
@@ -385,7 +386,7 @@ class QSettingsWidget(QWidget):
             widget_layout.setContentsMargins(0, 0, 0, 0)
             widget.setLayout(widget_layout)
 
-            slider = QSlider(Qt.Orientation.Horizontal)
+            slider = NoWheelSlider(Qt.Orientation.Horizontal)
             slider.setMinimum(config.min)
             slider.setMaximum(config.max)
             slider.setSingleStep(config.step)
