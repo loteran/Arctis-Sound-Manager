@@ -94,6 +94,13 @@ def _tray_icon_color() -> str:
     return resolve_tray_icon_color(0)
 
 
+# The main window is built in the background once the daemon has a device up
+# (its first non-empty status), plus a moment for the channels to settle — the
+# build runs the Sonar config check, which must not race the daemon's own
+# set-up. Without a headset no such status comes, hence the fallback.
+_PREBUILD_AFTER_READY_MS = 1000
+_PREBUILD_FALLBACK_MS = 20000
+
 class _ServiceActionWorker(QThread):
     """Run a blocking service_control call off the Qt UI thread.
 
@@ -302,6 +309,11 @@ class QSystrayApp(QBaseDesktopApp):
 
         self.last_device_status = status
         self._update_tray_icon(status)
+        if status and not getattr(self, '_prebuild_scheduled', False):
+            # The daemon is up with a device: build the window now rather than
+            # on the fallback timer (see _prebuild_main_window).
+            self._prebuild_scheduled = True
+            QTimer.singleShot(_PREBUILD_AFTER_READY_MS, self._prebuild_main_window)
         # Do NOT call menu_setup() here: the menu popup window may already be
         # visible (Wayland surface exists) and clear()-ing it while paint events
         # are queued causes a use-after-free SIGSEGV in QWaylandWindow.
@@ -390,6 +402,7 @@ class QSystrayApp(QBaseDesktopApp):
     async def start(self):
         self.logger.info('Starting Systray app.')
         self.tray_icon.show()
+        QTimer.singleShot(_PREBUILD_FALLBACK_MS, self._prebuild_main_window)
 
         # start (not restart): just ensure filter-chain is up without cutting audio.
         sc.start("filter-chain")
@@ -901,6 +914,35 @@ class QSystrayApp(QBaseDesktopApp):
         # icon and all, which reads from the outside as "it just closed".
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
             QTimer.singleShot(0, self.open_main_window)
+
+    def _prebuild_main_window(self) -> None:
+        """Build the main window in the background, so the first open is instant.
+
+        Building it takes seconds (every page, the Sonar config check, the Clips
+        install screen probing GStreamer), and it used to happen on the first
+        tray click. Built here, hidden, a while after login; open_main_window()
+        then only shows it, and a click landing mid-build is already handled
+        there (it retries until the build is done).
+
+        Skipped while Clips is active: its page binds the global shortcut and
+        starts following games as soon as it exists, which until now only
+        happened once the window was opened, and should stay that way.
+        """
+        if getattr(self, '_main_app', None) is not None or self.is_stopping():
+            return
+        try:
+            from arctis_sound_manager.gui import clips_setup
+            if clips_setup.clips_active():
+                return
+        except Exception:  # noqa: BLE001 — unsure: build on first open, as before
+            return
+        started = monotonic()
+        try:
+            self._ensure_main_app()
+        except Exception:  # noqa: BLE001 — the first open builds it instead
+            self.logger.warning('Background build of the main window failed', exc_info=True)
+            return
+        self.logger.info('Main window prebuilt in %.1f s', monotonic() - started)
 
     def _ensure_main_app(self):
         """The one main window, built at most once.
