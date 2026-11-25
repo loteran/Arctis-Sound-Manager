@@ -427,6 +427,11 @@ class HeadsetPage(QWidget):
         self._balance_widget.update_from_settings(settings.get('general') or {})
         for panel in self._anc_levels.values():
             panel.update_settings(settings)
+        configs = settings.get('settings_config') or {}
+        visible_transparency = any(
+            isinstance(configs.get(k), dict) and not configs[k].get('hidden')
+            for k in _TRANSPARENCY_LEVEL_KEYS)
+        self._anc_widget.set_level_row_fallback(not visible_transparency)
         self._events.update_settings(settings)
         values = settings.get('device') or {}
         if 'noise_cancelling' in values:

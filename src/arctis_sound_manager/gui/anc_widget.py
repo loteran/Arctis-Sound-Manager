@@ -79,6 +79,11 @@ class QAncWidget(QWidget):
         self._pending_anc_level = None
         self._current_anc_level = None
         self._has_anc_level = False
+        # The Headset page shows the transparency level as the profile's own
+        # setting. Profiles that keep it `hidden` (Nova Pro Wireless, Omni: it
+        # is read from the base's status) have no such row, so this widget's
+        # own slider is shown for them instead (set_level_row_fallback).
+        self._level_row_fallback = False
 
         self._timeout_timer = QTimer(self)
         self._timeout_timer.setSingleShot(True)
@@ -265,6 +270,13 @@ class QAncWidget(QWidget):
         self._pending_anc_level = None
         self._set_widgets_enabled(True)
 
+    def set_level_row_fallback(self, enabled: bool) -> None:
+        """Show this widget's transparency slider: the profile has no visible
+        transparency setting for the Headset page to show instead."""
+        self._level_row_fallback = bool(enabled)
+        self._level_row.setVisible(self._level_row_fallback and self._reports_mode
+                                   and self._current_mode == 'transparent')
+
     def apply_saved_mode(self, value) -> None:
         """Show the saved noise_cancelling setting, for a headset whose status
         does not report the mode. A status that does report it wins."""
@@ -284,8 +296,10 @@ class QAncWidget(QWidget):
         # status reports the mode (and its level) too.
         is_transparent = (mode == 'transparent')
         # The level is the Headset page's settings slider for the selected
-        # mode now (one control per setting); this row stays hidden.
-        self._level_row.setVisible(False)
+        # mode (one control per setting); this row only stands in for a
+        # profile that keeps that setting hidden (set_level_row_fallback).
+        self._level_row.setVisible(self._level_row_fallback and is_transparent
+                                   and self._reports_mode)
         self.mode_changed.emit(mode)
         if is_transparent and level is not None:
             perc = int(level)
@@ -309,7 +323,8 @@ class QAncWidget(QWidget):
         self._pending_mode = mode_key
         for key, pill in self._pills.items():
             pill._set_active(key == mode_key)
-        self._level_row.setVisible(False)
+        self._level_row.setVisible(self._level_row_fallback and mode_key == 'transparent'
+                                   and self._reports_mode)
         self._anc_level_row.setVisible(mode_key == 'on' and self._has_anc_level)
         self.mode_changed.emit(mode_key)
         if self._reports_mode:
