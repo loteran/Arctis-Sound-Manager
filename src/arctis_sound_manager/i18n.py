@@ -107,6 +107,12 @@ class I18n:
 
         self._lang = lang_code or default
         self.translations = RawConfigParser()
+        # A downloaded copy (lang_updater) is laid over the bundled file rather
+        # than replacing it: upstream ships most locales as empty Crowdin stubs,
+        # and a stub in HOME_LANG_FOLDER used to hide a complete bundled
+        # translation entirely. Keys it does carry still win.
+        if lang_file == home_path and sys_path.is_file():
+            _read_lang_file(self.translations, sys_path)
         if not _read_lang_file(self.translations, lang_file) and self._lang != default:
             # Selected locale is unreadable even after sanitizing — fall back to
             # the default rather than leaving the UI with an empty catalogue.
