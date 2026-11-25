@@ -24,6 +24,7 @@ from arctis_sound_manager.gui.components import (
     SectionTitle,
     SvgIconWidget,
 )
+from arctis_sound_manager.gui.events_section import EVENT_DEVICE_KEYS
 from arctis_sound_manager.gui.headset_cards import (
     SettingsCard,
     StatusTiles,
@@ -174,6 +175,17 @@ class HeadsetPage(QWidget):
         card_layout.addWidget(chatmix)
         layout.addSpacing(16)
 
+        # What happens automatically, by event (connecting, disconnecting, not
+        # used for a while, …): each with its outcome worded from the current
+        # settings, and its controls behind "Change". Those settings appear
+        # here only — the cards below and the Settings page leave them out.
+        from arctis_sound_manager.gui.events_section import QEventsSection
+        self._events = QEventsSection()
+        self._events_card = SettingsCard(
+            I18n.translate("ui", "events_title"), self._events, content)
+        layout.addWidget(self._events_card)
+        layout.addSpacing(8)
+
         # ── The headset's own settings ────────────────────────────────────────
         # Sidetone, mic volume, the volume limiter, auto power-off… everything
         # the device profile declares, one card per section of the profile.
@@ -239,6 +251,7 @@ class HeadsetPage(QWidget):
         self._device_selector.setStyleSheet(card_contents_qss())
         self._status_tiles.apply_theme()
         self._anc_section.apply_theme()
+        self._events_card.apply_theme()
         for card in self._setting_cards:
             card.apply_theme()
 
@@ -300,6 +313,7 @@ class HeadsetPage(QWidget):
     def update_status(self, status: dict):
         self._status_tiles.update_status(status)
         self._anc_widget.update_status(status)
+        self._events.update_status(status)
         keys = status_key_names(status)
         for card in self._setting_cards:
             card.body.set_available_status_keys(keys)
@@ -341,6 +355,7 @@ class HeadsetPage(QWidget):
         station's settings belong to the DAC page. A daemon too old to send
         each setting's section gets everything in a single card.
         """
+        self._events.update_settings(settings)
         values = settings.get('device') or {}
         groups: dict[str | None, list[str]] = {}
         for name, config in (settings.get('settings_config') or {}).items():
@@ -351,6 +366,8 @@ class HeadsetPage(QWidget):
                 continue
             if config.get('hidden') or not config.get('type'):
                 continue
+            if name in EVENT_DEVICE_KEYS:
+                continue                # shown in the Events card instead
             groups.setdefault(section, []).append(name)
         wanted = [(section, tuple(names)) for section, names in groups.items()]
         if wanted == self._card_groups:

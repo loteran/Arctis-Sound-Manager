@@ -39,7 +39,7 @@ from arctis_sound_manager.gui.settings_widget import (
     QSettingsWidget,
     status_key_names,
 )
-from arctis_sound_manager.autostart import active_backend_name, autostart_enabled, set_autostart
+from arctis_sound_manager.gui.events_section import EVENT_GENERAL_KEYS
 log = logging.getLogger(__name__)
 
 import arctis_sound_manager.gui.theme as _theme
@@ -153,12 +153,11 @@ def _styled_button(text: str) -> QPushButton:
 # The "general" D-Bus section, split by topic. Keys not listed in any of these
 # stay in the General group itself.
 _INTERFACE_KEYS = ('systray_show_battery', 'systray_chatmix_osd', 'systray_master_osd', 'systray_icon_color')
-_AUDIO_KEYS = (
-    'redirect_audio_on_connect', 'redirect_audio_on_connect_channel',
-    'redirect_audio_on_disconnect', 'redirect_audio_on_disconnect_device',
-    'external_output_device', 'hrir_id', 'pipewire_quantum',
-)
-_MICRO_KEYS = ('micro_input_source', 'micro_alt_source', 'micro_autoswitch')
+# The redirect-on-(dis)connect, automatic mic switching and startup settings
+# live in the Headset page's Events card (events_section.EVENT_GENERAL_KEYS),
+# worded as what happens when; they are left out here.
+_AUDIO_KEYS = ('external_output_device', 'hrir_id', 'pipewire_quantum')
+_MICRO_KEYS = ('micro_input_source',)
 _GENERIC_KEYS = ('usb_transport', 'generic_device_mode', 'generic_output_device', 'generic_input_device')
 
 
@@ -268,15 +267,8 @@ class DevicePage(QWidget):
         self._refresh_lang_combo()
         self._add_row(general, I18n.translate("ui", "language"), self._lang_combo)
 
-        self._startup_toggle = QDualState(
-            off_text=I18n.translate("settings_values", "off"),
-            on_text=I18n.translate("settings_values", "on"),
-            init_state="right" if autostart_enabled() else "left",
-            accent=True,
-        )
-        self._startup_toggle.setToolTip(f"Autostart via: {active_backend_name()}")
-        self._startup_toggle.checkStateChanged.connect(self._on_autostart_toggled)
-        self._add_row(general, I18n.translate("ui", "launch_at_startup"), self._startup_toggle)
+        # "Launch at startup" is in the Headset page's Events card ("When you
+        # log in").
 
         from arctis_sound_manager.telemetry import get_consent, set_consent
 
@@ -295,7 +287,8 @@ class DevicePage(QWidget):
         # Whatever no other group claims lands here, so a setting added to
         # GeneralSettings shows up even before it is given a group.
         self._general_widget = self._add_settings_group(
-            general, None, exclude=_INTERFACE_KEYS + _AUDIO_KEYS + _MICRO_KEYS + _GENERIC_KEYS)
+            general, None, exclude=_INTERFACE_KEYS + _AUDIO_KEYS + _MICRO_KEYS + _GENERIC_KEYS
+            + EVENT_GENERAL_KEYS)
 
         update_row = self._add_row(general, I18n.translate("ui", "check_for_updates"),
                                    self._check_update_btn)
@@ -558,9 +551,6 @@ class DevicePage(QWidget):
             self._lang_codes.append(code)
         self._refresh_lang_combo()
         self._lang_combo.blockSignals(False)
-
-    def _on_autostart_toggled(self, state: Qt.CheckState) -> None:
-        set_autostart(state == Qt.CheckState.Checked)
 
     # ── Clips: install / uninstall ────────────────────────────────────────────
     #
