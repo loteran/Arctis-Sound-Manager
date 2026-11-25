@@ -154,6 +154,9 @@ class QMainApp(QBaseDesktopApp):
         set_active_theme(self._general_settings.theme)
         # Apply global dark stylesheet with saved theme
         app.setStyleSheet(build_qss(self._general_settings.theme))
+        # Title bar and frame in the theme too, where the desktop allows (KDE).
+        from arctis_sound_manager.gui import window_frame
+        window_frame.apply(app)
         # Before any page is built: skip re-applying unchanged widget sheets.
         from arctis_sound_manager.gui.theme import install_stylesheet_dedup
         install_stylesheet_dedup()
@@ -385,6 +388,8 @@ class QMainApp(QBaseDesktopApp):
         if hasattr(self._home_page, "profile_bar"):
             self._home_page.profile_bar.apply_theme(t)
         self._switch_page(self._stack.currentIndex())
+        from arctis_sound_manager.gui import window_frame
+        window_frame.apply(self.app)
         if save and theme_name != PREVIEW_THEME_ID:
             self._general_settings.theme = theme_name
             self._general_settings.write_to_file()
