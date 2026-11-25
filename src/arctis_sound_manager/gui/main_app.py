@@ -163,24 +163,10 @@ class QMainApp(QBaseDesktopApp):
         # Initialise theme-before-edit tracker
         self._theme_before_edit: str = "steelseries"
 
-        # Wire theme change signal
-        self._device_page.sig_theme_changed.connect(self._apply_theme)
-        self._device_page.sig_theme_create.connect(self._open_theme_editor_new)
-        self._device_page.sig_theme_edit.connect(self._open_theme_editor_edit)
-        self._theme_editor_page.sig_preview.connect(self._on_theme_preview)
-        self._theme_editor_page.sig_saved.connect(self._on_theme_saved)
-        self._theme_editor_page.sig_cancelled.connect(self._on_theme_editor_cancelled)
-
-        # Wire D-Bus signals to pages
+        # Wire D-Bus signals to the pages built so far. The others are wired
+        # in _wire_page() when they are built (see _page()).
         self.dbus_wrapper.sig_status.connect(self._home_page.update_status)
-        self.dbus_wrapper.sig_status.connect(self._headset_page.update_status)
-        self.dbus_wrapper.sig_status.connect(self._device_page.update_status)
-        self.dbus_wrapper.sig_status.connect(self._dac_page.update_status)
         self.dbus_wrapper.sig_settings.connect(self._home_page.update_settings)
-        self.dbus_wrapper.sig_settings.connect(self._headset_page.update_settings)
-        self.dbus_wrapper.sig_settings.connect(self._equalizer_page.update_settings)
-        self.dbus_wrapper.sig_settings.connect(self._dac_page.update_settings)
-        self.dbus_wrapper.sig_settings.connect(self._device_page.update_settings)
 
         # DAC tab hidden by default until device confirms it has a DAC
         self._sidebar_buttons[PAGE_DAC].setVisible(False)
@@ -194,35 +180,134 @@ class QMainApp(QBaseDesktopApp):
         self._update_worker = UpdateCheckWorker(project_version())
         self._update_worker.result.connect(self._home_page.on_update_available)
         self._update_worker.start()
-        self._device_page.sig_update_result.connect(self._home_page.on_update_available)
 
         # Check for new/updated translation files (non-blocking)
         from arctis_sound_manager.lang_updater import LangUpdateWorker
         self._lang_worker = LangUpdateWorker()
-        self._lang_worker.langs_updated.connect(self._device_page.rebuild_lang_combo)
+        self._lang_worker.langs_updated.connect(self._on_langs_updated)
         self._lang_worker.start()
 
         # Wire profile bar
         self._home_page.profile_bar.sig_apply.connect(self._on_apply_profile)
         self._home_page.profile_bar.sig_changed.connect(self._on_profiles_changed)
 
-        # A preset picked on a Channels card: show it on the Equalizer page too
-        self._home_page.sig_eq_preset_applied.connect(
-            self._equalizer_page._sonar_page.notify_external_preset_change)
-
-        # The cards' output buttons drive the Equalizer page's own selectors,
-        # so a device picked on either page shows on both
-        sonar = self._equalizer_page._sonar_page
-        self._home_page.set_output_pickers({
-            "game": sonar._game_output_selector,
-            "chat": sonar._chat_output_selector,
-            "media": sonar._media_output_selector,
-            "aux": sonar._aux_output_selector,
-            "output": sonar._output_selector,
-        })
-
         self.destroyed.connect(self.sig_stop)
         self.main_window.visibilityChanged.connect(self._on_visibility_changed)
+
+        # The Equalizer page is not built with the window, but straight after
+        # it: Home's output buttons drive its output selectors, and its Output
+        # selector applies automatic fallbacks, so it has to exist whether or
+        # not the tab is opened. Deferred to the next event-loop turn, the
+        # window (Home) is up first.
+        QTimer.singleShot(0, self._build_equalizer_page)
+
+    # ── Pages built on first use ──────────────────────────────────────────────
+    #
+    # Only Home (the start page) and Clips are built with the window. The rest
+    # are built when first shown — or when something reaches for them, through
+    # the properties below — then given the latest settings and status kept in
+    # self.settings / self.status, and wired to the live updates from there.
+
+    _LAZY_PAGES = {
+        PAGE_EQUALIZER: EqualizerPage,
+        PAGE_HEADSET: HeadsetPage,
+        PAGE_DAC: DacPage,
+        PAGE_SETTINGS: DevicePage,
+        PAGE_HELP: HelpPage,
+        PAGE_THEME_EDITOR: ThemeEditorPage,
+    }
+
+    def _built(self, index: int):
+        """The page at *index* if it has been built, else None."""
+        return self._built_pages.get(index)
+
+    def _page(self, index: int):
+        """The page at *index*, built (and wired, and fed) if it was not yet."""
+        page = self._built_pages.get(index)
+        if page is not None or index not in self._LAZY_PAGES:
+            return page
+        page = self._LAZY_PAGES[index]()
+        self._built_pages[index] = page
+        placeholder = self._stack.widget(index)
+        current = self._stack.currentIndex()
+        self._stack.insertWidget(index, page)
+        self._stack.removeWidget(placeholder)
+        placeholder.deleteLater()
+        self._stack.setCurrentIndex(current)
+        self._wire_page(index, page)
+        # What it would have received had it existed: settings first, as the
+        # daemon sends them, then the status.
+        if self.settings and hasattr(page, "update_settings"):
+            page.update_settings(self.settings)
+        if self.status and hasattr(page, "update_status"):
+            page.update_status(self.status)
+        return page
+
+    def _wire_page(self, index: int, page) -> None:
+        if hasattr(page, "update_settings"):
+            self.dbus_wrapper.sig_settings.connect(page.update_settings)
+        if hasattr(page, "update_status"):
+            self.dbus_wrapper.sig_status.connect(page.update_status)
+
+        if index == PAGE_EQUALIZER:
+            self._apply_hardware_eq_settings(self.settings)
+            sonar = page._sonar_page
+            # A preset picked on a Channels card: show it on this page too
+            self._home_page.sig_eq_preset_applied.connect(
+                sonar.notify_external_preset_change)
+            # The cards' output buttons drive this page's own selectors, so a
+            # device picked on either page shows on both
+            self._home_page.set_output_pickers({
+                "game": sonar._game_output_selector,
+                "chat": sonar._chat_output_selector,
+                "media": sonar._media_output_selector,
+                "aux": sonar._aux_output_selector,
+                "output": sonar._output_selector,
+            })
+        elif index == PAGE_SETTINGS:
+            page.sig_theme_changed.connect(self._apply_theme)
+            page.sig_theme_create.connect(self._open_theme_editor_new)
+            page.sig_theme_edit.connect(self._open_theme_editor_edit)
+            page.sig_update_result.connect(self._home_page.on_update_available)
+        elif index == PAGE_THEME_EDITOR:
+            page.sig_preview.connect(self._on_theme_preview)
+            page.sig_saved.connect(self._on_theme_saved)
+            page.sig_cancelled.connect(self._on_theme_editor_cancelled)
+
+    def _build_equalizer_page(self) -> None:
+        if not getattr(self, "_stopping", False):
+            self._page(PAGE_EQUALIZER)
+
+    def _on_langs_updated(self, codes) -> None:
+        settings_page = self._built(PAGE_SETTINGS)
+        if settings_page is not None:
+            settings_page.rebuild_lang_combo(codes)
+
+    # Reached from elsewhere (the tray, profile and theme handling): built on
+    # demand, so nothing can find one missing.
+    @property
+    def _equalizer_page(self):
+        return self._page(PAGE_EQUALIZER)
+
+    @property
+    def _headset_page(self):
+        return self._page(PAGE_HEADSET)
+
+    @property
+    def _dac_page(self):
+        return self._page(PAGE_DAC)
+
+    @property
+    def _device_page(self):
+        return self._page(PAGE_SETTINGS)
+
+    @property
+    def _help_page(self):
+        return self._page(PAGE_HELP)
+
+    @property
+    def _theme_editor_page(self):
+        return self._page(PAGE_THEME_EDITOR)
 
     # ── Theme ─────────────────────────────────────────────────────────────────
 
@@ -234,15 +319,11 @@ class QMainApp(QBaseDesktopApp):
         self.app.setStyleSheet(build_qss(theme_name))
         for btn in self._sidebar_buttons:
             btn.update_colors(t)
-        # Propagate to every page that implements apply_theme
+        # Propagate to every page that implements apply_theme. Pages not built
+        # yet need nothing: they read the active theme when they are built.
         for page in (
             self._home_page,
-            self._equalizer_page,
-            self._headset_page,
-            self._dac_page,
-            self._device_page,
-            self._help_page,
-            self._theme_editor_page,
+            *self._built_pages.values(),
             getattr(self, "_clips_page", None),
         ):
             if hasattr(page, "apply_theme"):
@@ -413,26 +494,21 @@ class QMainApp(QBaseDesktopApp):
         self._stack = QStackedWidget()
 
         self._home_page      = HomePage()
-        self._equalizer_page = EqualizerPage()
-        self._headset_page   = HeadsetPage()
-        self._dac_page       = DacPage()
-        self._device_page    = DevicePage()
         # The Video tab is always present. When Clips is not on, it shows the
         # install screen (what it does, which packages it needs, and a one-click
         # install) instead of the recorder.
         self._clips_page = self._build_clips_page()
-        self._help_page      = HelpPage()
 
-        self._theme_editor_page = ThemeEditorPage()
-
-        self._stack.addWidget(self._home_page)        # index 0 → Home
-        self._stack.addWidget(self._equalizer_page)   # index 1 → Equalizer
-        self._stack.addWidget(self._headset_page)     # index 2 → Headset
-        self._stack.addWidget(self._dac_page)         # index 3 → DAC
-        self._stack.addWidget(self._clips_page)       # index 4 → Clips
-        self._stack.addWidget(self._device_page)      # index 5 → Settings
-        self._stack.addWidget(self._help_page)        # index 6 → Help
-        self._stack.addWidget(self._theme_editor_page) # index 7 → Theme Editor
+        # Every sidebar index is also its stack index, so the pages built on
+        # first use (_page()) hold their place with an empty widget until then.
+        self._built_pages: dict = {}
+        for index in range(PAGE_THEME_EDITOR + 1):
+            if index == PAGE_HOME:
+                self._stack.addWidget(self._home_page)
+            elif index == PAGE_CLIPS:
+                self._stack.addWidget(self._clips_page)
+            else:
+                self._stack.addWidget(QWidget())
 
         content_layout.addWidget(self._stack)
         root_layout.addWidget(content_wrapper, stretch=1)
@@ -447,6 +523,7 @@ class QMainApp(QBaseDesktopApp):
     # ── Page switching ────────────────────────────────────────────────────────
 
     def _switch_page(self, index: int):
+        self._page(index)
         self._stack.setCurrentIndex(index)
         # The theme editor has no button of its own; it lights up Settings.
         active_idx = PAGE_SETTINGS if index == PAGE_THEME_EDITOR else index
@@ -639,14 +716,7 @@ class QMainApp(QBaseDesktopApp):
         if not has_dac and self._stack.currentIndex() == PAGE_DAC:
             self._switch_page(PAGE_HOME)
 
-        # Headsets with no on-device equaliser can't do anything with the
-        # custom band sliders; only offer the switch to those that can (#146).
-        if 'has_hardware_eq' in settings:
-            self._equalizer_page.set_hardware_eq_available(
-                bool(settings['has_hardware_eq']))
-        if 'hardware_eq_range_db' in settings:
-            self._equalizer_page.set_hardware_eq_range(
-                int(settings['hardware_eq_range_db']))
+        self._apply_hardware_eq_settings(settings)
 
         # Daemon flagged a USB EACCES on the currently-attached device. The
         # rules file might be valid (so the startup dialog at gui.py:142
@@ -678,6 +748,18 @@ class QMainApp(QBaseDesktopApp):
                     "open — closing it, there is nothing left to fix."
                 )
                 dlg.reject()
+
+    def _apply_hardware_eq_settings(self, settings: dict) -> None:
+        """Headsets with no on-device equaliser can't do anything with the
+        custom band sliders; only offer the switch to those that can (#146).
+        Also run when the Equalizer page is built, from the stored settings."""
+        equalizer = self._built(PAGE_EQUALIZER)
+        if equalizer is None or not settings:
+            return
+        if 'has_hardware_eq' in settings:
+            equalizer.set_hardware_eq_available(bool(settings['has_hardware_eq']))
+        if 'hardware_eq_range_db' in settings:
+            equalizer.set_hardware_eq_range(int(settings['hardware_eq_range_db']))
 
     def on_status_received(self, status: dict):
         if status == self.status:
