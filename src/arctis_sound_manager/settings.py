@@ -240,6 +240,34 @@ _HRIR_ID_MIGRATIONS = {
 }
 
 
+# Output choices users report losing after an update, with no trace of what
+# cleared them. Every write that changes one is logged with the process and
+# the code path that made it, so the next report names the culprit.
+_TRACKED_OUTPUT_KEYS = ('external_output_device', 'redirect_audio_on_disconnect_device',
+                        'generic_output_device')
+
+
+def _log_output_setting_changes(settings_file: Path, new_values: dict) -> None:
+    try:
+        old = _load_yaml_with_backup(settings_file, logger=logging.getLogger(__name__)) or {}
+        changes = [(k, old.get(k), new_values.get(k)) for k in _TRACKED_OUTPUT_KEYS
+                   if old.get(k) != new_values.get(k)]
+        if not changes:
+            return
+        import os
+        import sys
+        import traceback
+        frames = traceback.extract_stack()[:-2][-4:]  # drop this helper and write_to_file
+        where = ' <- '.join(f'{Path(f.filename).stem}.{f.name}:{f.lineno}' for f in reversed(frames))
+        proc = Path(sys.argv[0]).name if sys.argv and sys.argv[0] else 'python'
+        for key, before, after in changes:
+            logging.getLogger(__name__).info(
+                'Output setting %s: %r -> %r (by %s[%d], %s)',
+                key, before, after, proc, os.getpid(), where)
+    except Exception:  # noqa: BLE001 — logging must never stop a settings write
+        pass
+
+
 class GeneralSettings(JsonSerializable):
     _js_exclude_fields = ['settings_config', 'dac_settings_config']
 
@@ -677,6 +705,8 @@ class GeneralSettings(JsonSerializable):
 
     def write_to_file(self):
         settings_file = SETTINGS_FOLDER / 'general_settings.yaml'
+
+        _log_output_setting_changes(settings_file, self.__dict__)
 
         # Atomic write: serialize to a sibling tempfile, fsync, then rename.
         # Prevents the on-disk file from ever being half-written if the
