@@ -158,9 +158,9 @@ _INTERFACE_KEYS = ('systray_show_battery', 'systray_chatmix_osd', 'systray_maste
 # worded as what happens when; they are left out here.
 # Shown elsewhere, next to what they affect: the Output channel's device on
 # the Output tab and card, the surround profile in Spatial Audio (Sonar), the
-# preferred device on the Headset page.
-_SHOWN_ELSEWHERE = ('external_output_device', 'hrir_id', 'preferred_device')
-_MICRO_KEYS = ('micro_input_source',)
+# preferred device on the Headset page, the Micro EQ's input on the Micro tab.
+_SHOWN_ELSEWHERE = ('external_output_device', 'hrir_id', 'preferred_device',
+                    'micro_input_source')
 _GENERIC_KEYS = ('generic_device_mode', 'generic_output_device', 'generic_input_device')
 # Technical settings most people never touch: how ASM reaches the headset,
 # and PipeWire's buffer size.
@@ -293,7 +293,7 @@ class DevicePage(QWidget):
         # Whatever no other group claims lands here, so a setting added to
         # GeneralSettings shows up even before it is given a group.
         self._general_widget = self._add_settings_group(
-            general, None, exclude=_INTERFACE_KEYS + _SHOWN_ELSEWHERE + _MICRO_KEYS + _GENERIC_KEYS
+            general, None, exclude=_INTERFACE_KEYS + _SHOWN_ELSEWHERE + _GENERIC_KEYS
             + _ADVANCED_KEYS + EVENT_GENERAL_KEYS)
 
         update_row = self._add_row(general, I18n.translate("ui", "check_for_updates"),
@@ -337,7 +337,6 @@ class DevicePage(QWidget):
         # The headset's own settings (sidetone, mic volume, noise cancelling…)
         # live on the Headset page, next to the headset they change. This page
         # keeps what belongs to the app.
-        self._add_settings_group(self._add_card(content_layout, "settings_group_micro"), _MICRO_KEYS)
         self._generic_group = self._add_settings_group(
             self._add_card(content_layout, "settings_group_generic"), _GENERIC_KEYS)
         self._add_settings_group(self._add_card(content_layout, "settings_group_advanced"), _ADVANCED_KEYS)
