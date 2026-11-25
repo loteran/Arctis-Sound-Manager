@@ -365,6 +365,15 @@ HELP_CONTENT: dict[str, dict] = {
                 ),
             },
             {
+                "heading": "Left / right volume",
+                "body": (
+                    "For hearing that differs between the ears: at the bottom of the General card on the Headset page, "
+                    "turn on \"Separate volume for left and right\" and set each side as a percentage of the main volume. "
+                    "Off by default; the main volume slider keeps the balance. It applies to what this computer plays "
+                    "through the headset, not to Bluetooth audio from another device."
+                ),
+            },
+            {
                 "heading": "Headset / DAC Infos",
                 "body": (
                     "This page displays technical information about the connected device:\n\n"
@@ -992,6 +1001,15 @@ HELP_CONTENT: dict[str, dict] = {
                 ),
             },
             {
+                "heading": "Volume gauche / droite",
+                "body": (
+                    "Pour une audition différente d'une oreille à l'autre : en bas de la carte Général de la page Casque, "
+                    "activez « Volume séparé gauche et droite » et réglez chaque côté en pourcentage du volume principal. "
+                    "Désactivé par défaut ; le curseur de volume principal garde l'équilibre. Cela s'applique au son que cet "
+                    "ordinateur envoie au casque, pas à l'audio Bluetooth d'un autre appareil."
+                ),
+            },
+            {
                 "heading": "Casque / DAC — Infos",
                 "body": (
                     "Cette page affiche des informations techniques sur l'appareil connecté :\n\n"
@@ -1616,6 +1634,15 @@ HELP_CONTENT: dict[str, dict] = {
                     "• ANC — cancelación de ruido activa completa (nivel Low / Medium / High en el Nova Pro Omni)\n\n"
                     "Los cambios realizados desde los botones del auricular se reflejan en tiempo "
                     "real en la interfaz, y viceversa."
+                ),
+            },
+            {
+                "heading": "Volumen izquierdo / derecho",
+                "body": (
+                    "Para una audición distinta en cada oído: al final de la tarjeta General de la página Auriculares, "
+                    "activa «Volumen separado para izquierda y derecha» y ajusta cada lado como porcentaje del volumen principal. "
+                    "Desactivado por defecto; el control de volumen principal mantiene el balance. Se aplica al sonido que este "
+                    "ordenador envía a los auriculares, no al audio Bluetooth de otro dispositivo."
                 ),
             },
             {
