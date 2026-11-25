@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSlider, QVBoxLayout,
 
 import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
+from arctis_sound_manager.gui.qt_widgets.no_wheel_slider import NoWheelSlider
 from arctis_sound_manager.gui.qt_widgets.q_dual_state import QDualState
 from arctis_sound_manager.i18n import I18n
 
@@ -68,7 +69,7 @@ class QOutputBalanceWidget(QWidget):
             row.setSpacing(10)
             name = QLabel(_t(f'output_volume_{side}'))
             name.setMinimumWidth(80)
-            slider = QSlider(Qt.Orientation.Horizontal)
+            slider = NoWheelSlider(Qt.Orientation.Horizontal)
             slider.setRange(0, 100)
             slider.setValue(100)
             value = QLabel('100%')
