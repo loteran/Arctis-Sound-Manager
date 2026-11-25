@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -57,11 +57,6 @@ def clips_runtime_ready() -> bool:
     return clips_setup.runtime_ready()
 
 
-def _manual_command() -> str | None:
-    """A single, copy-pasteable command that installs every missing package on
-    this distro, or None when the distro is unknown (no argv to offer)."""
-    return clips_setup.manual_command(clips_setup.install_argvs())
-
 
 class ClipsInstallPage(QWidget):
     """Explains Clips and turns it on — installing its runtime if needed."""
@@ -73,6 +68,22 @@ class ClipsInstallPage(QWidget):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self._build()
+        # Probed when first shown, not here: the window builds this page at
+        # start-up whether or not anyone opens the tab, and the probe is a
+        # gst-inspect subprocess per component (slow right after login, while
+        # GStreamer's registry is cold).
+        self._probed = False
+        self._status.setText(_tr("clips_install_checking", "Checking what is installed…"))
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if not self._probed:
+            self._probed = True
+            # After this paint, so the tab appears at once with "Checking…".
+            QTimer.singleShot(0, self._first_refresh)
+
+    def _first_refresh(self) -> None:
+        self._status.setText("")
         self._refresh()
 
     # ── UI ─────────────────────────────────────────────────────────────────
@@ -198,16 +209,16 @@ class ClipsInstallPage(QWidget):
 
     def _refresh(self) -> None:
         """Rebuild the component list and the manual command from a live probe."""
-        from arctis_sound_manager.system_deps_checker import (
-            clip_dep_checks, install_command_for)
+        from arctis_sound_manager.system_deps_checker import install_command_for
+
+        # One probe per refresh: the list, the install command, the Remove
+        # button and the Install/Enable choice all read this snapshot. Each
+        # used to probe again — four gst-inspect passes per refresh.
+        results = clips_setup.probe()
+        missing = [check for check, ok in results if not ok]
 
         self._clear_list()
-        for check in clip_dep_checks():
-            present = False
-            try:
-                present = bool(check.detect())
-            except Exception:  # noqa: BLE001
-                present = False
+        for check, present in results:
             argv = install_command_for(check)
             pkgs = (", ".join(clips_setup.packages_in(argv)) if argv
                     else _tr("clips_install_own_pm", "(install via your package manager)"))
@@ -221,7 +232,7 @@ class ClipsInstallPage(QWidget):
             row.setStyleSheet("font-size: 10.5pt; background: transparent;")
             self._list_box.addWidget(row)
 
-        cmd = _manual_command()
+        cmd = clips_setup.manual_command(clips_setup.install_argvs(missing))
         self._manual_field.setText(cmd or "")
         self._manual_field.setVisible(cmd is not None)
         self._manual_hint.setVisible(cmd is not None)
@@ -230,13 +241,13 @@ class ClipsInstallPage(QWidget):
         # Nothing on this machine to remove means no offer to remove it. The
         # button is about the packages, not about the feature, so it follows
         # what the probe found rather than the toggle.
-        self._remove_btn.setVisible(bool(clips_setup.present_names()))
+        self._remove_btn.setVisible(any(ok for _, ok in results))
 
         # Said before the password prompt, not after it. Installing
         # python-gobject on a pipx install succeeds and changes nothing, and
         # without this the screen would send the user around that loop first.
         self._install_btn.setEnabled(True)
-        if clips_setup.bindings_unreachable():
+        if clips_setup.bindings_unreachable(missing):
             self._install_btn.setEnabled(False)
             self._recheck_btn.setVisible(False)
             # The command would run, report success, and change nothing. Leaving
@@ -257,7 +268,7 @@ class ClipsInstallPage(QWidget):
         # Nothing left to fetch: this is the switched-off state, not the
         # missing-runtime one. "Install" would be a lie about what the button
         # is going to do, and there is nothing to re-check by hand either.
-        if not clips_setup.missing_checks():
+        if not missing:
             self._install_btn.setText(_tr("clips_install_enable", "Enable"))
             self._recheck_btn.setVisible(False)
             self._status.setText(_tr("clips_install_all_present",
