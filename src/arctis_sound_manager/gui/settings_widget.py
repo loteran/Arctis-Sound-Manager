@@ -138,6 +138,9 @@ class QSettingsWidget(QWidget):
         self._labels = dict(labels or {})
         self._exclude = frozenset(exclude)
         self._compact = compact
+        # get_widget() returns the bare control, without its caption row: for
+        # a subclass that lays the controls out itself (button_map_widget).
+        self._controls_only = False
 
         layout = QVBoxLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -504,6 +507,9 @@ class QSettingsWidget(QWidget):
         else:
             widget = QLabel(f'UNKNOWN TYPE: {config.type}')
 
+        if widget is not None and self._controls_only:
+            return widget
+
         if widget:
             label = QLabel(self._labels.get(config.name)
                            or I18n.get_instance().translate('settings', config.name))
@@ -532,6 +538,18 @@ class QSettingsWidget(QWidget):
                 main_layout.addStretch(1)
             else:
                 main_layout.addWidget(widget, 1)
+
+            # What changing it does to playback, where that is out of the
+            # ordinary (effect: interrupts / switches_connection), verified on
+            # the hardware. Taking effect at once is what anyone expects and
+            # goes unmarked: no field, no note.
+            effect = getattr(config, 'effect', None)
+            if effect and effect != 'instant':
+                effect_note = QLabel(I18n.translate('ui', f'setting_effect_{effect}'))
+                effect_note.setObjectName('setting_effect_note')
+                effect_note.setStyleSheet(
+                    f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; background: transparent;")
+                main_layout.addWidget(effect_note, 0, Qt.AlignmentFlag.AlignVCenter)
 
         return main_widget if widget else None
 

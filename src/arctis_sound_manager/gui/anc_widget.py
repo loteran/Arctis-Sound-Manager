@@ -5,7 +5,7 @@
 ANC / Transparent mode — interactive control.
 Sends USB commands to change mode and transparent level via D-Bus.
 """
-from PySide6.QtCore import Qt, QTimer, Slot
+from PySide6.QtCore import Qt, QTimer, Signal, Slot
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget
 
 import arctis_sound_manager.gui.theme as _theme
@@ -55,6 +55,11 @@ class QAncWidget(QWidget):
     Interactive ANC / Transparent mode control.
     Sends commands via D-Bus and reflects live hardware state.
     """
+
+
+    # The selected mode ('off' / 'transparent' / 'on'), for the level slider
+    # the Headset page shows under the buttons for that mode.
+    mode_changed = Signal(str)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -278,7 +283,10 @@ class QAncWidget(QWidget):
         # The level slider sends transparent_level, which only exists where the
         # status reports the mode (and its level) too.
         is_transparent = (mode == 'transparent')
-        self._level_row.setVisible(is_transparent and self._reports_mode)
+        # The level is the Headset page's settings slider for the selected
+        # mode now (one control per setting); this row stays hidden.
+        self._level_row.setVisible(False)
+        self.mode_changed.emit(mode)
         if is_transparent and level is not None:
             perc = int(level)
             self._level_slider.blockSignals(True)
@@ -301,8 +309,9 @@ class QAncWidget(QWidget):
         self._pending_mode = mode_key
         for key, pill in self._pills.items():
             pill._set_active(key == mode_key)
-        self._level_row.setVisible(mode_key == 'transparent' and self._reports_mode)
+        self._level_row.setVisible(False)
         self._anc_level_row.setVisible(mode_key == 'on' and self._has_anc_level)
+        self.mode_changed.emit(mode_key)
         if self._reports_mode:
             self._set_widgets_enabled(False)
             self._timeout_timer.start(5000)  # 5 second grace period for device confirmation
