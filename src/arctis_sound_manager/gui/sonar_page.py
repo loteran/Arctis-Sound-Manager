@@ -4098,6 +4098,13 @@ def _channel_tabs_qss() -> str:
             top: -1px;
             padding: 12px;
         }}
+        QTabWidget::tab-bar {{
+            /* Flush with the panel's left edge. Without a position here the
+               platform style places the bar, and Breeze puts it a pixel to
+               the right: the first tab's border then steps in from the
+               panel's. */
+            left: 0px;
+        }}
         QTabBar::tab {{
             background: transparent;
             color: {_theme.c('TEXT_SECONDARY')};
