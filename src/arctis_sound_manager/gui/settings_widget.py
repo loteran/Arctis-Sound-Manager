@@ -119,7 +119,7 @@ class QSettingsWidget(QWidget):
 
     def __init__(self, parent: QWidget, i18n_section_name: str | None, dbus_settings_section: str,
                  keys: Iterable[str] | None = None, exclude: Iterable[str] = (),
-                 compact: bool = False):
+                 compact: bool = False, labels: dict[str, str] | None = None):
         """*keys* limits the panel to those settings, shown in that order;
         *exclude* drops settings from it. A D-Bus section can so be split over
         several panels, one per group of related settings. No
@@ -131,6 +131,10 @@ class QSettingsWidget(QWidget):
         narrow card without scrolling sideways."""
         super().__init__(parent)
         self._keys: list[str] | None = list(keys) if keys is not None else None
+        # Row captions to use instead of the settings' own names, for a panel
+        # whose context already says what the setting is about (the Headset
+        # page's Events card: "Move sound" / "To" under "When … disconnects").
+        self._labels = dict(labels or {})
         self._exclude = frozenset(exclude)
         self._compact = compact
 
@@ -500,7 +504,8 @@ class QSettingsWidget(QWidget):
             widget = QLabel(f'UNKNOWN TYPE: {config.type}')
 
         if widget:
-            label = QLabel(I18n.get_instance().translate('settings', config.name))
+            label = QLabel(self._labels.get(config.name)
+                           or I18n.get_instance().translate('settings', config.name))
             label.setFixedWidth(_COMPACT_LABEL_WIDTH if self._compact else 260)
             label.setWordWrap(True)
             main_layout.addWidget(label)

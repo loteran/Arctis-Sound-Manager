@@ -47,7 +47,11 @@ EVENT_GENERAL_KEYS = (
 EVENT_DEVICE_KEYS = ('pm_shutdown', 'auto_off_time_minutes', 'wear_sense')
 
 # micro_autoswitch values (settings.py): 0 off, 1 on (dis)connection, 2 on
-# mute, 3 both — see core.resolve_mic_autoswitch_target.
+# mute, 3 both — see core.resolve_mic_autoswitch_target. Two independent
+# switches in one number: bit 1 is (dis)connection, bit 2 is mute, so each
+# event row gets a plain on/off for its own bit instead of the four-way list.
+_MIC_CONNECTION_BIT = 1
+_MIC_MUTE_BIT = 2
 _MIC_ON_CONNECTION = (1, 3)
 _MIC_ON_MUTE = (2, 3)
 _REDIRECT_CHANNELS = {0: 'redirect_channel_media', 1: 'redirect_channel_game',
@@ -244,38 +248,63 @@ class QEventsSection(QWidget):
 
         self._panels: list[QSettingsWidget] = []
 
-        def panel(section: str, *keys: str) -> QSettingsWidget:
-            widget = QSettingsWidget(None, None, section, keys=keys, compact=True)
+        def panel(section: str, *keys: str, labels: dict | None = None) -> QSettingsWidget:
+            widget = QSettingsWidget(None, None, section, keys=keys, compact=True, labels=labels)
             self._panels.append(widget)
             return widget
 
-        self._autostart_toggle = QDualState(
-            off_text=I18n.translate('settings_values', 'off'),
-            on_text=I18n.translate('settings_values', 'on'),
-            init_state='left', accent=True)
-        self._autostart_toggle.checkStateChanged.connect(self._on_autostart_toggled)
-        autostart_row = QWidget()
-        ar = QHBoxLayout(autostart_row)
-        ar.setContentsMargins(0, 4, 0, 4)
-        autostart_label = QLabel(I18n.translate('ui', 'launch_at_startup'))
-        autostart_label.setFixedWidth(200)
-        ar.addWidget(autostart_label)
-        ar.addWidget(self._autostart_toggle)
-        ar.addStretch(1)
+        def switch_row(caption: str, on_toggled) -> tuple[QWidget, QDualState]:
+            """A captioned on/off laid out like a QSettingsWidget toggle row."""
+            toggle = QDualState(off_text=I18n.translate('settings_values', 'off'),
+                                on_text=I18n.translate('settings_values', 'on'),
+                                init_state='left', accent=True)
+            toggle.checkStateChanged.connect(on_toggled)
+            row = QWidget()
+            h = QHBoxLayout(row)
+            h.setContentsMargins(0, 4, 0, 4)
+            label = QLabel(caption)
+            label.setFixedWidth(200)
+            label.setWordWrap(True)
+            h.addWidget(label)
+            h.addWidget(toggle)
+            h.addStretch(1)
+            return row, toggle
+
+        move, to, to_channel = _t('event_ctl_move_sound'), _t('event_ctl_to'), _t('event_ctl_to_channel')
+        self._mic_toggles: list[tuple[QDualState, int]] = []
+
+        def mic_rows(bit: int) -> list[QWidget]:
+            row, toggle = switch_row(_t('event_ctl_switch_mic'),
+                                     lambda state, b=bit: self._on_mic_toggled(b, state))
+            self._mic_toggles.append((toggle, bit))
+            return [row, panel('general', 'micro_alt_source', labels={'micro_alt_source': to})]
+
+        autostart_row, self._autostart_toggle = switch_row(
+            _t('event_ctl_start_asm'), self._on_autostart_toggled)
         self._autostart = self._read_autostart()
         self._autostart_toggle.set_state('right' if self._autostart else 'left')
 
         self._rows = {
             'connect': _EventRow(HEADPHONE_ICON, [
-                panel('general', 'redirect_audio_on_connect', 'redirect_audio_on_connect_channel'),
-                panel('general', 'micro_autoswitch', 'micro_alt_source')]),
+                panel('general', 'redirect_audio_on_connect', 'redirect_audio_on_connect_channel',
+                      labels={'redirect_audio_on_connect': move,
+                              'redirect_audio_on_connect_channel': to_channel}),
+                *mic_rows(_MIC_CONNECTION_BIT)]),
             'disconnect': _EventRow(POWER_ICON, [
-                panel('general', 'redirect_audio_on_disconnect', 'redirect_audio_on_disconnect_device'),
-                panel('general', 'micro_autoswitch', 'micro_alt_source')]),
-            'mute': _EventRow(MIC_ICON, [panel('general', 'micro_autoswitch', 'micro_alt_source')]),
-            'idle': _EventRow(CLOCK_ICON, [panel('device', 'pm_shutdown', 'auto_off_time_minutes')]),
-            'wear': _EventRow(HEADPHONE_ICON, [panel('device', 'wear_sense')]),
-            'login': _EventRow(LOGIN_ICON, [autostart_row, panel('general', 'preset_sync_enabled')]),
+                panel('general', 'redirect_audio_on_disconnect', 'redirect_audio_on_disconnect_device',
+                      labels={'redirect_audio_on_disconnect': move,
+                              'redirect_audio_on_disconnect_device': to}),
+                *mic_rows(_MIC_CONNECTION_BIT)]),
+            'mute': _EventRow(MIC_ICON, mic_rows(_MIC_MUTE_BIT)),
+            'idle': _EventRow(CLOCK_ICON, [panel(
+                'device', 'pm_shutdown', 'auto_off_time_minutes',
+                labels={'pm_shutdown': _t('event_ctl_turn_off_after'),
+                        'auto_off_time_minutes': _t('event_ctl_turn_off_after')})]),
+            'wear': _EventRow(HEADPHONE_ICON, [panel(
+                'device', 'wear_sense', labels={'wear_sense': _t('event_ctl_wear')})]),
+            'login': _EventRow(LOGIN_ICON, [autostart_row, panel(
+                'general', 'preset_sync_enabled',
+                labels={'preset_sync_enabled': _t('event_ctl_download_presets')})]),
         }
         for row in self._rows.values():
             row.setVisible(False)
@@ -335,6 +364,8 @@ class QEventsSection(QWidget):
         rows['wear'].set_icon(device_icon)
 
         mode = int(general.get('micro_autoswitch', 0) or 0)
+        for toggle, bit in self._mic_toggles:
+            toggle.set_state('right' if mode & bit else 'left')
         alt = general.get('micro_alt_source') or ''
         alt_name = self._label('pulse_audio_sources', alt) if alt else ''
 
@@ -415,6 +446,18 @@ class QEventsSection(QWidget):
             else (_t('event_login_no_presets'), False),
         ])
         rows['login'].setVisible(True)
+
+    # ── Microphone switching: one bit per event of micro_autoswitch ──────────
+
+    def _on_mic_toggled(self, bit: int, state: Qt.CheckState) -> None:
+        general = self._settings.get('general') or {}
+        mode = int(general.get('micro_autoswitch', 0) or 0)
+        mode = mode | bit if state == Qt.CheckState.Checked else mode & ~bit
+        DbusWrapper.change_setting('micro_autoswitch', mode)
+        if general:
+            # Shown at once; the daemon's next push confirms it.
+            self._settings = {**self._settings, 'general': {**general, 'micro_autoswitch': mode}}
+            self._refresh()
 
     # ── Start at login (not a daemon setting: a systemd/XDG autostart entry) ──
 

@@ -72,3 +72,15 @@ def test_ids_are_shown_by_name_once_the_list_arrives(section):
     assert "mic2" in _texts(section._rows['disconnect'])[1][0]
     section._on_options({'name': 'pulse_audio_sources', 'list': [{'id': 'mic2', 'name': 'Desk mic'}]})
     assert "Desk mic" in _texts(section._rows['disconnect'])[1][0]
+
+
+def test_each_mic_switch_flips_only_its_own_bit(section, monkeypatch):
+    from PySide6.QtCore import Qt
+    sent = MagicMock()
+    monkeypatch.setattr(ev.DbusWrapper, 'change_setting', sent)
+    section.update_settings(_settings(general={'micro_autoswitch': 2}))   # mute only
+    section._on_mic_toggled(ev._MIC_CONNECTION_BIT, Qt.CheckState.Checked)
+    sent.assert_called_with('micro_autoswitch', 3)                       # mute + connection
+    section._on_mic_toggled(ev._MIC_MUTE_BIT, Qt.CheckState.Unchecked)
+    sent.assert_called_with('micro_autoswitch', 1)                       # connection only
+    assert [t.toggle.isChecked() for t, _ in section._mic_toggles] == [True, True, False]
