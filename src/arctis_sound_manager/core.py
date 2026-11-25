@@ -4163,7 +4163,7 @@ class CoreEngine:
     _REDIRECT_CHANNELS = (PULSE_MEDIA_NODE_NAME, PULSE_GAME_NODE_NAME, PULSE_CHAT_NODE_NAME)
 
     def hand_channels_back_to_headset(self) -> None:
-        """When the headset connects with "move the sound" on, it gets the sound.
+        """On connection, channels sent to another device come back (opt-in).
 
         A channel can be sent to another device from the Channels page; that
         choice is kept in channel_output_devices.json. It used to outlive every
@@ -4172,9 +4172,11 @@ class CoreEngine:
         promised — and the channel carried on to the speakers. Nothing on
         screen said so, and what a connection would do became unknowable.
 
-        The rule now: the latest event decides. A manual channel choice holds
-        until the headset next connects; then, with redirect_audio_on_connect
-        on, every channel goes back to the headset. The Output channel's own
+        With redirect_channels_back_on_connect on (it needs
+        redirect_audio_on_connect too) the latest event decides: a manual
+        channel choice holds until the headset next connects, then every
+        channel goes back to the headset. Off by default: a channel sent to
+        the speakers for good stays there, as before. The Output channel's own
         device (external_output_device) is not a channel choice and stays.
         Called only on a real connection — USB or the headset coming online —
         never on the resume-from-sleep reconciliation.
@@ -4183,6 +4185,7 @@ class CoreEngine:
         # half-way, a mock) may end up deleting the user's channel choices.
         settings = getattr(self, 'general_settings', None)
         if getattr(settings, 'redirect_audio_on_connect', False) is not True \
+                or getattr(settings, 'redirect_channels_back_on_connect', False) is not True \
                 or self.is_device_online() is not True:
             return
         from arctis_sound_manager.sonar_to_pipewire import (

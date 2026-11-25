@@ -41,7 +41,7 @@ LOGIN_ICON = os.path.join(IMAGES_DIR, "login_icon.svg")
 # cards leave these out.
 EVENT_GENERAL_KEYS = (
     'redirect_audio_on_connect', 'redirect_audio_on_connect_channel',
-    'redirect_audio_on_disconnect', 'redirect_audio_on_disconnect_device',
+    'redirect_channels_back_on_connect', 'redirect_audio_on_disconnect', 'redirect_audio_on_disconnect_device',
     'micro_autoswitch', 'micro_alt_source', 'preset_sync_enabled',
 )
 EVENT_DEVICE_KEYS = ('pm_shutdown', 'auto_off_time_minutes', 'wear_sense')
@@ -287,8 +287,10 @@ class QEventsSection(QWidget):
         self._rows = {
             'connect': _EventRow(HEADPHONE_ICON, [
                 panel('general', 'redirect_audio_on_connect', 'redirect_audio_on_connect_channel',
+                      'redirect_channels_back_on_connect',
                       labels={'redirect_audio_on_connect': move,
-                              'redirect_audio_on_connect_channel': to_channel}),
+                              'redirect_audio_on_connect_channel': to_channel,
+                              'redirect_channels_back_on_connect': _t('event_ctl_channels_back')}),
                 *mic_rows(_MIC_CONNECTION_BIT)]),
             'disconnect': _EventRow(POWER_ICON, [
                 panel('general', 'redirect_audio_on_disconnect', 'redirect_audio_on_disconnect_device',
@@ -382,9 +384,10 @@ class QEventsSection(QWidget):
                 int(general.get('redirect_audio_on_connect_channel', 0) or 0), 'redirect_channel_media'))
             sound = (_t('event_sound_to_channel', device=settings.get('device_name') or 'Arctis',
                         channel=channel), True)
-            # The daemon's rule (core.hand_channels_back_to_headset): a channel
-            # sent elsewhere on the Channels page comes back on connection.
-            channels_back = [(_t(f'event_channels_back_{who}'), True)]
+            # core.hand_channels_back_to_headset: a channel sent elsewhere on
+            # the Channels page comes back on connection, if asked for.
+            channels_back = ([(_t(f'event_channels_back_{who}'), True)]
+                             if general.get('redirect_channels_back_on_connect', False) else [])
         else:
             sound = (_t('event_sound_stays'), False)
             channels_back = []

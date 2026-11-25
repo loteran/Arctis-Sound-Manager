@@ -39,12 +39,23 @@ def test_buds_wording_and_outcomes(section):
                                                              'only_over': 'bluetooth'}}))
     rows = section._rows
     assert rows['connect']._state[0] == 'event_connect_title_buds'
-    assert [on for _, on in _texts(rows['connect'])] == [True, True, True]
-    assert _texts(rows['connect'])[1][0] == 'event_channels_back_buds'   # channels come back
+    assert [on for _, on in _texts(rows['connect'])] == [True, True]   # channels: not asked for
     assert _texts(rows['disconnect'])[1][0].startswith('event_mic_to')
     assert rows['idle']._state[0].startswith('event_idle_title_buds')
     assert _texts(rows['wear']) == [('event_wear_bt_only', False)]     # greyed: Bluetooth only
     assert rows['mute'].isHidden()                                      # no mic_status reported
+
+
+def test_channels_back_only_when_asked_for(section):
+    section.update_status({'headset': {'left_bud_battery': {}}})
+    section.update_settings(_settings(general={'redirect_channels_back_on_connect': True}))
+    texts = _texts(section._rows['connect'])
+    assert [on for _, on in texts] == [True, True, True]
+    assert texts[1][0] == 'event_channels_back_buds'
+    # Without "move the sound" there is no connection rule to promise it from.
+    section.update_settings(_settings(general={'redirect_channels_back_on_connect': True,
+                                               'redirect_audio_on_connect': False}))
+    assert 'event_channels_back_buds' not in [t for t, _ in _texts(section._rows['connect'])]
 
 
 def test_nothing_promised_that_will_not_happen(section):

@@ -287,6 +287,13 @@ class GeneralSettings(JsonSerializable):
     # redirect_audio_on_connect is on; ignored otherwise.
     redirect_audio_on_connect_channel: int = 0
 
+    # With redirect_audio_on_connect on: a channel sent to another device on
+    # the Channels page also comes back to the headset when it connects
+    # (core.hand_channels_back_to_headset). Off by default — some users send
+    # a channel to their speakers for good and would lose it at every
+    # power-on.
+    redirect_channels_back_on_connect: bool = False
+
     # When disconnecting, redirect to this device
     redirect_audio_on_disconnect: bool = False
     redirect_audio_on_disconnect_device: str|None = None
@@ -570,6 +577,7 @@ class GeneralSettings(JsonSerializable):
     settings_config: list[ConfigSetting] = [
         ConfigSetting('redirect_audio_on_connect', SettingType.TOGGLE, True, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
         ConfigSetting('redirect_audio_on_connect_channel', SettingType.BUTTON_GROUP, 0, values_mapping={0: 'redirect_channel_media', 1: 'redirect_channel_game', 2: 'redirect_channel_chat'}),
+        ConfigSetting('redirect_channels_back_on_connect', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }, visible_when={'redirect_audio_on_connect': 1}),
         # inert_without: this toggle acts only through the companion setting
         # named here. On its own it makes CoreEngine.redirect_audio_on_disconnect
         # return without doing anything, which is indistinguishable from a
