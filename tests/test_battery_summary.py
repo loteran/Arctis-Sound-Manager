@@ -34,3 +34,11 @@ def test_tray_tooltip_lists_buds_and_case(monkeypatch):
     s = _status({'value': 95, 'type': PCT}, {'value': 100, 'type': PCT}, case=42)
     assert QSystrayApp._tooltip_text(s, 95) == 'Arctis — L 95% · R 100% · Case 42%'
     assert QSystrayApp._tooltip_text({}, None) == 'Arctis Sound Manager'
+
+
+def test_buds_levels_per_side_for_icons():
+    from arctis_sound_manager.battery_summary import buds_levels
+    s = {'headset': {'left_bud_battery': {'value': 95, 'type': 'percentage'},
+                     'right_bud_battery': {'value': 100, 'type': 'percentage'}}}
+    assert buds_levels(s) == [('left', '95%'), ('right', '100%')]
+    assert buds_levels({}) == []

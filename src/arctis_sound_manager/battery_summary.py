@@ -39,6 +39,19 @@ def buds_text(status: dict) -> str | None:
     return ' · '.join(parts) or None
 
 
+def buds_levels(status: dict) -> list[tuple[str, str]]:
+    """[("left", "95%"), ("right", "100%")] — each bud's reading, for icons."""
+    headset = status.get('headset') if isinstance(status, dict) else None
+    if not isinstance(headset, dict):
+        return []
+    levels = []
+    for side, key in (('left', 'left_bud_battery'), ('right', 'right_bud_battery')):
+        reading = _reading(headset.get(key))
+        if reading is not None:
+            levels.append((side, reading))
+    return levels
+
+
 def case_percent(status: dict) -> int | None:
     """The charging case's level, while it is plugged in over USB."""
     case = status.get('charging_case') if isinstance(status, dict) else None
