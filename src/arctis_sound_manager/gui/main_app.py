@@ -55,6 +55,7 @@ from arctis_sound_manager.gui.theme import (
     THEMES,
     build_qss,
     set_active_theme,
+    retheme_widgets,
     get_theme,
     set_preview_colors,
     PREVIEW_THEME_ID,
@@ -364,6 +365,9 @@ class QMainApp(QBaseDesktopApp):
         # Update the active theme state first so c() returns the right colors
         # during all subsequent restyle calls.
         set_active_theme(theme_name)
+        # Every inline stylesheet first, so nothing keeps the old theme; the
+        # pages' apply_theme() below then rewrite what they compute themselves.
+        retheme_widgets()
         t = get_theme(theme_name)
         self.app.setStyleSheet(build_qss(theme_name))
         for btn in self._sidebar_buttons:
@@ -468,7 +472,7 @@ class QMainApp(QBaseDesktopApp):
         top_pages_def = [
             (HOME_ICON,      I18n.translate('ui', 'channels'),  current_accent, _SIDEBAR_ICON_SIZE),
             (EQUALIZER_ICON, I18n.translate('ui', 'equalizer'), current_accent, _SIDEBAR_ICON_SIZE),
-            (HEADPHONE_ICON, I18n.translate('ui', 'headset'),   current_accent, _SIDEBAR_ICON_SIZE),
+            (HEADPHONE_ICON, I18n.translate('ui', 'devices'),   current_accent, _SIDEBAR_ICON_SIZE),
             (GAMEDAC_ICON,   I18n.translate('ui', 'dac'),       current_accent, _SIDEBAR_ICON_SIZE),
             (CLIPS_ICON,     I18n.translate('ui', 'clips'),     current_accent, _SIDEBAR_ICON_SIZE),
             (SETTINGS_ICON,  I18n.translate('ui', 'settings'),  current_accent, _SIDEBAR_ICON_SIZE),

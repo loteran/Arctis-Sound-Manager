@@ -96,7 +96,17 @@ class SvgIconWidget(QLabel):
         """Re-tint the icon, e.g. after a theme change."""
         self._load(self._svg_path, color, self._size, self._width)
 
+    def retheme_colours(self, mapping: dict[str, str]) -> None:
+        """Called by theme.retheme_widgets() on a theme switch: the tint
+        follows its colour role, like the inline stylesheets do."""
+        new = mapping.get(str(self._color).lower())
+        if new:
+            self.set_color(new)
+
     def _load(self, svg_path: str, color: str, size: int, width: int | None = None):
+        # A default-theme colour (module constant) -> the active theme's.
+        color = _theme.translate_colour(color)
+        self._color = color
         w = width if width is not None else size
         pixmap = tinted_svg_pixmap(svg_path, color, w, size)
         self.setPixmap(pixmap)

@@ -6,6 +6,7 @@
 import configparser
 import logging
 import os
+import re
 from pathlib import Path
 
 THEMES = {
@@ -290,7 +291,9 @@ def set_preview_colors(colors: dict[str, str] | None) -> None:
 
 
 def install_stylesheet_dedup() -> None:
-    """Make QWidget.setStyleSheet() a no-op when the sheet is unchanged.
+    """Make QWidget.setStyleSheet() a no-op when the sheet is unchanged, and
+    translate default-theme colours in it to the active theme's (see
+    retheme_widgets).
 
     Every setStyleSheet() makes Qt re-style the widget and its whole subtree,
     even when the text is the one it already has. The pages theme themselves
@@ -310,6 +313,8 @@ def install_stylesheet_dedup() -> None:
     original = QWidget.setStyleSheet
 
     def setStyleSheet(self, sheet):  # noqa: N802 — Qt's name
+        # Default-theme colours (the module constants) -> the active theme.
+        sheet = translate_sheet(sheet, _default_to_active())
         if self.styleSheet() == sheet:
             return
         original(self, sheet)
@@ -320,11 +325,93 @@ def install_stylesheet_dedup() -> None:
 
 def set_active_theme(name: str) -> None:
     """Set the globally active theme by name (falls back to 'steelseries')."""
-    global _ACTIVE_THEME
+    global _ACTIVE_THEME, _APPLIED
     if name in THEMES or name in _USER_THEMES or name == PREVIEW_THEME_ID:
         _ACTIVE_THEME = name
     else:
         _ACTIVE_THEME = "steelseries"
+    if _APPLIED is None:
+        # The first theme set, before any widget exists: what they are built in.
+        _APPLIED = dict(active_theme())
+
+
+# ── Inline stylesheets follow the theme ───────────────────────────────────────
+# Widgets colour themselves with inline stylesheets, written either from c()
+# (the theme active when they were built) or from the module-level constants
+# below, which are the default theme's. Neither followed a theme switch unless
+# the widget's own apply_theme() rewrote it, and many had none: after a switch
+# parts of each page kept the old theme, and the constants showed the default
+# theme's orange and greys on every theme. Rather than chase each widget, every
+# inline stylesheet is translated by colour role: on setStyleSheet() from the
+# default palette to the active one, and on a theme switch (retheme_widgets())
+# from the colours the widgets carry to the new ones. No built-in theme uses a
+# default-theme colour in a different role (tests/test_theme_follow.py), so a
+# colour written through c() is never mistaken for a constant; within a theme
+# where roles share a value, the first role in this order wins.
+_ROLE_PRIORITY = (
+    "ACCENT", "TEXT_PRIMARY", "TEXT_SECONDARY", "BG_MAIN", "BG_CARD", "BG_BUTTON",
+    "BG_BUTTON_HOVER", "BORDER", "BG_SIDEBAR", "BG_SIDEBAR_ACTIVE", "TOGGLE_ON",
+    "TOGGLE_OFF", "ACCENT2", "COLOR_GAME", "COLOR_CHAT", "COLOR_AUX", "COLOR_HDMI",
+    "COLOR_AUX2", "COLOR_MASTER", "COLOR_MIC",
+)
+_HEX_COLOR = re.compile(r"#[0-9a-fA-F]{6}\b")
+_APPLIED: dict[str, str] | None = None      # the colours the widgets carry
+_DEFAULT_MAP: tuple[tuple, dict[str, str]] = ((), {})
+
+
+def colour_map(src: dict[str, str], dst: dict[str, str]) -> dict[str, str]:
+    """Lower-case colour in `src` -> the colour of the same role in `dst`."""
+    mapping: dict[str, str] = {}
+    for key in _ROLE_PRIORITY:
+        value = src.get(key)
+        if value and key in dst:
+            mapping.setdefault(value.lower(), dst[key])
+    return {k: v for k, v in mapping.items() if k != v.lower()}
+
+
+def translate_sheet(sheet: str, mapping: dict[str, str]) -> str:
+    if not sheet or not mapping or "#" not in sheet:
+        return sheet
+    return _HEX_COLOR.sub(lambda m: mapping.get(m.group(0).lower(), m.group(0)), sheet)
+
+
+def translate_colour(colour: str) -> str:
+    """One default-theme colour -> the active theme's (for painted widgets)."""
+    if not isinstance(colour, str):
+        return colour
+    return _default_to_active().get(colour.lower(), colour)
+
+
+def _default_to_active() -> dict[str, str]:
+    global _DEFAULT_MAP
+    active = active_theme()
+    key = (_ACTIVE_THEME, tuple(sorted(active.items())))
+    if _DEFAULT_MAP[0] != key:
+        _DEFAULT_MAP = (key, colour_map(THEMES["steelseries"], active))
+    return _DEFAULT_MAP[1]
+
+
+def retheme_widgets() -> None:
+    """After set_active_theme(): carry every widget's inline stylesheet over
+    from the colours it was written in to the active theme's. Call before the
+    pages' own apply_theme(), which then rewrite what they know about."""
+    global _APPLIED
+    from PySide6.QtWidgets import QApplication
+    new = dict(active_theme())
+    old, _APPLIED = _APPLIED or new, new
+    mapping = colour_map(old, new)
+    if not mapping:
+        return
+    for widget in QApplication.allWidgets():
+        # Widgets that paint with a remembered colour (tinted SVG icons).
+        hook = getattr(widget, "retheme_colours", None)
+        if callable(hook):
+            hook(mapping)
+        sheet = widget.styleSheet()
+        if sheet:
+            translated = translate_sheet(sheet, mapping)
+            if translated != sheet:
+                widget.setStyleSheet(translated)
 
 
 def active_theme() -> dict:
