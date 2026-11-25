@@ -125,7 +125,7 @@ class I18n:
 
     @staticmethod
     def available_languages() -> list[tuple[str, str]]:
-        """Return (code, display_name) for languages with >= 40% coverage, sorted by code.
+        """Return (code, display_name) for languages with >= 10% coverage, sorted by code.
 
         Display names come from babel (native name). English is always included.
         Scans built-in lang dir first, then HOME_LANG_FOLDER for community downloads.
@@ -133,7 +133,7 @@ class I18n:
         en_cp = RawConfigParser()
         _read_lang_file(en_cp, _BUILTIN_LANG_DIR / 'en.ini')
         en_key_count = sum(len(list(en_cp.items(s))) for s in en_cp.sections())
-        threshold = int(en_key_count * 0.40)
+        threshold = int(en_key_count * 0.10)
 
         def _native_name(code: str) -> str:
             if _BABEL_AVAILABLE and _BabelLocale is not None:
