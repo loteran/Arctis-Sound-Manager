@@ -359,7 +359,7 @@ HELP_CONTENT: dict[str, dict] = {
                     "Three modes are available:\n"
                     "• Off — noise cancelling disabled\n"
                     "• Transparent — lets outside sound through (adjustable level 10–100%)\n"
-                    "• ANC — full active noise cancelling\n\n"
+                    "• ANC — full active noise cancelling (Low / Medium / High strength on the Nova Pro Omni)\n\n"
                     "Changes made from the headset buttons are reflected in real time in the GUI, "
                     "and vice-versa."
                 ),
@@ -986,7 +986,7 @@ HELP_CONTENT: dict[str, dict] = {
                     "Trois modes sont disponibles :\n"
                     "• Off — réduction de bruit désactivée\n"
                     "• Transparent — laisse passer le son extérieur (niveau réglable 10–100%)\n"
-                    "• ANC — réduction de bruit active complète\n\n"
+                    "• ANC — réduction de bruit active complète (niveau Low / Medium / High sur le Nova Pro Omni)\n\n"
                     "Les changements faits depuis les boutons du casque sont reflétés en temps "
                     "réel dans l'interface, et vice-versa."
                 ),
@@ -1613,7 +1613,7 @@ HELP_CONTENT: dict[str, dict] = {
                     "Tres modos disponibles:\n"
                     "• Off — cancelación de ruido desactivada\n"
                     "• Transparente — deja pasar el sonido exterior (nivel ajustable 10–100%)\n"
-                    "• ANC — cancelación de ruido activa completa\n\n"
+                    "• ANC — cancelación de ruido activa completa (nivel Low / Medium / High en el Nova Pro Omni)\n\n"
                     "Los cambios realizados desde los botones del auricular se reflejan en tiempo "
                     "real en la interfaz, y viceversa."
                 ),

@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLa
 
 import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
+from arctis_sound_manager.i18n import I18n
 
 
 _MODE_LABELS = {
@@ -17,6 +18,11 @@ _MODE_LABELS = {
     'transparent': ('Transparent', 1),
     'on':          ('ANC',         2),
 }
+
+# ANC strength, as the status reports it (int_str_mapping) → value written.
+# Only headsets whose status carries `anc_level` show this row (the Nova Pro
+# Omni, #400); the Elite declares its level as a setting card of its own.
+_ANC_LEVELS = {'low': 1, 'medium': 2, 'high': 3}
 
 
 class _Pill(QPushButton):
@@ -60,6 +66,9 @@ class QAncWidget(QWidget):
         # snap the UI back before the command actually lands.
         self._pending_mode = None
         self._pending_level = None
+        self._pending_anc_level = None
+        self._current_anc_level = None
+        self._has_anc_level = False
 
         self._timeout_timer = QTimer(self)
         self._timeout_timer.setSingleShot(True)
@@ -113,15 +122,34 @@ class QAncWidget(QWidget):
         layout.addWidget(self._level_row)
         self._level_row.setVisible(False)
 
+        # ── ANC level row ─────────────────────────────────────────────────────
+        self._anc_level_row = QWidget()
+        self._anc_level_row.setStyleSheet("background: transparent;")
+        anc_layout = QHBoxLayout(self._anc_level_row)
+        anc_layout.setContentsMargins(4, 0, 0, 0)
+        anc_layout.setSpacing(8)
+        self._anc_level_title = QLabel(I18n.translate("status", "anc_level") + ":")
+        anc_layout.addWidget(self._anc_level_title)
+        self._anc_level_pills: dict[str, _Pill] = {}
+        for key, value in _ANC_LEVELS.items():
+            pill = _Pill(I18n.translate("status_values", key), self._anc_level_row)
+            pill.clicked.connect(lambda _, k=key, v=value: self._on_anc_level_clicked(k, v))
+            self._anc_level_pills[key] = pill
+            anc_layout.addWidget(pill)
+        anc_layout.addStretch(1)
+        layout.addWidget(self._anc_level_row)
+        self._anc_level_row.setVisible(False)
+
         self.apply_theme()
 
     # ── Theme ─────────────────────────────────────────────────────────────────
 
     def apply_theme(self, t=None) -> None:
         """Restyle all inline colors to the currently active theme."""
-        self._level_title.setStyleSheet(
-            f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 10pt; background: transparent;"
-        )
+        for title in (self._level_title, self._anc_level_title):
+            title.setStyleSheet(
+                f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 10pt; background: transparent;"
+            )
         self._level_label.setStyleSheet(
             f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 10pt; background: transparent;"
         )
@@ -138,6 +166,8 @@ class QAncWidget(QWidget):
         # Refresh pill colors to match the new theme
         for key, pill in self._pills.items():
             pill._set_active(key == self._current_mode)
+        for key, pill in self._anc_level_pills.items():
+            pill._set_active(key == self._current_anc_level)
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -150,6 +180,12 @@ class QAncWidget(QWidget):
 
         tr_entry = headset.get('transparent_noise_cancelling_level', {})
         level = tr_entry.get('value', None) if isinstance(tr_entry, dict) else None
+
+        anc_entry = headset.get('anc_level')
+        self._has_anc_level = isinstance(anc_entry, dict)
+        anc_level = anc_entry.get('value') if self._has_anc_level else None
+        if anc_level not in _ANC_LEVELS:
+            anc_level = None
 
         # Check if we are waiting for a pending mode/level change to be
         # confirmed by the device before trusting this status update.
@@ -166,12 +202,19 @@ class QAncWidget(QWidget):
             else:
                 is_waiting = True
 
+        if self._pending_anc_level is not None and anc_level is not None:
+            if anc_level == self._pending_anc_level:
+                self._pending_anc_level = None
+            else:
+                is_waiting = True
+
         if is_waiting:
             return
 
         self._timeout_timer.stop()
         self._set_widgets_enabled(True)
         self._set_state(mode, level)
+        self._set_anc_level(anc_level)
 
     # ── Private ───────────────────────────────────────────────────────────────
 
@@ -179,6 +222,8 @@ class QAncWidget(QWidget):
         for pill in self._pills.values():
             pill.setEnabled(enabled)
         self._level_slider.setEnabled(enabled)
+        for pill in self._anc_level_pills.values():
+            pill.setEnabled(enabled)
 
     @Slot()
     def _on_timeout(self) -> None:
@@ -187,6 +232,7 @@ class QAncWidget(QWidget):
         # forever (e.g. the device was disconnected mid-command).
         self._pending_mode = None
         self._pending_level = None
+        self._pending_anc_level = None
         self._set_widgets_enabled(True)
 
     def _set_state(self, mode: str, level) -> None:
@@ -202,6 +248,14 @@ class QAncWidget(QWidget):
             self._level_slider.setValue(max(1, perc // 10))
             self._level_slider.blockSignals(False)
             self._level_label.setText(f"{perc}%")
+        self._anc_level_row.setVisible(mode == 'on' and self._has_anc_level)
+
+    def _set_anc_level(self, anc_level) -> None:
+        if anc_level is None:
+            return
+        self._current_anc_level = anc_level
+        for key, pill in self._anc_level_pills.items():
+            pill._set_active(key == anc_level)
 
     def _on_mode_clicked(self, mode_key: str, mode_value: int) -> None:
         if mode_key == self._current_mode:
@@ -211,6 +265,7 @@ class QAncWidget(QWidget):
         for key, pill in self._pills.items():
             pill._set_active(key == mode_key)
         self._level_row.setVisible(mode_key == 'transparent')
+        self._anc_level_row.setVisible(mode_key == 'on' and self._has_anc_level)
         self._set_widgets_enabled(False)
         self._timeout_timer.start(5000)  # 5 second grace period for device confirmation
         DbusWrapper.change_setting('noise_cancelling', mode_value)
@@ -221,3 +276,12 @@ class QAncWidget(QWidget):
         self._set_widgets_enabled(False)
         self._timeout_timer.start(5000)  # 5 second grace period for device confirmation
         DbusWrapper.change_setting('transparent_level', value)
+
+    def _on_anc_level_clicked(self, level_key: str, level_value: int) -> None:
+        if level_key == self._current_anc_level:
+            return
+        self._set_anc_level(level_key)
+        self._pending_anc_level = level_key
+        self._set_widgets_enabled(False)
+        self._timeout_timer.start(5000)  # 5 second grace period for device confirmation
+        DbusWrapper.change_setting('anc_level', level_value)

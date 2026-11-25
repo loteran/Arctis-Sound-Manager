@@ -247,7 +247,29 @@ class ConfigSetting(JsonSerializable):
                 raise Exception(f"Invalid update sequence value: {b}")
 
         return result
-    
+
+    def accepts(self, value: Any) -> bool:
+        """Whether *value* is one the profile declares for this setting.
+
+        Only the bounds the profile states are checked (a slider's min/max,
+        a button group's or select's values_mapping); a setting that states
+        none accepts anything. A base station can report a byte for a setting
+        that isn't a level at all, e.g. while the headset is off (#400), and
+        that value must neither be adopted nor pushed back to the headset.
+        """
+        if not isinstance(value, int) or isinstance(value, bool):
+            return True
+        kw = self.__dict__
+        lo, hi = kw.get('min'), kw.get('max')
+        if isinstance(lo, int) and value < lo:
+            return False
+        if isinstance(hi, int) and value > hi:
+            return False
+        mapping = kw.get('values_mapping')
+        if isinstance(mapping, dict) and mapping and all(isinstance(k, int) for k in mapping):
+            return value in mapping
+        return True
+
     def __getattribute__(self, name: str) -> Any:
         return super().__getattribute__(name)
 

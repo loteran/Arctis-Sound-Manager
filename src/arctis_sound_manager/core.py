@@ -3466,7 +3466,17 @@ class CoreEngine:
 
         def left_to_device(frame) -> bool:
             names = frame_settings(frame) if isinstance(frame, list) else []
-            return bool(names) and all(n in keep_device_values for n in names)
+            if not names:
+                return False
+            if all(n in keep_device_values for n in names):
+                return True
+            # A saved value outside what the profile declares (the Omni's ANC
+            # level stored as 0, read from the base while the headset was off)
+            # would make the headset fall back to its own default — HIGH for
+            # ANC (#400). Leave the device's value alone instead.
+            return any(not self._setting_accepts(
+                n, self.device_settings.get(n, self._setting_default(n)))
+                for n in names) if getattr(self, 'device_settings', None) is not None else False
 
         for index, bytes in enumerate(self.device_config.device_init, start=1):
             pause = init_entry_pause_seconds(bytes)
@@ -4161,6 +4171,20 @@ class CoreEngine:
             self.redirect_to_media_sink()
         else:
             self.redirect_audio_on_disconnect()
+
+    def _setting_accepts(self, name: str, value) -> bool:
+        """Whether the profile's declaration of *name* allows *value*.
+
+        A name the profile doesn't declare as a setting accepts anything.
+        """
+        if self.device_config is None:
+            return True
+        for section in self.device_config.settings.values():
+            for setting in section:
+                if setting.name == name:
+                    accepts = getattr(setting, 'accepts', None)
+                    return accepts(value) if callable(accepts) else True
+        return True
 
     def _setting_default(self, name: str) -> int:
         """Profile-declared default for a setting, or 0 if none is an int.
@@ -5039,6 +5063,13 @@ class CoreEngine:
                 for c in section if getattr(c, 'hidden', False) is True
             }
             for name, value in values.items():
+                if not self._setting_accepts(name, value):
+                    # Not a value of that setting (e.g. a level byte read
+                    # while the headset is off): adopting it would push it
+                    # back on the next replay (#400).
+                    self.logger.debug("Readback %s=%s outside the profile's range, ignored",
+                                      name, value)
+                    continue
                 if (self.device_settings.was_chosen_by_user(name) and not device_wins
                         and name not in hidden):
                     continue
