@@ -342,6 +342,8 @@ class HeadsetPage(QWidget):
         each setting's section gets everything in a single card.
         """
         values = settings.get('device') or {}
+        if 'noise_cancelling' in values:
+            self._anc_widget.apply_saved_mode(values['noise_cancelling'])
         groups: dict[str | None, list[str]] = {}
         for name, config in (settings.get('settings_config') or {}).items():
             if name not in values or not isinstance(config, dict):
