@@ -4596,8 +4596,8 @@ class SonarPage(QWidget):
             self._micro_source.apply_theme()
 
         # Propagate to each channel widget (they own cards, macro sliders, etc.)
-        for widget in (self._game_widget, self._media_widget, self._chat_widget,
-                       self._micro_widget, self._output_widget):
+        for widget in (self._game_widget, self._media_widget, self._aux_widget,
+                       self._chat_widget, self._micro_widget, self._output_widget):
             widget.apply_theme(t)
 
     def apply_all_from_files(self) -> None:
