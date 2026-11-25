@@ -2776,7 +2776,7 @@ class CoreEngine:
             self.logger.warning("reset_filter_chain_safe_mode failed: %r", exc)
             return False
 
-    def _resolve_sink_name(self, wanted: str) -> str | None:
+    def _resolve_sink_name(self, wanted: str, source: bool = False) -> str | None:
         """Turn a saved device id into the ``node.name`` the graph uses.
 
         Settings store whichever id the picker offered — a ``node.nick`` from
@@ -2788,12 +2788,30 @@ class CoreEngine:
         try:
             import pulsectl
             with pulsectl.Pulse("asm-generic-resolve") as pulse:
-                for sink in pulse.sink_list():
-                    if wanted in (sink.name, sink.proplist.get("node.nick", "")):
-                        return sink.name
+                # The microphone is a source: it was looked up among the
+                # sinks, never found, and generic mode always ran with "no
+                # microphone configured" whatever had been chosen.
+                nodes = pulse.source_list() if source else pulse.sink_list()
+                for node in nodes:
+                    if wanted in (node.name, node.proplist.get("node.nick", "")):
+                        # What the GUI shows for the no-headset mode.
+                        self._node_descriptions = getattr(self, "_node_descriptions", {})
+                        self._node_descriptions[node.name] = (
+                            node.proplist.get("node.description") or node.description or node.name)
+                        return node.name
         except Exception as exc:
             self.logger.debug("could not resolve generic output %r: %r", wanted, exc)
         return None
+
+    def generic_devices(self) -> dict[str, str] | None:
+        """The no-headset mode's devices by name, while that mode is active."""
+        config = self.device_config
+        if config is None or not getattr(config, "generic", False):
+            return None
+        from arctis_sound_manager import device_state
+        names = getattr(self, "_node_descriptions", {})
+        out, mic = device_state.get_physical_out_game(), device_state.get_physical_in()
+        return {"output": names.get(out, out or ""), "input": names.get(mic, mic or "")}
 
     def _setup_generic_device(self) -> bool:
         """Build the channels on a device ASM does not talk to (#189).
@@ -2848,7 +2866,7 @@ class CoreEngine:
         self.device_settings = None     # nor any headset settings to hold
 
         source = self._resolve_sink_name(
-            getattr(settings, "generic_input_device", None) or "")
+            getattr(settings, "generic_input_device", None) or "", source=True)
 
         # Game and Chat share one sink here. A real Arctis exposes two PCMs and
         # ASM separates them; a generic headset has one output, so both channels

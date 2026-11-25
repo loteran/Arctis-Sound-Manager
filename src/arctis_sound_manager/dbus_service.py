@@ -386,6 +386,9 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
             },
         }
 
+        generic = self.core_engine.generic_devices() if hasattr(self.core_engine, 'generic_devices') else None
+        if generic is not None:
+            settings['generic_device'] = generic
         if self.core_engine.device_config and self.core_engine.device_settings:
             settings.update({'device': self.core_engine.device_settings.settings})
             settings['settings_config'].update({
