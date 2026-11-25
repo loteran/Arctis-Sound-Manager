@@ -266,6 +266,7 @@ device:
         # (the Quick Switch a button can also be mapped to). On Bluetooth,
         # this computer's audio through the dongle stops reaching the
         # earbuds. Not yet tried on real GameBuds.
+        effect: switches_connection
         type: button_group
         default: 0x00
         update_sequence: [0xaa, 'value']

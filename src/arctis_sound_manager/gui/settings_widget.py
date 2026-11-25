@@ -532,6 +532,17 @@ class QSettingsWidget(QWidget):
             else:
                 main_layout.addWidget(widget, 1)
 
+            # What changing it does to playback, where the profile says
+            # (effect: instant / interrupts / switches_connection). Only
+            # stated where it was verified on the hardware: no field, no note.
+            effect = getattr(config, 'effect', None)
+            if effect:
+                effect_note = QLabel(I18n.translate('ui', f'setting_effect_{effect}'))
+                effect_note.setObjectName('setting_effect_note')
+                effect_note.setStyleSheet(
+                    f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; background: transparent;")
+                main_layout.addWidget(effect_note, 0, Qt.AlignmentFlag.AlignVCenter)
+
         return main_widget if widget else None
 
     def _too_long_for_buttons(self, config: ConfigSetting) -> bool:
