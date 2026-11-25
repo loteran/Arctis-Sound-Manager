@@ -4130,6 +4130,27 @@ def _micro_source_qss() -> str:
     """
 
 
+def _repair_stale_configs() -> None:
+    """check_and_fix_stale_configs(), and the restart a fix needs."""
+    import logging
+    log = logging.getLogger(__name__)
+    try:
+        fixed, needs_pw_restart = check_and_fix_stale_configs()
+        if not fixed:
+            return
+        if needs_pw_restart:
+            # One-time migration: static HeSuVi was in pipewire.conf.d and created a
+            # duplicate node that silenced the Game channel.  A full PipeWire restart
+            # is required to unload the old node; subsequent runs won't need this.
+            log.info("Stale static HeSuVi config removed — restarting PipeWire to clear duplicate node")
+            sc.restart("pipewire", "wireplumber", "pipewire-pulse", "filter-chain", timeout=20)
+        else:
+            log.info("Stale Sonar configs fixed, restarting filter-chain")
+            sc.restart("filter-chain", timeout=15)
+    except Exception:  # noqa: BLE001 — a background check must not take the GUI down
+        log.warning("Sonar config check failed", exc_info=True)
+
+
 class SonarPage(QWidget):
     def __init__(self, embedded: bool = False, parent: QWidget | None = None):
         super().__init__(parent)
@@ -4139,22 +4160,13 @@ class SonarPage(QWidget):
         self._apply_all_worker: _ApplyAllWorker | None = None
         self._pending_apply_all: bool = False
 
-        # Fix stale configs (broken builtins, wrong locations, duplicate HeSuVi node, …)
-        fixed, needs_pw_restart = check_and_fix_stale_configs()
-        if fixed:
-            import logging
-            if needs_pw_restart:
-                # One-time migration: static HeSuVi was in pipewire.conf.d and created a
-                # duplicate node that silenced the Game channel.  A full PipeWire restart
-                # is required to unload the old node; subsequent runs won't need this.
-                logging.getLogger(__name__).info(
-                    "Stale static HeSuVi config removed — restarting PipeWire to clear duplicate node"
-                )
-                sc.restart("pipewire", "wireplumber", "pipewire-pulse", "filter-chain",
-                           timeout=20)
-            else:
-                logging.getLogger(__name__).info("Stale Sonar configs fixed, restarting filter-chain")
-                sc.restart("filter-chain", timeout=15)
+        # Fix stale configs (broken builtins, wrong locations, duplicate HeSuVi
+        # node, …) — off the UI thread: the page is built with the main window
+        # at start-up, and a fix ends in a filter-chain (or PipeWire) restart
+        # the build used to sit and wait for. Nothing below reads the confs.
+        import threading
+        threading.Thread(target=_repair_stale_configs, name="asm-sonar-config-check",
+                         daemon=True).start()
 
         self.setStyleSheet(f"background-color: {BG_MAIN};")
 
