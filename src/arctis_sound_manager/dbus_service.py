@@ -702,6 +702,16 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
                 from arctis_sound_manager.pw_utils import apply_force_quantum
                 apply_force_quantum(int(value))
 
+            if setting in ('redirect_audio_on_disconnect', 'redirect_audio_on_disconnect_device'):
+                # Chosen while the headset is away: follow it now, not at the
+                # next disconnect. A default-sink change and a stream move —
+                # quick, and done here rather than on a thread that could
+                # still be touching PulseAudio after the call returned.
+                try:
+                    self.core_engine.follow_disconnect_target()
+                except Exception:
+                    self.logger.warning("Could not follow the new disconnect device", exc_info=True)
+
             if setting == 'usb_transport':
                 # Re-acquire the headset with the other transport: hand the
                 # interfaces back (libusb) or close the nodes (hidraw), then
