@@ -346,10 +346,25 @@ class QSystrayApp(QBaseDesktopApp):
 
         try:
             self.tray_icon.setIcon(QIcon(get_tray_pixmap(pct, color=color)))
-            self.tray_icon.setToolTip(f'Arctis — {pct}%' if pct is not None
-                                      else 'Arctis Sound Manager')
+            self.tray_icon.setToolTip(self._tooltip_text(status, pct))
         except Exception as e:
             self.logger.debug('Could not update the tray icon: %s', e)
+
+    @staticmethod
+    def _tooltip_text(status: dict, pct: int | None) -> str:
+        """"Arctis — 95%", or each earbud instead where the headset reports
+        them (the combined level is just their minimum), plus the case:
+        "Arctis — L 95% · R 100% · Case 42%"."""
+        from arctis_sound_manager.battery_summary import buds_text, case_percent
+
+        if pct is None:
+            text = 'Arctis Sound Manager'
+        else:
+            text = f'Arctis — {buds_text(status) or f"{pct}%"}'
+        case = case_percent(status) if _show_battery_in_tray() else None
+        if case is not None:
+            text += f' · {I18n.translate("ui", "headset_tile_case_battery_charge")} {case}%'
+        return text
 
     @staticmethod
     def _extract_battery_percent(status: dict) -> int | None:

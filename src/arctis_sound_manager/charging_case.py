@@ -14,6 +14,7 @@ Protocol from base_arctis_gamebuds_case.device. Offsets follow ASM's
 convention (spec field position minus two: no report id, command echo at 0):
 
     0xB7  left %, right %, case %, left/right/case charging (0/1/2)
+          (per-bud values are only kept while that bud is seated)
     0xB8  left bud seated, right bud seated (0/1)
     0xBC  lid (0 open, 1 closed)
 """
@@ -48,10 +49,11 @@ def parse_frame(frame: list[int] | bytes) -> dict[str, Any]:
     cmd = frame[0]
     if cmd == CMD_BATTERY and len(frame) >= 7:
         out: dict[str, Any] = {}
-        if 0 <= frame[3] <= 100:
-            out['case_battery_charge'] = frame[3]
-        if frame[6] in _CHARGING:
-            out['case_charging_status'] = _CHARGING[frame[6]]
+        for prefix, pct, chg in (('case_left', 1, 4), ('case_right', 2, 5), ('case', 3, 6)):
+            if 0 <= frame[pct] <= 100:
+                out[f'{prefix}_battery_charge'] = frame[pct]
+            if frame[chg] in _CHARGING:
+                out[f'{prefix}_charging_status'] = _CHARGING[frame[chg]]
         return out
     if cmd == CMD_BUDS_IN_CASE and len(frame) >= 3:
         left, right = frame[1], frame[2]
@@ -80,11 +82,25 @@ def choose_interface(pages: dict[int, int | None], case: ChargingCaseConfig) -> 
     return case.command_interface_index
 
 
+def without_unseated_buds(state: dict[str, Any]) -> dict[str, Any]:
+    """Drop a bud's case readings while it is not seated: the case has
+    nothing to measure then, and the bud's real level comes from the dongle."""
+    seated = state.get('buds_in_case')
+    if seated is None:
+        return state
+    out = dict(state)
+    for side in ('left', 'right'):
+        if seated not in (side, 'both'):
+            out.pop(f'case_{side}_battery_charge', None)
+            out.pop(f'case_{side}_charging_status', None)
+    return out
+
+
 def status_category(state: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """`state` in GetStatus's ``{key: {'value', 'type'}}`` shape."""
     return {
         key: {'value': value,
-              'type': 'percentage' if key == 'case_battery_charge' else 'label'}
+              'type': 'percentage' if key.endswith('_battery_charge') else 'label'}
         for key, value in state.items()
     }
 
@@ -118,7 +134,7 @@ class ChargingCaseMonitor:
             out: dict[str, Any] = {}
             for pid in config.charging_case.product_ids:
                 out.update(self._state.get(pid, {}))
-            return out
+        return without_unseated_buds(out)
 
     def scan(self) -> None:
         """Pick up a case already plugged in when the daemon starts — the

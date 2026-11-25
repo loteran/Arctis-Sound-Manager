@@ -1414,6 +1414,10 @@ _PILL_QSS = (
 )
 
 
+from arctis_sound_manager.gui.components import IMAGES_DIR as _IMAGES_DIR
+_EARBUD_ICON = __import__("os").path.join(_IMAGES_DIR, "earbud_icon.svg")
+
+
 class _Pill(QWidget):
     """Rounded pill: colored dot + text."""
 
@@ -1438,8 +1442,43 @@ class _Pill(QWidget):
         layout.addWidget(self._text)
         self._update_style("#8D96AA")
 
+    def set_segments(self, segments: list[tuple[str, bool, str]], color: str):
+        """Icons with a reading each — [(svg, mirrored, "95%"), …] — in place
+        of the text: a left and a right earbud say more than "L" and "R"."""
+        key = tuple(segments)
+        if getattr(self, "_segments_key", None) != key:
+            self._segments_key = key
+            old = getattr(self, "_segments", None)
+            if old is not None:
+                self.layout().removeWidget(old)
+                old.deleteLater()
+            box = QWidget()
+            box.setStyleSheet("background: transparent; border: none;")
+            row = QHBoxLayout(box)
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(4)
+            for i, (svg, mirrored, text) in enumerate(segments):
+                if i:
+                    row.addSpacing(8)
+                row.addWidget(SvgIconWidget(svg, _theme.c('TEXT_PRIMARY'), size=18, mirrored=mirrored))
+                label = QLabel(text)
+                label.setStyleSheet(self._text.styleSheet())
+                row.addWidget(label)
+            self._segments = box
+            self.layout().addWidget(box)
+        self._text.hide()
+        self._segments.show()
+        self._paint_dot(color)
+
     def set_value(self, text: str, color: str):
+        segments = getattr(self, "_segments", None)
+        if segments is not None:
+            segments.hide()
+            self._text.show()
         self._text.setText(text)
+        self._paint_dot(color)
+
+    def _paint_dot(self, color: str):
         self._dot.setStyleSheet(
             f"background: transparent; font-size: 9pt; color: {color}; border: none;"
         )
@@ -1485,15 +1524,18 @@ class _DeviceStatusBar(QWidget):
         self._conn_pill = _Pill()
         self._headset_bat_pill = _Pill()
         self._dac_bat_pill = _Pill()
+        self._case_bat_pill = _Pill()
 
         layout.addWidget(self._conn_pill)
         layout.addWidget(self._headset_bat_pill)
         layout.addWidget(self._dac_bat_pill)
+        layout.addWidget(self._case_bat_pill)
 
         self.set_no_device()
 
     def apply_theme(self, t=None) -> None:
-        for pill in (self._conn_pill, self._headset_bat_pill, self._dac_bat_pill):
+        for pill in (self._conn_pill, self._headset_bat_pill, self._dac_bat_pill,
+                     self._case_bat_pill):
             pill.apply_theme()
 
     def set_no_device(self):
@@ -1504,15 +1546,24 @@ class _DeviceStatusBar(QWidget):
             I18n.get_instance().translate('ui', 'no_device_detected'), "#8D96AA")
         self._headset_bat_pill.set_visible(False)
         self._dac_bat_pill.set_visible(False)
+        self._case_bat_pill.set_visible(False)
 
-    def update(self, power_status, headset_bat, dac_bat):
+    def update(self, power_status, headset_bat, dac_bat, buds=None, case_bat=None):
         color = _status_color(power_status)
         label = _status_label(power_status)
         self._conn_pill.set_value(label, color)
 
         if headset_bat is not None:
             bat_color = _battery_color(headset_bat)
-            self._headset_bat_pill.set_value(f"Headset  {headset_bat}%", bat_color)
+            # Earbuds: each bud's own level beside its icon (the right one
+            # mirrored, so the two face each other), coloured by the lower
+            # one, which is what headset_bat already is.
+            if buds:
+                self._headset_bat_pill.set_segments(
+                    [(_EARBUD_ICON, side == "right", reading) for side, reading in buds],
+                    bat_color)
+            else:
+                self._headset_bat_pill.set_value(f"Headset  {headset_bat}%", bat_color)
             self._headset_bat_pill.set_visible(True)
         else:
             self._headset_bat_pill.set_visible(False)
@@ -1530,6 +1581,14 @@ class _DeviceStatusBar(QWidget):
             self._dac_bat_pill.set_visible(True)
         else:
             self._dac_bat_pill.set_visible(False)
+
+        if case_bat is not None:
+            self._case_bat_pill.set_value(
+                f"{I18n.translate('ui', 'headset_tile_case_battery_charge')}  {case_bat}%",
+                _battery_color(case_bat))
+            self._case_bat_pill.set_visible(True)
+        else:
+            self._case_bat_pill.set_visible(False)
 
 
 def _battery_color(pct: int) -> str:
@@ -2203,7 +2262,11 @@ class HomePage(QWidget):
         if normalize_power_value(power) is HeadsetPower.OFF:
             headset_bat_val = None
 
-        self._status_bar.update(power, headset_bat_val, dac_bat_val)
+        from arctis_sound_manager.battery_summary import buds_levels, case_percent
+        self._status_bar.update(
+            power, headset_bat_val, dac_bat_val,
+            buds=buds_levels(status) if headset_bat_val is not None else None,
+            case_bat=case_percent(status))
 
         # The GameDAC wheel attenuates in the DAC itself, on top of Master.
         # Shown beside Master for reference only, never applied to it (#268).

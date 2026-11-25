@@ -163,17 +163,15 @@ def test_online_status_points_at_a_mapped_and_represented_variable(gamebuds):
                for section in gamebuds.status.representation.values())
 
 
-def test_representation_lists_only_the_two_derived_variables(gamebuds):
-    """Per-bud raw bytes (left/right_connect_status, left/right_battery_level,
-    bt_left/right_connect_status) are real spec fields kept in
-    response_mapping as combinator inputs, but nothing downstream of
-    dbus_service consumes anything but headset_power_status /
-    headset_battery_charge (see power_status.py, systray_app.py,
-    home_page.py, dac_page.py) — listing the raw per-bud bytes here would be
-    dead rows with no i18n key and no reader."""
+def test_representation_shows_combined_and_per_bud_battery(gamebuds):
+    """The tray keeps the single min-of-both reading; the Headset page also
+    shows each bud's own level as a tile."""
     assert gamebuds.status.representation == {
-        "headset": ["headset_power_status", "headset_battery_charge"],
+        "headset": ["headset_power_status", "headset_battery_charge",
+                    "left_bud_battery", "right_bud_battery"],
     }
+    for key in ("left_bud_battery", "right_bud_battery"):
+        assert gamebuds.status_parse[key].type.value == "percentage"
 
 
 # ── The `max` / `min` combinator itself ─────────────────────────────────────
@@ -219,10 +217,30 @@ def test_combinator_does_not_disturb_plain_int_mappings_elsewhere():
                 if key == "starts_with":
                     continue
                 if device_yaml.name == "gamebuds.yaml" and key in (
-                        "headset_power_status", "headset_battery_charge"):
+                        "headset_power_status", "headset_battery_charge",
+                        "left_bud_battery", "right_bud_battery"):
                     assert isinstance(value, dict)
                 else:
                     assert isinstance(value, int), (
                         f"{device_yaml.name}: {key!r} is {value!r}, expected a plain "
                         "int offset"
                     )
+
+
+# ── A bud that is not connected says so ──────────────────────────────────────
+
+def test_disconnected_bud_reads_offline_and_drops_out_of_the_combined_charge(gamebuds):
+    # Left bud in the case (connect status 2), its battery byte stale at 0.
+    frame = _frame(left_connect=2, right_connect=3, left_batt=0, right_batt=70)
+    raw = _mapping(gamebuds, 0xB0).get_status_values(frame)
+    parsed = parsed_status(raw, gamebuds)
+    assert parsed["left_bud_battery"] == "offline"
+    assert parsed["right_bud_battery"] == 70
+    assert parsed["headset_battery_charge"] == 70
+
+
+def test_no_bud_connected_has_no_combined_charge(gamebuds):
+    frame = _frame(left_connect=2, right_connect=2, left_batt=0, right_batt=0)
+    parsed = parsed_status(_mapping(gamebuds, 0xB0).get_status_values(frame), gamebuds)
+    assert "headset_battery_charge" not in parsed
+    assert parsed["left_bud_battery"] == parsed["right_bud_battery"] == "offline"
