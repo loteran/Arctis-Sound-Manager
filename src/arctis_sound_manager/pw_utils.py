@@ -728,6 +728,33 @@ def sink_identity(sink, unstable: set[str]) -> str:
     return node_name if (not nick or nick in unstable) and node_name else (nick or node_name)
 
 
+def migrate_unstable_sink_ids(values: dict[str, str | None], sinks) -> dict[str, str]:
+    """New ids for saved settings that still hold an unstable nick.
+
+    Before unstable_nicks(), a picker stored "USB Audio #2" (or a nick
+    several sinks shared) as the setting itself. That value matches no entry
+    of the lists any more, so the picker showed nothing chosen. It is pinned
+    to the ``node.name`` of the one sink that carries the nick right now —
+    the output the daemon was already resolving it to. A nick no sink, or
+    several sinks, carry is left alone.
+
+    Returns ``{setting: node_name}`` for the settings to rewrite.
+    """
+    unstable = unstable_nicks(sinks)
+    out: dict[str, str] = {}
+    for key, value in values.items():
+        if not value or value not in unstable:
+            continue
+        owners = [s for s in sinks
+                  if (getattr(s, "proplist", None) or {}).get("node.nick", "") == value]
+        if len(owners) != 1:
+            continue
+        node_name = owners[0].proplist.get("node.name", "") or getattr(owners[0], "name", "")
+        if node_name:
+            out[key] = node_name
+    return out
+
+
 def sink_label(sink, unstable: set[str]) -> str:
     """What a picker shows for *sink*: a name that tells siblings apart."""
     props = sink.proplist

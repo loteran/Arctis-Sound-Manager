@@ -2981,7 +2981,46 @@ class CoreEngine:
         self._device_ready = True
         return True
 
+    _SINK_ID_SETTINGS = ('external_output_device', 'redirect_audio_on_disconnect_device',
+                         'generic_output_device')
+
+    def _migrate_unstable_output_ids(self) -> None:
+        """Pin saved outputs stored as an unstable nick to their node.name.
+
+        Once per daemon run (see pw_utils.migrate_unstable_sink_ids): a value
+        saved as "USB Audio #2" before nicks shared by one card's outputs
+        stopped being used as ids. Read-modify-write, as the GUI writes the
+        same file.
+        """
+        if getattr(self, '_sink_ids_migrated', False):
+            return
+        self._sink_ids_migrated = True
+        settings = getattr(self, 'general_settings', None)
+        if settings is None:
+            return
+        values = {k: getattr(settings, k, None) for k in self._SINK_ID_SETTINGS}
+        values = {k: v for k, v in values.items() if isinstance(v, str) and v}
+        if not values:
+            return
+        try:
+            import pulsectl
+            from arctis_sound_manager.pw_utils import migrate_unstable_sink_ids
+            with pulsectl.Pulse('asm-sink-id-migration') as pulse:
+                changes = migrate_unstable_sink_ids(values, pulse.sink_list())
+            if not changes:
+                return
+            on_disk = GeneralSettings.read_from_file()
+            for key, node_name in changes.items():
+                self.logger.info("Saved output %s=%r pinned to %s (shared nick)",
+                                 key, values[key], node_name)
+                setattr(settings, key, node_name)
+                setattr(on_disk, key, node_name)
+            on_disk.write_to_file()
+        except Exception as exc:  # noqa: BLE001 — the old value still resolves as before
+            self.logger.debug("output id migration skipped: %r", exc)
+
     def configure_virtual_sinks(self) -> None:
+        self._migrate_unstable_output_ids()
         self._detect_lock.acquire()
         self._device_configured_event.clear()
         deferred = False
