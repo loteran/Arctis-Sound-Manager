@@ -3159,7 +3159,28 @@ _BQ_CONTROL_RE = re.compile(
 )
 
 
-def diff_filter_conf(old_text: str, new_text: str) -> dict[str, dict[str, float]] | None:
+_LADSPA_HEADER_RE = re.compile(r'^\s*\{\s*type\s*=\s*ladspa\s+name\s*=\s*(\S+)(?:\s|$)')
+_LADSPA_INLINE_RE = re.compile(
+    r'^(\s*\{\s*type\s*=\s*ladspa\s+name\s*=\s*(\S+)\s.*?control\s*=\s*\{)(.*)(\}\s*\}\s*)$'
+)
+_LADSPA_CONTROL_RE = re.compile(r'^(\s*control\s*=\s*\{)(.*)(\}\s*\}\s*)$')
+_LADSPA_KV_RE = re.compile(r'"([^"]+)"\s*=\s*([-\d.eE]+)')
+
+
+def _ladspa_control_diff(old_body: str, new_body: str) -> dict[str, float] | None:
+    """Changed values between two LADSPA ``control = { … }`` bodies, or None
+    when anything but a number differs (a port added, removed or renamed)."""
+    old_kv = _LADSPA_KV_RE.findall(old_body)
+    new_kv = _LADSPA_KV_RE.findall(new_body)
+    if [k for k, _ in old_kv] != [k for k, _ in new_kv]:
+        return None
+    if _LADSPA_KV_RE.sub('', old_body).split() != _LADSPA_KV_RE.sub('', new_body).split():
+        return None
+    return {k: float(nv) for (k, ov), (_, nv) in zip(old_kv, new_kv) if float(ov) != float(nv)}
+
+
+def diff_filter_conf(old_text: str, new_text: str, *, ladspa: bool = False,
+                     ) -> dict[str, dict[str, float]] | None:
     """Compare two generated filter-chain conf texts.
 
     Returns ``{internal_node_name: {"Freq": f, "Q": q, "Gain": g}}`` — only
@@ -3181,13 +3202,52 @@ def diff_filter_conf(old_text: str, new_text: str) -> dict[str, dict[str, float]
 
     changed: dict[str, dict[str, float]] = {}
     pending_name: str | None = None
+    pending_ladspa: str | None = None
 
     for old_line, new_line in zip(old_lines, new_lines):
         header = _BQ_HEADER_RE.match(old_line)
         if old_line == new_line:
             if header:
                 pending_name = header.group(1)
+            if ladspa:
+                # Held across the node's other unchanged lines (plugin = …,
+                # label = … written on lines of their own) until its control
+                # line or the next node's header.
+                lheader = _LADSPA_HEADER_RE.match(old_line)
+                if lheader:
+                    pending_ladspa = lheader.group(1) if 'control' not in old_line else None
+                elif (header or _LADSPA_CONTROL_RE.match(old_line)
+                      or _BQ_CONTROL_RE.match(old_line)):
+                    pending_ladspa = None
             continue
+
+        if ladspa:
+            # Opt-in (Apply-All, for Volume Boost / Smart Volume): a comment
+            # (the "|  Boost: N dB" header) changes nothing in the graph, and
+            # a LADSPA control value is a live Props param like a biquad's
+            # ("limiter:Input gain (dB)"). Ports added, removed or renamed
+            # still return None.
+            if old_line.lstrip().startswith('#') and new_line.lstrip().startswith('#'):
+                continue
+            old_i, new_i = _LADSPA_INLINE_RE.match(old_line), _LADSPA_INLINE_RE.match(new_line)
+            if old_i and new_i:
+                if (old_i.group(1), old_i.group(4)) != (new_i.group(1), new_i.group(4)):
+                    return None
+                fields = _ladspa_control_diff(old_i.group(3), new_i.group(3))
+                if fields is None:
+                    return None
+                if fields:
+                    changed.setdefault(old_i.group(2), {}).update(fields)
+                continue
+            old_c, new_c = _LADSPA_CONTROL_RE.match(old_line), _LADSPA_CONTROL_RE.match(new_line)
+            if pending_ladspa and old_c and new_c and not _BQ_CONTROL_RE.match(old_line):
+                fields = _ladspa_control_diff(old_c.group(2), new_c.group(2))
+                if fields is None:
+                    return None
+                if fields:
+                    changed.setdefault(pending_ladspa, {}).update(fields)
+                pending_ladspa = None
+                continue
 
         # Lines differ. The only acceptable difference is a bq_* control
         # block (Freq/Q/Gain literals) belonging to the node named on the

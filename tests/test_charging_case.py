@@ -47,11 +47,22 @@ def test_udev_grants_the_case_the_same_access():
 
 # ── Frames ───────────────────────────────────────────────────────────────────
 
-def test_battery_frame_reads_the_case_bytes_not_the_buds():
+def test_battery_frame_reads_case_and_both_buds():
     # cmd, left 80 %, right 75 %, case 42 %, left/right charging, case charging
-    frame = [0xB7, 80, 75, 42, 1, 1, 1] + [0] * 57
-    assert cc.parse_frame(frame) == {'case_battery_charge': 42,
-                                     'case_charging_status': 'charging'}
+    frame = [0xB7, 80, 75, 42, 1, 2, 1] + [0] * 57
+    assert cc.parse_frame(frame) == {
+        'case_left_battery_charge': 80, 'case_left_charging_status': 'charging',
+        'case_right_battery_charge': 75, 'case_right_charging_status': 'plugged_in',
+        'case_battery_charge': 42, 'case_charging_status': 'charging'}
+
+
+def test_unseated_bud_readings_are_hidden():
+    state = {'case_left_battery_charge': 80, 'case_left_charging_status': 'charging',
+             'case_right_battery_charge': 0, 'case_right_charging_status': 'discharging',
+             'case_battery_charge': 42, 'buds_in_case': 'left'}
+    assert cc.without_unseated_buds(state) == {
+        'case_left_battery_charge': 80, 'case_left_charging_status': 'charging',
+        'case_battery_charge': 42, 'buds_in_case': 'left'}
 
 
 def test_buds_and_lid_frames():
@@ -62,7 +73,7 @@ def test_buds_and_lid_frames():
 
 
 def test_out_of_range_bytes_are_dropped_not_shown():
-    assert cc.parse_frame([0xB7, 0, 0, 200, 0, 0, 9]) == {}
+    assert cc.parse_frame([0xB7, 200, 200, 200, 9, 9, 9]) == {}
     assert cc.parse_frame([0xB8, 3, 0]) == {}
     assert cc.parse_frame([0xBC, 7]) == {}
     assert cc.parse_frame([0x42, 1, 2, 3]) == {}
@@ -154,6 +165,8 @@ def test_one_poll_reads_all_three_and_gives_the_interface_back(fake_usb, monkeyp
     assert all(s[:3] == (0x09, 0x0200, 3) and s[4] == 64 for s in device.sent)
     # The unsolicited lid frame read first is overridden by the real answer.
     assert seen == {'case_battery_charge': 33, 'case_charging_status': 'plugged_in',
+                    'case_left_battery_charge': 50, 'case_left_charging_status': 'discharging',
+                    'case_right_battery_charge': 60, 'case_right_charging_status': 'discharging',
                     'buds_in_case': 'both', 'case_lid_status': 'closed'}
     assert device.detached and device.attached
 

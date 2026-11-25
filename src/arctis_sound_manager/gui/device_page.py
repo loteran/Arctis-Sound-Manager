@@ -290,7 +290,7 @@ class DevicePage(QWidget):
         self._telemetry_toggle.checkStateChanged.connect(
             lambda state: set_consent(state == Qt.CheckState.Checked)
         )
-        self._add_row(general, "Telemetry — share anonymous usage data", self._telemetry_toggle)
+        self._add_row(general, I18n.translate("ui", "telemetry_setting"), self._telemetry_toggle)
 
         # Whatever no other group claims lands here, so a setting added to
         # GeneralSettings shows up even before it is given a group.
@@ -701,11 +701,11 @@ class DevicePage(QWidget):
             def _copy():
                 from PySide6.QtGui import QClipboard
                 QApplication.clipboard().setText(cmd, QClipboard.Mode.Clipboard)
-                copy_btn.setText("Copied!")
+                copy_btn.setText(I18n.translate("ui", "copied"))
                 copy_btn.setEnabled(False)
                 # context=copy_btn: cancels the timer if the dialog is closed
                 # before it fires, avoiding a shiboken use-after-free (issue #100).
-                QTimer.singleShot(2000, copy_btn, lambda: (copy_btn.setText("Copy command"), copy_btn.setEnabled(True)))
+                QTimer.singleShot(2000, copy_btn, lambda: (copy_btn.setText(I18n.translate("ui", "copy_command")), copy_btn.setEnabled(True)))
             copy_btn.clicked.connect(_copy)
             btn_row.addWidget(copy_btn)
 
@@ -727,7 +727,7 @@ class DevicePage(QWidget):
             QDesktopServices.openUrl(QUrl(self._update_url))
             return
 
-        self._update_status_lbl.setText("Installing…")
+        self._update_status_lbl.setText(I18n.translate("ui", "update_installing"))
         self._update_status_lbl.setStyleSheet(
             f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
         )
@@ -742,7 +742,7 @@ class DevicePage(QWidget):
     def _on_install_finished(self, success: bool, error_msg: str) -> None:
         import os, sys
         if success:
-            self._update_status_lbl.setText("Update installed — running setup…")
+            self._update_status_lbl.setText(I18n.translate("ui", "update_installed_setup"))
             from pathlib import Path
             (Path.home() / ".config" / "arctis_manager" / ".setup_done").unlink(missing_ok=True)
             from arctis_sound_manager.gui.first_run_dialog import FirstRunDialog

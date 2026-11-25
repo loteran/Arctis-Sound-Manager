@@ -75,7 +75,7 @@ class _RecordingBar:
     def __init__(self):
         self.calls: list[tuple] = []
 
-    def update(self, power, headset_bat, dac_bat):
+    def update(self, power, headset_bat, dac_bat, **_extra):
         self.calls.append((power, headset_bat, dac_bat))
 
     def set_no_device(self):

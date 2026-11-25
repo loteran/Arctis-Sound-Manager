@@ -271,7 +271,8 @@ def _should_restart_filter_chain_now() -> bool:
             os.close(lock_fd)
 
 
-def restart(*services: str, timeout: float | None = None, capture: bool = False) -> bool:
+def restart(*services: str, timeout: float | None = None, capture: bool = False,
+            force: bool = False) -> bool:
     """Restart services. Use this to (re)apply a new config — never ``start``,
     which is a no-op if the service is already running.
 
@@ -303,6 +304,11 @@ def restart(*services: str, timeout: float | None = None, capture: bool = False)
     with other services (full-stack config-migration repair) is rare enough
     not to need this and is left alone so it never skips restarting the
     other requested services.
+
+    *force* skips that coalescing, for a caller that has just written a conf
+    the earlier restart cannot have loaded: the GUI restarts filter-chain on
+    a switch to Sonar and the daemon writes the Spatial Audio chains moments
+    later, so "absorbed" there meant the new chain never came up.
     """
     if _GRAPH_REBUILDING.intersection(services):
         try:
@@ -310,7 +316,7 @@ def restart(*services: str, timeout: float | None = None, capture: bool = False)
             audio_reconfig.begin()
         except Exception as exc:  # never let this block a restart
             logger.warning("service_control: could not open the reconfig window: %s", exc)
-    if services == ("filter-chain",) and manager_available():
+    if services == ("filter-chain",) and manager_available() and not force:
         try:
             if not _should_restart_filter_chain_now():
                 logger.info("service_control: filter-chain restart absorbed by a "

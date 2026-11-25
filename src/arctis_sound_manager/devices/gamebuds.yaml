@@ -101,7 +101,8 @@ device:
   # Two batteries, one reading: the tray shows a single percentage, so
   # headset_battery_charge is the MIN of the two buds — the one that dies
   # first ends a stereo session, so it is the number worth warning on rather
-  # than an average that hides it.
+  # than an average that hides it. The Headset page also shows each bud's
+  # own level (left/right_bud_battery) as separate tiles.
   #
   # Two connect-status bytes, one online flag: SteelSeries' own firmware
   # (get-wireless-device-connection-status) computes exactly
@@ -130,17 +131,26 @@ device:
         bt_right_connect_status: 0x02
         left_connect_status: 0x03
         right_connect_status: 0x04
+        # A bud's battery byte means nothing while it is not connected (in
+        # the case, out of range): its tile says Offline instead, and the
+        # combined reading is the lowest of the connected buds only.
         left_battery_level: 0x05
         right_battery_level: 0x06
+        left_bud_battery:
+          if_connected: {value: [0x05], status: [0x03], connected: 0x03, otherwise: offline}
+        right_bud_battery:
+          if_connected: {value: [0x06], status: [0x04], connected: 0x03, otherwise: offline}
         headset_power_status:
           max: [0x03, 0x04]
         headset_battery_charge:
-          min: [0x05, 0x06]
+          if_connected: {value: [0x05, 0x06], status: [0x03, 0x04], connected: 0x03, reduce: min}
 
     representation:
       headset:
         - headset_power_status
         - headset_battery_charge
+        - left_bud_battery
+        - right_bud_battery
 
   status_parse:
     headset_power_status:
@@ -148,6 +158,14 @@ device:
       off: 0x02
       on: 0x03
     headset_battery_charge:
+      type: percentage
+      perc_min: 0
+      perc_max: 100
+    left_bud_battery:
+      type: percentage
+      perc_min: 0
+      perc_max: 100
+    right_bud_battery:
       type: percentage
       perc_min: 0
       perc_max: 100

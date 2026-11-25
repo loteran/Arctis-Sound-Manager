@@ -9,6 +9,7 @@ from PySide6.QtCore import Qt, QTimer, Slot
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget
 
 import arctis_sound_manager.gui.theme as _theme
+from arctis_sound_manager.gui.qt_widgets.no_wheel_slider import NoWheelSlider
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
 from arctis_sound_manager.i18n import I18n
 
@@ -58,6 +59,10 @@ class QAncWidget(QWidget):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self._current_mode = 'off'
+        # Until a status says otherwise, assume it reports the mode (the
+        # behaviour every profile but GameBuds' relies on).
+        self._reports_mode = True
+        self._saved_value = None
 
         # Pending mode/level set by the user but not yet confirmed by a status
         # update from the device — while pending, the widgets are disabled so
@@ -105,7 +110,7 @@ class QAncWidget(QWidget):
         self._level_title = QLabel("Level:")
         level_layout.addWidget(self._level_title)
 
-        self._level_slider = QSlider(Qt.Orientation.Horizontal)
+        self._level_slider = NoWheelSlider(Qt.Orientation.Horizontal)
         self._level_slider.setMinimum(1)
         self._level_slider.setMaximum(10)
         self._level_slider.setValue(5)
@@ -174,6 +179,26 @@ class QAncWidget(QWidget):
     @Slot(object)
     def update_status(self, status: dict) -> None:
         headset = status.get('headset', {})
+        if not headset:
+            return  # no device / nothing read yet: says nothing about the mode
+
+        if not isinstance(headset.get('noise_cancelling'), dict):
+            # This headset's status does not carry the mode (Arctis GameBuds:
+            # its 0xB0 reply has no mapped ANC field). Reading that as "off"
+            # snapped the pills back to Off after every change while the buds
+            # stayed in Transparency, and a click on Off was then dropped as
+            # "already active". Nothing will ever confirm a change here, so
+            # stop waiting and keep what was chosen (see apply_saved_mode).
+            first = self._reports_mode
+            self._reports_mode = False
+            self._pending_mode = None
+            self._pending_level = None
+            self._timeout_timer.stop()
+            self._set_widgets_enabled(True)
+            if first:
+                self.apply_saved_mode(self._saved_value)
+            return
+        self._reports_mode = True
 
         nc_entry = headset.get('noise_cancelling', {})
         mode = nc_entry.get('value', 'off') if isinstance(nc_entry, dict) else 'off'
@@ -235,13 +260,25 @@ class QAncWidget(QWidget):
         self._pending_anc_level = None
         self._set_widgets_enabled(True)
 
+    def apply_saved_mode(self, value) -> None:
+        """Show the saved noise_cancelling setting, for a headset whose status
+        does not report the mode. A status that does report it wins."""
+        self._saved_value = value
+        if self._reports_mode or self._pending_mode is not None:
+            return
+        mode = next((key for key, (_, v) in _MODE_LABELS.items() if v == value), None)
+        if mode is not None:
+            self._set_state(mode, None)
+
     def _set_state(self, mode: str, level) -> None:
         self._current_mode = mode
         for key, pill in self._pills.items():
             pill._set_active(key == mode)
 
+        # The level slider sends transparent_level, which only exists where the
+        # status reports the mode (and its level) too.
         is_transparent = (mode == 'transparent')
-        self._level_row.setVisible(is_transparent)
+        self._level_row.setVisible(is_transparent and self._reports_mode)
         if is_transparent and level is not None:
             perc = int(level)
             self._level_slider.blockSignals(True)
@@ -264,10 +301,13 @@ class QAncWidget(QWidget):
         self._pending_mode = mode_key
         for key, pill in self._pills.items():
             pill._set_active(key == mode_key)
-        self._level_row.setVisible(mode_key == 'transparent')
+        self._level_row.setVisible(mode_key == 'transparent' and self._reports_mode)
         self._anc_level_row.setVisible(mode_key == 'on' and self._has_anc_level)
-        self._set_widgets_enabled(False)
-        self._timeout_timer.start(5000)  # 5 second grace period for device confirmation
+        if self._reports_mode:
+            self._set_widgets_enabled(False)
+            self._timeout_timer.start(5000)  # 5 second grace period for device confirmation
+        else:
+            self._pending_mode = None  # nothing will confirm it
         DbusWrapper.change_setting('noise_cancelling', mode_value)
 
     def _on_level_changed(self, value: int) -> None:

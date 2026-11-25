@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPushButton, QSlider,
                                 QVBoxLayout, QWidget)
 
 from arctis_sound_manager import service_control as sc
+from arctis_sound_manager.gui.qt_widgets.no_wheel_slider import NoWheelSlider
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
 from arctis_sound_manager.i18n import I18n
 from arctis_sound_manager.sonar_to_pipewire import ensure_sonar_eq_configs
@@ -164,7 +165,7 @@ class _EqSlider(QWidget):
         freq_label.setStyleSheet('font-size: 11px; color: #aaa;')
         layout.addWidget(freq_label)
 
-        self._slider = QSlider(Qt.Orientation.Vertical)
+        self._slider = NoWheelSlider(Qt.Orientation.Vertical)
         self._slider.setMinimum(-20)   # -10 dB
         self._slider.setMaximum(20)    # +10 dB
         self._slider.setValue(0)       # 0 dB

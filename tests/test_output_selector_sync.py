@@ -220,6 +220,27 @@ def test_a_device_without_a_nick_keeps_its_name(monkeypatch):
     assert SonarPage._canonical_device_id(HEADSET) == HEADSET
 
 
+def test_a_nick_several_outputs_share_is_not_stored(monkeypatch):
+    """Every output of one USB card is "USB Audio": storing that made the
+    choice ambiguous, and the daemon took the first output (S/PDIF) where the
+    user had picked the speakers. Same rule as the list (#339): node.name."""
+    pytest.importorskip("PySide6")
+    from arctis_sound_manager.gui.sonar_page import SonarPage
+
+    spdif = "alsa_output.usb-Generic_USB_Audio-00.HiFi__SPDIF__sink"
+    speakers = "alsa_output.usb-Generic_USB_Audio-00.HiFi__Speaker__sink"
+    pulse = MagicMock()
+    pulse.__enter__ = lambda s: s
+    pulse.__exit__ = lambda *a: False
+    pulse.sink_list.return_value = [_FakeSink(spdif, nick="USB Audio"),
+                                    _FakeSink(speakers, nick="USB Audio"), _FakeSink(HEADSET)]
+    fake_pulsectl = types.ModuleType("pulsectl")
+    fake_pulsectl.Pulse = lambda *a, **kw: pulse
+    monkeypatch.setitem(sys.modules, "pulsectl", fake_pulsectl)
+
+    assert SonarPage._canonical_device_id(speakers) == speakers
+
+
 def test_the_round_trip_closes(tmp_path, monkeypatch):
     """Write it from the Equalizer, read it back into the Equalizer.
 

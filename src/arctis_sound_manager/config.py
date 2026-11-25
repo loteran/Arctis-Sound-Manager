@@ -192,6 +192,11 @@ class ConfigStatusResponseMapping:
                 # so a derived key behaves like any other mapped field
                 # downstream (on_off / percentage / representation).
                 for op, offsets in v.items():
+                    if op == 'if_connected':
+                        value = self._if_connected(offsets, raw_response)
+                        if value is not None:
+                            response[k] = value
+                        continue
                     values = [raw_response[o] for o in offsets if o in range(len(raw_response))]
                     if not values:
                         continue
@@ -203,6 +208,24 @@ class ConfigStatusResponseMapping:
                         raise ValueError(f"Unknown response_mapping combinator: {op!r}")
 
         return response
+
+    @staticmethod
+    def _if_connected(spec: dict[str, Any], raw: list[int]) -> int | str | None:
+        """A reading kept only for the parts that are connected.
+
+        ``{value: [offsets], status: [offsets], connected: 3, reduce: min,
+        otherwise: offline}``: value[i] counts only while raw[status[i]] equals
+        `connected` (GameBuds: a bud in its case still reports a stale or zero
+        battery byte). With nothing connected the field is `otherwise` — a
+        label, so the tile says so instead of showing 0 % — or absent when
+        `otherwise` is not given.
+        """
+        n = len(raw)
+        values = [raw[v] for v, s in zip(spec['value'], spec['status'])
+                  if v < n and s < n and raw[s] == spec['connected']]
+        if not values:
+            return spec.get('otherwise')
+        return {'min': min, 'max': max}[spec.get('reduce', 'min')](values)
 
 class ConfigSetting(JsonSerializable):
     name: str
@@ -862,7 +885,9 @@ def parsed_status(raw_status: dict[str, int]|None, device_config: DeviceConfigur
     result = {}
     for key, raw_value in raw_status.items():
         status_parse_config = next((csp for sp, csp in device_config.status_parse.items() if sp == key), None)
-        if status_parse_config is None:
+        if status_parse_config is None or isinstance(raw_value, str):
+            # A str is already a label (an `if_connected` fallback), not a
+            # byte for the parser to scale.
             result[key] = raw_value
             continue
         parser = next((p for p in status_parsers if getattr(p, '_status_type') == status_parse_config.type.value), None)
