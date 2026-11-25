@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from arctis_sound_manager.gui.components import DividerLine
+from arctis_sound_manager.gui.components import DividerLine, SectionTitle
 from arctis_sound_manager.gui.report_dialog import ReportBugDialog
 from arctis_sound_manager.i18n import I18n
 import arctis_sound_manager.gui.theme as _theme
@@ -2606,8 +2606,10 @@ class HelpPage(QWidget):
         outer.setSpacing(0)
 
         # ── Header (title + lang selector) — fixed, outside scroll ──────────
+        # Painted from the active theme in apply_theme(); the module-level
+        # BG_MAIN is the default theme's and left a grey band on any other.
         header_widget = QWidget()
-        header_widget.setStyleSheet(f"background-color: {BG_MAIN};")
+        self._header_widget = header_widget
         header_layout = QVBoxLayout(header_widget)
         header_layout.setContentsMargins(36, 28, 36, 0)
         header_layout.setSpacing(6)
@@ -2615,10 +2617,7 @@ class HelpPage(QWidget):
         title_row = QHBoxLayout()
         title_row.setSpacing(16)
 
-        self._title_label = QLabel("Help")
-        self._title_label.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 28pt; font-weight: bold; background: transparent;"
-        )
+        self._title_label = SectionTitle("Help")
         title_row.addWidget(self._title_label, stretch=1)
 
         # Report a bug button
@@ -2629,7 +2628,7 @@ class HelpPage(QWidget):
         )
         report_btn = QPushButton(I18n.translate('ui', 'report_bug'))
         report_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        report_btn.setStyleSheet(_BTN.format(bg=BG_BUTTON, fg=TEXT_PRIMARY, hover=BG_BUTTON_HOVER))
+        self._report_btn, self._report_btn_qss = report_btn, _BTN
         report_btn.clicked.connect(lambda: ReportBugDialog(parent=self).exec())
         title_row.addWidget(report_btn)
         header_layout.addLayout(title_row)
@@ -2678,9 +2677,10 @@ class HelpPage(QWidget):
         """Restyle the help page for the current active theme."""
         self.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
 
-        self._title_label.setStyleSheet(
-            f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 28pt; font-weight: bold; background: transparent;"
-        )
+        self._header_widget.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+        self._report_btn.setStyleSheet(self._report_btn_qss.format(
+            bg=_theme.c('BG_BUTTON'), fg=_theme.c('TEXT_PRIMARY'), hover=_theme.c('BG_BUTTON_HOVER')))
+        self._title_label.apply_theme()
         self._subtitle_label.setStyleSheet(
             f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 11pt; background: transparent;"
         )

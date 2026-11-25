@@ -33,6 +33,7 @@ from arctis_sound_manager.gui.fader_slider import CAP_H, FADER_HANDLE_QSS, Fader
 from arctis_sound_manager.i18n import I18n
 from arctis_sound_manager.sonar_to_pipewire import ensure_sonar_eq_configs
 import arctis_sound_manager.gui.theme as _theme
+from arctis_sound_manager.gui.components import SectionTitle
 from arctis_sound_manager.gui.theme import (
     ACCENT,
     BG_CARD,
@@ -635,8 +636,7 @@ class EqualizerPage(QWidget):
         root.setContentsMargins(36, 28, 36, 28)
         root.setSpacing(0)
 
-        self._eq_title = QLabel(I18n.translate('ui', 'equalizer'))
-        self._eq_title.setStyleSheet("color: #666666; font-size: 20pt; font-weight: bold; background: transparent;")
+        self._eq_title = SectionTitle(I18n.translate('ui', 'equalizer'))
         root.addWidget(self._eq_title)
         root.addSpacing(20)
 
@@ -663,30 +663,16 @@ class EqualizerPage(QWidget):
         mrl.setSpacing(12)
 
         ms = QLabel(I18n.translate('ui', 'current_mode'))
-        ms.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11pt; background: transparent;")
+        self._mode_caption = ms
         mrl.addWidget(ms)
 
         self._mode_label = QLabel()
-        self._mode_label.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 13pt; font-weight: bold; background: transparent;")
         mrl.addWidget(self._mode_label)
 
         self._button = QPushButton("")
         self._button.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         self._button.setFixedHeight(30)
         self._button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._button.setStyleSheet(f"""
-            QPushButton {{
-                background: {ACCENT};
-                color: #ffffff;
-                border: none;
-                border-radius: 6px;
-                font-size: 10pt;
-                font-weight: bold;
-                padding: 0 14px;
-            }}
-            QPushButton:hover {{ background: #e04000; }}
-            QPushButton:pressed {{ background: #c03800; }}
-        """)
         self._button.clicked.connect(self._on_toggle)
         mrl.addWidget(self._button)
         mrl.addStretch(1)
@@ -695,7 +681,6 @@ class EqualizerPage(QWidget):
 
         self._desc_label = QLabel()
         self._desc_label.setWordWrap(True)
-        self._desc_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;")
         card_layout.addWidget(self._desc_label)
 
         root.addWidget(self._card)
@@ -811,6 +796,8 @@ class EqualizerPage(QWidget):
     def apply_theme(self, t=None) -> None:
         """Restyle the equalizer page for the current active theme."""
         self.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
+        self._eq_title.apply_theme()
+        self._style_mode_card()
 
         self._card.setStyleSheet(f"""
             QWidget#eqCard {{
@@ -921,7 +908,6 @@ class EqualizerPage(QWidget):
         if mode == "sonar":
             self._eq_title.setText(I18n.translate('ui', 'sonar'))
             self._mode_label.setText(I18n.translate('ui', 'sonar'))
-            self._mode_label.setStyleSheet(f"color: {ACCENT}; font-size: 13pt; font-weight: bold; background: transparent;")
             self._desc_label.setText(I18n.translate('ui', 'sonar_active_desc'))
             self._button.setText(I18n.translate('ui', 'switch_to_custom'))
             self._eq_card.setVisible(False)
@@ -931,13 +917,34 @@ class EqualizerPage(QWidget):
         else:
             self._eq_title.setText(I18n.translate('ui', 'equalizer'))
             self._mode_label.setText(I18n.translate('ui', 'custom_eq'))
-            self._mode_label.setStyleSheet("color: #04C5A8; font-size: 13pt; font-weight: bold; background: transparent;")
             self._desc_label.setText(I18n.translate('ui', 'custom_active_desc'))
             self._button.setText(I18n.translate('ui', 'switch_to_sonar'))
             self._eq_card.setVisible(True)
             self._sonar_scroll.setVisible(False)
             if stretch_item:
                 root.setStretch(self._custom_stretch, 1)
+        self._style_mode_card(mode)
+
+    def _style_mode_card(self, mode: str | None = None) -> None:
+        """Mode card colours from the active theme. The module-level ACCENT is
+        the default theme's (orange), which showed on every other theme."""
+        mode = mode or _current_mode()
+        accent = _theme.c('ACCENT')
+        secondary = _theme.c('TEXT_SECONDARY')
+        self._mode_caption.setStyleSheet(f"color: {secondary}; font-size: 11pt; background: transparent;")
+        self._desc_label.setStyleSheet(f"color: {secondary}; font-size: 10pt; background: transparent;")
+        # Custom EQ keeps its own teal, so the two modes look different.
+        colour = accent if mode == "sonar" or getattr(self, '_hardware_eq_available', True) is False else "#04C5A8"
+        self._mode_label.setStyleSheet(
+            f"color: {colour}; font-size: 13pt; font-weight: bold; background: transparent;")
+        self._button.setStyleSheet(f"""
+            QPushButton {{
+                background: {accent}; color: #ffffff; border: none; border-radius: 6px;
+                font-size: 10pt; font-weight: bold; padding: 0 14px;
+            }}
+            QPushButton:hover {{ background: {QColor(accent).darker(115).name()}; }}
+            QPushButton:pressed {{ background: {QColor(accent).darker(130).name()}; }}
+        """)
 
     @Slot()
     def _on_toggle(self):

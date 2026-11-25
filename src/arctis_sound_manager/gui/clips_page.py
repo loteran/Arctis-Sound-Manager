@@ -46,6 +46,7 @@ from PySide6.QtWidgets import (
 )
 
 import arctis_sound_manager.gui.theme as _theme
+from arctis_sound_manager.gui.components import SectionTitle
 from arctis_sound_manager.gui.qt_widgets.no_wheel_combo import NoWheelComboBox
 from arctis_sound_manager.gui.qt_widgets.q_toggle import QToggle
 from arctis_sound_manager.i18n import I18n
@@ -335,11 +336,8 @@ class ClipsPage(QWidget):
         header = QHBoxLayout()
         header.setSpacing(10)
 
-        title = QLabel(_tr("clips", "Clips"))
-        title.setStyleSheet(
-            f"color: {_theme.c('TEXT_PRIMARY')}; font-size: 16pt; "
-            f"font-weight: bold; background: transparent;")
-        header.addWidget(title)
+        self._title = SectionTitle(_tr("clips", "Clips"))
+        header.addWidget(self._title)
         header.addStretch(1)
 
         self._power_lbl = QLabel(_tr("clips_power_on", "On"))
@@ -1663,6 +1661,7 @@ class ClipsPage(QWidget):
 
     def apply_theme(self, t=None) -> None:
         global _PLACEHOLDER
+        self._title.apply_theme()
         for widget, key, size in (
             (self._hint, "TEXT_SECONDARY", "9pt"),
             (self._status, "TEXT_SECONDARY", "9pt"),
