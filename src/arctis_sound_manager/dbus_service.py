@@ -331,19 +331,15 @@ def build_sink_options(sinks, list_name: str) -> list[dict[str, str]]:
             continue
         listed.append((sink, node_name))
 
-    nick_owners: dict[str, set[str]] = {}
-    for sink, node_name in listed:
-        nick = sink.proplist.get('node.nick', '')
-        if nick:
-            nick_owners.setdefault(nick, set()).add(node_name)
+    # Nicks one card's outputs share, suffixed or not, are no identity:
+    # those sinks are stored by node.name and labelled in full (pw_utils).
+    from arctis_sound_manager.pw_utils import sink_identity, sink_label, unstable_nicks
+    unstable = unstable_nicks(sinks)
 
     result: list[dict[str, str]] = []
     for sink, node_name in listed:
-        nick = sink.proplist.get('node.nick', '')
-        shared = len(nick_owners.get(nick, ())) > 1
-        identifier = node_name if (shared and node_name) else (nick or node_name)
-        name = (sink.proplist.get('node.description', '') or nick
-                or getattr(sink, 'description', '') or node_name)
+        identifier = sink_identity(sink, unstable) or node_name
+        name = sink_label(sink, unstable) or node_name
 
         if identifier and name and not any(r['id'] == identifier for r in result):
             result.append({'id': identifier, 'name': name})

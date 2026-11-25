@@ -4386,13 +4386,13 @@ class SonarPage(QWidget):
         """
         try:
             import pulsectl
+            from arctis_sound_manager.pw_utils import sink_identity, unstable_nicks
             with pulsectl.Pulse("asm-output-canonical") as pulse:
                 sinks = pulse.sink_list()
+                unstable = unstable_nicks(sinks)
                 for sink in sinks:
                     if sink.name == node_name:
-                        nick = sink.proplist.get("node.nick", "")
-                        shared = sum(1 for s in sinks if s.proplist.get("node.nick", "") == nick) > 1
-                        return node_name if (not nick or shared) else nick
+                        return sink_identity(sink, unstable) or node_name
         except Exception:
             pass
         return node_name
