@@ -8,7 +8,7 @@ import os
 import re
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QPainter, QPixmap
+from PySide6.QtGui import QColor, QPainter, QPixmap, QTransform
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QFrame,
@@ -83,8 +83,10 @@ def tinted_svg_pixmap(svg_path: str, color: str, width: int, height: int) -> QPi
 class SvgIconWidget(QLabel):
     """Renders an SVG file tinted with a given color."""
 
-    def __init__(self, svg_path: str, color: str, size: int = 55, width: int | None = None, parent=None):
+    def __init__(self, svg_path: str, color: str, size: int = 55, width: int | None = None, parent=None,
+                 mirrored: bool = False):
         super().__init__(parent)
+        self._mirrored = mirrored
         w = width if width is not None else size
         self.setFixedSize(w, size)
         self.setFrameShape(QFrame.Shape.NoFrame)
@@ -99,6 +101,8 @@ class SvgIconWidget(QLabel):
     def _load(self, svg_path: str, color: str, size: int, width: int | None = None):
         w = width if width is not None else size
         pixmap = tinted_svg_pixmap(svg_path, color, w, size)
+        if self._mirrored:
+            pixmap = pixmap.transformed(QTransform().scale(-1, 1))
         self.setPixmap(pixmap)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setStyleSheet("border: none; background: transparent;")

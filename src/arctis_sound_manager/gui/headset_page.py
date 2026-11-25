@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from arctis_sound_manager.gui import button_map_widget
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
 
 from arctis_sound_manager.gui.anc_widget import QAncWidget
@@ -426,7 +427,10 @@ class HeadsetPage(QWidget):
             card.deleteLater()
         self._setting_cards = []
         for section, names in wanted:
-            body = QSettingsWidget(None, None, "device", keys=names, compact=True)
+            if button_map_widget.fits(names):
+                body = button_map_widget.QButtonMapWidget(names)
+            else:
+                body = QSettingsWidget(None, None, "device", keys=names, compact=True)
             card = SettingsCard(section_title(section), body, self._content)
             self._cards_layout.addWidget(card)
             self._setting_cards.append(card)

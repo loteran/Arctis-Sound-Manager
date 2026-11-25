@@ -137,6 +137,9 @@ class QSettingsWidget(QWidget):
         self._labels = dict(labels or {})
         self._exclude = frozenset(exclude)
         self._compact = compact
+        # get_widget() returns the bare control, without its caption row: for
+        # a subclass that lays the controls out itself (button_map_widget).
+        self._controls_only = False
 
         layout = QVBoxLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -502,6 +505,9 @@ class QSettingsWidget(QWidget):
                 widget.setMaximumWidth(_COMPACT_SELECT_WIDTH)
         else:
             widget = QLabel(f'UNKNOWN TYPE: {config.type}')
+
+        if widget is not None and self._controls_only:
+            return widget
 
         if widget:
             label = QLabel(self._labels.get(config.name)
