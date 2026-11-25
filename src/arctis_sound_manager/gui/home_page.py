@@ -995,10 +995,10 @@ class AudioCard(QWidget):
         self._refresh_output_label()
 
     def set_disconnected(self):
-        self._ignore_change = True
-        self._slider.setValue(0)
+        # The slider stays where it was, locked: the channel is gone for now,
+        # its volume is not changed. Dropped to 0 it read as "the volume was
+        # turned down" when the headset was unplugged (it comes back as it was).
         self._pct_label.setText("—")
-        self._ignore_change = False
         self._slider.setEnabled(False)
 
     def set_connected(self):
