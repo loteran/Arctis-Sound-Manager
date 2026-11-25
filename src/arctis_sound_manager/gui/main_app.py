@@ -79,6 +79,9 @@ PAGE_SETTINGS = 5
 PAGE_HELP = 6
 PAGE_THEME_EDITOR = 7
 
+# Pause between background page builds (see QMainApp._background_step).
+_BACKGROUND_STEP_GAP_MS = 50
+
 
 #: Sidebar icon sizes. Help is deliberately smaller — see the note on
 #: top_pages_def in _build_window.
@@ -197,12 +200,15 @@ class QMainApp(QBaseDesktopApp):
         self.destroyed.connect(self.sig_stop)
         self.main_window.visibilityChanged.connect(self._on_visibility_changed)
 
-        # The Equalizer page is not built with the window, but straight after
-        # it: Home's output buttons drive its output selectors, and its Output
-        # selector applies automatic fallbacks, so it has to exist whether or
-        # not the tab is opened. Deferred to the next event-loop turn, the
-        # window (Home) is up first.
-        QTimer.singleShot(0, self._build_equalizer_page)
+        # The other pages are built — and rendered once off-screen — in the
+        # background straight after the window, one per step (see
+        # _background_step). The window (Home) is up first; the Equalizer comes
+        # early in the queue because it has to exist regardless: Home's output
+        # buttons drive its output selectors, and its Output selector applies
+        # automatic fallbacks.
+        self._background_queue = [PAGE_HOME, PAGE_EQUALIZER, PAGE_HEADSET, PAGE_SETTINGS,
+                                  PAGE_HELP, PAGE_CLIPS, PAGE_DAC]
+        QTimer.singleShot(0, self._background_step)
 
     # ── Pages built on first use ──────────────────────────────────────────────
     #
@@ -280,9 +286,41 @@ class QMainApp(QBaseDesktopApp):
             page.sig_saved.connect(self._on_theme_saved)
             page.sig_cancelled.connect(self._on_theme_editor_cancelled)
 
-    def _build_equalizer_page(self) -> None:
-        if not getattr(self, "_stopping", False):
-            self._page(PAGE_EQUALIZER)
+    def _background_step(self) -> None:
+        """Build and pre-render the next page in the queue, then yield.
+
+        Building a page is only part of what its first visit cost: showing it
+        then laid it out and painted it for the first time (0.25 s for Help).
+        Rendering it once off-screen beforehand does that work here, so even
+        the first visit only paints. One page per step, with a pause between,
+        keeps an already open window responsive; inside the tray's background
+        prebuild it is all done before the window is first opened.
+        """
+        if getattr(self, "_stopping", False) or not self._background_queue:
+            return
+        index = self._background_queue.pop(0)
+        try:
+            if index == PAGE_DAC and not self.settings.get('has_dac', False):
+                pass                    # hidden without a DAC; built if it ever shows
+            elif index in self._LAZY_PAGES:
+                self._prerender(self._page(index))
+            else:
+                self._prerender(self._stack.widget(index))
+        except Exception:  # noqa: BLE001 — a page that fails here is built on first visit
+            self.logger.debug("background build of page %d failed", index, exc_info=True)
+        QTimer.singleShot(_BACKGROUND_STEP_GAP_MS, self._background_step)
+
+    def _prerender(self, page) -> None:
+        """Lay out and paint *page* once, hidden, at the size it is shown at."""
+        if page is None or page.isVisible():
+            return              # the page on screen has done all this already
+        layout = self.main_window.layout()
+        if layout is not None:
+            # Never shown yet (the tray's prebuild): the stack's real size is
+            # only known once the window's layout has run.
+            layout.activate()
+        page.setGeometry(self._stack.contentsRect())
+        page.grab()
 
     def _on_langs_updated(self, codes) -> None:
         settings_page = self._built(PAGE_SETTINGS)
