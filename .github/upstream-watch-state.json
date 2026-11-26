@@ -11,7 +11,7 @@
   "kernel-usb-audio": "ae78fd83cc14f2a3cefd56bd6553e0c6d81031e4",
   "libusb": "v1.0.30",
   "linux-arctis-manager": "265619b9490ad78d3d8ef85a8a0bd6e05db476bb",
-  "pipewire": "1.6.11",
+  "pipewire": "1.6.12",
   "pulsectl": "24.12.0",
   "pyside6": "6.12.0",
   "pyudev": "0.24.5",
