@@ -2624,7 +2624,7 @@ class SpatialAudioWidget(QWidget):
 
         # ── Collapsible section ───────────────────────────────────────────────
         self._detail = QWidget()
-        self._detail.setStyleSheet("background: transparent;")
+        self._style_detail()
         detail_layout = QVBoxLayout(self._detail)
         detail_layout.setContentsMargins(0, 0, 0, 0)
         detail_layout.setSpacing(12)
@@ -2960,8 +2960,26 @@ class SpatialAudioWidget(QWidget):
             QPushButton:disabled {{ color: grey; }}
         """
         self.setStyleSheet(_slider_qss)
+        self._style_detail()
         self._hrir.apply_theme()
         self._sync_mode()
+
+    def _style_detail(self) -> None:
+        """Transparent section, opaque drop-down lists.
+
+        The transparent background reaches every descendant, the surround
+        profile's drop-down list included, which then opened see-through and
+        unreadable over the page. The list gets the theme's card colour back.
+        """
+        self._detail.setStyleSheet(f"""
+            QWidget {{ background: transparent; }}
+            QComboBoxPrivateContainer {{ background-color: {_theme.c('BG_CARD')}; }}
+            QComboBox QAbstractItemView {{
+                background-color: {_theme.c('BG_CARD')};
+                color: {_theme.c('TEXT_PRIMARY')};
+                border: 1px solid {_theme.c('BORDER')};
+            }}
+        """)
 
     def get_state(self) -> dict:
         return dict(self._state)
