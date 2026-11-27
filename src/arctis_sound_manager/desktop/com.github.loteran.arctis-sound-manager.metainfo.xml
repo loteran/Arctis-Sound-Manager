@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.7.11" date="2026-11-27">
+      <description>
+        <p>Separate left and right output volume (#403), for hearing that differs between the ears. A switch on the Headset page splits the volume into a left and a right slider; it applies to what this computer plays through the headset. Contributed by @DingusMcRinkyDinky. Headset page: an Events card that says what happens automatically and when — on connect, disconnect, mute, idle, taking the headset off and logging in — with each setting next to the event it changes. Contributed by @DingusMcRinkyDinky. Arctis Nova Pro Omni: choose the noise-cancelling level (#400). ASM no longer forces it back to High on every start or reconnect, and offers Low / Medium / High. Reported by @PoisonGhost90.</p>
+      </description>
+    </release>
     <release version="1.7.10" date="2026-11-24">
       <description>
         <p>Audio visualisers and other recorders stay on the channel you set them to (#398). The media router moved every program recording a channel to Game unless it had an override, so cava set to Media was pulled onto Game a few seconds after starting. Only game clip recorders (Steam Game Recording, gpu-screen-recorder) are now sent to Game. Reported by @nagaisa. Auto Spatial Audio no longer switches to virtual surround for a few seconds every five minutes (#397). A Cloudflare challenge page opens a short 8-channel audio stream while it checks the browser, and Auto acted on it. A surround source now has to last 10 seconds before Auto turns spatial on; going back to stereo is still immediate. Diagnosed and fixed by @Azykle.</p>
@@ -199,11 +204,6 @@
     <release version="1.4.27" date="2026-09-21">
       <description>
         <p>**The Equalizer tab now has its own output-device picker for Game, Chat,. The Channels page's Aux add/remove button is now a "Channels ▾" menu with. Support for the SteelSeries Arctis 5 (2018). This headset has no.</p>
-      </description>
-    </release>
-    <release version="1.4.26" date="2026-09-14">
-      <description>
-        <p>The daemon froze on wake from suspend (1.4.25 regression, #238). Two. Chat channel routed to an external output device now stays stereo instead of collapsing to mono/left-only, since ASM now owns its link (PipeWire no longer force-negotiates the chat EQ output to the headset's native mono PCM format). (#242). Turning the Aux channel off (or back on) never actually told the daemon.</p>
       </description>
     </release>
   </releases>

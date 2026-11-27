@@ -1,3 +1,60 @@
+arctis-sound-manager (1.7.11-1) noble; urgency=medium
+
+  * Separate left and right output volume (#403), for hearing that differs
+    between the ears. A switch on the Headset page splits the volume into a
+    left and a right slider; it applies to what this computer plays through
+    the headset. Contributed by @DingusMcRinkyDinky.
+  * Headset page: an Events card that says what happens automatically and
+    when — on connect, disconnect, mute, idle, taking the headset off and
+    logging in — with each setting next to the event it changes. Contributed
+    by @DingusMcRinkyDinky.
+  * Arctis Nova Pro Omni: choose the noise-cancelling level (#400). ASM no
+    longer forces it back to High on every start or reconnect, and offers
+    Low / Medium / High. Reported by @PoisonGhost90.
+  * GameBuds: each earbud's battery, and the case's (#402), beside a left
+    and a right earbud icon. Contributed by @DingusMcRinkyDinky.
+  * Themes: "Follow the system", and the title bar and window frame drawn in
+    the theme on KDE Plasma. Every page now follows a theme change, titles,
+    icons and drop-down arrows included. Contributed by @DingusMcRinkyDinky.
+  * Help page in Swedish. Contributed by @DingusMcRinkyDinky.
+  * README: Hyprland's Lua autostart (#427) for tray mode on Hyprland 0.55
+    and later. Suggested by @Makari-Aeron.
+  * The window opens much faster: pages are built on first use and
+    pre-rendered in the background (window build 2.0 s → 0.2 s). Contributed
+    by @DingusMcRinkyDinky.
+  * Headset page reorganised: noise cancelling in one card, button mappings
+    as a side × gesture grid, and playback notes only where a setting
+    interrupts sound. On the Settings page each device picker sits next to
+    what it affects. Contributed by @DingusMcRinkyDinky.
+  * Sliders leave the mouse wheel to the page until clicked (#414), so
+    scrolling no longer changes a volume by accident. Contributed by
+    @DingusMcRinkyDinky.
+  * The language menu lists languages that are at least 10% translated.
+  * Clips no longer crash on every captured frame when gst-python is
+    installed (#426). Reported by @SleepyXaria.
+  * A native Steam game is still sent to Game after a one-off failure to
+    read its process (#424). The failure used to be remembered until the
+    router restarted, so the game stayed on Media. Diagnosed and fixed by
+    @Azykle.
+  * Changing the disconnect device while the headset is away moves the sound
+    there now (#423), instead of at the next disconnect. Contributed by
+    @DingusMcRinkyDinky.
+  * Sonar: the Media channel is no longer silent, and Spatial Audio, Boost
+    and Smart Volume apply without restarting the audio engine. Contributed
+    by @DingusMcRinkyDinky.
+  * GameBuds: noise cancelling "Off" can be selected. Contributed by
+    @DingusMcRinkyDinky.
+  * Saved output devices stay put (#413) when several outputs of one card
+    share a name. Contributed by @DingusMcRinkyDinky.
+  * Bundled translations are no longer hidden by a stale downloaded language
+    file. Contributed by @DingusMcRinkyDinky.
+  * The surround profile's drop-down list is opaque instead of see-through
+    over the Sonar page.
+  * No-headset mode is shown as such, and an unplugged headset's name is no
+    longer kept on screen. Contributed by @DingusMcRinkyDinky.
+
+ -- loteran <axel.valadon@gmail.com>  Fri, 27 Nov 2026 00:00:00 +0000
+
 arctis-sound-manager (1.7.10-1) noble; urgency=medium
 
   * Audio visualisers and other recorders stay on the channel you set them
