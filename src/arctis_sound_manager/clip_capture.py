@@ -1330,13 +1330,14 @@ class ClipCapture:
                 keyframe = not buf.has_flags(Gst.BufferFlags.DELTA_UNIT)
                 self._last_video_at = time.monotonic()
 
-            ok, info = buf.map(Gst.MapFlags.READ)
-            if not ok:
+            # extract_dup, not map()/unmap(): with gst-python's overrides
+            # installed, map() hands back the override's MapInfo and unmap()
+            # rejects it ("Expected Gst.MapInfo, but got
+            # gi.repository.Gst.MapInfo", #426). extract_dup copies the bytes
+            # through plain introspection, the same on every install.
+            payload = buf.extract_dup(0, buf.get_size())
+            if payload is None:
                 return Gst.FlowReturn.OK
-            try:
-                payload = bytes(info.data)
-            finally:
-                buf.unmap(info)
 
             target = self.buffer.video if is_video else self.buffer.audio.get(track)
             if target is not None:
