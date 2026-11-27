@@ -54,8 +54,6 @@ def test_auto_route_unknown_returns_none():
 def _fake_environ(tmp_path, monkeypatch, content: bytes) -> str:
     """Point /proc/<pid>/environ reads at a file holding *content*."""
     import builtins
-    from arctis_sound_manager.scripts import video_router
-    video_router._pid_launched_by_steam.cache_clear()
     env = tmp_path / "environ"
     env.write_bytes(content)
     real_open = builtins.open
@@ -86,6 +84,37 @@ def test_auto_route_browser_from_steam_keeps_media(tmp_path, monkeypatch):
 
 def test_auto_route_unreadable_pid_returns_none():
     assert _auto_route("SomeRandomApp", {"application.process.id": "not-a-pid"}) is None
+
+
+def test_auto_route_retries_after_a_transient_environ_read_failure(tmp_path, monkeypatch):
+    """A one-off /proc read failure must not disable Steam detection for good.
+
+    BeamNG.drive (native, AppID 284160) is the real-world reproduction; the
+    app and binary names below are arbitrary — any non-wine Steam game takes
+    the same path.
+    """
+    import builtins
+
+    env = tmp_path / "environ"
+    env.write_bytes(b"SteamGameId=440\0")
+    real_open = builtins.open
+    attempts = {"n": 0}
+
+    def flaky_open(path, *args, **kwargs):
+        if str(path) == "/proc/4242/environ":
+            attempts["n"] += 1
+            if attempts["n"] == 1:
+                raise OSError(13, "Permission denied")
+            return real_open(env, *args, **kwargs)
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", flaky_open)
+    props = {
+        "application.process.binary": "SomeNativeGame.x64",
+        "application.process.id": "4242",
+    }
+    assert _auto_route("SomeNativeGame", props) is None
+    assert _auto_route("SomeNativeGame", props) == "Arctis_Game"
 
 
 def test_load_overrides_missing_file():

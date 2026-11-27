@@ -8,7 +8,6 @@ Respects manual overrides written by the GUI (routing_overrides.json).
 Detects manual moves done in KDE and saves them as persistent overrides.
 """
 import asyncio
-import functools
 import json
 import logging
 import os
@@ -183,7 +182,6 @@ _CHAT_APPS = {"WEBRTC VoiceEngine", "Discord", "TeamSpeak", "Mumble",
               "Element", "Signal"}
 
 
-@functools.lru_cache(maxsize=256)
 def _pid_launched_by_steam(pid: str) -> bool:
     """True if process *pid* was started by Steam as a game.
 
@@ -191,13 +189,17 @@ def _pid_launched_by_steam(pid: str) -> bool:
     native or Proton, and of non-Steam shortcuts too; the client itself does
     not carry it. That covers native Linux games such as TF2 (tf_linux64),
     which _GAME_BINARIES cannot know and which used to land on the default
-    channel (Media) every time (discussion #265). Cached per pid: the answer
-    cannot change for a running process.
+    channel (Media) every time (discussion #265).
+
+    Not cached: a one-off unreadable /proc (permissions, an exec transition) or
+    a reused PID must not suppress detection for the router's whole lifetime.
+    The auto-route pass retries on its next 5 s tick.
     """
     try:
         with open(f"/proc/{int(pid)}/environ", "rb") as f:
             env = f.read().split(b"\0")
-    except (OSError, ValueError):
+    except (OSError, ValueError) as exc:
+        log.debug("Steam launch detection: cannot read /proc/%s/environ: %r", pid, exc)
         return False
     for entry in env:
         if entry.startswith(b"SteamGameId="):
