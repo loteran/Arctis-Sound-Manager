@@ -583,11 +583,21 @@ systemctl --user enable --now arctis-gui.service
 <details>
 <summary><strong>Hyprland / Sway / other wlroots compositors</strong></summary>
 
-Add to `~/.config/hypr/hyprland.conf` (or your compositor's startup config):
+**Hyprland 0.55 and later (Lua config)** — add to `~/.config/hypr/hyprland.lua` (or the file it loads your autostart from, e.g. `autostart.lua`):
+
+```lua
+hl.on("hyprland.start", function()
+    hl.exec_cmd("asm-gui --systray")
+end)
+```
+
+**Older Hyprland (`hyprland.conf`)**, Sway and other compositors — add to the startup config:
 
 ```ini
 exec-once = asm-gui --systray
 ```
+
+(Sway: `exec asm-gui --systray` in `~/.config/sway/config`.)
 </details>
 
 <details>
