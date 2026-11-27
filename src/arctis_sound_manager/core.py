@@ -4254,6 +4254,7 @@ class CoreEngine:
         current_default_device = self.pa_audio_manager.get_default_device()
         if current_default_device is None:
             self.pa_audio_manager.redirect_audio(redirect_device)
+            self._disconnect_redirected_to = redirect_device
             return
 
         current_name = current_default_device.name or ''
@@ -4265,6 +4266,37 @@ class CoreEngine:
 
         if is_steelseries_alsa or is_arctis_owned:
             self.pa_audio_manager.redirect_audio(redirect_device)
+            self._disconnect_redirected_to = redirect_device
+
+    def follow_disconnect_target(self) -> None:
+        """The disconnect device was changed, or the redirect switched on,
+        while the headset is away: move the sound there now.
+
+        It used to wait for the next disconnect. Picking another device with
+        the earbuds in their case therefore did nothing, the sound stayed on
+        the first pick (an unconnected jack, in the case that showed it), and
+        nothing on screen said why. The sound moves only from where ASM itself
+        put it, or off the headset's own channels — never from an output the
+        user chose by hand since. Not in the no-headset mode, whose channels
+        are the output.
+        """
+        settings = getattr(self, 'general_settings', None)
+        if getattr(settings, 'redirect_audio_on_disconnect', False) is not True:
+            return
+        if getattr(self.device_config, 'generic', False) or self.is_device_online():
+            return
+        previous = getattr(self, '_disconnect_redirected_to', None)
+        current = self.pa_audio_manager.get_default_device()
+        if previous and current is not None and previous in (
+                current.name, current.proplist.get('node.nick', '')):
+            target = settings.redirect_audio_on_disconnect_device or self._fallback_disconnect_sink()
+            if target and target != previous:
+                self.logger.info("Disconnect device changed while the headset is away — "
+                                 "moving the sound to %s", target)
+                self.pa_audio_manager.redirect_audio(target)
+                self._disconnect_redirected_to = target
+            return
+        self.redirect_audio_on_disconnect()
 
     def _fallback_disconnect_sink(self) -> str | None:
         """Best sink to fall back to when no redirect device was configured.
