@@ -3361,6 +3361,7 @@ class CoreEngine:
                 self.logger.error("OLED display disabled, initialisation failed: %r", exc)
                 self.oled_manager = None
 
+        self.hand_channels_back_to_headset()
         self.redirect_to_media_sink()
         # Reached only when the full pipeline was configured without an early
         # return; mark the device as ready so loop() stops re-scanning.
@@ -4067,6 +4068,7 @@ class CoreEngine:
         if self.device_config and self.device_config.online_status and key == self.device_config.online_status.status_variable:
             if self.is_device_online():
                 self._cancel_offline_redirect()
+                self.hand_channels_back_to_headset()
                 self.redirect_to_media_sink()
                 # The headset just came up on its firmware defaults — give it
                 # back what the user chose (#221).
@@ -4159,6 +4161,52 @@ class CoreEngine:
     # instead of one of ASM's channels — for them "Media" is not a neutral
     # default, it is a second sink they never asked for.
     _REDIRECT_CHANNELS = (PULSE_MEDIA_NODE_NAME, PULSE_GAME_NODE_NAME, PULSE_CHAT_NODE_NAME)
+
+    def hand_channels_back_to_headset(self) -> None:
+        """On connection, channels sent to another device come back (opt-in).
+
+        A channel can be sent to another device from the Channels page; that
+        choice is kept in channel_output_devices.json. It used to outlive every
+        connection: with Media sent to the speakers once, putting the earbuds
+        in later moved the applications to the Media channel as the Events card
+        promised — and the channel carried on to the speakers. Nothing on
+        screen said so, and what a connection would do became unknowable.
+
+        With redirect_channels_back_on_connect on (it needs
+        redirect_audio_on_connect too) the latest event decides: a manual
+        channel choice holds until the headset next connects, then every
+        channel goes back to the headset. Off by default: a channel sent to
+        the speakers for good stays there, as before. The Output channel's own
+        device (external_output_device) is not a channel choice and stays.
+        Called only on a real connection — USB or the headset coming online —
+        never on the resume-from-sleep reconciliation.
+        """
+        # `is True`: the setting is a bool, and nothing else (an engine built
+        # half-way, a mock) may end up deleting the user's channel choices.
+        settings = getattr(self, 'general_settings', None)
+        if getattr(settings, 'redirect_audio_on_connect', False) is not True \
+                or getattr(settings, 'redirect_channels_back_on_connect', False) is not True \
+                or self.is_device_online() is not True:
+            return
+        from arctis_sound_manager.sonar_to_pipewire import (
+            CHANNEL_OUTPUTS_FILE, _load_channel_outputs)
+        outputs = _load_channel_outputs()
+        if not outputs:
+            return
+        try:
+            CHANNEL_OUTPUTS_FILE.unlink()
+        except OSError as exc:
+            self.logger.warning("Could not reset the channel outputs: %r", exc)
+            return
+        self.logger.info("Headset connected: channels %s back on the headset",
+                         ", ".join(sorted(outputs)))
+        try:
+            from arctis_sound_manager.sonar_to_pipewire import (
+                ensure_physical_output_links, ensure_spatial_eq_links)
+            ensure_spatial_eq_links()
+            ensure_physical_output_links()
+        except Exception as exc:
+            self.logger.warning("Re-linking the channels to the headset failed: %r", exc)
 
     def redirect_to_media_sink(self):
         """Make the configured channel the system default when the headset comes up.
