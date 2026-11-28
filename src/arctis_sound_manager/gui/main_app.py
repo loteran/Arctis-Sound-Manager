@@ -197,6 +197,11 @@ class QMainApp(QBaseDesktopApp):
         from arctis_sound_manager.gui.theme import install_stylesheet_dedup
         install_stylesheet_dedup()
 
+        # Settings that arrive before the window exists are held here and
+        # applied once it does (see on_settings_received, #432).
+        self._window_ready = False
+        self._early_settings: dict | None = None
+
         # D-Bus wrapper
         self.dbus_wrapper = DbusWrapper()
         self.dbus_wrapper.sig_settings.connect(self.on_settings_received)
@@ -218,6 +223,16 @@ class QMainApp(QBaseDesktopApp):
         # in _wire_page() when they are built (see _page()).
         self.dbus_wrapper.sig_status.connect(self._home_page.update_status)
         self.dbus_wrapper.sig_settings.connect(self._home_page.update_settings)
+
+        # The one-time request above can be answered while the window is
+        # still being built: a page that pumps the event loop during its
+        # construction (the Clips install screen does) delivers the reply
+        # early. Hand it on now that every page it touches exists.
+        self._window_ready = True
+        if self._early_settings is not None:
+            early, self._early_settings = self._early_settings, None
+            self.on_settings_received(early)
+            self._home_page.update_settings(early)
 
         # DAC tab hidden by default until device confirms it has a DAC
         self._sidebar_buttons[PAGE_DAC].setVisible(False)
@@ -822,6 +837,11 @@ class QMainApp(QBaseDesktopApp):
     # ── D-Bus signal handlers ─────────────────────────────────────────────────
 
     def on_settings_received(self, settings: dict):
+        if not getattr(self, '_window_ready', True):
+            # Answered during _build_window(): the sidebar and the page table
+            # may not exist yet (#432). Kept for the end of __init__.
+            self._early_settings = settings
+            return
         if settings == self.settings:
             return
         self.settings = settings
