@@ -1,3 +1,16 @@
+arctis-sound-manager (1.7.12-1) noble; urgency=medium
+
+  * The window no longer crashes at start-up (#432). Since 1.7.11 the
+    settings could arrive while the window was still being built, most
+    likely when Clips is not installed, and the app stopped with "'QMainApp'
+    object has no attribute '_built_pages'". Settings that arrive that early
+    are now applied once the window is ready. Reported by @ApollonGorilla2.
+  * Translations for the 1.7.11 features (Events card, left/right volume,
+    earbud battery, themes and more) in French, Spanish, German, Finnish,
+    Italian, Norwegian, Portuguese, Swedish and Turkish.
+
+ -- loteran <axel.valadon@gmail.com>  Sat, 28 Nov 2026 00:00:00 +0000
+
 arctis-sound-manager (1.7.11-1) noble; urgency=medium
 
   * Separate left and right output volume (#403), for hearing that differs
